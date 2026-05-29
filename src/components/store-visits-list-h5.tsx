@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, CalendarDays, ChevronRight, ImageIcon, Loader2, Plus, RefreshCw } from "lucide-react";
+import { ArrowLeft, CalendarDays, ChevronRight, ImageIcon, Loader2, LogIn, Plus, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
@@ -13,7 +13,9 @@ const storageKey = "makuku_app_user";
 
 type AppUser = {
   id: string;
+  username?: string;
   displayName: string;
+  role?: string;
 };
 
 type VisitListItem = {
@@ -44,6 +46,10 @@ function loadUser(): AppUser | null {
   } catch {
     return null;
   }
+}
+
+function saveUser(user: AppUser) {
+  localStorage.setItem(storageKey, JSON.stringify(user));
 }
 
 function statusClass(status: StoreVisitAnalysisStatus | null | undefined) {
@@ -96,7 +102,35 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const newVisitHref = `/${locale}/mobile/offline-capture/new`;
+
+  const loginText = locale === "zh"
+    ? {
+        title: "移动巡店登录",
+        username: "用户名",
+        password: "密码",
+        usernamePlaceholder: "输入用户名",
+        passwordPlaceholder: "输入密码",
+        submit: "登录",
+        submitting: "登录中...",
+        required: "请输入用户名和密码",
+        failed: "登录失败",
+      }
+    : {
+        title: "Mobile Visit Login",
+        username: "Username",
+        password: "Password",
+        usernamePlaceholder: "Enter username",
+        passwordPlaceholder: "Enter password",
+        submit: "Sign In",
+        submitting: "Signing in...",
+        required: "Enter username and password.",
+        failed: "Sign-in failed",
+      };
 
   const loadVisits = useCallback(async (nextPage = 1, append = false, currentUser: AppUser | null = null) => {
     if (!currentUser?.id) return;
@@ -131,6 +165,38 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
     }
   }, [copy.loadVisitFailed, copy.networkRetry]);
 
+  async function handleLogin() {
+    if (!username.trim() || !password) {
+      setLoginError(loginText.required);
+      return;
+    }
+
+    setLoginLoading(true);
+    setLoginError(null);
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.user?.id) {
+        setLoginError(data.error ?? loginText.failed);
+        return;
+      }
+
+      const nextUser = data.user as AppUser;
+      saveUser(nextUser);
+      setUser(nextUser);
+      setPassword("");
+      void loadVisits(1, false, nextUser);
+    } catch {
+      setLoginError(copy.networkRetry);
+    } finally {
+      setLoginLoading(false);
+    }
+  }
+
   useEffect(() => {
     const timeout = setTimeout(() => {
       const stored = loadUser();
@@ -157,9 +223,42 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
           </div>
           <MobileLanguageSwitch locale={locale} currentPath="/mobile/offline-capture/list" />
         </header>
-        <Link href={newVisitHref} className="flex h-11 items-center justify-center rounded-lg bg-slate-900 text-sm font-semibold text-white">
-          {copy.goToCapture}
-        </Link>
+        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="text-base font-bold">{loginText.title}</h2>
+          {loginError ? <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{loginError}</div> : null}
+          <div className="mt-4 space-y-3">
+            <label className="block">
+              <span className="text-sm font-semibold text-slate-700">{loginText.username}</span>
+              <input
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                onKeyDown={(event) => event.key === "Enter" && handleLogin()}
+                placeholder={loginText.usernamePlaceholder}
+                className="mt-1 h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-blue-500"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-semibold text-slate-700">{loginText.password}</span>
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                onKeyDown={(event) => event.key === "Enter" && handleLogin()}
+                placeholder={loginText.passwordPlaceholder}
+                className="mt-1 h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-blue-500"
+              />
+            </label>
+          </div>
+          <button
+            type="button"
+            onClick={handleLogin}
+            disabled={loginLoading}
+            className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-slate-900 text-sm font-semibold text-white disabled:opacity-60"
+          >
+            {loginLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
+            {loginLoading ? loginText.submitting : loginText.submit}
+          </button>
+        </section>
       </main>
     );
   }
