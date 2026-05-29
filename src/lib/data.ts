@@ -244,16 +244,28 @@ export async function getOfflineStoreVisit(id: string): Promise<QueryResult<Offl
 
 async function attachVisitImageUrls(visits: OfflineStoreVisit[]) {
   const supabase = createSupabaseServiceClient();
-  return Promise.all(visits.map(async (visit) => ({
-    ...visit,
-    offline_visit_images: await Promise.all((visit.offline_visit_images ?? []).map(async (image) => {
-      if (image.image_url) return image;
+  return Promise.all(visits.map(async (visit) => {
+    const imagePaths = Array.isArray(visit.image_urls) ? visit.image_urls : [];
+    const categories = Array.isArray(visit.image_categories) ? visit.image_categories : [];
+    const signedImages = await Promise.all(imagePaths.map(async (path, index) => {
       const { data } = await supabase.storage
-        .from("offline-visit-images")
-        .createSignedUrl(image.image_path, 60 * 60);
-      return { ...image, image_url: data?.signedUrl ?? null };
-    })),
-  })));
+        .from("store-visits")
+        .createSignedUrl(path, 60 * 60);
+      return { path, url: data?.signedUrl ?? null, category: categories[index] };
+    }));
+
+    return {
+      ...visit,
+      signed_images: signedImages,
+      offline_visit_images: await Promise.all((visit.offline_visit_images ?? []).map(async (image) => {
+        if (image.image_url) return image;
+        const { data } = await supabase.storage
+          .from("offline-visit-images")
+          .createSignedUrl(image.image_path, 60 * 60);
+        return { ...image, image_url: data?.signedUrl ?? null };
+      })),
+    };
+  }));
 }
 
 export async function getAlerts(): Promise<QueryResult<Alert[]>> {

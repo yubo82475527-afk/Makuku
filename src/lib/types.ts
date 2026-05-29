@@ -297,6 +297,11 @@ export type OfflineStoreVisit = {
   summary_result: Record<string, unknown> | null;
   created_at: string;
   offline_visit_images?: OfflineVisitImage[];
+  signed_images?: {
+    path: string;
+    url: string | null;
+    category?: StoreVisitImageCategory;
+  }[];
 };
 
 export type AiPriceCandidateStatus = "pending" | "approved" | "rejected";

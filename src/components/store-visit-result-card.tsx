@@ -4,6 +4,7 @@ import type { Locale } from "@/lib/i18n/config";
 import { formatIdr } from "@/lib/format";
 import { getMobileCopy } from "@/lib/mobile-i18n";
 import { calculatePricePerPiece, parseIdrPrice } from "@/lib/price-utils";
+import { normalizeStoreVisitAiResult } from "@/lib/store-visit-ai";
 import type { StoreVisitAiResult } from "@/lib/types";
 
 export function StoreVisitResultCard({
@@ -13,6 +14,7 @@ export function StoreVisitResultCard({
   result: StoreVisitAiResult;
   locale?: Locale;
 }) {
+  result = normalizeStoreVisitAiResult(result);
   const copy = getMobileCopy(locale).result;
   const shelf = result.shelf_understanding;
   const prices = result.price_insights;
