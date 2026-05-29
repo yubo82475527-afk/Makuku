@@ -101,6 +101,19 @@ export type StoreVisitAiResult = {
   store_summary: string;
 };
 
+export type StoreVisitAiConfig = {
+  id?: string;
+  version_name: string;
+  system_prompt: string;
+  temperature: number;
+  max_tokens: number;
+  status?: "active" | "archived";
+  last_test_visit_id?: string | null;
+  last_test_result?: Record<string, unknown> | null;
+  created_at?: string;
+  activated_at?: string | null;
+};
+
 export type Brand = {
   id: string;
   name: string;

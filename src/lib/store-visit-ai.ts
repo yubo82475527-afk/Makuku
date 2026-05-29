@@ -9,9 +9,11 @@ import type {
   StockRiskLevel,
   StockRiskSignal,
   StoreVisitAiResult,
+  StoreVisitAiConfig,
   ValidationWarningType,
 } from "@/lib/types";
 import { createJsonChatCompletion, imageUrlPart, textPart } from "@/lib/ai-client";
+import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
 
 const stockRiskLevels: StockRiskLevel[] = ["Normal", "Low Stock", "Out of Stock Risk"];
 const promotionTypes: PromotionType[] = ["Discount", "Buy 1 Get 1", "Buy 2 Get 1", "Promo Tag", "Special Offer"];
@@ -23,6 +25,62 @@ const promotionVisibilities: PromotionVisibility[] = ["LOW", "MEDIUM", "HIGH"];
 const promoPressureLevels: PromoPressureLevel[] = ["LOW", "MEDIUM", "HIGH"];
 const rawExtractionTypes: RawExtractionType[] = ["SKU", "PROMO", "SHELF_SIGNAL"];
 const validationWarningTypes: ValidationWarningType[] = ["MISSING_DATA", "LOW_CONFIDENCE", "PARSE_RISK"];
+
+export const STORE_VISIT_AI_PROMPT = [
+  "You are a Retail Shelf Intelligence AI System with strict observability requirements.",
+  "You analyze MULTIPLE store shelf images from a SINGLE store visit and produce raw structured extraction, normalized retail insights, and validation metadata.",
+  "Never silently fail. Never replace missing data with fake defaults. Every output must be explainable through structured layers.",
+  "Mandatory pipeline: Step 1 raw extraction of visible brands, SKUs, prices, promotions, and shelf condition signals without deduplication. Step 2 aggregate into brand-level insights, key SKU selection, promotion grouping, and stock signals. Step 3 validate missing brand, unclear price, low confidence, and JSON completeness risk. Step 4 produce normalized output.",
+  "If information is unclear, keep it in raw_extraction with confidence 0 and add a validation warning. Do not use Unknown or Price unclear in the model output.",
+  "For price_insights.key_sku_prices, include piece_count only when the package piece count is visible on pack text or shelf tag. If unclear, set piece_count to null. Do not guess piece count.",
+  "Never calculate price_per_piece yourself. Return package price and piece_count only; the system calculates per-piece price.",
+  "Treat all images as ONE store-level observation.",
+  "Output limits: raw_extraction.detected_items max 20; price_insights.key_sku_prices max 5; promotion_insights.competitor_promotions max 3; price_insights.brand_price_range max 6; store_summary max 25 words and one sentence.",
+  "Return ONLY valid compact JSON. No markdown. No explanations. No extra text.",
+  "Use exactly this JSON structure and enum values:",
+  '{"raw_extraction":{"detected_items":[{"brand":"string","product":"string","price":"string","type":"SKU|PROMO|SHELF_SIGNAL","confidence":0.8}]},"validation":{"is_valid":true,"warnings":[{"type":"MISSING_DATA|LOW_CONFIDENCE|PARSE_RISK","message":"string"}]},"shelf_understanding":{"brands_present":[{"brand":"string","shelf_share_estimate":0}],"category_coverage":"FULL|PARTIAL|FRAGMENTED","shelf_condition":"WELL_ORGANISED|NORMAL|MESSY","facings_estimate":[{"brand":"string","facing_count_estimate":0}]},"price_insights":{"brand_price_range":[{"brand":"string","min_price":"string","max_price":"string"}],"key_sku_prices":[{"brand":"string","product":"string","price":"string","piece_count":44,"tag":"HERO|PROMO|ANOMALY","confidence":0.8}]},"stock_risk":{"level":"Normal|Low Stock|Out of Stock Risk","affected_brands":[{"brand":"string","risk_signal":"EMPTY_FACING|LOW_FACING|BLOCKED_SHELF"}],"reason":"string"},"promotion_insights":{"competitor_promotions":[{"brand":"string","type":"Discount|Buy 1 Get 1|Buy 2 Get 1|Promo Tag|Special Offer","visibility":"LOW|MEDIUM|HIGH","description":"string"}],"promo_pressure_level":"LOW|MEDIUM|HIGH"},"store_summary":"string"}',
+].join("\n");
+
+export const DEFAULT_STORE_VISIT_AI_CONFIG: StoreVisitAiConfig = {
+  version_name: "Default code config",
+  system_prompt: STORE_VISIT_AI_PROMPT,
+  temperature: 0,
+  max_tokens: 2200,
+  status: "active",
+};
+
+function normalizeAiConfig(value: Partial<StoreVisitAiConfig> | null | undefined): StoreVisitAiConfig {
+  const temperature = Number(value?.temperature ?? DEFAULT_STORE_VISIT_AI_CONFIG.temperature);
+  const maxTokens = Number(value?.max_tokens ?? DEFAULT_STORE_VISIT_AI_CONFIG.max_tokens);
+  return {
+    ...DEFAULT_STORE_VISIT_AI_CONFIG,
+    ...value,
+    version_name: asString(value?.version_name, DEFAULT_STORE_VISIT_AI_CONFIG.version_name),
+    system_prompt: asString(value?.system_prompt, DEFAULT_STORE_VISIT_AI_CONFIG.system_prompt),
+    temperature: Number.isFinite(temperature) ? Math.min(Math.max(temperature, 0), 2) : DEFAULT_STORE_VISIT_AI_CONFIG.temperature,
+    max_tokens: Number.isFinite(maxTokens) ? Math.min(Math.max(Math.floor(maxTokens), 500), 6000) : DEFAULT_STORE_VISIT_AI_CONFIG.max_tokens,
+  };
+}
+
+export async function getActiveStoreVisitAiConfig(): Promise<StoreVisitAiConfig> {
+  if (!hasSupabaseServiceConfig()) return DEFAULT_STORE_VISIT_AI_CONFIG;
+
+  try {
+    const supabase = createSupabaseServiceClient();
+    const { data, error } = await supabase
+      .from("store_visit_ai_configs")
+      .select("*")
+      .eq("status", "active")
+      .order("activated_at", { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !data) return DEFAULT_STORE_VISIT_AI_CONFIG;
+    return normalizeAiConfig(data as StoreVisitAiConfig);
+  } catch {
+    return DEFAULT_STORE_VISIT_AI_CONFIG;
+  }
+}
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -227,29 +285,18 @@ export async function analyzeStoreVisitImages(input: {
   channel: string;
   promoter: string;
   visitDate: string;
+  config?: Partial<StoreVisitAiConfig>;
 }) {
   if (input.imageUrls.length === 0) {
     throw new Error("At least one image is required for analysis");
   }
 
+  const config = input.config ? normalizeAiConfig(input.config) : await getActiveStoreVisitAiConfig();
   const completion = await createJsonChatCompletion({
     messages: [
       {
         role: "system",
-        content: [
-          "You are a Retail Shelf Intelligence AI System with strict observability requirements.",
-          "You analyze MULTIPLE store shelf images from a SINGLE store visit and produce raw structured extraction, normalized retail insights, and validation metadata.",
-          "Never silently fail. Never replace missing data with fake defaults. Every output must be explainable through structured layers.",
-          "Mandatory pipeline: Step 1 raw extraction of visible brands, SKUs, prices, promotions, and shelf condition signals without deduplication. Step 2 aggregate into brand-level insights, key SKU selection, promotion grouping, and stock signals. Step 3 validate missing brand, unclear price, low confidence, and JSON completeness risk. Step 4 produce normalized output.",
-          "If information is unclear, keep it in raw_extraction with confidence 0 and add a validation warning. Do not use Unknown or Price unclear in the model output.",
-          "For price_insights.key_sku_prices, include piece_count only when the package piece count is visible on pack text or shelf tag. If unclear, set piece_count to null. Do not guess piece count.",
-          "Never calculate price_per_piece yourself. Return package price and piece_count only; the system calculates per-piece price.",
-          "Treat all images as ONE store-level observation.",
-          "Output limits: raw_extraction.detected_items max 20; price_insights.key_sku_prices max 5; promotion_insights.competitor_promotions max 3; price_insights.brand_price_range max 6; store_summary max 25 words and one sentence.",
-          "Return ONLY valid compact JSON. No markdown. No explanations. No extra text.",
-          "Use exactly this JSON structure and enum values:",
-          '{"raw_extraction":{"detected_items":[{"brand":"string","product":"string","price":"string","type":"SKU|PROMO|SHELF_SIGNAL","confidence":0.8}]},"validation":{"is_valid":true,"warnings":[{"type":"MISSING_DATA|LOW_CONFIDENCE|PARSE_RISK","message":"string"}]},"shelf_understanding":{"brands_present":[{"brand":"string","shelf_share_estimate":0}],"category_coverage":"FULL|PARTIAL|FRAGMENTED","shelf_condition":"WELL_ORGANISED|NORMAL|MESSY","facings_estimate":[{"brand":"string","facing_count_estimate":0}]},"price_insights":{"brand_price_range":[{"brand":"string","min_price":"string","max_price":"string"}],"key_sku_prices":[{"brand":"string","product":"string","price":"string","piece_count":44,"tag":"HERO|PROMO|ANOMALY","confidence":0.8}]},"stock_risk":{"level":"Normal|Low Stock|Out of Stock Risk","affected_brands":[{"brand":"string","risk_signal":"EMPTY_FACING|LOW_FACING|BLOCKED_SHELF"}],"reason":"string"},"promotion_insights":{"competitor_promotions":[{"brand":"string","type":"Discount|Buy 1 Get 1|Buy 2 Get 1|Promo Tag|Special Offer","visibility":"LOW|MEDIUM|HIGH","description":"string"}],"promo_pressure_level":"LOW|MEDIUM|HIGH"},"store_summary":"string"}',
-        ].join("\n"),
+        content: config.system_prompt,
       },
       {
         role: "user",
@@ -267,8 +314,8 @@ export async function analyzeStoreVisitImages(input: {
         ],
       },
     ],
-    temperature: 0,
-    maxTokens: 2200,
+    temperature: config.temperature,
+    maxTokens: config.max_tokens,
   });
 
   return {
@@ -276,5 +323,6 @@ export async function analyzeStoreVisitImages(input: {
     rawText: completion.rawText,
     parsed: completion.parsed,
     metadata: completion.metadata,
+    config,
   };
 }

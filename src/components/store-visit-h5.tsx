@@ -9,6 +9,9 @@ import { getMobileCopy } from "@/lib/mobile-i18n";
 import { MobileLanguageSwitch } from "@/components/mobile-language-switch";
 
 const maxImages = 6;
+const maxUploadBytes = 8 * 1024 * 1024;
+const compressionMaxSide = 1600;
+const compressionQuality = 0.78;
 const storageKey = "makuku_app_user";
 const imageCategoryOrder = ["makuku_shelf", "competitor_shelf", "storefront"] as const;
 type ImageCategory = (typeof imageCategoryOrder)[number];
@@ -33,6 +36,55 @@ function emptyImagesByCategory(): PendingImagesByCategory {
   };
 }
 
+function formatMb(bytes: number) {
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+}
+
+function loadImage(file: File) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Unable to read image"));
+    };
+    image.src = url;
+  });
+}
+
+async function compressImage(file: File) {
+  if (!file.type.startsWith("image/")) {
+    throw new Error(`${file.name} is not an image.`);
+  }
+
+  const image = await loadImage(file);
+  const scale = Math.min(1, compressionMaxSide / Math.max(image.naturalWidth, image.naturalHeight));
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Image compression is not available in this browser.");
+  ctx.drawImage(image, 0, 0, width, height);
+
+  const blob = await new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(resolve, "image/jpeg", compressionQuality);
+  });
+  if (!blob) throw new Error("Image compression failed.");
+
+  const safeName = file.name.replace(/\.[^.]+$/, "") || "store-photo";
+  const compressed = new File([blob], `${safeName}.jpg`, {
+    type: "image/jpeg",
+    lastModified: Date.now(),
+  });
+  return compressed.size < file.size || file.size > maxUploadBytes ? compressed : file;
+}
+
 export function StoreVisitH5({ locale }: { locale: Locale }) {
   const router = useRouter();
   const copy = getMobileCopy(locale);
@@ -44,6 +96,7 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [images, setImages] = useState<PendingImagesByCategory>(() => emptyImagesByCategory());
   const [submitting, setSubmitting] = useState(false);
+  const [submitStatus, setSubmitStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -91,37 +144,71 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
       return;
     }
 
-    setSubmitting(true);
-    setError(null);
-    const formData = new FormData();
-    formData.set("store_name", storeName);
-    formData.set("region", region);
-    formData.set("channel", channel);
-    formData.set("visit_date", visitDate);
-    formData.set("promoter", promoter);
-    if (user?.id) {
-      formData.set("user_id", user.id);
-      formData.set("uploader_user_id", user.id);
+    const flattenedImages = imageCategoryOrder.flatMap((category) => images[category].map((image) => ({ ...image, category })));
+    if (flattenedImages.length > maxImages) {
+      setError(`Upload up to ${maxImages} images.`);
+      return;
     }
-    imageCategoryOrder.forEach((category) => {
-      images[category].forEach((image) => {
-        formData.append("images", image.file);
-        formData.append("image_categories", category);
-      });
-    });
+
+    setSubmitting(true);
+    setSubmitStatus("Compressing photos...");
+    setError(null);
 
     try {
-      const res = await fetch("/api/store-visit", { method: "POST", body: formData });
+      const compressedImages = [];
+      for (let index = 0; index < flattenedImages.length; index += 1) {
+        setSubmitStatus(`Compressing photo ${index + 1}/${flattenedImages.length}...`);
+        const file = await compressImage(flattenedImages[index].file);
+        if (file.size > maxUploadBytes) {
+          throw new Error(`Photo ${index + 1} is still ${formatMb(file.size)} after compression. Please choose a smaller photo.`);
+        }
+        compressedImages.push({ file, category: flattenedImages[index].category });
+      }
+
+      setSubmitStatus("Creating store visit...");
+      const res = await fetch("/api/store-visit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          store_name: storeName,
+          region,
+          channel,
+          visit_date: visitDate,
+          promoter,
+          user_id: user?.id ?? null,
+          uploader_user_id: user?.id ?? null,
+        }),
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(data.error ?? copy.submitFailed);
         return;
       }
+      const visitId = String(data.visit?.id ?? "");
+      if (!visitId) throw new Error("Store visit was created without an id.");
+
+      for (let index = 0; index < compressedImages.length; index += 1) {
+        setSubmitStatus(`Uploading photo ${index + 1}/${compressedImages.length}...`);
+        const imageFormData = new FormData();
+        imageFormData.set("image", compressedImages[index].file);
+        imageFormData.set("image_category", compressedImages[index].category);
+        const imageRes = await fetch(`/api/store-visit/${visitId}/images`, {
+          method: "POST",
+          body: imageFormData,
+        });
+        const imageData = await imageRes.json().catch(() => ({}));
+        if (!imageRes.ok) {
+          throw new Error(`Photo ${index + 1} upload failed: ${imageData.error ?? copy.submitFailed}`);
+        }
+      }
+
+      setSubmitStatus("Submitted.");
       router.push(`/${locale}/mobile/offline-capture`);
-    } catch {
-      setError(copy.networkRetry);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : copy.networkRetry);
     } finally {
       setSubmitting(false);
+      setSubmitStatus("");
     }
   }
 
@@ -140,6 +227,7 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
       </header>
 
       {error ? <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
+      {submitStatus ? <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">{submitStatus}</div> : null}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="font-semibold">{copy.storeInformation}</h2>
@@ -183,7 +271,7 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
 
       <button type="button" onClick={submit} disabled={submitting} className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 text-sm font-bold text-white disabled:opacity-60">
         {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-        {submitting ? copy.submitting : copy.submitStoreVisit}
+        {submitting ? (submitStatus || copy.submitting) : copy.submitStoreVisit}
       </button>
     </main>
   );
