@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>门店走查 H5 原型</title>
+  <style>
+    :root {
+      --bg: #f2f4f7;
+      --panel: #ffffff;
+      --panel-muted: #f7f8fa;
+      --line: #d9dee7;
+      --line-strong: #c5ccd8;
+      --text: #172033;
+      --muted: #667085;
+      --muted-2: #98a2b3;
+      --primary: #1d4ed8;
+      --primary-soft: #e9f0ff;
+      --success: #067647;
+      --success-soft: #e7f6ee;
+      --warning: #b54708;
+      --warning-soft: #fff1e8;
+      --danger: #b42318;
+      --danger-soft: #fdecec;
+      --radius: 10px;
+      --shadow: 0 8px 24px rgba(16, 24, 40, 0.06);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    .phone {
+      min-height: 100vh;
+      max-width: 430px;
+      margin: 0 auto;
+      background: var(--bg);
+      padding-bottom: 84px;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(242, 244, 247, 0.96);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--line);
+      padding: 14px 16px 12px;
+    }
+
+    .topbar-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .page-title {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .page-subtitle {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .shift-chip {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .content {
+      padding: 14px 16px 24px;
+    }
+
+    .section {
+      margin-bottom: 12px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .section-title {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing: 0;
+    }
+
+    .link-btn {
+      border: none;
+      background: transparent;
+      color: var(--primary);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 0;
+      cursor: pointer;
+    }
+
+    .store-card {
+      padding: 14px;
+    }
+
+    .store-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .store-name {
+      margin: 0 0 4px;
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .store-meta {
+      margin: 0;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid var(--line);
+      background: var(--panel-muted);
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .status-badge::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--warning);
+      flex: none;
+    }
+
+    .store-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      padding: 0 14px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #ffffff;
+    }
+
+    .btn-secondary {
+      background: var(--panel);
+      border-color: var(--line-strong);
+      color: var(--text);
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .stat-card {
+      padding: 12px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+
+    .stat-label {
+      margin: 0;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .stat-value {
+      margin: 6px 0 0;
+      font-size: 24px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .progress-card {
+      padding: 12px;
+    }
+
+    .progress-steps {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+
+    .step {
+      padding: 10px 8px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: var(--panel-muted);
+      min-height: 72px;
+    }
+
+    .step.done {
+      border-color: #b7e2cb;
+      background: var(--success-soft);
+    }
+
+    .step.current {
+      border-color: #bfd1ff;
+      background: var(--primary-soft);
+    }
+
+    .step-index {
+      display: inline-flex;
+      width: 22px;
+      height: 22px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+      background: #ffffff;
+      border: 1px solid var(--line);
+    }
+
+    .step.done .step-index {
+      color: var(--success);
+      border-color: #b7e2cb;
+      background: #ffffff;
+    }
+
+    .step.current .step-index {
+      color: var(--primary);
+      border-color: #bfd1ff;
+    }
+
+    .step-title {
+      margin: 8px 0 0;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .step-note {
+      margin: 4px 0 0;
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .capture-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .capture-card {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel);
+      display: grid;
+      gap: 10px;
+    }
+
+    .capture-card.done {
+      border-color: #b7e2cb;
+      background: #fbfefc;
+    }
+
+    .capture-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .brand-name {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .brand-rule {
+      margin: 4px 0 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .task-tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 5px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      background: var(--panel-muted);
+      white-space: nowrap;
+    }
+
+    .task-tag.pending {
+      color: var(--warning);
+      border-color: #f2c79b;
+      background: var(--warning-soft);
+    }
+
+    .task-tag.uploading {
+      color: var(--primary);
+      border-color: #bfd1ff;
+      background: var(--primary-soft);
+    }
+
+    .task-tag.done {
+      color: var(--success);
+      border-color: #b7e2cb;
+      background: var(--success-soft);
+    }
+
+    .thumb-row {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+
+    .thumb {
+      width: 74px;
+      height: 74px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background:
+        linear-gradient(135deg, rgba(29, 78, 216, 0.14), rgba(29, 78, 216, 0.04)),
+        #eef3ff;
+      position: relative;
+      flex: none;
+    }
+
+    .thumb::after {
+      content: "照片";
+      position: absolute;
+      left: 8px;
+      bottom: 8px;
+      font-size: 11px;
+      color: var(--primary);
+      font-weight: 700;
+    }
+
+    .capture-actions {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+    }
+
+    .mini-btn {
+      min-height: 38px;
+      padding: 0 12px;
+      border-radius: 8px;
+      border: 1px solid var(--line-strong);
+      background: var(--panel);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .mini-btn.primary {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #ffffff;
+    }
+
+    .result-card {
+      padding: 12px;
+    }
+
+    .result-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .result-box {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-muted);
+      padding: 10px;
+    }
+
+    .result-box p {
+      margin: 0;
+    }
+
+    .result-box .k {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .result-box .v {
+      margin-top: 6px;
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .issue-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .issue-item {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 10px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .issue-title {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .issue-desc {
+      margin: 4px 0 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .severity {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+      flex: none;
+    }
+
+    .severity.high {
+      color: var(--danger);
+      background: var(--danger-soft);
+    }
+
+    .severity.medium {
+      color: var(--warning);
+      background: var(--warning-soft);
+    }
+
+    .store-list {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .store-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .store-row:last-child {
+      border-bottom: none;
+    }
+
+    .store-row.active {
+      background: #f8fbff;
+    }
+
+    .row-name {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .row-meta {
+      margin: 4px 0 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .row-state {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      background: var(--panel-muted);
+      white-space: nowrap;
+      margin-top: 2px;
+    }
+
+    .row-state.done {
+      color: var(--success);
+      border-color: #b7e2cb;
+      background: var(--success-soft);
+    }
+
+    .row-state.current {
+      color: var(--primary);
+      border-color: #bfd1ff;
+      background: var(--primary-soft);
+    }
+
+    .tab-page {
+      display: none;
+    }
+
+    .tab-page.active {
+      display: block;
+    }
+
+    .profile-card {
+      padding: 16px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+    }
+
+    .profile-name {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .profile-role {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .profile-grid {
+      display: grid;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .profile-item {
+      display: grid;
+      grid-template-columns: 78px 1fr;
+      gap: 10px;
+      padding: 10px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .profile-item:first-child {
+      border-top: 1px solid var(--line);
+    }
+
+    .profile-key {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .profile-value {
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .menu-list {
+      margin-top: 12px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .menu-item {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: var(--panel);
+      border: none;
+      border-bottom: 1px solid var(--line);
+      padding: 14px 16px;
+      text-align: left;
+      cursor: pointer;
+      color: var(--text);
+    }
+
+    .menu-item:last-child {
+      border-bottom: none;
+    }
+
+    .menu-main {
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .menu-sub {
+      margin-top: 3px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .menu-arrow {
+      color: var(--muted-2);
+      font-weight: 700;
+    }
+
+    .logout {
+      color: var(--danger);
+    }
+
+    .bottom-tab {
+      position: fixed;
+      left: 50%;
+      bottom: 0;
+      transform: translateX(-50%);
+      width: 100%;
+      max-width: 430px;
+      background: rgba(255, 255, 255, 0.98);
+      border-top: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      padding: 8px 16px calc(8px + env(safe-area-inset-bottom));
+      gap: 8px;
+    }
+
+    .tab-btn {
+      border: none;
+      background: transparent;
+      border-radius: 10px;
+      padding: 8px 10px;
+      color: var(--muted);
+      cursor: pointer;
+    }
+
+    .tab-btn.active {
+      background: var(--primary-soft);
+      color: var(--primary);
+    }
+
+    .tab-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .tab-note {
+      display: block;
+      margin-top: 2px;
+      font-size: 11px;
+    }
+
+    @media (max-width: 380px) {
+      .stats,
+      .result-grid,
+      .progress-steps {
+        grid-template-columns: 1fr;
+      }
+
+      .store-actions,
+      .capture-actions {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="phone">
+    <div class="topbar">
+      <div class="topbar-row">
+        <div>
+          <h1 class="page-title">门店走查</h1>
+          <p class="page-subtitle">Jakarta GT Route A</p>
+        </div>
+        <div class="shift-chip">09:40 在岗</div>
+      </div>
+    </div>
+
+    <main class="content">
+      <section id="tabVisit" class="tab-page active">
+        <div class="section">
+          <div class="panel store-card">
+            <div class="store-top">
+              <div>
+                <h2 class="store-name">Hero Swalayan Tebet</h2>
+                <p class="store-meta">门店编码 ST-2031</p>
+                <p class="store-meta">South Jakarta · Modern Trade</p>
+              </div>
+              <div class="status-badge">待提交</div>
+            </div>
+            <div class="store-actions">
+              <button class="btn btn-primary">继续本店</button>
+              <button class="btn btn-secondary">下一家门店</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="stats">
+            <div class="stat-card">
+              <p class="stat-label">待完成</p>
+              <p class="stat-value">18</p>
+            </div>
+            <div class="stat-card">
+              <p class="stat-label">已提交</p>
+              <p class="stat-value">27</p>
+            </div>
+            <div class="stat-card">
+              <p class="stat-label">异常店</p>
+              <p class="stat-value">4</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-head">
+            <h3 class="section-title">当前进度</h3>
+          </div>
+          <div class="panel progress-card">
+            <div class="progress-steps">
+              <div class="step done">
+                <div class="step-index">1</div>
+                <p class="step-title">提交门店</p>
+                <p class="step-note">门店已选定</p>
+              </div>
+              <div class="step current">
+                <div class="step-index">2</div>
+                <p class="step-title">上传图片</p>
+                <p class="step-note">按品牌补齐照片</p>
+              </div>
+              <div class="step">
+                <div class="step-index">3</div>
+                <p class="step-title">解析中</p>
+                <p class="step-note">系统批量识别</p>
+              </div>
+              <div class="step">
+                <div class="step-index">4</div>
+                <p class="step-title">结果</p>
+                <p class="step-note">确认后提交</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-head">
+            <h3 class="section-title">拍摄任务</h3>
+            <button class="link-btn">批量上传</button>
+          </div>
+          <div class="capture-list">
+            <div class="capture-card done">
+              <div class="capture-head">
+                <div>
+                  <p class="brand-name">MAKUKU</p>
+                  <p class="brand-rule">自有货架，建议 2 张</p>
+                </div>
+                <div class="task-tag done">已完成</div>
+              </div>
+              <div class="thumb-row">
+                <div class="thumb"></div>
+                <div class="thumb"></div>
+              </div>
+              <div class="capture-actions">
+                <button class="mini-btn">重拍</button>
+                <button class="mini-btn primary">查看结果</button>
+              </div>
+            </div>
+
+            <div class="capture-card">
+              <div class="capture-head">
+                <div>
+                  <p class="brand-name">MamyPoko</p>
+                  <p class="brand-rule">竞品货架，建议 1-2 张</p>
+                </div>
+                <div class="task-tag uploading">解析中</div>
+              </div>
+              <div class="thumb-row">
+                <div class="thumb"></div>
+              </div>
+              <div class="capture-actions">
+                <button class="mini-btn">补拍</button>
+                <button class="mini-btn primary">查看进度</button>
+              </div>
+            </div>
+
+            <div class="capture-card">
+              <div class="capture-head">
+                <div>
+                  <p class="brand-name">Merries</p>
+                  <p class="brand-rule">竞品货架，建议 1 张</p>
+                </div>
+                <div class="task-tag pending">待上传</div>
+              </div>
+              <div class="capture-actions">
+                <button class="mini-btn primary">拍照上传</button>
+                <button class="mini-btn">从相册选择</button>
+              </div>
+            </div>
+
+            <div class="capture-card">
+              <div class="capture-head">
+                <div>
+                  <p class="brand-name">Pampers</p>
+                  <p class="brand-rule">竞品货架，建议 1 张</p>
+                </div>
+                <div class="task-tag pending">待上传</div>
+              </div>
+              <div class="capture-actions">
+                <button class="mini-btn primary">拍照上传</button>
+                <button class="mini-btn">从相册选择</button>
+              </div>
+            </div>
+
+            <div class="capture-card">
+              <div class="capture-head">
+                <div>
+                  <p class="brand-name">其他品牌</p>
+                  <p class="brand-rule">可选补充，建议 1 张</p>
+                </div>
+                <div class="task-tag pending">可补充</div>
+              </div>
+              <div class="capture-actions">
+                <button class="mini-btn primary">补充上传</button>
+                <button class="mini-btn">跳过</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-head">
+            <h3 class="section-title">识别结果</h3>
+            <button class="link-btn">提交门店</button>
+          </div>
+          <div class="panel result-card">
+            <div class="result-grid">
+              <div class="result-box">
+                <p class="k">识别 SKU</p>
+                <p class="v">26</p>
+              </div>
+              <div class="result-box">
+                <p class="k">自有排面</p>
+                <p class="v">34%</p>
+              </div>
+              <div class="result-box">
+                <p class="k">待复核</p>
+                <p class="v">3</p>
+              </div>
+            </div>
+            <div class="issue-list">
+              <div class="issue-item">
+                <div>
+                  <p class="issue-title">MAKUKU L58 缺货</p>
+                  <p class="issue-desc">自有主货架未识别到库存，建议门店确认。</p>
+                </div>
+                <div class="severity high">高</div>
+              </div>
+              <div class="issue-item">
+                <div>
+                  <p class="issue-title">MamyPoko 端架占位偏高</p>
+                  <p class="issue-desc">竞品端架曝光明显，建议跟进陈列资源。</p>
+                </div>
+                <div class="severity medium">中</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-head">
+            <h3 class="section-title">路线门店</h3>
+            <button class="link-btn">切换路线</button>
+          </div>
+          <div class="store-list">
+            <div class="store-row active">
+              <div>
+                <p class="row-name">Hero Swalayan Tebet</p>
+                <p class="row-meta">South Jakarta · 5 张任务图</p>
+              </div>
+              <div class="row-state current">当前</div>
+            </div>
+            <div class="store-row">
+              <div>
+                <p class="row-name">Lotte Mart Kuningan</p>
+                <p class="row-meta">South Jakarta · 待开始</p>
+              </div>
+              <div class="row-state">排队中</div>
+            </div>
+            <div class="store-row">
+              <div>
+                <p class="row-name">Transmart Cempaka Putih</p>
+                <p class="row-meta">Central Jakarta · 待开始</p>
+              </div>
+              <div class="row-state">排队中</div>
+            </div>
+            <div class="store-row">
+              <div>
+                <p class="row-name">Giant Bekasi Barat</p>
+                <p class="row-meta">Bekasi · 已提交</p>
+              </div>
+              <div class="row-state done">已完成</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tabProfile" class="tab-page">
+        <div class="profile-card">
+          <h2 class="profile-name">Field Tester</h2>
+          <p class="profile-role">门店督导</p>
+          <div class="profile-grid">
+            <div class="profile-item">
+              <div class="profile-key">工号</div>
+              <div class="profile-value">SUP-1024</div>
+            </div>
+            <div class="profile-item">
+              <div class="profile-key">区域</div>
+              <div class="profile-value">Jakarta GT Route A</div>
+            </div>
+            <div class="profile-item">
+              <div class="profile-key">设备</div>
+              <div class="profile-value">iPhone 14 Pro</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="menu-list">
+          <button class="menu-item">
+            <div>
+              <div class="menu-main">离线记录</div>
+              <div class="menu-sub">3 条待同步</div>
+            </div>
+            <div class="menu-arrow">></div>
+          </button>
+          <button class="menu-item">
+            <div>
+              <div class="menu-main">账号信息</div>
+              <div class="menu-sub">查看测试账号资料</div>
+            </div>
+            <div class="menu-arrow">></div>
+          </button>
+          <button class="menu-item">
+            <div>
+              <div class="menu-main">帮助与反馈</div>
+              <div class="menu-sub">查看处理说明</div>
+            </div>
+            <div class="menu-arrow">></div>
+          </button>
+          <button class="menu-item logout">
+            <div>
+              <div class="menu-main">退出登录</div>
+            </div>
+            <div class="menu-arrow">></div>
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <nav class="bottom-tab">
+      <button class="tab-btn active" type="button" data-tab="visit">
+        <span class="tab-label">门店走查</span>
+        <span class="tab-note">当前任务</span>
+      </button>
+      <button class="tab-btn" type="button" data-tab="profile">
+        <span class="tab-label">我的</span>
+        <span class="tab-note">账号与设置</span>
+      </button>
+    </nav>
+  </div>
+
+  <script>
+    const tabButtons = document.querySelectorAll("[data-tab]");
+    const tabVisit = document.getElementById("tabVisit");
+    const tabProfile = document.getElementById("tabProfile");
+
+    tabButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const nextTab = button.getAttribute("data-tab");
+
+        tabButtons.forEach((item) => item.classList.remove("active"));
+        button.classList.add("active");
+
+        if (nextTab === "visit") {
+          tabVisit.classList.add("active");
+          tabProfile.classList.remove("active");
+        } else {
+          tabProfile.classList.add("active");
+          tabVisit.classList.remove("active");
+        }
+      });
+    });
+  </script>
+</body>
+</html>

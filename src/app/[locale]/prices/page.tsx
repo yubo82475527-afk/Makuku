@@ -1,0 +1,118 @@
+import { AppShell } from "@/components/app-shell";
+import { Badge, Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
+import { formatIdr, formatJakartaTime, formatPricePerPiece } from "@/lib/format";
+import { getBrands, getCompetitorProducts, getPriceSnapshots } from "@/lib/data";
+import { getPageI18n } from "@/lib/i18n/server";
+import { translateEnum } from "@/lib/i18n/get-dictionary";
+
+export default async function PricesPage({
+  params: routeParams,
+  searchParams,
+}: {
+  params: Promise<{ locale: string }>;
+  searchParams: Promise<{ brand?: string; channel?: string; sku?: string }>;
+}) {
+  const { locale, dict } = await getPageI18n(routeParams);
+  const params = await searchParams;
+  const [pricesResult, productsResult, brandsResult] = await Promise.all([
+    getPriceSnapshots(),
+    getCompetitorProducts(),
+    getBrands(),
+  ]);
+  const prices = pricesResult.data.filter((snapshot) => {
+    const product = snapshot.competitor_products;
+    const match = product?.sku_matches?.[0];
+    if (params.brand && product?.brand_id !== params.brand) return false;
+    if (params.channel && snapshot.channel !== params.channel) return false;
+    if (params.sku && match?.sku_master_id !== params.sku) return false;
+    return true;
+  });
+
+  return (
+    <AppShell locale={locale} dict={dict} title={dict.prices.title} currentPath="/prices" isDemo={pricesResult.isDemo}>
+      <DataNotice dict={dict} error={pricesResult.error ?? productsResult.error ?? brandsResult.error} />
+      <Card className="mb-4">
+        <form className="grid gap-3 md:grid-cols-4">
+          <SelectInput name="brand" defaultValue={params.brand ?? ""}>
+            <option value="">{dict.common.allBrands}</option>
+            {brandsResult.data.filter((brand) => !brand.is_own_brand).map((brand) => <option key={brand.id} value={brand.id}>{brand.name}</option>)}
+          </SelectInput>
+          <SelectInput name="channel" defaultValue={params.channel ?? ""}>
+            <option value="">{dict.common.allChannels}</option>
+            <option value="shopee">{translateEnum(dict, "channel", "shopee")}</option>
+            <option value="offline">{translateEnum(dict, "channel", "offline")}</option>
+            <option value="tiktok">{translateEnum(dict, "channel", "tiktok")}</option>
+            <option value="manual">{translateEnum(dict, "channel", "manual")}</option>
+          </SelectInput>
+          <TextInput name="sku" placeholder={dict.prices.skuId} defaultValue={params.sku ?? ""} />
+          <Button type="submit">{dict.common.filter}</Button>
+        </form>
+      </Card>
+
+      <Card className="mb-4">
+        <h2 className="mb-3 font-semibold">{dict.prices.addTitle}</h2>
+        <form action="/api/price-snapshots" method="post" className="grid gap-3 md:grid-cols-4 xl:grid-cols-8">
+          <input type="hidden" name="return_to" value={`/${locale}/prices`} />
+          <SelectInput name="competitor_product_id" required className="md:col-span-2">
+            {productsResult.data.map((product) => <option key={product.id} value={product.id}>{product.brands?.name} / {product.normalized_name}</option>)}
+          </SelectInput>
+          <SelectInput name="channel" defaultValue="shopee">
+            <option value="shopee">{translateEnum(dict, "channel", "shopee")}</option>
+            <option value="offline">{translateEnum(dict, "channel", "offline")}</option>
+            <option value="tiktok">{translateEnum(dict, "channel", "tiktok")}</option>
+            <option value="manual">{translateEnum(dict, "channel", "manual")}</option>
+          </SelectInput>
+          <TextInput name="list_price_idr" type="number" placeholder={dict.prices.listIdr} required />
+          <TextInput name="promo_price_idr" type="number" placeholder={dict.prices.promoIdr} required />
+          <TextInput name="voucher_value_idr" type="number" placeholder={dict.prices.voucher} />
+          <TextInput name="shipping_subsidy_idr" type="number" placeholder={dict.prices.shipping} />
+          <TextInput name="promo_type" placeholder={dict.prices.promoTypePlaceholder} />
+          <TextInput name="evidence_url" placeholder={dict.prices.evidenceUrl} className="md:col-span-2" />
+          <Button type="submit">{dict.prices.addButton}</Button>
+        </form>
+      </Card>
+
+      <Card>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1100px] text-left text-sm">
+            <thead className="border-b border-slate-200 text-xs uppercase text-slate-500">
+              <tr>
+                <th className="py-2 pr-3">{dict.prices.captured}</th>
+                <th className="py-2 pr-3">{dict.common.brand}</th>
+                <th className="py-2 pr-3">{dict.common.product}</th>
+                <th className="py-2 pr-3">{dict.common.channel}</th>
+                <th className="py-2 pr-3">{dict.prices.list}</th>
+                <th className="py-2 pr-3">{dict.prices.promo}</th>
+                <th className="py-2 pr-3">{dict.prices.voucher}</th>
+                <th className="py-2 pr-3">{dict.prices.net}</th>
+                <th className="py-2 pr-3">{dict.prices.idrPerPc}</th>
+                <th className="py-2 pr-3">{dict.prices.promoType}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {prices.map((snapshot) => {
+                const sku = snapshot.competitor_products?.sku_matches?.[0]?.sku_master;
+                const underFloor = sku && snapshot.price_per_piece < sku.floor_price_per_piece;
+                const underTarget = sku && snapshot.price_per_piece < sku.target_price_per_piece * 0.92;
+                return (
+                  <tr key={snapshot.id} className={underFloor ? "bg-red-50" : underTarget ? "bg-yellow-50" : undefined}>
+                    <td className="py-3 pr-3">{formatJakartaTime(snapshot.captured_at)}</td>
+                    <td className="py-3 pr-3 font-medium">{snapshot.competitor_products?.brands?.name}</td>
+                    <td className="py-3 pr-3">{snapshot.competitor_products?.normalized_name}</td>
+                    <td className="py-3 pr-3"><Badge>{translateEnum(dict, "channel", snapshot.channel)}</Badge></td>
+                    <td className="py-3 pr-3">{formatIdr(snapshot.list_price_idr)}</td>
+                    <td className="py-3 pr-3">{formatIdr(snapshot.promo_price_idr)}</td>
+                    <td className="py-3 pr-3">{formatIdr(snapshot.voucher_value_idr)}</td>
+                    <td className="py-3 pr-3">{formatIdr(snapshot.net_price_idr)}</td>
+                    <td className="py-3 pr-3 font-semibold">{formatPricePerPiece(snapshot.price_per_piece)}</td>
+                    <td className="py-3 pr-3">{snapshot.promo_type ?? "-"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </AppShell>
+  );
+}
