@@ -9,6 +9,9 @@ type ChatMessage = {
 
 type ChatCompletionChoice = {
   finish_reason?: string | null;
+  delta?: {
+    content?: string | ChatContentPart[] | null;
+  };
   message?: {
     content?: string | ChatContentPart[] | null;
     refusal?: string | null;
@@ -70,6 +73,64 @@ function trimTrailingSlash(value: string) {
   return value.replace(/\/+$/, "");
 }
 
+function previewText(value: string) {
+  return value.slice(0, 800).replace(/\s+/g, " ");
+}
+
+function parseChatCompletionPayload(text: string): ChatCompletionPayload {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    throw new Error("AI provider returned an empty response");
+  }
+
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    return JSON.parse(trimmed) as ChatCompletionPayload;
+  }
+
+  if (!trimmed.includes("data:")) {
+    throw new Error(`AI provider returned unsupported response format. Preview: ${previewText(trimmed)}`);
+  }
+
+  const chunks: ChatCompletionPayload[] = [];
+  for (const line of trimmed.split(/\r?\n/)) {
+    const normalized = line.trim();
+    if (!normalized.startsWith("data:")) continue;
+    const data = normalized.slice("data:".length).trim();
+    if (!data || data === "[DONE]") continue;
+    chunks.push(JSON.parse(data) as ChatCompletionPayload);
+  }
+
+  if (chunks.length === 0) {
+    throw new Error(`AI provider returned an empty event stream. Preview: ${previewText(trimmed)}`);
+  }
+
+  const content = chunks
+    .map((chunk) => {
+      const value = chunk.choices?.[0]?.delta?.content ?? chunk.choices?.[0]?.message?.content;
+      if (typeof value === "string") return value;
+      if (Array.isArray(value)) {
+        return value.map((part) => part.type === "text" ? part.text : "").join("");
+      }
+      return "";
+    })
+    .join("")
+    .trim();
+  const lastChunk = chunks[chunks.length - 1];
+
+  return {
+    ...lastChunk,
+    choices: [{
+      finish_reason: lastChunk.choices?.[0]?.finish_reason ?? null,
+      message: {
+        content,
+        refusal: lastChunk.choices?.[0]?.message?.refusal,
+      },
+    }],
+    usage: lastChunk.usage ?? chunks.find((chunk) => chunk.usage)?.usage,
+    id: lastChunk.id ?? chunks.find((chunk) => chunk.id)?.id,
+  };
+}
+
 export function getAiConfig() {
   const apiKey = process.env.AI_API_KEY || process.env.OPENAI_API_KEY || "";
   const baseUrl = trimTrailingSlash(process.env.AI_BASE_URL || "https://api.openai.com/v1");
@@ -115,6 +176,7 @@ export async function createJsonChatCompletion(input: {
       messages: input.messages,
       temperature: input.temperature ?? 0.2,
       max_tokens: input.maxTokens ?? config.maxTokens ?? 1200,
+      stream: false,
   };
 
   async function requestCompletion(useJsonResponseFormat: boolean) {
@@ -135,7 +197,13 @@ export async function createJsonChatCompletion(input: {
       throw new Error(`AI analysis failed: ${message}`);
     }
 
-    return await response.json() as ChatCompletionPayload;
+    const text = await response.text();
+    try {
+      return parseChatCompletionPayload(text);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to parse AI provider response";
+      throw new Error(message);
+    }
   }
 
   function extractContent(payload: ChatCompletionPayload) {
