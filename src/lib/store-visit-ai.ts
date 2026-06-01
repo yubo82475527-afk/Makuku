@@ -31,6 +31,22 @@ const PROMOTION_PROMPT_REQUIREMENT = [
   "For each competitor promotion, description must mention the visible product or pack, promo mechanic, promo price or discount text, and location/evidence when visible. Use Promo Tag when the mechanic is visible but cannot be classified more specifically.",
 ].join("\n");
 
+const PRICE_CANDIDATE_PROMPT_REQUIREMENT = [
+  "Price candidate quality requirement: price_insights.key_sku_prices must contain only sellable product prices that are suitable for AI Price Review. Every item must have a specific product or pack, a visible IDR package price, and visible piece_count from the pack text or shelf tag.",
+  "For price boards, shelf tags, promo tags, and handwritten price boards, extract EVERY visible readable SKU-price row into price_insights.key_sku_prices. Do not return only the top SKUs. If 8 SKU prices are visible, return 8 key_sku_prices.",
+  "Do not summarize a multi-row price board only in promotion_insights. If promotion_insights.description mentions a SKU price, normal price, promo price, or per-piece row, the same SKU-price pair must also appear as a separate price_insights.key_sku_prices item.",
+  "Before finalizing, count the readable SKU-price rows on each price board/promo tag and make sure key_sku_prices contains one item for each counted row.",
+  "For price-board rows where the product, pack size, and most price digits are visible, output the best-read price with lower confidence instead of omitting the row. Use validation warnings for uncertainty; do not hide the SKU row only because the handwriting is imperfect.",
+  "Do not mix unrelated shelf-edge labels or background price tags into the same promo-board extraction. If a separate shelf label is not clearly linked to a visible product pack or board row, keep it as SHELF_SIGNAL rather than key_sku_prices.",
+  "Do not put gifts, freebies, bonus items, giveaway mechanics, unclear handwritten notes, or non-price text into price_insights.key_sku_prices. Text such as gratis, free, gift, bonus, hadiah, cashback, voucher, plate, bowl, toy, or '1 pcs' without an IDR selling price is promotion context only, not a price candidate.",
+  "raw_extraction.detected_items may include original observations, but price must be an actual IDR selling price only. If the visible text is a gift, free item, bonus, or mechanic rather than a selling price, leave price as an empty string and record the context in promotion_insights.competitor_promotions.",
+  "For handwritten or shelf-board prices, distinguish normal price, promo price, and gift mechanic. If the price-product mapping is uncertain, use type SHELF_SIGNAL or add a validation warning; do not force it into key_sku_prices unless the product and IDR price are clearly linked.",
+  "When a price appears as a shelf tag mismatch, unrelated top-shelf label, or low-confidence ANOMALY outside the main promo tag rows, keep it out of key_sku_prices and explain it in validation warnings or raw_extraction as SHELF_SIGNAL.",
+  "This requirement overrides any earlier key_sku_prices top-N or max-5 instruction. key_sku_prices has no fixed row cap; completeness of readable SKU-price rows is more important than brevity.",
+].join("\n");
+
+const OUTPUT_LIMITS_PROMPT_REQUIREMENT = "Output limits: raw_extraction.detected_items max 30; price_insights.key_sku_prices has no fixed max and must include every readable SKU-price row; price_insights.brand_price_range max 6; store_summary max 25 words and one sentence. There is no top-N limit for promotion_insights.competitor_promotions; include all distinct visible promotions.";
+
 export const STORE_VISIT_AI_PROMPT = [
   "You are a Retail Shelf Intelligence AI System with strict observability requirements.",
   "You analyze MULTIPLE store shelf images from a SINGLE store visit and produce raw structured extraction, normalized retail insights, and validation metadata.",
@@ -40,8 +56,9 @@ export const STORE_VISIT_AI_PROMPT = [
   "For price_insights.key_sku_prices, include piece_count only when the package piece count is visible on pack text or shelf tag. If unclear, set piece_count to null. Do not guess piece count.",
   "Never calculate price_per_piece yourself. Return package price and piece_count only; the system calculates per-piece price.",
   PROMOTION_PROMPT_REQUIREMENT,
+  PRICE_CANDIDATE_PROMPT_REQUIREMENT,
   "Treat all images as ONE store-level observation.",
-  "Output limits: raw_extraction.detected_items max 20; price_insights.key_sku_prices max 5; price_insights.brand_price_range max 6; store_summary max 25 words and one sentence. There is no top-N limit for promotion_insights.competitor_promotions; include all distinct visible promotions.",
+  OUTPUT_LIMITS_PROMPT_REQUIREMENT,
   "Return ONLY valid compact JSON. No markdown. No explanations. No extra text.",
   "Use exactly this JSON structure and enum values:",
   '{"raw_extraction":{"detected_items":[{"brand":"string","product":"string","price":"string","type":"SKU|PROMO|SHELF_SIGNAL","confidence":0.8}]},"validation":{"is_valid":true,"warnings":[{"type":"MISSING_DATA|LOW_CONFIDENCE|PARSE_RISK","message":"string"}]},"shelf_understanding":{"brands_present":[{"brand":"string","shelf_share_estimate":0}],"category_coverage":"FULL|PARTIAL|FRAGMENTED","shelf_condition":"WELL_ORGANISED|NORMAL|MESSY","facings_estimate":[{"brand":"string","facing_count_estimate":0}]},"price_insights":{"brand_price_range":[{"brand":"string","min_price":"string","max_price":"string"}],"key_sku_prices":[{"brand":"string","product":"string","price":"string","piece_count":44,"tag":"HERO|PROMO|ANOMALY","confidence":0.8}]},"stock_risk":{"level":"Normal|Low Stock|Out of Stock Risk","affected_brands":[{"brand":"string","risk_signal":"EMPTY_FACING|LOW_FACING|BLOCKED_SHELF"}],"reason":"string"},"promotion_insights":{"competitor_promotions":[{"brand":"string","type":"Discount|Buy 1 Get 1|Buy 2 Get 1|Promo Tag|Special Offer","visibility":"LOW|MEDIUM|HIGH","description":"string"}],"promo_pressure_level":"LOW|MEDIUM|HIGH"},"store_summary":"string"}',
@@ -51,7 +68,7 @@ export const DEFAULT_STORE_VISIT_AI_CONFIG: StoreVisitAiConfig = {
   version_name: "Default code config",
   system_prompt: STORE_VISIT_AI_PROMPT,
   temperature: 0,
-  max_tokens: 3200,
+  max_tokens: 5000,
   status: "active",
 };
 
@@ -62,16 +79,37 @@ function normalizeAiConfig(value: Partial<StoreVisitAiConfig> | null | undefined
     ...DEFAULT_STORE_VISIT_AI_CONFIG,
     ...value,
     version_name: asString(value?.version_name, DEFAULT_STORE_VISIT_AI_CONFIG.version_name),
-    system_prompt: withPromotionPromptRequirement(asString(value?.system_prompt, DEFAULT_STORE_VISIT_AI_CONFIG.system_prompt)),
+    system_prompt: withRequiredPromptSections(asString(value?.system_prompt, DEFAULT_STORE_VISIT_AI_CONFIG.system_prompt)),
     temperature: Number.isFinite(temperature) ? Math.min(Math.max(temperature, 0), 2) : DEFAULT_STORE_VISIT_AI_CONFIG.temperature,
     max_tokens: Number.isFinite(maxTokens) ? Math.min(Math.max(Math.floor(maxTokens), DEFAULT_STORE_VISIT_AI_CONFIG.max_tokens), 6000) : DEFAULT_STORE_VISIT_AI_CONFIG.max_tokens,
   };
 }
 
-function withPromotionPromptRequirement(prompt: string) {
-  return prompt.includes("promotion_insights.competitor_promotions must include EVERY distinct visible promotion")
-    ? prompt
-    : `${prompt.trim()}\n\n${PROMOTION_PROMPT_REQUIREMENT}`;
+function sanitizePromptLimits(prompt: string) {
+  return prompt
+    .replace(
+      /Output limits: raw_extraction\.detected_items max 20; price_insights\.key_sku_prices max 5; price_insights\.brand_price_range max 6; store_summary max 25 words and one sentence\. There is no top-N limit for promotion_insights\.competitor_promotions; include all distinct visible promotions\./g,
+      OUTPUT_LIMITS_PROMPT_REQUIREMENT,
+    )
+    .replace(/price_insights\.key_sku_prices max 5/g, "price_insights.key_sku_prices has no fixed max and must include every readable SKU-price row")
+    .replace(/raw_extraction\.detected_items max 20/g, "raw_extraction.detected_items max 30");
+}
+
+function appendPromptSection(prompt: string, marker: string, section: string) {
+  return prompt.includes(marker) ? prompt : `${prompt.trim()}\n\n${section}`;
+}
+
+function withRequiredPromptSections(prompt: string) {
+  return [
+    {
+      marker: "promotion_insights.competitor_promotions must include EVERY distinct visible promotion",
+      section: PROMOTION_PROMPT_REQUIREMENT,
+    },
+    {
+      marker: "key_sku_prices has no fixed row cap",
+      section: PRICE_CANDIDATE_PROMPT_REQUIREMENT,
+    },
+  ].reduce((current, requirement) => appendPromptSection(current, requirement.marker, requirement.section), sanitizePromptLimits(prompt));
 }
 
 export async function getActiveStoreVisitAiConfig(): Promise<StoreVisitAiConfig> {
@@ -194,7 +232,7 @@ export function normalizeStoreVisitAiResult(value: unknown): StoreVisitAiResult 
       };
     });
   const detectedItems = (Array.isArray(rawExtraction.detected_items) ? rawExtraction.detected_items : [])
-    .slice(0, 20)
+    .slice(0, 30)
     .map((item) => {
       const detected = asRecord(item);
       const confidence = Math.min(Math.max(asNumber(detected.confidence, 0), 0), 1);
@@ -218,7 +256,7 @@ export function normalizeStoreVisitAiResult(value: unknown): StoreVisitAiResult 
         confidence,
       };
     });
-  const normalizedKeySkuPrices = keySkuPrices.slice(0, 5).map((item) => {
+  const normalizedKeySkuPrices = keySkuPrices.map((item) => {
     const price = asRecord(item);
     return {
       brand: asString(price.brand, "Unknown"),

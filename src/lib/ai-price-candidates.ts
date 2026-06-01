@@ -9,6 +9,20 @@ type CandidateInput = {
   aiResult: StoreVisitAiResult;
 };
 
+type SourceItem = {
+  brand: string;
+  product: string;
+  price: string;
+  piece_count: number | null;
+  type: "SKU" | "PROMO";
+  tag?: string | null;
+  confidence: number;
+  source: "key_sku" | "raw";
+};
+
+const nonPricePromotionPattern = /\b(gratis|free|gift|bonus|hadiah|cashback|voucher|plate|bowl|toy|giveaway)\b/i;
+const priceRangePattern = /\d[\d.,]*\s*[-–—]\s*\d[\d.,]*/;
+
 function normalizeText(value: string | null | undefined) {
   return String(value ?? "")
     .toLowerCase()
@@ -32,6 +46,47 @@ function normalizePieceCount(value: number | null | undefined) {
   const parsed = Number(value ?? 0);
   if (!Number.isFinite(parsed) || parsed <= 0) return null;
   return Math.floor(parsed);
+}
+
+function extractPieceCount(value: string | null | undefined) {
+  const text = String(value ?? "");
+  const pcsMatch = text.match(/\b(\d{1,3})\s*(?:pcs?|pieces?)\b/i);
+  if (pcsMatch) return normalizePieceCount(Number(pcsMatch[1]));
+
+  const trailingPackMatch = text.match(/\b(?:nb|s|m|l|xl|xxl|xxxl|xxxxl|nb-s)\s*(\d{1,3})(?:\+\d{1,3})?\b/i);
+  if (trailingPackMatch) return normalizePieceCount(Number(trailingPackMatch[1]));
+
+  const finalNumberMatch = text.match(/\b(\d{1,3})(?:\+\d{1,3})?\s*$/);
+  if (finalNumberMatch) return normalizePieceCount(Number(finalNumberMatch[1]));
+
+  return null;
+}
+
+function hasNonPricePromotionText(item: { brand: string; product: string; price: string }) {
+  return nonPricePromotionPattern.test(`${item.brand} ${item.product} ${item.price}`);
+}
+
+function parseCandidatePrice(value: string | number | null | undefined) {
+  const raw = String(value ?? "").trim();
+  if (!raw || priceRangePattern.test(raw)) return null;
+
+  const parsed = parseIdrPrice(value);
+  if (!parsed || parsed < 1000) return null;
+
+  const hasCurrency = /\b(?:rp|idr)\b/i.test(raw);
+  const hasThousandsPattern = /\d{1,3}(?:[.,]\d{3})+/.test(raw);
+  const hasPlainIdrAmount = /^\s*\d{4,}\s*$/.test(raw);
+  return hasCurrency || hasThousandsPattern || hasPlainIdrAmount ? parsed : null;
+}
+
+function candidateProductKey(value: string) {
+  return normalizeText(value)
+    .replace(/\bpromo\b/g, " ")
+    .replace(/\bpcs?\b/g, " ")
+    .replace(/\bpieces?\b/g, " ")
+    .replace(/\b(\d{1,3})(\s*$)/, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function isMakukuBrand(brand: string) {
@@ -71,33 +126,53 @@ function pickBestCompetitor(candidate: { brand: string; product: string }, produ
   return best;
 }
 
+function isPriceCandidate(item: SourceItem) {
+  if (!item.brand || !item.product) return false;
+  if (item.confidence < 0.4) return false;
+  if (item.tag === "ANOMALY") return false;
+  if (!item.piece_count) return false;
+  if (hasNonPricePromotionText(item)) return false;
+  return parseCandidatePrice(item.price) !== null;
+}
+
 function sourceItems(aiResult: StoreVisitAiResult) {
-  const keySkuItems = aiResult.price_insights.key_sku_prices.map((item) => ({
+  const keySkuItems: SourceItem[] = aiResult.price_insights.key_sku_prices.map((item) => ({
     brand: item.brand,
     product: item.product,
     price: item.price,
-    piece_count: item.piece_count,
+    piece_count: normalizePieceCount(item.piece_count) ?? extractPieceCount(item.product),
     type: "SKU" as const,
+    tag: item.tag,
     confidence: item.confidence,
-  }));
+    source: "key_sku" as const,
+  })).filter(isPriceCandidate);
 
   const rawItems = aiResult.raw_extraction.detected_items
     .filter((item) => item.type === "SKU" || item.type === "PROMO")
-    .map((item) => ({
+    .map((item): SourceItem => ({
       brand: item.brand,
       product: item.product,
       price: item.price,
-      piece_count: null as number | null,
-      type: item.type,
+      piece_count: extractPieceCount(item.product),
+      type: item.type === "PROMO" ? "PROMO" : "SKU",
       confidence: item.confidence,
-    }));
+      source: "raw",
+    }))
+    .filter(isPriceCandidate);
 
-  const byKey = new Map<string, (typeof keySkuItems | typeof rawItems)[number]>();
+  const keySkuPricePieceKeys = new Set(keySkuItems.map((item) => {
+    const parsedPrice = parseCandidatePrice(item.price);
+    return normalizeText(`${item.brand} ${parsedPrice ?? item.price} ${item.piece_count ?? ""}`);
+  }));
+  const byKey = new Map<string, SourceItem>();
   for (const item of [...keySkuItems, ...rawItems]) {
-    const key = normalizeText(`${item.brand} ${item.product} ${item.price}`);
+    const parsedPrice = parseCandidatePrice(item.price);
+    const pricePieceKey = normalizeText(`${item.brand} ${parsedPrice ?? item.price} ${item.piece_count ?? ""}`);
+    if (item.source === "raw" && keySkuPricePieceKeys.has(pricePieceKey)) continue;
+    const key = normalizeText(`${item.brand} ${candidateProductKey(item.product)} ${parsedPrice ?? item.price}`);
     if (!key || !Boolean(item.brand || item.product || item.price)) continue;
     const existing = byKey.get(key);
-    if (!existing || (!existing.piece_count && item.piece_count)) {
+    if (!existing || existing.source === "raw" && item.source === "key_sku" || (!existing.piece_count && item.piece_count)) {
       byKey.set(key, item);
     }
   }
@@ -122,7 +197,7 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
   ]);
 
   const rows = items.map((item) => {
-    const parsedPrice = parseIdrPrice(item.price);
+    const parsedPrice = parseCandidatePrice(item.price);
     const pieceCount = normalizePieceCount(item.piece_count);
     const pricePerPiece = calculatePricePerPiece(parsedPrice, pieceCount);
     const warnings: Warning[] = [];

@@ -1,7 +1,8 @@
+import { Download } from "lucide-react";
 import Link from "next/link";
 import { AppShell } from "@/components/app-shell";
 import { AiPriceCandidateActions } from "@/components/ai-price-candidate-actions";
-import { Badge, Card, DataNotice, EmptyState } from "@/components/ui";
+import { Badge, Button, Card, DataNotice, EmptyState, TextInput } from "@/components/ui";
 import { formatIdr, formatJakartaTime } from "@/lib/format";
 import { getAiPriceCandidates } from "@/lib/data";
 import { getPageI18n } from "@/lib/i18n/server";
@@ -16,11 +17,27 @@ function scoreTone(score: number) {
 
 export default async function OfflinePriceCandidatesPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { locale, dict } = await getPageI18n(params);
-  const result = await getAiPriceCandidates();
+  const filters = await searchParams;
+  const getFilter = (key: string) => {
+    const value = filters[key];
+    return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+  };
+  const dateFrom = getFilter("date_from");
+  const dateTo = getFilter("date_to");
+  const exportParams = new URLSearchParams();
+  if (dateFrom) exportParams.set("date_from", dateFrom);
+  if (dateTo) exportParams.set("date_to", dateTo);
+  const exportHref = `/api/ai-price-candidates/export${exportParams.size > 0 ? `?${exportParams.toString()}` : ""}`;
+  const result = await getAiPriceCandidates({
+    dateFrom: dateFrom || undefined,
+    dateTo: dateTo || undefined,
+  });
   const candidates = result.data;
   const pending = candidates.filter((item) => item.status === "pending").length;
   const matched = candidates.filter((item) => item.matched_entity_type !== "unmatched").length;
@@ -46,10 +63,24 @@ export default async function OfflinePriceCandidatesPage({
       </div>
 
       <Card>
-        <div className="mb-3">
-          <h2 className="font-semibold">AI detected price candidates</h2>
-          <p className="mt-1 text-sm text-slate-500">Review AI extracted prices before they enter the price monitor.</p>
+        <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="font-semibold">AI detected price candidates</h2>
+            <p className="mt-1 text-sm text-slate-500">Review AI extracted prices before they enter the price monitor.</p>
+          </div>
+          <a href={exportHref} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
+            <Download className="h-4 w-4" />
+            Export CSV
+          </a>
         </div>
+        <form className="mb-4 grid gap-3 md:grid-cols-[minmax(0,180px)_minmax(0,180px)_auto_auto]">
+          <TextInput name="date_from" type="date" defaultValue={dateFrom} aria-label="Visit date from" />
+          <TextInput name="date_to" type="date" defaultValue={dateTo} aria-label="Visit date to" />
+          <Button type="submit">{dict.common.filter}</Button>
+          <Link href={`/${locale}/offline-price-candidates`} className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
+            {dict.common.viewAll}
+          </Link>
+        </form>
         {candidates.length === 0 ? <EmptyState text="No AI price candidates yet. Run Store Visit analysis first." /> : null}
         {candidates.length > 0 ? (
           <div className="overflow-x-auto">

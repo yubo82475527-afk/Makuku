@@ -46,6 +46,12 @@ export type OfflineStoreVisitFilters = {
   limit?: number;
 };
 
+export type AiPriceCandidateFilters = {
+  dateFrom?: string;
+  dateTo?: string;
+  limit?: number;
+};
+
 async function fromSupabase<T>(query: PromiseLike<{ data: unknown; error: { message: string } | null }>, fallback: T): Promise<QueryResult<T>> {
   if (!hasSupabaseConfig()) return { data: fallback, error: null, isDemo: true };
   const { data, error } = await query;
@@ -282,7 +288,7 @@ function mergeOfflineStores(stores: OfflineStore[]) {
   });
 }
 
-export async function getAiPriceCandidates(): Promise<QueryResult<AiPriceCandidate[]>> {
+export async function getAiPriceCandidates(filters: AiPriceCandidateFilters = {}): Promise<QueryResult<AiPriceCandidate[]>> {
   if (!hasSupabaseServiceConfig()) {
     return {
       data: [],
@@ -292,11 +298,20 @@ export async function getAiPriceCandidates(): Promise<QueryResult<AiPriceCandida
   }
 
   const supabase = createSupabaseServiceClient();
-  const { data, error } = await supabase
+  const shouldFilterVisitDate = Boolean(filters.dateFrom || filters.dateTo);
+  const visitSelect = shouldFilterVisitDate
+    ? "offline_store_visits!inner(id,store_name,city,channel_type,visit_date,created_at)"
+    : "offline_store_visits(id,store_name,city,channel_type,visit_date,created_at)";
+  let query = supabase
     .from("ai_price_candidates")
-    .select("*, offline_store_visits(id,store_name,city,channel_type,visit_date,created_at)")
+    .select(`*, ${visitSelect}`)
     .order("created_at", { ascending: false })
-    .limit(200);
+    .limit(filters.limit ?? 200);
+
+  if (filters.dateFrom) query = query.gte("offline_store_visits.visit_date", filters.dateFrom);
+  if (filters.dateTo) query = query.lte("offline_store_visits.visit_date", filters.dateTo);
+
+  const { data, error } = await query;
 
   if (error?.message.includes("ai_price_candidates")) {
     return { data: [], error: "Run migration 202605280005_ai_price_candidates.sql", isDemo: false };
