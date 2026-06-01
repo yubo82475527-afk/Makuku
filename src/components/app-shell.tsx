@@ -5,10 +5,12 @@ import {
   ClipboardCheck,
   Gauge,
   ImageUp,
+  ListTree,
   SlidersHorizontal,
   PackageSearch,
   ReceiptText,
   Siren,
+  Store,
 } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -18,6 +20,8 @@ import type { Dictionary } from "@/lib/i18n/get-dictionary";
 const navItems = [
   { href: "/dashboard", labelKey: "dashboard", icon: Gauge },
   { href: "/sku-master", labelKey: "skuMaster", icon: Boxes },
+  { href: "/channels", labelKey: "dashboard", label: { zh: "渠道列表", en: "Channels" }, icon: ListTree },
+  { href: "/offline-stores", labelKey: "offlineUploads", label: { zh: "门店列表", en: "Stores" }, icon: Store },
   { href: "/competitors", labelKey: "competitors", icon: PackageSearch },
   { href: "/prices", labelKey: "prices", icon: ReceiptText },
   { href: "/offline-uploads", labelKey: "offlineUploads", icon: ImageUp },
@@ -62,7 +66,7 @@ export function AppShell({
                 className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
               >
                 <Icon className="h-4 w-4" />
-                {"label" in item ? item.label : dict.nav[item.labelKey]}
+                {"label" in item ? (typeof item.label === "string" ? item.label : item.label[locale]) : dict.nav[item.labelKey]}
               </Link>
             );
           })}

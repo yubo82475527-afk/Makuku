@@ -2,7 +2,10 @@ import type {
   AiStrategyRecommendation,
   Alert,
   Brand,
+  ChannelMaster,
   CompetitorProduct,
+  MaterialMaster,
+  OfflineStore,
   OfflineStoreVisit,
   OfflineUpload,
   PriceSnapshot,
@@ -12,6 +15,24 @@ import type {
 
 const now = Date.now();
 const iso = (hoursAgo: number) => new Date(now - hoursAgo * 60 * 60 * 1000).toISOString();
+
+export const demoChannels: ChannelMaster[] = [
+  ["ch-shopee", "shopee", "Shopee", "online", 10],
+  ["ch-tiktok", "tiktok", "TikTok", "online", 20],
+  ["ch-modern-trade", "modern_trade", "Modern Trade", "offline", 30],
+  ["ch-baby-store", "baby_store", "Baby Store", "offline", 40],
+  ["ch-pharmacy", "pharmacy", "Pharmacy", "offline", 50],
+  ["ch-general-trade", "general_trade", "General Trade", "offline", 60],
+  ["ch-other", "other", "Other", "offline", 90],
+].map(([id, code, name, type, sort_order]) => ({
+  id,
+  code,
+  name,
+  type,
+  sort_order,
+  active: true,
+  created_at: iso(240),
+}) as ChannelMaster);
 
 export const demoBrands: Brand[] = [
   { id: "b1", name: "Makuku", country: "Indonesia", is_own_brand: true, created_at: iso(240) },
@@ -56,6 +77,54 @@ export const demoSkuMaster: SkuMaster[] = [
   active: true,
   created_at: iso(200),
 }) as SkuMaster);
+
+export const demoMaterialMaster: MaterialMaster[] = demoSkuMaster.map((sku, index) => {
+  const skuName = sku.makuku_sku_name;
+  const subBrand = skuName.includes("Comfort")
+    ? "Comfort"
+    : skuName.includes("Value")
+      ? "Value"
+      : skuName.includes("Air")
+        ? "Air"
+        : "Slim";
+  return {
+    tenant_sku_code: `DEMO-${String(index + 1).padStart(3, "0")}`,
+    tenant_sku_name: skuName,
+    category: "Diapers",
+    sub_category: sku.pack_type === "tape" ? "Tape" : "Pants",
+    brand: "Makuku",
+    sub_brand: subBrand,
+    type: sku.pack_type,
+    sub_type: sku.size,
+    pack_count: sku.piece_count,
+    box_count: 1,
+    pcs_price: sku.target_price_per_piece,
+    f_expiry_date: "2099-12-31",
+  };
+});
+
+export const demoOfflineStores: OfflineStore[] = [
+  {
+    id: "demo-store-jakarta",
+    name: "Demo Jakarta Baby Store",
+    city: "Jakarta",
+    channel_type: "baby_store",
+    channel_id: "ch-baby-store",
+    address: "Demo address",
+    created_at: iso(72),
+    channels: demoChannels.find((channel) => channel.code === "baby_store") ?? null,
+  },
+  {
+    id: "demo-store-surabaya",
+    name: "Demo Surabaya Modern Trade",
+    city: "Surabaya",
+    channel_type: "modern_trade",
+    channel_id: "ch-modern-trade",
+    address: "Demo address",
+    created_at: iso(72),
+    channels: demoChannels.find((channel) => channel.code === "modern_trade") ?? null,
+  },
+];
 
 export const demoCompetitors: CompetitorProduct[] = [
   ["c1", "b2", "MamyPoko Pants Royal Soft M32", "Royal Soft Pants M32", "shopee", "MamyPoko Official", "pants", "M", 32, "premium", "s2", 0.94, true],
@@ -237,6 +306,8 @@ export const demoOfflineStoreVisits: OfflineStoreVisit[] = [
     store_name: "Transmart Buah Batu",
     city: "Bandung",
     channel_type: "modern_trade",
+    store_id: "demo-store-surabaya",
+    channel_id: "ch-modern-trade",
     uploader_name: "Rina",
     visit_date: new Date(now - 4 * 60 * 60 * 1000).toISOString().slice(0, 10),
     visit_status: "analyzed",

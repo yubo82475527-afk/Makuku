@@ -1,4 +1,5 @@
 export type Channel = "shopee" | "tiktok" | "offline" | "manual";
+export type ChannelType = "online" | "offline";
 export type PackType = "pants" | "tape" | "unknown";
 export type Segment = "premium" | "mid" | "value" | "unknown";
 export type MatchMethod = "rule" | "ai" | "manual";
@@ -169,6 +170,27 @@ export type MaterialMaster = {
   f_expiry_date: string;
 };
 
+export type ChannelMaster = {
+  id: string;
+  code: string;
+  name: string;
+  type: ChannelType;
+  sort_order: number;
+  active: boolean;
+  created_at: string;
+};
+
+export type OfflineStore = {
+  id: string;
+  name: string;
+  city: string;
+  channel_type: string;
+  channel_id: string | null;
+  address: string | null;
+  created_at: string;
+  channels?: Pick<ChannelMaster, "id" | "code" | "name" | "type"> | null;
+};
+
 export type SkuMatch = {
   id: string;
   competitor_product_id: string;
@@ -289,6 +311,8 @@ export type OfflineStoreVisit = {
   analysis_error?: string | null;
   city: string;
   channel_type: string;
+  store_id?: string | null;
+  channel_id?: string | null;
   uploader_name: string;
   user_id?: string | null;
   uploader_user_id?: string | null;
@@ -353,6 +377,110 @@ export type PromoEvent = {
   competitor_products?: CompetitorProduct | null;
   sku_master?: SkuMaster | null;
   ai_strategy_recommendations?: AiStrategyRecommendation[];
+};
+
+export type PromoEventFeedSource = "promo_event" | "offline_capture" | "offline_upload";
+
+export type PromoEventFeedStatus = "confirmed" | "pending_review";
+
+export type PromoEventFeedItem = {
+  id: string;
+  source: PromoEventFeedSource;
+  sourceId: string;
+  detailHref?: string | null;
+  channel: Channel;
+  channelCode: string;
+  severity: Severity | null;
+  brandName: string | null;
+  brandId: string | null;
+  category: string;
+  productName: string | null;
+  city: string | null;
+  date: string;
+  storeName: string | null;
+  activityName: string;
+  discountRate: number | null;
+  discountLabel: string;
+  status: PromoEventFeedStatus;
+  evidenceUrl: string | null;
+};
+
+export type DashboardCategoryChannelCell = {
+  category: string;
+  channelCode: string;
+  promoCount: number;
+  maxSeverity: Severity | null;
+  maxDiscountRate: number | null;
+  recentPromoCount: number;
+  signalType: "risk" | "opportunity" | "neutral";
+  href: string;
+};
+
+export type DashboardCategoryChannelRow = {
+  category: string;
+  totalPromoCount: number;
+  cells: DashboardCategoryChannelCell[];
+};
+
+export type DashboardCityChannelCell = {
+  city: string;
+  channelCode: string;
+  promoCount: number;
+  maxSeverity: Severity | null;
+  maxDiscountRate: number | null;
+  recentPromoCount: number;
+  signalType: "risk" | "opportunity" | "neutral";
+  href: string;
+};
+
+export type DashboardCityChannelRow = {
+  city: string;
+  storeCount: number;
+  totalPromoCount: number;
+  cells: DashboardCityChannelCell[];
+};
+
+export type DashboardBattleMapCity = {
+  city: string;
+  storeCount: number;
+  promoCount: number;
+  recentPromoCount: number;
+  maxSeverity: Severity | null;
+  maxDiscountRate: number | null;
+  makukuShareAvg: number | null;
+  shareSampleCount: number;
+  captured: boolean;
+  competitionLevel: "strong" | "medium" | "weak" | "unknown";
+  x: number;
+  y: number;
+  href: string;
+};
+
+export type DashboardInsight = {
+  id: string;
+  title: string;
+  summary: string;
+  level: Severity;
+  href: string | null;
+};
+
+export type DashboardCategoryChannelMatrix = {
+  categories: string[];
+  channels: ChannelMaster[];
+  rows: DashboardCategoryChannelRow[];
+  cityRows: DashboardCityChannelRow[];
+  battleMapCities: DashboardBattleMapCity[];
+  insights: {
+    growthOpportunities: DashboardInsight[];
+    riskInsights: DashboardInsight[];
+  };
+  totals: {
+    categoryCount: number;
+    channelCount: number;
+    cityCount: number;
+    storeCount: number;
+    recentPromoCount: number;
+  };
 };
 
 export type RecommendedAction = {

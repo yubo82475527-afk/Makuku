@@ -33,20 +33,38 @@ export async function POST(request: Request) {
     const { body, isForm } = await readRequestBody(request);
     const storeName = String(body.store_name ?? "").trim();
     const city = String(body.city ?? "").trim();
-    const channelType = String(body.channel_type ?? "").trim();
+    let channelType = String(body.channel_type ?? "").trim();
+    let channelId = String(body.channel_id ?? "").trim() || null;
+    const storeId = String(body.store_id ?? "").trim() || null;
     const uploaderName = String(body.uploader_name ?? "").trim();
     const uploaderUserId = String(body.user_id ?? body.uploader_user_id ?? "").trim();
     const visitDate = String(body.visit_date ?? new Date().toISOString().slice(0, 10)).trim();
 
-    if (!storeName || !city || !channelType || !uploaderName) {
+    if (!storeName || !city || !uploaderName) {
       return Response.json({ error: "Missing required visit fields" }, { status: 400 });
     }
 
     const supabase = createSupabaseServiceClient();
+    if (storeId && (!channelId || !channelType)) {
+      const { data: store } = await supabase
+        .from("offline_stores")
+        .select("channel_id, channel_type")
+        .eq("id", storeId)
+        .maybeSingle();
+      channelId = channelId ?? (store?.channel_id as string | null) ?? null;
+      channelType = channelType || String(store?.channel_type ?? "");
+    }
+
+    if (!channelType) {
+      return Response.json({ error: "Missing required visit fields" }, { status: 400 });
+    }
+
     const payload = {
       store_name: storeName,
       city,
       channel_type: channelType,
+      channel_id: channelId,
+      store_id: storeId,
       uploader_name: uploaderName,
       user_id: uploaderUserId || null,
       uploader_user_id: uploaderUserId || null,
@@ -60,11 +78,33 @@ export async function POST(request: Request) {
       .select("*")
       .single();
 
+    if (error?.message.includes("channel_id") || error?.message.includes("store_id")) {
+      const noStorePayload = {
+        store_name: payload.store_name,
+        city: payload.city,
+        channel_type: payload.channel_type,
+        uploader_name: payload.uploader_name,
+        user_id: payload.user_id,
+        uploader_user_id: payload.uploader_user_id,
+        visit_date: payload.visit_date,
+        visit_status: payload.visit_status,
+      };
+      const noStoreResult = await supabase
+        .from("offline_store_visits")
+        .insert(noStorePayload)
+        .select("*")
+        .single();
+      data = noStoreResult.data;
+      error = noStoreResult.error;
+    }
+
     if (error?.message.includes("user_id") && uploaderUserId) {
       const uploaderOnlyPayload = {
         store_name: payload.store_name,
         city: payload.city,
         channel_type: payload.channel_type,
+        channel_id: payload.channel_id,
+        store_id: payload.store_id,
         uploader_name: payload.uploader_name,
         uploader_user_id: payload.uploader_user_id,
         visit_date: payload.visit_date,
@@ -79,7 +119,7 @@ export async function POST(request: Request) {
       error = uploaderOnlyResult.error;
     }
 
-    if (error?.message.includes("uploader_user_id") || error?.message.includes("user_id")) {
+    if (error?.message.includes("uploader_user_id") || error?.message.includes("user_id") || error?.message.includes("channel_id") || error?.message.includes("store_id")) {
       const legacyPayload = {
         store_name: payload.store_name,
         city: payload.city,
