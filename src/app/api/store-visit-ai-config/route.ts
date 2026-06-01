@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const config = normalizeStoreVisitAiConfigInput(body);
     const token = String(body.test_token ?? "");
-    const testPayload = verifyStoreVisitAiTestToken(token, config);
+    const testPayload = token ? verifyStoreVisitAiTestToken(token, config) : null;
     const supabase = createSupabaseServiceClient();
 
     const { data: created, error: createError } = await supabase
@@ -28,11 +28,16 @@ export async function POST(request: Request) {
       .insert({
         ...config,
         status: "archived",
-        last_test_visit_id: testPayload.visit_id,
-        last_test_result: {
-          tested_at: new Date().toISOString(),
-          config_hash: testPayload.config_hash,
-        },
+        last_test_visit_id: testPayload?.visit_id ?? null,
+        last_test_result: testPayload
+          ? {
+            tested_at: new Date().toISOString(),
+            config_hash: testPayload.config_hash,
+          }
+          : {
+            saved_without_test: true,
+            saved_at: new Date().toISOString(),
+          },
       })
       .select("*")
       .single();

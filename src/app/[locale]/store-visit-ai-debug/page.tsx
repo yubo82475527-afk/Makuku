@@ -31,7 +31,7 @@ export default async function StoreVisitAiDebugPage({
               </p>
             </div>
             <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800">
-              Save is enabled only after a successful test.
+              Direct save is enabled. Run test is optional.
             </div>
           </div>
         </Card>

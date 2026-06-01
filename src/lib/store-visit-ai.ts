@@ -25,6 +25,11 @@ const promotionVisibilities: PromotionVisibility[] = ["LOW", "MEDIUM", "HIGH"];
 const promoPressureLevels: PromoPressureLevel[] = ["LOW", "MEDIUM", "HIGH"];
 const rawExtractionTypes: RawExtractionType[] = ["SKU", "PROMO", "SHELF_SIGNAL"];
 const validationWarningTypes: ValidationWarningType[] = ["MISSING_DATA", "LOW_CONFIDENCE", "PARSE_RISK"];
+const PROMOTION_PROMPT_REQUIREMENT = [
+  "Promotion insight requirement: promotion_insights.competitor_promotions must include EVERY distinct visible promotion detected across ALL images. Do not return only the top promotions. Do not cap this array at 3. Do not drop a promotion because brand, product, price, or mechanic is partially unclear; keep the visible evidence in description and add a validation warning when needed.",
+  "A distinct promotion means a visible promo tag, discount, bundle, buy-more-save offer, special price, gondola/display offer, gift/cashback offer, or any shelf material communicating a promotional mechanic. If the same physical promotion appears in multiple images, merge it once; if different brands/products/mechanics/prices are visible, output each one separately.",
+  "For each competitor promotion, description must mention the visible product or pack, promo mechanic, promo price or discount text, and location/evidence when visible. Use Promo Tag when the mechanic is visible but cannot be classified more specifically.",
+].join("\n");
 
 export const STORE_VISIT_AI_PROMPT = [
   "You are a Retail Shelf Intelligence AI System with strict observability requirements.",
@@ -34,8 +39,9 @@ export const STORE_VISIT_AI_PROMPT = [
   "If information is unclear, keep it in raw_extraction with confidence 0 and add a validation warning. Do not use Unknown or Price unclear in the model output.",
   "For price_insights.key_sku_prices, include piece_count only when the package piece count is visible on pack text or shelf tag. If unclear, set piece_count to null. Do not guess piece count.",
   "Never calculate price_per_piece yourself. Return package price and piece_count only; the system calculates per-piece price.",
+  PROMOTION_PROMPT_REQUIREMENT,
   "Treat all images as ONE store-level observation.",
-  "Output limits: raw_extraction.detected_items max 20; price_insights.key_sku_prices max 5; promotion_insights.competitor_promotions max 3; price_insights.brand_price_range max 6; store_summary max 25 words and one sentence.",
+  "Output limits: raw_extraction.detected_items max 20; price_insights.key_sku_prices max 5; price_insights.brand_price_range max 6; store_summary max 25 words and one sentence. There is no top-N limit for promotion_insights.competitor_promotions; include all distinct visible promotions.",
   "Return ONLY valid compact JSON. No markdown. No explanations. No extra text.",
   "Use exactly this JSON structure and enum values:",
   '{"raw_extraction":{"detected_items":[{"brand":"string","product":"string","price":"string","type":"SKU|PROMO|SHELF_SIGNAL","confidence":0.8}]},"validation":{"is_valid":true,"warnings":[{"type":"MISSING_DATA|LOW_CONFIDENCE|PARSE_RISK","message":"string"}]},"shelf_understanding":{"brands_present":[{"brand":"string","shelf_share_estimate":0}],"category_coverage":"FULL|PARTIAL|FRAGMENTED","shelf_condition":"WELL_ORGANISED|NORMAL|MESSY","facings_estimate":[{"brand":"string","facing_count_estimate":0}]},"price_insights":{"brand_price_range":[{"brand":"string","min_price":"string","max_price":"string"}],"key_sku_prices":[{"brand":"string","product":"string","price":"string","piece_count":44,"tag":"HERO|PROMO|ANOMALY","confidence":0.8}]},"stock_risk":{"level":"Normal|Low Stock|Out of Stock Risk","affected_brands":[{"brand":"string","risk_signal":"EMPTY_FACING|LOW_FACING|BLOCKED_SHELF"}],"reason":"string"},"promotion_insights":{"competitor_promotions":[{"brand":"string","type":"Discount|Buy 1 Get 1|Buy 2 Get 1|Promo Tag|Special Offer","visibility":"LOW|MEDIUM|HIGH","description":"string"}],"promo_pressure_level":"LOW|MEDIUM|HIGH"},"store_summary":"string"}',
@@ -45,7 +51,7 @@ export const DEFAULT_STORE_VISIT_AI_CONFIG: StoreVisitAiConfig = {
   version_name: "Default code config",
   system_prompt: STORE_VISIT_AI_PROMPT,
   temperature: 0,
-  max_tokens: 2200,
+  max_tokens: 3200,
   status: "active",
 };
 
@@ -56,10 +62,16 @@ function normalizeAiConfig(value: Partial<StoreVisitAiConfig> | null | undefined
     ...DEFAULT_STORE_VISIT_AI_CONFIG,
     ...value,
     version_name: asString(value?.version_name, DEFAULT_STORE_VISIT_AI_CONFIG.version_name),
-    system_prompt: asString(value?.system_prompt, DEFAULT_STORE_VISIT_AI_CONFIG.system_prompt),
+    system_prompt: withPromotionPromptRequirement(asString(value?.system_prompt, DEFAULT_STORE_VISIT_AI_CONFIG.system_prompt)),
     temperature: Number.isFinite(temperature) ? Math.min(Math.max(temperature, 0), 2) : DEFAULT_STORE_VISIT_AI_CONFIG.temperature,
-    max_tokens: Number.isFinite(maxTokens) ? Math.min(Math.max(Math.floor(maxTokens), 500), 6000) : DEFAULT_STORE_VISIT_AI_CONFIG.max_tokens,
+    max_tokens: Number.isFinite(maxTokens) ? Math.min(Math.max(Math.floor(maxTokens), DEFAULT_STORE_VISIT_AI_CONFIG.max_tokens), 6000) : DEFAULT_STORE_VISIT_AI_CONFIG.max_tokens,
   };
+}
+
+function withPromotionPromptRequirement(prompt: string) {
+  return prompt.includes("promotion_insights.competitor_promotions must include EVERY distinct visible promotion")
+    ? prompt
+    : `${prompt.trim()}\n\n${PROMOTION_PROMPT_REQUIREMENT}`;
 }
 
 export async function getActiveStoreVisitAiConfig(): Promise<StoreVisitAiConfig> {
@@ -110,6 +122,48 @@ function asPositiveIntegerOrNull(value: unknown) {
 
 function asEnum<T extends string>(value: unknown, options: readonly T[], fallback: T) {
   return options.includes(value as T) ? value as T : fallback;
+}
+
+function normalizeValidationWarnings(warnings: { type: ValidationWarningType; message: string }[]) {
+  const priority: ValidationWarningType[] = ["PARSE_RISK", "LOW_CONFIDENCE", "MISSING_DATA"];
+  const grouped = new Map<ValidationWarningType, string[]>();
+
+  for (const warning of warnings) {
+    const messages = grouped.get(warning.type) ?? [];
+    const normalizedMessage = warning.message.trim();
+    if (normalizedMessage && !messages.some((message) => message.toLowerCase() === normalizedMessage.toLowerCase())) {
+      messages.push(normalizedMessage);
+    }
+    grouped.set(warning.type, messages);
+  }
+
+  return priority
+    .filter((type) => grouped.has(type))
+    .slice(0, 2)
+    .map((type) => {
+      const messages = grouped.get(type) ?? [];
+      return {
+        type,
+        message: mergedWarningMessage(type, messages),
+      };
+    });
+}
+
+function mergedWarningMessage(type: ValidationWarningType, messages: string[]) {
+  if (messages.length === 0) {
+    if (type === "PARSE_RISK") return "Image quality or overlays may limit reliable extraction.";
+    if (type === "LOW_CONFIDENCE") return "Some visible shelf items or promo details are low confidence.";
+    return "Some required brand, product, price, or promo details are missing.";
+  }
+  if (messages.length === 1) return messages[0];
+
+  if (type === "PARSE_RISK") {
+    return `Multiple parse risks detected: ${messages.slice(0, 2).join(" ")}`;
+  }
+  if (type === "LOW_CONFIDENCE") {
+    return `Multiple low-confidence items detected: ${messages.slice(0, 2).join(" ")}`;
+  }
+  return `Multiple missing-data issues detected: ${messages.slice(0, 2).join(" ")}`;
 }
 
 export function normalizeStoreVisitAiResult(value: unknown): StoreVisitAiResult {
@@ -175,7 +229,7 @@ export function normalizeStoreVisitAiResult(value: unknown): StoreVisitAiResult 
       confidence: Math.min(Math.max(asNumber(price.confidence, 0.7), 0), 1),
     };
   });
-  const normalizedPromotions = competitorPromotions.slice(0, 3).map((item) => {
+  const normalizedPromotions = competitorPromotions.map((item) => {
     const promotion = asRecord(item);
     const promotionType = asString(promotion.type ?? promotion.promotion_type, "Promo Tag");
     return {
@@ -185,6 +239,14 @@ export function normalizeStoreVisitAiResult(value: unknown): StoreVisitAiResult 
       description: asString(promotion.description, "No clear promotion detected"),
     };
   });
+  const normalizedWarnings = normalizeValidationWarnings(
+    detectedItems.length > 0
+      ? warnings
+      : [
+        ...warnings,
+        { type: "MISSING_DATA" as const, message: "AI did not return raw extraction items." },
+      ],
+  );
 
   return {
     raw_extraction: {
@@ -193,13 +255,8 @@ export function normalizeStoreVisitAiResult(value: unknown): StoreVisitAiResult 
     validation: {
       is_valid: typeof validation.is_valid === "boolean"
         ? validation.is_valid
-        : detectedItems.length > 0 && warnings.length === 0,
-      warnings: detectedItems.length > 0
-        ? warnings.slice(0, 10)
-        : [
-          ...warnings,
-          { type: "MISSING_DATA" as const, message: "AI did not return raw extraction items." },
-        ].slice(0, 10),
+        : detectedItems.length > 0 && normalizedWarnings.length === 0,
+      warnings: normalizedWarnings,
     },
     shelf_understanding: {
       brands_present: (Array.isArray(shelfUnderstanding.brands_present) ? shelfUnderstanding.brands_present : [])
