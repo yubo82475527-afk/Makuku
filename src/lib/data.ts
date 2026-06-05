@@ -20,12 +20,18 @@ import type {
   ChannelMaster,
   CompetitorProduct,
   DashboardCategoryChannelMatrix,
+  DashboardCollectionEfficiency,
   DashboardInsight,
   MaterialMaster,
   OfflineStore,
   OfflineUpload,
   OfflineStoreVisit,
+  OpportunityAction,
+  OpportunityActionStatus,
+  OpportunityActionType,
   PriceSnapshot,
+  ProductSegmentBattle,
+  ProductSegmentBattleSummary,
   PromoEvent,
   PromoEventFeedItem,
   Severity,
@@ -49,6 +55,7 @@ export type OfflineStoreVisitFilters = {
 export type AiPriceCandidateFilters = {
   dateFrom?: string;
   dateTo?: string;
+  status?: "pending" | "approved" | "rejected";
   limit?: number;
 };
 
@@ -66,7 +73,7 @@ function isMissingSchemaError(error: { message?: string } | null) {
 
 export async function getBrands(): Promise<QueryResult<Brand[]>> {
   if (!hasSupabaseConfig()) return { data: demoBrands, error: null, isDemo: true };
-  const supabase = createSupabaseAnonClient();
+  const supabase = createSupabaseServiceClient();
   return fromSupabase<Brand[]>(supabase.from("brands").select("*").order("name"), demoBrands);
 }
 
@@ -305,11 +312,17 @@ export async function getAiPriceCandidates(filters: AiPriceCandidateFilters = {}
   let query = supabase
     .from("ai_price_candidates")
     .select(`*, ${visitSelect}`)
-    .order("created_at", { ascending: false })
     .limit(filters.limit ?? 200);
 
   if (filters.dateFrom) query = query.gte("offline_store_visits.visit_date", filters.dateFrom);
   if (filters.dateTo) query = query.lte("offline_store_visits.visit_date", filters.dateTo);
+  if (filters.status) query = query.eq("status", filters.status);
+
+  if (filters.status === "approved") {
+    query = query.order("reviewed_at", { ascending: false }).order("created_at", { ascending: false });
+  } else {
+    query = query.order("created_at", { ascending: false });
+  }
 
   const { data, error } = await query;
 
@@ -317,12 +330,23 @@ export async function getAiPriceCandidates(filters: AiPriceCandidateFilters = {}
     return { data: [], error: "Run migration 202605280005_ai_price_candidates.sql", isDemo: false };
   }
   if (error) return { data: [], error: error.message, isDemo: false };
-  return { data: (data ?? []) as AiPriceCandidate[], error: null, isDemo: false };
+  const rows = (data ?? []) as AiPriceCandidate[];
+  if (!filters.status) {
+    const statusRank: Record<string, number> = { pending: 0, approved: 1, rejected: 2 };
+    rows.sort((a, b) => {
+      const rankCompare = (statusRank[a.status] ?? 3) - (statusRank[b.status] ?? 3);
+      if (rankCompare !== 0) return rankCompare;
+      const aTime = a.status === "approved" ? a.reviewed_at ?? a.created_at : a.created_at;
+      const bTime = b.status === "approved" ? b.reviewed_at ?? b.created_at : b.created_at;
+      return new Date(bTime).getTime() - new Date(aTime).getTime();
+    });
+  }
+  return { data: rows, error: null, isDemo: false };
 }
 
 export async function getCompetitorProducts(): Promise<QueryResult<CompetitorProduct[]>> {
   if (!hasSupabaseConfig()) return { data: demoCompetitors, error: null, isDemo: true };
-  const supabase = createSupabaseAnonClient();
+  const supabase = createSupabaseServiceClient();
   return fromSupabase<CompetitorProduct[]>(
     supabase
       .from("competitor_products")
@@ -334,7 +358,7 @@ export async function getCompetitorProducts(): Promise<QueryResult<CompetitorPro
 
 export async function getPriceSnapshots(): Promise<QueryResult<PriceSnapshot[]>> {
   if (!hasSupabaseConfig()) return { data: demoPriceSnapshots, error: null, isDemo: true };
-  const supabase = createSupabaseAnonClient();
+  const supabase = createSupabaseServiceClient();
   return fromSupabase<PriceSnapshot[]>(
     supabase
       .from("price_snapshots")
@@ -432,12 +456,13 @@ export async function getPromoEventFeed(): Promise<QueryResult<PromoEventFeedIte
 }
 
 export async function getDashboardCategoryChannelMatrix(locale = "zh"): Promise<QueryResult<DashboardCategoryChannelMatrix>> {
-  const [feedResult, channelsResult, storesResult, materialResult, visitsResult] = await Promise.all([
+  const [feedResult, channelsResult, storesResult, materialResult, visitsResult, candidatesResult] = await Promise.all([
     getPromoEventFeed(),
     getChannels(),
     getOfflineStores(),
     getMaterialMaster(),
     getOfflineStoreVisits({ limit: 1000 }),
+    getAiPriceCandidates({ limit: 5000 }),
   ]);
   const activeChannels = channelsResult.data.filter((channel) => channel.active && channel.type === "offline");
   const activeChannelCodes = new Set(activeChannels.map((channel) => channel.code));
@@ -507,6 +532,7 @@ export async function getDashboardCategoryChannelMatrix(locale = "zh"): Promise<
   });
 
   const recentPromoCount = dashboardFeed.filter((item) => new Date(item.date) >= since).length;
+  const collection = buildCollectionEfficiency(visitsResult.data, candidatesResult.data);
   const battleMapCities = buildBattleMapCities({
     cityRows,
     feed: dashboardFeed,
@@ -530,6 +556,7 @@ export async function getDashboardCategoryChannelMatrix(locale = "zh"): Promise<
       rows,
       cityRows,
       battleMapCities,
+      collection,
       insights,
       totals: {
         categoryCount: categories.length,
@@ -539,9 +566,522 @@ export async function getDashboardCategoryChannelMatrix(locale = "zh"): Promise<
         recentPromoCount,
       },
     },
-    error: feedResult.error ?? channelsResult.error ?? storesResult.error ?? materialResult.error ?? visitsResult.error,
-    isDemo: feedResult.isDemo || channelsResult.isDemo || storesResult.isDemo || materialResult.isDemo || visitsResult.isDemo,
+    error: feedResult.error ?? channelsResult.error ?? storesResult.error ?? materialResult.error ?? visitsResult.error ?? candidatesResult.error,
+    isDemo: feedResult.isDemo || channelsResult.isDemo || storesResult.isDemo || materialResult.isDemo || visitsResult.isDemo || candidatesResult.isDemo,
   };
+}
+
+export async function getOpportunityActions(locale = "zh"): Promise<QueryResult<OpportunityAction[]>> {
+  const [matrixResult, feedResult, candidatesResult] = await Promise.all([
+    getDashboardCategoryChannelMatrix(locale),
+    getPromoEventFeed(),
+    getAiPriceCandidates({ limit: 5000 }),
+  ]);
+
+  const actions = buildOpportunityActions({
+    locale,
+    matrix: matrixResult.data,
+    feed: feedResult.data,
+    candidates: candidatesResult.data,
+  });
+
+  return {
+    data: actions,
+    error: matrixResult.error ?? feedResult.error ?? candidatesResult.error,
+    isDemo: matrixResult.isDemo || feedResult.isDemo || candidatesResult.isDemo,
+  };
+}
+
+export async function getProductSegmentBattles(locale = "zh"): Promise<QueryResult<{ summary: ProductSegmentBattleSummary; battles: ProductSegmentBattle[] }>> {
+  const [skuResult, materialResult, competitorsResult, snapshotsResult, promosResult, candidatesResult] = await Promise.all([
+    getSkuMaster(),
+    getMaterialMaster(),
+    getCompetitorProducts(),
+    getPriceSnapshots(),
+    getPromoEvents(),
+    getAiPriceCandidates({ limit: 5000 }),
+  ]);
+
+  let battles = buildProductSegmentBattles({
+    locale,
+    skuMaster: skuResult.data,
+    materialMaster: materialResult.data,
+    competitors: competitorsResult.data,
+    snapshots: snapshotsResult.data,
+    promos: promosResult.data,
+    candidates: candidatesResult.data,
+  });
+  if (battles.every((battle) => battle.evidenceCount === 0)) {
+    battles = buildProductSegmentBattles({
+      locale,
+      skuMaster: skuResult.data,
+      materialMaster: materialResult.data,
+      competitors: demoCompetitors,
+      snapshots: demoPriceSnapshots,
+      promos: demoPromoEvents,
+      candidates: [],
+    });
+  }
+
+  return {
+    data: {
+      summary: {
+        segmentCount: battles.length,
+        pressuredSegmentCount: battles.filter((battle) => battle.lowestCompetitorPricePerPiece !== null).length,
+        belowFloorSegmentCount: battles.filter((battle) => battle.floorGapPct !== null && battle.floorGapPct < 0).length,
+        evidenceCount: battles.reduce((sum, battle) => sum + battle.evidenceCount, 0),
+        competitorProductCount: battles.reduce((sum, battle) => sum + battle.competitorProductCount, 0),
+      },
+      battles,
+    },
+    error: skuResult.error ?? materialResult.error ?? competitorsResult.error ?? snapshotsResult.error ?? promosResult.error ?? candidatesResult.error,
+    isDemo: skuResult.isDemo || materialResult.isDemo || competitorsResult.isDemo || snapshotsResult.isDemo || promosResult.isDemo || candidatesResult.isDemo,
+  };
+}
+
+function buildCollectionEfficiency(
+  visits: OfflineStoreVisit[],
+  candidates: AiPriceCandidate[],
+): DashboardCollectionEfficiency {
+  const todayStart = startOfLocalDay(new Date());
+  const weekStart = new Date(todayStart);
+  weekStart.setDate(weekStart.getDate() - 6);
+  const weekVisits = visits.filter((visit) => {
+    const date = visit.visit_date ? new Date(`${visit.visit_date}T00:00:00`) : new Date(visit.created_at);
+    return date >= weekStart;
+  });
+  const todayVisitCount = visits.filter((visit) => {
+    const date = visit.visit_date ? new Date(`${visit.visit_date}T00:00:00`) : new Date(visit.created_at);
+    return date >= todayStart;
+  }).length;
+  const weekStoreKeys = new Set(weekVisits.map((visit) => `${cleanText(visit.city) ?? ""}|${cleanText(visit.store_name) ?? ""}`));
+  const approvedCandidates = candidates.filter((candidate) => candidate.status === "approved");
+  const accuracies = approvedCandidates
+    .map((candidate) => ({ candidate, accuracy: candidatePriceAccuracy(candidate) }))
+    .filter((item): item is { candidate: AiPriceCandidate; accuracy: number } => item.accuracy !== null);
+
+  return {
+    todayVisitCount,
+    weekVisitCount: weekVisits.length,
+    weekStoreCount: weekStoreKeys.size,
+    aiCandidateCount: candidates.length,
+    pendingCandidateCount: candidates.filter((candidate) => candidate.status === "pending").length,
+    approvedCandidateCount: approvedCandidates.length,
+    approvedAccuracy: accuracies.length
+      ? accuracies.reduce((sum, item) => sum + item.accuracy, 0) / accuracies.length
+      : null,
+    lowAccuracyItems: accuracies
+      .sort((a, b) => a.accuracy - b.accuracy)
+      .slice(0, 5)
+      .map(({ candidate, accuracy }) => ({
+        id: candidate.id,
+        brand: candidate.raw_brand || "-",
+        product: candidate.raw_product || "-",
+        accuracy,
+        aiPricePerPiece: candidate.price_per_piece as number,
+        reviewedPricePerPiece: candidate.reviewed_price_per_piece as number,
+        reviewedAt: candidate.reviewed_at,
+      })),
+  };
+}
+
+function startOfLocalDay(value: Date) {
+  const date = new Date(value);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function candidatePriceAccuracy(candidate: AiPriceCandidate) {
+  if (!candidate.price_per_piece || !candidate.reviewed_price_per_piece || candidate.reviewed_price_per_piece <= 0) return null;
+  return Math.max(0, 1 - Math.abs(candidate.price_per_piece - candidate.reviewed_price_per_piece) / candidate.reviewed_price_per_piece);
+}
+
+function buildProductSegmentBattles(input: {
+  locale: string;
+  skuMaster: SkuMaster[];
+  materialMaster: MaterialMaster[];
+  competitors: CompetitorProduct[];
+  snapshots: PriceSnapshot[];
+  promos: PromoEvent[];
+  candidates: AiPriceCandidate[];
+}): ProductSegmentBattle[] {
+  const groups = new Map<string, { line: string; size: string; skus: SkuMaster[]; materialItems: MaterialMaster[] }>();
+
+  for (const sku of input.skuMaster.filter((item) => item.active)) {
+    const line = productLineLabel(sku.pack_type);
+    const size = cleanText(sku.size) ?? "Unknown";
+    const key = productSegmentKey(line, size);
+    const group = groups.get(key) ?? { line, size, skus: [], materialItems: [] };
+    group.skus.push(sku);
+    groups.set(key, group);
+  }
+
+  for (const item of input.materialMaster) {
+    const line = cleanText(item.sub_category) ?? cleanText(item.type) ?? "Unknown";
+    const size = cleanText(item.sub_type) ?? "Unknown";
+    const key = productSegmentKey(line, size);
+    const group = groups.get(key) ?? { line, size, skus: [], materialItems: [] };
+    group.materialItems.push(item);
+    groups.set(key, group);
+  }
+
+  const skuSegment = new Map<string, string>();
+  for (const [key, group] of groups) {
+    for (const sku of group.skus) skuSegment.set(sku.id, key);
+  }
+  const competitorSegment = new Map<string, string>();
+  for (const product of input.competitors) {
+    const segment = competitorProductSegment(product);
+    competitorSegment.set(product.id, productSegmentKey(segment.line, segment.size));
+  }
+  const candidateSegment = new Map<string, string>();
+  for (const candidate of input.candidates.filter((item) => !isMakukuBrandName(item.raw_brand))) {
+    const line = inferProductLine(candidate.raw_product || candidate.matched_label || candidate.raw_brand);
+    const size = inferProductSize(candidate.raw_product || candidate.matched_label);
+    candidateSegment.set(candidate.id, productSegmentKey(line, size));
+  }
+
+  const battles = Array.from(groups.entries()).map(([key, group]) => {
+    const skuIds = new Set(group.skus.map((sku) => sku.id));
+    const competitors = input.competitors.filter((product) => {
+      if (product.sku_matches?.some((match) => skuIds.has(match.sku_master_id))) return true;
+      return competitorSegment.get(product.id) === key;
+    });
+    const snapshots = input.snapshots.filter((snapshot) => {
+      const product = snapshot.competitor_products;
+      if (!product) return false;
+      if (product.sku_matches?.some((match) => skuIds.has(match.sku_master_id))) return true;
+      return competitorSegment.get(product.id) === key;
+    });
+    const promos = input.promos.filter((promo) => {
+      if (promo.sku_master_id && skuIds.has(promo.sku_master_id)) return true;
+      const product = promo.competitor_products;
+      if (!product) return false;
+      if (product.sku_matches?.some((match) => skuSegment.get(match.sku_master_id) === key)) return true;
+      return competitorSegment.get(product.id) === key;
+    });
+    const candidates = input.candidates.filter((candidate) => candidateSegment.get(candidate.id) === key);
+    const competitorProductCount = competitors.length || new Set(
+      candidates.map((candidate) => `${cleanText(candidate.raw_brand) ?? "-"}|${cleanText(candidate.raw_product) ?? "-"}`),
+    ).size;
+    const targetPrices = [
+      ...group.skus.map((sku) => sku.target_price_per_piece),
+      ...(group.skus.length === 0 ? group.materialItems.map((item) => item.pcs_price) : []),
+    ].filter(isPositiveNumber);
+    const floorPrices = group.skus.map((sku) => sku.floor_price_per_piece).filter(isPositiveNumber);
+    const targetPriceMin = minOrNull(targetPrices);
+    const targetPriceMax = maxOrNull(targetPrices);
+    const floorPriceMin = minOrNull(floorPrices);
+    const floorPriceMax = maxOrNull(floorPrices);
+    const priceEvidence = [
+      ...snapshots.map((snapshot) => ({
+        price: snapshot.price_per_piece,
+        brand: snapshot.competitor_products?.brands?.name ?? null,
+        channel: snapshot.channel,
+        capturedAt: snapshot.captured_at,
+      })),
+      ...promos.map((promo) => ({
+        price: promo.new_price_per_piece,
+        brand: promo.competitor_products?.brands?.name ?? null,
+        channel: promo.channel,
+        capturedAt: promo.started_at,
+      })),
+      ...candidates.map((candidate) => ({
+        price: candidate.reviewed_price_per_piece ?? candidate.price_per_piece,
+        brand: cleanText(candidate.raw_brand),
+        channel: "offline" as const,
+        capturedAt: candidate.reviewed_at ?? candidate.created_at,
+      })),
+    ].filter(isProductBattlePriceEvidence);
+    const lowest = priceEvidence.reduce<typeof priceEvidence[number] | null>((current, item) => {
+      if (!current || item.price < current.price) return item;
+      return current;
+    }, null);
+    const latestCapturedAt = priceEvidence
+      .map((item) => item.capturedAt)
+      .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
+    const targetGapPct = lowest && targetPriceMin ? ((lowest.price - targetPriceMin) / targetPriceMin) * 100 : null;
+    const floorGapPct = lowest && floorPriceMin ? ((lowest.price - floorPriceMin) / floorPriceMin) * 100 : null;
+    const promoSeverity = maxSeverity(promos.map((promo) => promo.severity));
+    const evidenceCount = snapshots.length + promos.length + candidates.length;
+    const severity = productBattleSeverity({ targetGapPct, floorGapPct, promoSeverity, evidenceCount });
+    const segmentLabels = Array.from(new Set(group.skus.map((sku) => sku.segment)));
+
+    return {
+      id: key,
+      line: group.line,
+      size: group.size,
+      label: `${group.line} / ${group.size}`,
+      segmentLabels,
+      makukuSkuCount: group.skus.length || group.materialItems.length,
+      makukuSkuNames: group.skus.length > 0 ? group.skus.map((sku) => sku.makuku_sku_name) : group.materialItems.map((item) => item.tenant_sku_name),
+      targetPriceMin,
+      targetPriceMax,
+      floorPriceMin,
+      floorPriceMax,
+      competitorProductCount,
+      evidenceCount,
+      promoEventCount: promos.length,
+      lowestCompetitorPricePerPiece: lowest?.price ?? null,
+      strongestCompetitorBrand: lowest?.brand ?? null,
+      strongestChannel: lowest?.channel ?? null,
+      targetGapPct,
+      floorGapPct,
+      severity,
+      latestCapturedAt,
+      href: `/${input.locale}/prices?line=${encodeURIComponent(group.line)}&size=${encodeURIComponent(group.size)}`,
+    } satisfies ProductSegmentBattle;
+  });
+
+  return battles
+    .sort((a, b) => productBattleSortScore(b) - productBattleSortScore(a))
+    .slice(0, 12);
+}
+
+function productLineLabel(value: SkuMaster["pack_type"]) {
+  if (value === "pants") return "Pants";
+  if (value === "tape") return "Tape";
+  return "Unknown";
+}
+
+function competitorProductSegment(product: CompetitorProduct) {
+  const line = product.pack_type === "unknown"
+    ? inferProductLine(product.normalized_name || product.raw_title)
+    : productLineLabel(product.pack_type);
+  const size = cleanText(product.size) ?? inferProductSize(product.normalized_name || product.raw_title);
+  return { line, size };
+}
+
+function inferProductLine(value: string | null | undefined) {
+  const text = (value ?? "").toLowerCase();
+  if (text.includes("tape")) return "Tape";
+  if (text.includes("pants") || text.includes("pant")) return "Pants";
+  return "Pants";
+}
+
+function inferProductSize(value: string | null | undefined) {
+  const text = (value ?? "").toUpperCase();
+  const match = text.match(/\b(NB\/NB-S|XXXXL|XXXL|XXL|XL|NB|L|M|S)\b/);
+  return match?.[1] ?? "Unknown";
+}
+
+function isMakukuBrandName(value: string | null | undefined) {
+  return (value ?? "").toLowerCase().includes("makuku");
+}
+
+function isProductBattlePriceEvidence(item: {
+  price: number | null;
+  brand: string | null;
+  channel: PriceSnapshot["channel"];
+  capturedAt: string;
+}): item is {
+  price: number;
+  brand: string | null;
+  channel: PriceSnapshot["channel"];
+  capturedAt: string;
+} {
+  return isPositiveNumber(item.price);
+}
+
+function productSegmentKey(line: string, size: string) {
+  return `${slugKey(line)}-${slugKey(size)}`;
+}
+
+function productBattleSeverity(input: {
+  targetGapPct: number | null;
+  floorGapPct: number | null;
+  promoSeverity: Severity | null;
+  evidenceCount: number;
+}): Severity {
+  if ((input.floorGapPct !== null && input.floorGapPct < 0) || input.promoSeverity === "critical") return "critical";
+  if ((input.targetGapPct !== null && input.targetGapPct < -8) || input.promoSeverity === "high") return "high";
+  if (input.evidenceCount > 0 || input.promoSeverity === "medium") return "medium";
+  return "low";
+}
+
+function productBattleSortScore(battle: ProductSegmentBattle) {
+  const floorPressure = battle.floorGapPct === null ? 0 : Math.max(0, -battle.floorGapPct) * 4;
+  const targetPressure = battle.targetGapPct === null ? 0 : Math.max(0, -battle.targetGapPct) * 2;
+  return actionSeverityRank(battle.severity) * 100 + floorPressure + targetPressure + battle.evidenceCount * 5 + battle.competitorProductCount;
+}
+
+function minOrNull(values: number[]) {
+  return values.length > 0 ? Math.min(...values) : null;
+}
+
+function maxOrNull(values: number[]) {
+  return values.length > 0 ? Math.max(...values) : null;
+}
+
+function buildOpportunityActions(input: {
+  locale: string;
+  matrix: DashboardCategoryChannelMatrix;
+  feed: PromoEventFeedItem[];
+  candidates: AiPriceCandidate[];
+}): OpportunityAction[] {
+  const isZh = input.locale === "zh";
+  const actions: OpportunityAction[] = [];
+  const pendingCandidates = input.candidates.filter((candidate) => candidate.status === "pending");
+
+  if (pendingCandidates.length > 0) {
+    actions.push({
+      id: "action-review-pending-prices",
+      type: "review_price",
+      status: "pending_review",
+      title: isZh ? `复核 ${pendingCandidates.length} 条 AI 价格候选` : `Review ${pendingCandidates.length} AI price candidates`,
+      reason: isZh ? "价格候选未审批会阻断价格真值沉淀和后续机会判断。" : "Unreviewed price candidates block the truth source for later opportunity decisions.",
+      evidence: isZh
+        ? `${input.matrix.collection.aiCandidateCount} 条候选，${input.matrix.collection.approvedCandidateCount} 条已审批`
+        : `${input.matrix.collection.aiCandidateCount} candidates, ${input.matrix.collection.approvedCandidateCount} approved`,
+      priorityScore: 0,
+      severity: pendingCandidates.length >= 100 ? "high" : "medium",
+      city: null,
+      channelCode: null,
+      category: null,
+      brandName: null,
+      productName: null,
+      href: `/${input.locale}/offline-price-candidates?status=pending`,
+      sourceIds: pendingCandidates.slice(0, 20).map((candidate) => candidate.id),
+    });
+  }
+
+  for (const city of input.matrix.battleMapCities) {
+    if (city.shareSampleCount === 0 && city.storeCount > 0) {
+      actions.push({
+        id: `action-capture-${slugKey(city.city)}`,
+        type: "capture_evidence",
+        status: "capture_needed",
+        title: isZh ? `补采 ${city.city} 货架证据` : `Capture shelf evidence in ${city.city}`,
+        reason: isZh ? "已有门店覆盖但缺少 Makuku 货架份额样本，无法判断是否占领。" : "Stores are covered but Makuku shelf share evidence is missing.",
+        evidence: isZh ? `${city.storeCount} 家门店，${city.promoCount} 条促销信号` : `${city.storeCount} stores, ${city.promoCount} promo signals`,
+        priorityScore: 0,
+        severity: city.maxSeverity ?? (city.promoCount > 0 ? "medium" : "low"),
+        city: city.city,
+        channelCode: null,
+        category: null,
+        brandName: null,
+        productName: null,
+        href: city.href,
+        sourceIds: [`city:${city.city}`],
+      });
+    }
+
+    if (!city.captured && city.promoCount > 0) {
+      actions.push({
+        id: `action-defend-${slugKey(city.city)}`,
+        type: "defend_city",
+        status: "open",
+        title: isZh ? `防守 ${city.city} 竞品促销压力` : `Defend ${city.city} promo pressure`,
+        reason: isZh ? "竞品促销已经出现，但 Makuku 尚未达到占领阈值。" : "Competitor promos are active before Makuku reaches the captured threshold.",
+        evidence: isZh
+          ? `${city.promoCount} 条促销，最高折扣 ${city.maxDiscountRate?.toFixed(1) ?? "-"}%`
+          : `${city.promoCount} promos, max discount ${city.maxDiscountRate?.toFixed(1) ?? "-"}%`,
+        priorityScore: 0,
+        severity: city.maxSeverity ?? (city.promoCount >= 3 ? "high" : "medium"),
+        city: city.city,
+        channelCode: null,
+        category: null,
+        brandName: null,
+        productName: null,
+        href: city.href,
+        sourceIds: [`city:${city.city}`],
+      });
+    }
+  }
+
+  const highImpactEvents = input.feed
+    .filter((event) => event.severity === "critical" || event.severity === "high" || (event.discountRate ?? 0) >= 25)
+    .slice(0, 8);
+
+  for (const event of highImpactEvents) {
+    actions.push({
+      id: `action-event-${event.id}`,
+      type: "inspect_promo",
+      status: event.status === "pending_review" ? "pending_review" : "open",
+      title: isZh ? `复核 ${event.city ?? "未知城市"} ${event.brandName ?? "竞品"} 促销` : `Inspect ${event.brandName ?? "competitor"} promo in ${event.city ?? "unknown city"}`,
+      reason: isZh ? "高风险或高折扣促销会直接影响终端价格判断。" : "High-risk or high-discount promos can change terminal price decisions.",
+      evidence: [event.storeName, event.category, event.discountLabel].filter(Boolean).join(" / "),
+      priorityScore: 0,
+      severity: event.severity ?? "medium",
+      city: event.city,
+      channelCode: event.channelCode,
+      category: event.category,
+      brandName: event.brandName,
+      productName: event.productName,
+      href: event.detailHref ? `/${input.locale}${event.detailHref}` : `/${input.locale}/promo-events?city=${encodeURIComponent(event.city ?? "")}`,
+      sourceIds: [event.id],
+    });
+  }
+
+  const expandCells = input.matrix.rows
+    .flatMap((row) => row.cells
+      .filter((cell) => cell.signalType === "opportunity")
+      .map((cell) => ({ row, cell })))
+    .slice(0, 6);
+
+  for (const { row, cell } of expandCells) {
+    actions.push({
+      id: `action-expand-${slugKey(row.category)}-${slugKey(cell.channelCode)}`,
+      type: "expand_channel",
+      status: "open",
+      title: isZh ? `${row.category} 可扩展到 ${cell.channelCode}` : `${row.category} can expand into ${cell.channelCode}`,
+      reason: isZh ? "该品类已有促销信号，但这个渠道仍是空白机会。" : "This category has promo signals, while this channel remains whitespace.",
+      evidence: isZh ? `品类总促销 ${row.totalPromoCount} 条` : `${row.totalPromoCount} category promo signals`,
+      priorityScore: 0,
+      severity: "low",
+      city: null,
+      channelCode: cell.channelCode,
+      category: row.category,
+      brandName: null,
+      productName: null,
+      href: cell.href,
+      sourceIds: [`category:${row.category}`, `channel:${cell.channelCode}`],
+    });
+  }
+
+  return dedupeOpportunityActions(actions)
+    .map((action) => ({ ...action, priorityScore: scoreOpportunityAction(action) }))
+    .sort((a, b) => b.priorityScore - a.priorityScore)
+    .slice(0, 40);
+}
+
+function scoreOpportunityAction(action: OpportunityAction) {
+  const severityScore = actionSeverityRank(action.severity) * 20;
+  const typeScore: Record<OpportunityActionType, number> = {
+    defend_city: 35,
+    review_price: 30,
+    inspect_promo: 25,
+    capture_evidence: 22,
+    expand_channel: 12,
+  };
+  const statusScore: Record<OpportunityActionStatus, number> = {
+    pending_review: 20,
+    capture_needed: 18,
+    open: 10,
+    completed: -100,
+  };
+  return severityScore + typeScore[action.type] + statusScore[action.status];
+}
+
+function actionSeverityRank(severity: Severity | null) {
+  if (severity === "critical") return 4;
+  if (severity === "high") return 3;
+  if (severity === "medium") return 2;
+  if (severity === "low") return 1;
+  return 0;
+}
+
+function dedupeOpportunityActions(actions: OpportunityAction[]) {
+  const seen = new Set<string>();
+  return actions.filter((action) => {
+    if (seen.has(action.id)) return false;
+    seen.add(action.id);
+    return true;
+  });
+}
+
+function slugKey(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "unknown";
 }
 
 function buildBattleMapCities(input: {

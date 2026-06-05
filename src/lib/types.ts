@@ -464,12 +464,34 @@ export type DashboardInsight = {
   href: string | null;
 };
 
+export type DashboardLowAccuracyItem = {
+  id: string;
+  brand: string;
+  product: string;
+  accuracy: number;
+  aiPricePerPiece: number;
+  reviewedPricePerPiece: number;
+  reviewedAt: string | null;
+};
+
+export type DashboardCollectionEfficiency = {
+  todayVisitCount: number;
+  weekVisitCount: number;
+  weekStoreCount: number;
+  aiCandidateCount: number;
+  pendingCandidateCount: number;
+  approvedCandidateCount: number;
+  approvedAccuracy: number | null;
+  lowAccuracyItems: DashboardLowAccuracyItem[];
+};
+
 export type DashboardCategoryChannelMatrix = {
   categories: string[];
   channels: ChannelMaster[];
   rows: DashboardCategoryChannelRow[];
   cityRows: DashboardCityChannelRow[];
   battleMapCities: DashboardBattleMapCity[];
+  collection: DashboardCollectionEfficiency;
   insights: {
     growthOpportunities: DashboardInsight[];
     riskInsights: DashboardInsight[];
@@ -481,6 +503,70 @@ export type DashboardCategoryChannelMatrix = {
     storeCount: number;
     recentPromoCount: number;
   };
+};
+
+export type ProductSegmentBattle = {
+  id: string;
+  line: string;
+  size: string;
+  label: string;
+  segmentLabels: Segment[];
+  makukuSkuCount: number;
+  makukuSkuNames: string[];
+  targetPriceMin: number | null;
+  targetPriceMax: number | null;
+  floorPriceMin: number | null;
+  floorPriceMax: number | null;
+  competitorProductCount: number;
+  evidenceCount: number;
+  promoEventCount: number;
+  lowestCompetitorPricePerPiece: number | null;
+  strongestCompetitorBrand: string | null;
+  strongestChannel: Channel | null;
+  targetGapPct: number | null;
+  floorGapPct: number | null;
+  severity: Severity;
+  latestCapturedAt: string | null;
+  href: string;
+};
+
+export type ProductSegmentBattleSummary = {
+  segmentCount: number;
+  pressuredSegmentCount: number;
+  belowFloorSegmentCount: number;
+  evidenceCount: number;
+  competitorProductCount: number;
+};
+
+export type OpportunityActionType =
+  | "review_price"
+  | "capture_evidence"
+  | "inspect_promo"
+  | "defend_city"
+  | "expand_channel";
+
+export type OpportunityActionStatus =
+  | "open"
+  | "pending_review"
+  | "capture_needed"
+  | "completed";
+
+export type OpportunityAction = {
+  id: string;
+  type: OpportunityActionType;
+  status: OpportunityActionStatus;
+  title: string;
+  reason: string;
+  evidence: string;
+  priorityScore: number;
+  severity: Severity | null;
+  city: string | null;
+  channelCode: string | null;
+  category: string | null;
+  brandName: string | null;
+  productName: string | null;
+  href: string;
+  sourceIds: string[];
 };
 
 export type RecommendedAction = {

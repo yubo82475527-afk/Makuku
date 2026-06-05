@@ -1,37 +1,61 @@
-import Link from "next/link";
 import { AppShell } from "@/components/app-shell";
-import { Badge, Button, Card, DataNotice, EmptyState, SelectInput, TextInput } from "@/components/ui";
-import { getBrands, getChannels, getPromoEventFeed } from "@/lib/data";
+import { OpportunityQueueTabs, OpportunityTaskCard } from "@/components/opportunity-actions";
+import { Button, Card, DataNotice, EmptyState, SelectInput, TextInput } from "@/components/ui";
+import { getBrands, getChannels, getOpportunityActions } from "@/lib/data";
 import { getPageI18n } from "@/lib/i18n/server";
 import { translateEnum } from "@/lib/i18n/get-dictionary";
-import type { Dictionary } from "@/lib/i18n/get-dictionary";
-import type { PromoEventFeedItem } from "@/lib/types";
+import type { OpportunityActionStatus } from "@/lib/types";
 
 export default async function PromoEventsPage({
   params: routeParams,
   searchParams,
 }: {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ severity?: string; channel?: string; brand?: string; city?: string; category?: string }>;
+  searchParams: Promise<{ severity?: string; channel?: string; brand?: string; city?: string; category?: string; status?: string }>;
 }) {
   const { locale, dict } = await getPageI18n(routeParams);
   const params = await searchParams;
-  const [feedResult, brandsResult, channelsResult] = await Promise.all([getPromoEventFeed(), getBrands(), getChannels()]);
-  const categories = Array.from(new Set(feedResult.data.map((event) => event.category))).sort();
-  const events = feedResult.data.filter((event) => {
-    if (params.severity && event.severity !== params.severity) return false;
-    if (params.channel && event.channel !== params.channel && event.channelCode !== params.channel) return false;
-    if (params.brand && event.brandId !== params.brand) return false;
-    if (params.city && event.city !== params.city) return false;
-    if (params.category && event.category !== params.category) return false;
+  const [actionsResult, brandsResult, channelsResult] = await Promise.all([getOpportunityActions(locale), getBrands(), getChannels()]);
+  const categories = Array.from(new Set(actionsResult.data.map((action) => action.category).filter((category): category is string => Boolean(category)))).sort();
+  const selectedBrand = params.brand ? brandsResult.data.find((brand) => brand.id === params.brand) : null;
+  const actions = actionsResult.data.filter((action) => {
+    if (params.status && params.status !== "all" && action.status !== params.status) return false;
+    if (params.severity && action.severity !== params.severity) return false;
+    if (params.channel && action.channelCode !== params.channel) return false;
+    if (selectedBrand && action.brandName !== selectedBrand.name) return false;
+    if (params.city && action.city !== params.city) return false;
+    if (params.category && action.category !== params.category) return false;
     return true;
   });
 
+  const counts: Record<"all" | OpportunityActionStatus, number> = {
+    all: actionsResult.data.length,
+    open: actionsResult.data.filter((action) => action.status === "open").length,
+    pending_review: actionsResult.data.filter((action) => action.status === "pending_review").length,
+    capture_needed: actionsResult.data.filter((action) => action.status === "capture_needed").length,
+    completed: actionsResult.data.filter((action) => action.status === "completed").length,
+  };
+
   return (
-    <AppShell locale={locale} dict={dict} title={dict.promoEvents.title} currentPath="/promo-events" isDemo={feedResult.isDemo}>
-      <DataNotice dict={dict} error={feedResult.error ?? brandsResult.error ?? channelsResult.error} />
+    <AppShell
+      locale={locale}
+      dict={dict}
+      title={locale === "zh" ? "\u673a\u4f1a\u5904\u7406\u53f0" : "Operating Queue"}
+      currentPath="/promo-events"
+      isDemo={actionsResult.isDemo || brandsResult.isDemo || channelsResult.isDemo}
+    >
+      <DataNotice dict={dict} error={actionsResult.error ?? brandsResult.error ?? channelsResult.error} />
+
+      <OpportunityQueueTabs
+        locale={locale}
+        currentStatus={params.status ?? "all"}
+        baseHref={`/${locale}/promo-events`}
+        counts={counts}
+      />
+
       <Card className="mb-4">
         <form className="grid gap-3 md:grid-cols-6">
+          {params.status && params.status !== "all" ? <input type="hidden" name="status" value={params.status} /> : null}
           <SelectInput name="severity" defaultValue={params.severity ?? ""}>
             <option value="">{dict.common.allSeverity}</option>
             <option value="critical">{translateEnum(dict, "severity", "critical")}</option>
@@ -58,62 +82,28 @@ export default async function PromoEventsPage({
         </form>
       </Card>
 
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="font-semibold">{locale === "zh" ? "\u673a\u4f1a\u5904\u7406\u53f0" : "Operating Queue"}</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            {locale === "zh"
+              ? "\u6309\u5f71\u54cd\u4f18\u5148\u6392\u5e8f\uff0c\u6bcf\u5f20\u5361\u90fd\u7ed9\u51fa\u539f\u56e0\u3001\u8bc1\u636e\u548c\u4e0b\u4e00\u6b65\u3002"
+              : "Sorted by impact, with reason, evidence, and next step on every card."}
+          </p>
+        </div>
+        <div className="text-sm text-slate-500">{actions.length} / {actionsResult.data.length}</div>
+      </div>
+
       <div className="space-y-3">
-        {events.length === 0 ? <EmptyState text={locale === "zh" ? "\u6682\u65e0\u4fc3\u9500\u4e8b\u4ef6\u3002" : "No promo events yet."} /> : null}
-        {events.map((event) => <PromoFeedCard key={event.id} event={event} locale={locale} dict={dict} />)}
+        {actions.length === 0 ? (
+          <EmptyState
+            text={locale === "zh"
+              ? "\u6682\u65e0\u4f18\u5148\u52a8\u4f5c\uff0c\u5148\u5b8c\u6210\u95e8\u5e97\u91c7\u96c6\u6216\u4ef7\u683c\u590d\u6838\u3002"
+              : "No priority actions yet. Complete store capture or price review first."}
+          />
+        ) : null}
+        {actions.map((action) => <OpportunityTaskCard key={action.id} action={action} locale={locale} />)}
       </div>
     </AppShell>
   );
-}
-
-function PromoFeedCard({
-  event,
-  locale,
-  dict,
-}: {
-  event: PromoEventFeedItem;
-  locale: string;
-  dict: Dictionary;
-}) {
-  const brandLabel = event.brandName ?? (locale === "zh" ? "\u672a\u77e5\u54c1\u724c" : "Unknown brand");
-  const content = (
-    <Card className="hover:border-slate-300">
-      <div className="grid gap-4 md:grid-cols-[140px_180px_1fr_130px] md:items-start">
-        <Field label={locale === "zh" ? "\u65e5\u671f" : "Date"} value={formatFeedDate(event.date, locale)} />
-        <Field label={locale === "zh" ? "\u95e8\u5e97" : "Store"} value={event.storeName ?? "-"} />
-        <div className="min-w-0">
-          <div className="text-xs font-medium uppercase text-slate-500">{locale === "zh" ? "\u6d3b\u52a8\u540d\u79f0" : "Activity"}</div>
-          <h2 className="mt-1 break-words font-semibold text-slate-900">{event.activityName}</h2>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            {event.severity ? <Badge tone={event.severity}>{translateEnum(dict, "severity", event.severity)}</Badge> : null}
-            <Badge>{translateEnum(dict, "channel", event.channel)}</Badge>
-            <Badge>{event.status === "confirmed" ? (locale === "zh" ? "\u5df2\u786e\u8ba4" : "Confirmed") : (locale === "zh" ? "\u5f85\u590d\u6838" : "Pending review")}</Badge>
-            <span className="text-xs text-slate-500">{brandLabel}</span>
-          </div>
-        </div>
-        <Field label={locale === "zh" ? "\u6298\u6263\u529b\u5ea6" : "Discount"} value={event.discountLabel} strong />
-      </div>
-    </Card>
-  );
-
-  if (!event.detailHref) return content;
-  return <Link href={`/${locale}${event.detailHref}`} className="block">{content}</Link>;
-}
-
-function Field({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
-  return (
-    <div>
-      <div className="text-xs font-medium uppercase text-slate-500">{label}</div>
-      <div className={strong ? "mt-1 text-lg font-semibold text-slate-900" : "mt-1 text-sm text-slate-800"}>{value}</div>
-    </div>
-  );
-}
-
-function formatFeedDate(value: string, locale: string) {
-  return new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-US", {
-    timeZone: "Asia/Jakarta",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(value));
 }

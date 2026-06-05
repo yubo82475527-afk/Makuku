@@ -23,6 +23,7 @@ const csvColumns = [
   "warnings",
   "status",
   "reviewed_price_per_piece",
+  "accuracy",
   "reviewed_at",
   "created_at",
 ];
@@ -40,6 +41,11 @@ function csvEscape(value: string | number | null | undefined) {
 function formatRate(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return "";
   return `${Math.round(value * 100)}%`;
+}
+
+function priceAccuracy(candidate: AiPriceCandidate) {
+  if (!candidate.price_per_piece || !candidate.reviewed_price_per_piece || candidate.reviewed_price_per_piece <= 0) return null;
+  return Math.max(0, 1 - Math.abs(candidate.price_per_piece - candidate.reviewed_price_per_piece) / candidate.reviewed_price_per_piece);
 }
 
 function warningText(candidate: AiPriceCandidate) {
@@ -76,14 +82,19 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const dateFrom = searchParams.get("date_from");
     const dateTo = searchParams.get("date_to");
+    const status = searchParams.get("status");
 
     if ((dateFrom && !isDateInput(dateFrom)) || (dateTo && !isDateInput(dateTo))) {
       return Response.json({ error: "date_from and date_to must use YYYY-MM-DD" }, { status: 400 });
+    }
+    if (status && !["pending", "approved", "rejected"].includes(status)) {
+      return Response.json({ error: "status must be pending, approved, or rejected" }, { status: 400 });
     }
 
     const result = await getAiPriceCandidates({
       dateFrom: dateFrom || undefined,
       dateTo: dateTo || undefined,
+      status: status ? status as "pending" | "approved" | "rejected" : undefined,
       limit: 5000,
     });
     if (result.error && !result.isDemo) {
@@ -118,6 +129,7 @@ export async function GET(request: Request) {
         warningText(candidate),
         candidate.status,
         candidate.reviewed_price_per_piece,
+        formatRate(priceAccuracy(candidate)),
         candidate.reviewed_at,
         candidate.created_at,
       ].map(csvEscape).join(",");
