@@ -1,5 +1,6 @@
 import { AppShell } from "@/components/app-shell";
-import { Badge, Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
+import { StoreMasterTable } from "@/components/store-master-table";
+import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
 import { getChannels, getOfflineStores } from "@/lib/data";
 import { getPageI18n } from "@/lib/i18n/server";
 
@@ -7,17 +8,23 @@ export const dynamic = "force-dynamic";
 
 export default async function OfflineStoresPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string }>;
+  searchParams: Promise<{ status?: string | string[] | undefined }>;
 }) {
   const { locale, dict } = await getPageI18n(params);
-  const [storesResult, channelsResult] = await Promise.all([getOfflineStores(), getChannels()]);
+  const query = await searchParams;
+  const rawStatus = Array.isArray(query.status) ? query.status[0] : query.status;
+  const statusFilter = rawStatus === "disabled" || rawStatus === "all" ? rawStatus : "enabled";
+  const [storesResult, channelsResult] = await Promise.all([getOfflineStores({ status: statusFilter }), getChannels()]);
   const offlineChannels = channelsResult.data.filter((channel) => channel.active && channel.type === "offline");
   const useChannelTypeFallback = offlineChannels.every((channel) => channel.id.startsWith("ch-"));
   const isZh = locale === "zh";
+  const currentPath = `/offline-stores${statusFilter === "enabled" ? "" : `?status=${statusFilter}`}`;
 
   return (
-    <AppShell locale={locale} dict={dict} title={isZh ? "\u95e8\u5e97\u5217\u8868" : "Store List"} currentPath="/offline-stores" isDemo={storesResult.isDemo || channelsResult.isDemo}>
+    <AppShell locale={locale} dict={dict} title={isZh ? "\u95e8\u5e97\u5217\u8868" : "Store List"} currentPath={currentPath} isDemo={storesResult.isDemo || channelsResult.isDemo}>
       <DataNotice dict={dict} error={storesResult.error ?? channelsResult.error} />
 
       <Card className="mb-4">
@@ -38,28 +45,7 @@ export default async function OfflineStoresPage({
       </Card>
 
       <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[840px] text-left text-sm">
-            <thead className="border-b border-slate-200 text-xs uppercase text-slate-500">
-              <tr>
-                <th className="py-2 pr-3">{isZh ? "\u95e8\u5e97" : "Store"}</th>
-                <th className="py-2 pr-3">{isZh ? "\u57ce\u5e02" : "City"}</th>
-                <th className="py-2 pr-3">{isZh ? "\u6240\u5c5e\u6e20\u9053" : "Channel"}</th>
-                <th className="py-2 pr-3">{isZh ? "\u5730\u5740" : "Address"}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {storesResult.data.map((store) => (
-                <tr key={store.id}>
-                  <td className="py-3 pr-3 font-medium">{store.name}</td>
-                  <td className="py-3 pr-3">{store.city}</td>
-                  <td className="py-3 pr-3"><Badge>{store.channels?.name ?? store.channel_type}</Badge></td>
-                  <td className="py-3 pr-3">{store.address ?? "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <StoreMasterTable stores={storesResult.data} locale={locale} statusFilter={statusFilter} />
       </Card>
     </AppShell>
   );

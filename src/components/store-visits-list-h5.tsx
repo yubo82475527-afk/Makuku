@@ -1,10 +1,10 @@
 "use client";
 
-import { ArrowLeft, CalendarDays, ChevronRight, ImageIcon, Loader2, LogIn, Plus, RefreshCw } from "lucide-react";
+import { ArrowLeft, CalendarDays, ChevronRight, ImageIcon, Languages, Loader2, LogIn, LogOut, Plus, RefreshCw, Settings } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
-import type { Locale } from "@/lib/i18n/config";
+import { localeLabels, replacePathLocale, type Locale } from "@/lib/i18n/config";
 import { getMobileCopy, mobileAnalysisStatusLabel } from "@/lib/mobile-i18n";
 import type { StockRiskLevel, StoreVisitAnalysisStatus, StoreVisitAiResult } from "@/lib/types";
 import { MobileLanguageSwitch } from "@/components/mobile-language-switch";
@@ -90,6 +90,64 @@ function Badge({ children, className }: { children: ReactNode; className: string
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${className}`}>
       {children}
     </span>
+  );
+}
+
+function MobileCaptureSettingsMenu({
+  locale,
+  onLogout,
+}: {
+  locale: Locale;
+  onLogout: () => void;
+}) {
+  const otherLocale: Locale = locale === "en" ? "zh" : "en";
+  const labels = locale === "zh"
+    ? {
+        settings: "设置",
+        language: "语言",
+        logout: "退出登录",
+      }
+    : {
+        settings: "Settings",
+        language: "Language",
+        logout: "Sign Out",
+      };
+
+  return (
+    <details className="relative">
+      <summary
+        aria-label={labels.settings}
+        title={labels.settings}
+        className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 [&::-webkit-details-marker]:hidden"
+      >
+        <Settings className="h-4 w-4" />
+      </summary>
+      <div className="absolute right-0 top-11 z-20 w-44 rounded-xl border border-slate-200 bg-white p-2 text-sm shadow-lg">
+        <div className="px-2 py-1 text-xs font-semibold uppercase tracking-normal text-slate-500">{labels.language}</div>
+        <Link
+          href={`/${locale}/mobile/offline-capture`}
+          className="flex items-center justify-between rounded-lg px-2 py-2 font-medium text-slate-700 hover:bg-slate-50"
+        >
+          <span>{localeLabels[locale]}</span>
+          <Languages className="h-4 w-4 text-slate-400" />
+        </Link>
+        <Link
+          href={replacePathLocale(`/${locale}/mobile/offline-capture`, otherLocale)}
+          className="flex items-center justify-between rounded-lg px-2 py-2 font-medium text-slate-700 hover:bg-slate-50"
+        >
+          <span>{localeLabels[otherLocale]}</span>
+          <Languages className="h-4 w-4 text-slate-400" />
+        </Link>
+        <button
+          type="button"
+          onClick={onLogout}
+          className="mt-1 flex w-full items-center justify-between rounded-lg border-t border-slate-100 px-2 py-2 text-left font-semibold text-red-700 hover:bg-red-50"
+        >
+          <span>{labels.logout}</span>
+          <LogOut className="h-4 w-4" />
+        </button>
+      </div>
+    </details>
   );
 }
 
@@ -197,6 +255,17 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
     }
   }
 
+  function handleLogout() {
+    localStorage.removeItem(storageKey);
+    setUser(null);
+    setVisits([]);
+    setPagination(null);
+    setTodayCount(0);
+    setPassword("");
+    setLoginError(null);
+    setLoading(false);
+  }
+
   useEffect(() => {
     const timeout = setTimeout(() => {
       const stored = loadUser();
@@ -272,14 +341,10 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
             <h1 className="mt-1 text-2xl font-bold">{copy.myVisits}</h1>
           </div>
           <div className="flex items-center gap-2">
-            <MobileLanguageSwitch locale={locale} currentPath="/mobile/offline-capture/list" />
             <button type="button" onClick={() => loadVisits(1, false, user)} className="rounded-full border border-slate-200 bg-white p-2 text-slate-700 shadow-sm" aria-label={copy.refreshVisits}>
               <RefreshCw className="h-4 w-4" />
             </button>
-            <Link href={newVisitHref} className="inline-flex h-9 items-center gap-1.5 rounded-full bg-slate-900 px-3 text-xs font-bold text-white shadow-sm">
-              <Plus className="h-3.5 w-3.5" />
-              {copy.new}
-            </Link>
+            <MobileCaptureSettingsMenu locale={locale} onLogout={handleLogout} />
           </div>
         </div>
         <div className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">

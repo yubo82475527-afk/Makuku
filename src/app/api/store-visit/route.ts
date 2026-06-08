@@ -15,6 +15,22 @@ function missingColumn(error: { message?: string } | null) {
   return Boolean(error?.message?.includes("column") || error?.message?.includes("schema cache"));
 }
 
+function cleanOptionalNumber(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isLocationColumnError(error: { message?: string } | null) {
+  const message = error?.message ?? "";
+  return message.includes("latitude") || message.includes("longitude") || message.includes("location_accuracy_m") || message.includes("location_captured_at");
+}
+
+function isStoreColumnError(error: { message?: string } | null) {
+  const message = error?.message ?? "";
+  return message.includes("store_id") || message.includes("channel_id");
+}
+
 function cleanCategory(value: FormDataEntryValue | null) {
   const category = clean(value);
   return imageCategories.includes(category as (typeof imageCategories)[number]) ? category : null;
@@ -26,22 +42,34 @@ function isJsonRequest(request: Request) {
 
 async function insertVisit(input: {
   storeName: string;
-  region: string;
-  channel: string;
+  city: string;
+  channelType: string;
+  storeId: string | null;
+  channelId: string | null;
   visitDate: string;
   promoter: string;
   userId: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  locationAccuracyM: number | null;
+  locationCapturedAt: string | null;
   visitStatus: "draft" | "uploaded";
 }) {
   const supabase = createSupabaseServiceClient();
   const payload = {
     store_name: input.storeName,
-    region: input.region,
-    channel: input.channel,
+    region: input.city,
+    channel: input.channelType,
     promoter: input.promoter,
     visit_date: input.visitDate,
-    city: input.region,
-    channel_type: input.channel,
+    city: input.city,
+    channel_type: input.channelType,
+    store_id: input.storeId,
+    channel_id: input.channelId,
+    latitude: input.latitude,
+    longitude: input.longitude,
+    location_accuracy_m: input.locationAccuracyM,
+    location_captured_at: input.locationCapturedAt,
     uploader_name: input.promoter,
     user_id: input.userId,
     uploader_user_id: input.userId,
@@ -59,6 +87,64 @@ async function insertVisit(input: {
     .select("*")
     .single();
 
+  if (isLocationColumnError(visitError)) {
+    const noLocationPayload = {
+      store_name: payload.store_name,
+      region: payload.region,
+      channel: payload.channel,
+      promoter: payload.promoter,
+      visit_date: payload.visit_date,
+      city: payload.city,
+      channel_type: payload.channel_type,
+      store_id: payload.store_id,
+      channel_id: payload.channel_id,
+      uploader_name: payload.uploader_name,
+      user_id: payload.user_id,
+      uploader_user_id: payload.uploader_user_id,
+      visit_status: payload.visit_status,
+      analysis_status: payload.analysis_status,
+      analysis_error: payload.analysis_error,
+      image_urls: payload.image_urls,
+      image_categories: payload.image_categories,
+      ai_result: payload.ai_result,
+    };
+    const noLocationResult = await supabase
+      .from("offline_store_visits")
+      .insert(noLocationPayload)
+      .select("*")
+      .single();
+    visit = noLocationResult.data;
+    visitError = noLocationResult.error;
+  }
+
+  if (isStoreColumnError(visitError)) {
+    const noStorePayload = {
+      store_name: payload.store_name,
+      region: payload.region,
+      channel: payload.channel,
+      promoter: payload.promoter,
+      visit_date: payload.visit_date,
+      city: payload.city,
+      channel_type: payload.channel_type,
+      uploader_name: payload.uploader_name,
+      user_id: payload.user_id,
+      uploader_user_id: payload.uploader_user_id,
+      visit_status: payload.visit_status,
+      analysis_status: payload.analysis_status,
+      analysis_error: payload.analysis_error,
+      image_urls: payload.image_urls,
+      image_categories: payload.image_categories,
+      ai_result: payload.ai_result,
+    };
+    const noStoreResult = await supabase
+      .from("offline_store_visits")
+      .insert(noStorePayload)
+      .select("*")
+      .single();
+    visit = noStoreResult.data;
+    visitError = noStoreResult.error;
+  }
+
   if (visitError?.message.includes("user_id")) {
     const uploaderOnlyPayload = {
       store_name: payload.store_name,
@@ -68,6 +154,12 @@ async function insertVisit(input: {
       visit_date: payload.visit_date,
       city: payload.city,
       channel_type: payload.channel_type,
+      store_id: payload.store_id,
+      channel_id: payload.channel_id,
+      latitude: payload.latitude,
+      longitude: payload.longitude,
+      location_accuracy_m: payload.location_accuracy_m,
+      location_captured_at: payload.location_captured_at,
       uploader_name: payload.uploader_name,
       uploader_user_id: payload.uploader_user_id,
       visit_status: payload.visit_status,
@@ -98,36 +190,86 @@ async function insertVisit(input: {
 
 function validateBaseFields(input: {
   storeName: string;
-  region: string;
-  channel: string;
+  city: string;
+  channelType: string;
   promoter: string;
 }) {
-  if (!input.storeName || !input.region || !input.channel || !input.promoter) {
+  if (!input.storeName || !input.city || !input.channelType || !input.promoter) {
     return Response.json({ error: "Missing required fields" }, { status: 400 });
   }
   return null;
+}
+
+async function resolveStoreMaster(input: {
+  storeId: string | null;
+  storeName: string;
+  city: string;
+  channelType: string;
+  channelId: string | null;
+}) {
+  if (!input.storeId) return input;
+
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("offline_stores")
+    .select("id,name,city,channel_type,channel_id")
+    .eq("id", input.storeId)
+    .maybeSingle();
+
+  if (error?.message.includes("offline_stores") || missingColumn(error)) return input;
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Selected store not found");
+
+  const store = data as {
+    id: string;
+    name: string;
+    city: string;
+    channel_type: string;
+    channel_id: string | null;
+  };
+
+  return {
+    storeId: store.id,
+    storeName: clean(store.name) || input.storeName,
+    city: clean(store.city) || input.city,
+    channelType: clean(store.channel_type) || input.channelType,
+    channelId: store.channel_id ?? input.channelId,
+  };
 }
 
 export async function POST(request: Request) {
   try {
     if (isJsonRequest(request)) {
       const body = await request.json().catch(() => ({}));
+      const storeId = clean(body.store_id) || null;
+      const channelId = clean(body.channel_id) || null;
       const storeName = clean(body.store_name);
-      const region = clean(body.region);
-      const channel = clean(body.channel);
+      const city = clean(body.city) || clean(body.region);
+      const channelType = clean(body.channel_type) || clean(body.channel);
       const visitDate = clean(body.visit_date) || new Date().toISOString().slice(0, 10);
       const promoter = clean(body.promoter);
       const userId = clean(body.user_id) || clean(body.uploader_user_id) || null;
-      const invalid = validateBaseFields({ storeName, region, channel, promoter });
+      const latitude = cleanOptionalNumber(body.latitude);
+      const longitude = cleanOptionalNumber(body.longitude);
+      const locationAccuracyM = cleanOptionalNumber(body.location_accuracy_m);
+      const locationCapturedAt = clean(body.location_captured_at) || null;
+      const resolved = await resolveStoreMaster({ storeId, storeName, city, channelType, channelId });
+      const invalid = validateBaseFields({ storeName: resolved.storeName, city: resolved.city, channelType: resolved.channelType, promoter });
       if (invalid) return invalid;
 
       const { visit } = await insertVisit({
-        storeName,
-        region,
-        channel,
+        storeName: resolved.storeName,
+        city: resolved.city,
+        channelType: resolved.channelType,
+        storeId: resolved.storeId,
+        channelId: resolved.channelId,
         visitDate,
         promoter,
         userId,
+        latitude,
+        longitude,
+        locationAccuracyM,
+        locationCapturedAt,
         visitStatus: "draft",
       });
 
@@ -146,15 +288,22 @@ export async function POST(request: Request) {
       return Response.json({ error: "Image request is too large or invalid. Please compress photos and retry." }, { status: 413 });
     }
     const storeName = clean(formData.get("store_name"));
-    const region = clean(formData.get("region"));
-    const channel = clean(formData.get("channel"));
+    const storeId = clean(formData.get("store_id")) || null;
+    const channelId = clean(formData.get("channel_id")) || null;
+    const city = clean(formData.get("city")) || clean(formData.get("region"));
+    const channelType = clean(formData.get("channel_type")) || clean(formData.get("channel"));
     const visitDate = clean(formData.get("visit_date")) || new Date().toISOString().slice(0, 10);
     const promoter = clean(formData.get("promoter"));
     const userId = clean(formData.get("user_id")) || clean(formData.get("uploader_user_id")) || null;
     const files = formData.getAll("images").filter((file): file is File => file instanceof File);
     const categories = formData.getAll("image_categories").map(cleanCategory);
 
-    const invalid = validateBaseFields({ storeName, region, channel, promoter });
+    const latitude = cleanOptionalNumber(formData.get("latitude"));
+    const longitude = cleanOptionalNumber(formData.get("longitude"));
+    const locationAccuracyM = cleanOptionalNumber(formData.get("location_accuracy_m"));
+    const locationCapturedAt = clean(formData.get("location_captured_at")) || null;
+    const resolved = await resolveStoreMaster({ storeId, storeName, city, channelType, channelId });
+    const invalid = validateBaseFields({ storeName: resolved.storeName, city: resolved.city, channelType: resolved.channelType, promoter });
     if (invalid) return invalid;
     if (files.length === 0) {
       return Response.json({ error: "At least one image is required" }, { status: 400 });
@@ -174,12 +323,18 @@ export async function POST(request: Request) {
     }
 
     const { supabase, visit } = await insertVisit({
-      storeName,
-      region,
-      channel,
+      storeName: resolved.storeName,
+      city: resolved.city,
+      channelType: resolved.channelType,
+      storeId: resolved.storeId,
+      channelId: resolved.channelId,
       visitDate,
       promoter,
       userId,
+      latitude,
+      longitude,
+      locationAccuracyM,
+      locationCapturedAt,
       visitStatus: "uploaded",
     });
 

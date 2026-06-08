@@ -180,6 +180,20 @@ export type ChannelMaster = {
   created_at: string;
 };
 
+export type AppUserStatus = "enabled" | "disabled";
+export type AppUserRole = "field_agent" | "manager" | "admin";
+
+export type AppUser = {
+  id: string;
+  username: string;
+  display_name: string;
+  role: AppUserRole;
+  status?: AppUserStatus | null;
+  disabled_at?: string | null;
+  updated_at?: string | null;
+  created_at: string;
+};
+
 export type OfflineStore = {
   id: string;
   name: string;
@@ -187,6 +201,13 @@ export type OfflineStore = {
   channel_type: string;
   channel_id: string | null;
   address: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  location_accuracy_m?: number | null;
+  location_captured_at?: string | null;
+  status?: "enabled" | "disabled" | null;
+  disabled_at?: string | null;
+  deleted_at?: string | null;
   created_at: string;
   channels?: Pick<ChannelMaster, "id" | "code" | "name" | "type"> | null;
 };
@@ -313,6 +334,10 @@ export type OfflineStoreVisit = {
   channel_type: string;
   store_id?: string | null;
   channel_id?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  location_accuracy_m?: number | null;
+  location_captured_at?: string | null;
   uploader_name: string;
   user_id?: string | null;
   uploader_user_id?: string | null;
