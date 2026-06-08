@@ -39,6 +39,16 @@ test("new H5 store visit keeps browser location inside create-store master data"
   assert.doesNotMatch(storeVisitH5, /google\.maps|amap|qq\.maps|mapbox/i);
 });
 
+test("new store sheet loads offline channel master data for store type", () => {
+  assert.match(storeVisitH5, /\/api\/channels/);
+  assert.match(storeVisitH5, /\.filter\(\(channel\) => channel\.type === "offline"\)/);
+  assert.match(storeVisitH5, /setChannels/);
+  assert.match(storeVisitH5, /channel_id: selectedChannel\?\.id/);
+  assert.match(storeVisitH5, /channel_type: selectedChannel\?\.code/);
+  assert.doesNotMatch(storeVisitH5, /<option value="modern_trade">Modern Trade<\/option>/);
+  assert.doesNotMatch(storeVisitH5, /<option value="baby_store">Baby Store<\/option>/);
+});
+
 test("new H5 store visit keeps visit date compact instead of a full store-info card", () => {
   assert.match(storeVisitH5, /labels\.visitDate/);
   assert.doesNotMatch(storeVisitH5, /<h2 className="font-semibold">\{copy\.storeInformation\}<\/h2>/);

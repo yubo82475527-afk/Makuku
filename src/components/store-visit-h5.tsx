@@ -47,6 +47,13 @@ type ReverseLocationResponse = {
   error?: string;
 };
 
+type ChannelOption = {
+  id: string;
+  code: string;
+  name: string;
+  type: string;
+};
+
 type PendingImage = {
   file: File;
   preview: string;
@@ -72,10 +79,12 @@ function uiCopy(locale: Locale) {
         createStore: "新建门店",
         storeNameRequired: "门店名称 *",
         channelTypeRequired: "门店类型 *",
+        channelTypeLoading: "正在加载门店类型...",
+        channelTypeEmpty: "没有可用的线下门店类型，请先维护渠道主数据。",
         cityRequired: "省/市/区 *",
         addressOptional: "地址（选填）",
         createFailed: "创建门店失败",
-        createRequired: "请填写门店名称和省/市/区。",
+        createRequired: "请填写门店名称、门店类型和省/市/区。",
         selectedStore: "已选门店",
         changeStore: "重选门店",
         city: "省/市/区",
@@ -105,10 +114,12 @@ function uiCopy(locale: Locale) {
         createStore: "Create Store",
         storeNameRequired: "Store name *",
         channelTypeRequired: "Store type *",
+        channelTypeLoading: "Loading store types...",
+        channelTypeEmpty: "No offline store types are available. Maintain channel master data first.",
         cityRequired: "Province / City / District *",
         addressOptional: "Address (optional)",
         createFailed: "Failed to create store",
-        createRequired: "Enter store name and province / city / district.",
+        createRequired: "Enter store name, store type, and province / city / district.",
         selectedStore: "Selected Store",
         changeStore: "Change Store",
         city: "Province / City / District",
@@ -565,13 +576,44 @@ function CreateStoreSheet({ locale, onClose, onCreated }: { locale: Locale; onCl
   const labels = uiCopy(locale);
   const [name, setName] = useState("");
   const [city, setCity] = useState("");
-  const [channelType, setChannelType] = useState("modern_trade");
+  const [channels, setChannels] = useState<ChannelOption[]>([]);
+  const [selectedChannelId, setSelectedChannelId] = useState("");
+  const [channelsLoading, setChannelsLoading] = useState(true);
+  const [channelStatus, setChannelStatus] = useState("");
   const [address, setAddress] = useState("");
   const [storeLocation, setStoreLocation] = useState<StoreLocationEvidence | null>(null);
   const [locationStatus, setLocationStatus] = useState("");
   const [locating, setLocating] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const selectedChannel = channels.find((channel) => channel.id === selectedChannelId) ?? null;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadChannels() {
+      setChannelsLoading(true);
+      setChannelStatus("");
+      try {
+        const res = await fetch("/api/channels");
+        const data = (await res.json().catch(() => ({}))) as { channels?: ChannelOption[]; error?: string };
+        const offlineChannels = (data.channels ?? []).filter((channel) => channel.type === "offline");
+        if (cancelled) return;
+        setChannels(offlineChannels);
+        setSelectedChannelId((current) => current || offlineChannels[0]?.id || "");
+        setChannelStatus(!res.ok || data.error ? (data.error ?? labels.createFailed) : "");
+      } catch {
+        if (!cancelled) setChannelStatus(labels.createFailed);
+      } finally {
+        if (!cancelled) setChannelsLoading(false);
+      }
+    }
+
+    loadChannels();
+    return () => {
+      cancelled = true;
+    };
+  }, [labels.createFailed]);
 
   function captureStoreLocation() {
     if (!navigator.geolocation) {
@@ -620,7 +662,7 @@ function CreateStoreSheet({ locale, onClose, onCreated }: { locale: Locale; onCl
   }
 
   async function createStore() {
-    if (!name.trim() || !channelType.trim() || !city.trim()) {
+    if (!name.trim() || !selectedChannel || !city.trim()) {
       setError(labels.createRequired);
       return;
     }
@@ -634,7 +676,8 @@ function CreateStoreSheet({ locale, onClose, onCreated }: { locale: Locale; onCl
         body: JSON.stringify({
           name,
           city,
-          channel_type: channelType,
+          channel_id: selectedChannel?.id,
+          channel_type: selectedChannel?.code,
           address,
           latitude: storeLocation?.latitude ?? null,
           longitude: storeLocation?.longitude ?? null,
@@ -669,13 +712,16 @@ function CreateStoreSheet({ locale, onClose, onCreated }: { locale: Locale; onCl
           <input required value={name} onChange={(event) => setName(event.target.value)} placeholder={labels.storeNameRequired} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-blue-500" />
           <label className="block">
             <span className="mb-1.5 block text-xs font-bold text-slate-600">{labels.channelTypeRequired}</span>
-            <select required value={channelType} onChange={(event) => setChannelType(event.target.value)} className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500">
-              <option value="modern_trade">Modern Trade</option>
-              <option value="baby_store">Baby Store</option>
-              <option value="pharmacy">Pharmacy</option>
-              <option value="general_trade">General Trade</option>
-              <option value="other">Other</option>
+            <select required value={selectedChannelId} onChange={(event) => setSelectedChannelId(event.target.value)} disabled={channelsLoading || channels.length === 0} className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500 disabled:bg-slate-100 disabled:text-slate-500">
+              {channelsLoading ? <option value="">{labels.channelTypeLoading}</option> : null}
+              {!channelsLoading && channels.length === 0 ? <option value="">{labels.channelTypeEmpty}</option> : null}
+              {channels.map((channel) => (
+                <option key={channel.id} value={channel.id}>
+                  {channel.name || channel.code}
+                </option>
+              ))}
             </select>
+            {channelStatus ? <span className="mt-1.5 block text-xs text-amber-700">{channelStatus}</span> : null}
           </label>
         </div>
 
@@ -707,7 +753,7 @@ function CreateStoreSheet({ locale, onClose, onCreated }: { locale: Locale; onCl
           {locationStatus ? <div className="mt-3 rounded-lg bg-white px-3 py-2 text-sm text-slate-600">{locationStatus}</div> : null}
           <div className="mt-3 text-[11px] font-medium text-slate-400">{labels.locationAttribution}</div>
         </div>
-        <button type="button" onClick={createStore} disabled={loading} className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 text-sm font-bold text-white disabled:opacity-60">
+        <button type="button" onClick={createStore} disabled={loading || channelsLoading || !selectedChannel} className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 text-sm font-bold text-white disabled:opacity-60">
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Building2 className="h-4 w-4" />}
           {labels.createStore}
         </button>

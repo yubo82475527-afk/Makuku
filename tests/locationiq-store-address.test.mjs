@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 
 const storeVisitH5 = readFileSync("src/components/store-visit-h5.tsx", "utf8");
 const reverseRoutePath = "src/app/api/location/reverse/route.ts";
+const locationRegionPath = "src/lib/location-region.mjs";
 
 test("new store sheet reverse geocodes browser location without exposing LocationIQ token", () => {
   assert.match(storeVisitH5, /\/api\/location\/reverse/);
@@ -49,31 +50,38 @@ test("new visit store selection keeps the header minimal and create-store action
 
 test("LocationIQ reverse API proxies coordinates through a server-only token", () => {
   assert.equal(existsSync(reverseRoutePath), true, "reverse geocode route should exist");
+  assert.equal(existsSync(locationRegionPath), true, "region parser should exist");
   const reverseRoute = readFileSync(reverseRoutePath, "utf8");
+  const locationRegion = readFileSync(locationRegionPath, "utf8");
 
   assert.match(reverseRoute, /export const dynamic = "force-dynamic"/);
   assert.match(reverseRoute, /process\.env\.LOCATIONIQ_API_KEY/);
   assert.match(reverseRoute, /LOCATIONIQ_REGION/);
   assert.match(reverseRoute, /addressdetails/);
+  assert.match(reverseRoute, /buildLocationRegion/);
   assert.doesNotMatch(reverseRoute, /normalizeaddress/);
   assert.doesNotMatch(reverseRoute, /normalizecity/);
-  assert.match(reverseRoute, /city/);
-  assert.match(reverseRoute, /town/);
-  assert.match(reverseRoute, /village/);
-  assert.match(reverseRoute, /municipality/);
-  assert.match(reverseRoute, /county/);
-  assert.match(reverseRoute, /state/);
-  assert.match(reverseRoute, /state_district/);
-  assert.match(reverseRoute, /city_district/);
-  assert.match(reverseRoute, /district/);
-  assert.match(reverseRoute, /suburb/);
-  assert.match(reverseRoute, /neighbourhood/);
-  assert.match(reverseRoute, /region/);
-  assert.match(reverseRoute, /buildDisplayRegion/);
-  assert.match(reverseRoute, /display_name/);
-  assert.match(reverseRoute, /postcode/);
-  assert.match(reverseRoute, /country/);
-  assert.match(reverseRoute, /buildRegion/);
-  assert.match(reverseRoute, /display_name/);
+  assert.match(locationRegion, /export function buildLocationRegion/);
+  assert.match(locationRegion, /city/);
+  assert.match(locationRegion, /town/);
+  assert.match(locationRegion, /village/);
+  assert.match(locationRegion, /municipality/);
+  assert.match(locationRegion, /county/);
+  assert.match(locationRegion, /state/);
+  assert.match(locationRegion, /state_district/);
+  assert.match(locationRegion, /city_district/);
+  assert.match(locationRegion, /district/);
+  assert.match(locationRegion, /suburb/);
+  assert.match(locationRegion, /region/);
+  assert.match(locationRegion, /display_name/);
+  assert.match(locationRegion, /\[,\s*，\]/);
+  assert.match(locationRegion, /pickBetterRegion/);
+  assert.match(locationRegion, /postcode/);
+  assert.match(locationRegion, /country/);
+  assert.match(locationRegion, /country_code/);
+  assert.match(locationRegion, /cn/);
+  assert.match(locationRegion, /id/);
+  assert.match(locationRegion, /isRtRwBlock/);
+  assert.match(locationRegion, /isIndonesiaIsland/);
   assert.doesNotMatch(reverseRoute, /raw:/);
 });
