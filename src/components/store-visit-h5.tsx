@@ -489,6 +489,8 @@ function StoreSearchStep({ locale, onSelect }: { locale: Locale; onSelect: (stor
       setLoading(true);
       setError(null);
       const params = new URLSearchParams();
+      params.set("scope", "master");
+      params.set("limit", query.trim() ? "50" : "20");
       if (query.trim()) params.set("q", query.trim());
       try {
         const res = await fetch(`/api/offline-stores?${params.toString()}`);

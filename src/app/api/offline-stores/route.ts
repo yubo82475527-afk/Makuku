@@ -1,7 +1,9 @@
 import { revalidatePath } from "next/cache";
 import { formReturnRedirect, readRequestBody } from "@/lib/request";
+import { demoOfflineStores } from "@/lib/demo-data";
 import { getOfflineStores } from "@/lib/data";
-import { createSupabaseServiceClient } from "@/lib/supabase";
+import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
+import type { OfflineStore } from "@/lib/types";
 
 function isMissingSchemaError(error: { message?: string } | null) {
   return Boolean(error?.message?.includes("Could not find the table") || error?.message?.includes("schema cache"));
@@ -73,6 +75,69 @@ function isStoreStatus(value: unknown): value is "enabled" | "disabled" {
   return value === "enabled" || value === "disabled";
 }
 
+function isDisabledStore(store: Pick<OfflineStore, "status" | "disabled_at" | "deleted_at">) {
+  return store.status === "disabled" || Boolean(store.disabled_at || store.deleted_at);
+}
+
+function cleanLimit(value: string | null) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 20;
+  return Math.max(1, Math.min(100, Math.floor(parsed)));
+}
+
+function filterDemoStoreMasterOptions(q: string, limit: number) {
+  const keyword = q.toLowerCase();
+  return demoOfflineStores
+    .filter((store) => !isDisabledStore(store))
+    .filter((store) => !keyword || store.name.toLowerCase().includes(keyword) || store.city.toLowerCase().includes(keyword))
+    .slice(0, limit);
+}
+
+async function readStoreMasterOptions({ q, limit }: { q: string; limit: number }) {
+  if (!hasSupabaseServiceConfig()) return { stores: filterDemoStoreMasterOptions(q, limit), error: null, demo: true };
+
+  const supabase = createSupabaseServiceClient();
+  const keyword = q.trim();
+  let query = supabase
+    .from("offline_stores")
+    .select("id,name,city,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_at,channels(id,code,name,type)")
+    .order("name")
+    .limit(limit);
+
+  if (keyword) query = query.or(`name.ilike.%${keyword}%,city.ilike.%${keyword}%`);
+
+  const initial = await query;
+  let data = initial.data as OfflineStore[] | null;
+  let error: { message: string } | null = initial.error;
+
+  if (error?.message.includes("channels") || error?.message.includes("schema cache")) {
+    let legacyQuery = supabase
+      .from("offline_stores")
+      .select("id,name,city,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_at")
+      .order("name")
+      .limit(limit);
+    if (keyword) legacyQuery = legacyQuery.or(`name.ilike.%${keyword}%,city.ilike.%${keyword}%`);
+    const legacy = await legacyQuery;
+    data = legacy.data as OfflineStore[] | null;
+    error = legacy.error;
+  }
+
+  if (isStoreStatusColumnError(error)) {
+    let noStatusQuery = supabase
+      .from("offline_stores")
+      .select("id,name,city,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,created_at,channels(id,code,name,type)")
+      .order("name")
+      .limit(limit);
+    if (keyword) noStatusQuery = noStatusQuery.or(`name.ilike.%${keyword}%,city.ilike.%${keyword}%`);
+    const noStatus = await noStatusQuery;
+    data = noStatus.data as OfflineStore[] | null;
+    error = noStatus.error;
+  }
+
+  if (error) return { stores: filterDemoStoreMasterOptions(q, limit), error: error.message, demo: true };
+  return { stores: ((data ?? []) as OfflineStore[]).filter((store) => !isDisabledStore(store)), error: null, demo: false };
+}
+
 function revalidateOfflineStoreViews() {
   revalidatePath("/zh/dashboard");
   revalidatePath("/en/dashboard");
@@ -86,6 +151,14 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const q = searchParams.get("q")?.trim() ?? "";
+    const scope = searchParams.get("scope")?.trim() ?? "";
+    const limit = cleanLimit(searchParams.get("limit"));
+
+    if (scope === "master") {
+      const result = await readStoreMasterOptions({ q, limit });
+      return Response.json({ stores: result.stores, demo: result.demo, error: result.error }, { status: result.error && !result.demo ? 400 : 200 });
+    }
+
     const result = await getOfflineStores();
     const keyword = q.toLowerCase();
     const stores = result.data

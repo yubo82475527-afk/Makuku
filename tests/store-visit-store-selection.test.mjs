@@ -11,6 +11,8 @@ const typesFile = readFileSync("src/lib/types.ts", "utf8");
 test("new H5 store visit requires selecting store master data before capture", () => {
   assert.match(storeVisitH5, /selectedStore/);
   assert.match(storeVisitH5, /fetch\(`\/api\/offline-stores\?\$\{params\.toString\(\)\}`\)/);
+  assert.match(storeVisitH5, /params\.set\("scope", "master"\)/);
+  assert.match(storeVisitH5, /params\.set\("limit", query\.trim\(\) \? "50" : "20"\)/);
   assert.match(storeVisitH5, /StoreSearchStep/);
   assert.match(storeVisitH5, /CreateStoreSheet/);
   assert.match(storeVisitH5, /storeInfoIncomplete/);
@@ -76,6 +78,9 @@ test("store visit API accepts selected store and optional location fields", () =
 test("offline stores API and types preserve location-capable store master data", () => {
   assert.match(offlineStoresApi, /latitude/);
   assert.match(offlineStoresApi, /longitude/);
+  assert.match(offlineStoresApi, /scope.*master/s);
+  assert.match(offlineStoresApi, /readStoreMasterOptions/);
+  assert.match(offlineStoresApi, /\.limit\(limit\)/);
   assert.match(typesFile, /latitude\?: number \| null/);
   assert.match(typesFile, /location_accuracy_m\?: number \| null/);
 });
