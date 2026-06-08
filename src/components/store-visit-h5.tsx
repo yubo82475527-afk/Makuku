@@ -42,6 +42,12 @@ type StoreLocationEvidence = {
   location_captured_at: string;
 };
 
+type ReverseLocationResponse = {
+  city?: string | null;
+  address?: string | null;
+  error?: string;
+};
+
 type PendingImage = {
   file: File;
   preview: string;
@@ -66,6 +72,7 @@ function uiCopy(locale: Locale) {
         noStoreFound: "未找到门店，可新建",
         createStore: "新建门店",
         storeNameRequired: "门店名称 *",
+        channelTypeRequired: "门店类型 *",
         cityRequired: "城市/区域 *",
         addressOptional: "地址（选填）",
         createFailed: "创建门店失败",
@@ -77,13 +84,17 @@ function uiCopy(locale: Locale) {
         address: "地址",
         storeInfoIncomplete: "门店资料不完整，请重新选择或新建门店。",
         visitDate: "巡店日期",
+        storeLocationGroup: "城市/区域与详细地址",
         storeLocationTitle: "门店定位",
-        storeLocationHint: "用于保存门店经纬度，城市/区域仍需手动填写。",
-        locate: "获取门店定位",
+        storeLocationHint: "免费浏览器定位，经 LocationIQ 识别后自动填充城市区域和地址。",
+        locate: "定位并填充地址",
         locating: "定位中...",
-        located: "已定位",
+        located: "已定位并填充",
         locationUnavailable: "当前浏览器不支持定位，可继续创建门店。",
         locationFailed: "定位失败或未授权，可继续创建门店。",
+        reverseAddressFailed: "地址识别失败，可手动填写城市区域和地址。",
+        reverseAddressMissing: "已保存经纬度，但未识别出地址，可手动填写。",
+        locationAttribution: "Address by LocationIQ",
         signInTitle: "请先登录",
         signInBody: "新增巡店需要绑定导购员账号，登录后会自动带出提交人。",
       }
@@ -94,6 +105,7 @@ function uiCopy(locale: Locale) {
         noStoreFound: "No store found. Create one.",
         createStore: "Create Store",
         storeNameRequired: "Store name *",
+        channelTypeRequired: "Store type *",
         cityRequired: "City / region *",
         addressOptional: "Address (optional)",
         createFailed: "Failed to create store",
@@ -105,13 +117,17 @@ function uiCopy(locale: Locale) {
         address: "Address",
         storeInfoIncomplete: "Store master data is incomplete. Select or create another store.",
         visitDate: "Visit Date",
+        storeLocationGroup: "City / Region and Address",
         storeLocationTitle: "Store Location",
-        storeLocationHint: "Saves store coordinates. City / region still needs manual input.",
-        locate: "Get Store Location",
+        storeLocationHint: "Uses free browser location, then LocationIQ fills city / region and address.",
+        locate: "Locate & Fill Address",
         locating: "Locating...",
-        located: "Located",
+        located: "Located and filled",
         locationUnavailable: "Location is not supported in this browser. You can still create the store.",
         locationFailed: "Location failed or was not allowed. You can still create the store.",
+        reverseAddressFailed: "Address lookup failed. Fill city / region and address manually.",
+        reverseAddressMissing: "Coordinates were saved, but no address was found. Fill address manually.",
+        locationAttribution: "Address by LocationIQ",
         signInTitle: "Sign In Required",
         signInBody: "New visits must be tied to a field user. Sign in first and the promoter is filled automatically.",
       };
@@ -572,15 +588,34 @@ function CreateStoreSheet({ locale, onClose, onCreated }: { locale: Locale; onCl
     setLocating(true);
     setLocationStatus("");
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setStoreLocation({
+      async (position) => {
+        const capturedLocation = {
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
           location_accuracy_m: Number.isFinite(position.coords.accuracy) ? Math.round(position.coords.accuracy) : null,
           location_captured_at: new Date().toISOString(),
-        });
-        setLocationStatus("");
-        setLocating(false);
+        };
+        setStoreLocation(capturedLocation);
+
+        try {
+          const params = new URLSearchParams({
+            lat: String(capturedLocation.latitude),
+            lon: String(capturedLocation.longitude),
+          });
+          const res = await fetch(`/api/location/reverse?${params.toString()}`);
+          const data = (await res.json().catch(() => ({}))) as ReverseLocationResponse;
+          if (!res.ok) {
+            setLocationStatus(labels.reverseAddressFailed);
+            return;
+          }
+          if (data.city) setCity(data.city);
+          if (data.address) setAddress(data.address);
+          setLocationStatus(data.city || data.address ? "" : labels.reverseAddressMissing);
+        } catch {
+          setLocationStatus(labels.reverseAddressFailed);
+        } finally {
+          setLocating(false);
+        }
       },
       () => {
         setLocationStatus(labels.locationFailed);
@@ -591,7 +626,7 @@ function CreateStoreSheet({ locale, onClose, onCreated }: { locale: Locale; onCl
   }
 
   async function createStore() {
-    if (!name.trim() || !city.trim()) {
+    if (!name.trim() || !channelType.trim() || !city.trim()) {
       setError(labels.createRequired);
       return;
     }
@@ -637,28 +672,32 @@ function CreateStoreSheet({ locale, onClose, onCreated }: { locale: Locale; onCl
         </div>
         {error ? <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
         <div className="mt-4 space-y-3">
-          <input value={name} onChange={(event) => setName(event.target.value)} placeholder={labels.storeNameRequired} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-blue-500" />
-          <input value={city} onChange={(event) => setCity(event.target.value)} placeholder={labels.cityRequired} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-blue-500" />
-          <select value={channelType} onChange={(event) => setChannelType(event.target.value)} className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500">
-            <option value="modern_trade">Modern Trade</option>
-            <option value="baby_store">Baby Store</option>
-            <option value="pharmacy">Pharmacy</option>
-            <option value="general_trade">General Trade</option>
-            <option value="other">Other</option>
-          </select>
-          <input value={address} onChange={(event) => setAddress(event.target.value)} placeholder={labels.addressOptional} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-blue-500" />
+          <input required value={name} onChange={(event) => setName(event.target.value)} placeholder={labels.storeNameRequired} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-blue-500" />
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-bold text-slate-600">{labels.channelTypeRequired}</span>
+            <select required value={channelType} onChange={(event) => setChannelType(event.target.value)} className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500">
+              <option value="modern_trade">Modern Trade</option>
+              <option value="baby_store">Baby Store</option>
+              <option value="pharmacy">Pharmacy</option>
+              <option value="general_trade">General Trade</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
         </div>
+
         <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-sm font-bold text-slate-900">{labels.storeLocationTitle}</div>
-              <p className="mt-1 text-xs leading-5 text-slate-500">{labels.storeLocationHint}</p>
-            </div>
+          <div className="min-w-0">
+            <div className="text-sm font-bold text-slate-900">{labels.storeLocationGroup}</div>
+            <p className="mt-1 text-xs leading-5 text-slate-500">{labels.storeLocationHint}</p>
+          </div>
+          <div className="mt-3 space-y-3">
+            <input required value={city} onChange={(event) => setCity(event.target.value)} placeholder={labels.cityRequired} className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500" />
+            <input value={address} onChange={(event) => setAddress(event.target.value)} placeholder={labels.addressOptional} className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500" />
             <button
               type="button"
               onClick={captureStoreLocation}
               disabled={locating}
-              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-slate-900 px-3 text-xs font-bold text-white disabled:opacity-60"
+              className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 text-xs font-bold text-white disabled:opacity-60"
             >
               {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : <LocateFixed className="h-4 w-4" />}
               {locating ? labels.locating : labels.locate}
@@ -672,6 +711,7 @@ function CreateStoreSheet({ locale, onClose, onCreated }: { locale: Locale; onCl
             </div>
           ) : null}
           {locationStatus ? <div className="mt-3 rounded-lg bg-white px-3 py-2 text-sm text-slate-600">{locationStatus}</div> : null}
+          <div className="mt-3 text-[11px] font-medium text-slate-400">{labels.locationAttribution}</div>
         </div>
         <button type="button" onClick={createStore} disabled={loading} className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 text-sm font-bold text-white disabled:opacity-60">
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Building2 className="h-4 w-4" />}
