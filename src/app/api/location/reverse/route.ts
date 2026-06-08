@@ -68,7 +68,7 @@ export async function GET(request: Request) {
     }
 
     return Response.json({
-      city: buildLocationRegion(data),
+      city: buildLocationRegion(data, { latitude: lat, longitude: lon }),
       address: data.display_name ?? null,
       provider: "locationiq",
     });

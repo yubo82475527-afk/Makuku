@@ -728,7 +728,6 @@ function CreateStoreSheet({ locale, onClose, onCreated }: { locale: Locale; onCl
         <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
           <div className="min-w-0">
             <div className="text-sm font-bold text-slate-900">{labels.storeLocationGroup}</div>
-            <p className="mt-1 text-xs leading-5 text-slate-500">{labels.storeLocationHint}</p>
           </div>
           <div className="mt-3 space-y-3">
             <input required value={city} onChange={(event) => setCity(event.target.value)} placeholder={labels.cityRequired} className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500" />

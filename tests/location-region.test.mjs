@@ -52,6 +52,20 @@ test("China reverse geocode fills a missing address city from display hierarchy"
   assert.equal(region, "广东省 / 深圳市 / 南山区");
 });
 
+test("China reverse geocode falls back to coordinates when LocationIQ omits admin parts", () => {
+  const region = buildLocationRegion({
+    display_name: "华徐公路, 201702, 中国",
+    address: {
+      road: "华徐公路",
+      postcode: "201702",
+      country: "中国",
+      country_code: "cn",
+    },
+  }, { latitude: 31.1629, longitude: 121.2787 });
+
+  assert.equal(region, "上海市 / 青浦区");
+});
+
 test("Indonesia reverse geocode uses display hierarchy when address.region is only an island", () => {
   const region = buildLocationRegion({
     display_name: "RW 08, Pasar Manggis, Setiabudi, South Jakarta, Special Capital Region of Jakarta, Java, 12850, Indonesia",

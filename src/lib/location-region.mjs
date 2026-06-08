@@ -43,6 +43,26 @@ function joinRegion(parts) {
   return regionParts.length > 0 ? regionParts.join(" / ") : null;
 }
 
+function isInside(latitude, longitude, bounds) {
+  return latitude >= bounds.minLat && latitude <= bounds.maxLat && longitude >= bounds.minLon && longitude <= bounds.maxLon;
+}
+
+function buildChinaCoordinateRegion(coordinates) {
+  if (!coordinates) return null;
+  const { latitude, longitude } = coordinates;
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+
+  if (isInside(latitude, longitude, { minLat: 30.95, maxLat: 31.35, minLon: 120.85, maxLon: 121.35 })) {
+    return "上海市 / 青浦区";
+  }
+
+  if (isInside(latitude, longitude, { minLat: 30.65, maxLat: 31.9, minLon: 120.85, maxLon: 122.2 })) {
+    return "上海市";
+  }
+
+  return null;
+}
+
 function splitDisplayName(displayName) {
   return cleanText(displayName)?.split(/[,，]/).map((part) => part.trim()).filter(Boolean) ?? [];
 }
@@ -129,12 +149,13 @@ function pickBetterRegion(primary, fallback) {
   return primary ?? fallback;
 }
 
-export function buildLocationRegion(data) {
+export function buildLocationRegion(data, coordinates) {
   const address = data?.address;
   const code = countryCode(address);
 
   if (code === "cn") {
-    return pickBetterRegion(buildChinaAddressRegion(address), buildChinaDisplayRegion(data?.display_name, address));
+    return pickBetterRegion(buildChinaAddressRegion(address), buildChinaDisplayRegion(data?.display_name, address))
+      ?? buildChinaCoordinateRegion(coordinates);
   }
 
   if (code === "id") {
