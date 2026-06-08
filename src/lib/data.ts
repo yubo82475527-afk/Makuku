@@ -16,6 +16,7 @@ import { createSupabaseAnonClient, createSupabaseServiceClient, hasSupabaseConfi
 import type {
   Alert,
   AiPriceCandidate,
+  AppUser,
   Brand,
   ChannelMaster,
   CompetitorProduct,
@@ -117,8 +118,50 @@ export async function getChannels(): Promise<QueryResult<ChannelMaster[]>> {
   return { data: (data ?? []) as ChannelMaster[], error: null, isDemo: false };
 }
 
-export async function getOfflineStores(): Promise<QueryResult<OfflineStore[]>> {
-  if (!hasSupabaseServiceConfig()) return { data: demoOfflineStores, error: null, isDemo: true };
+export async function getAppUsers(): Promise<QueryResult<AppUser[]>> {
+  if (!hasSupabaseServiceConfig()) {
+    return {
+      data: [],
+      error: "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY",
+      isDemo: true,
+    };
+  }
+
+  const supabase = createSupabaseServiceClient();
+  let { data, error } = await supabase
+    .from("app_users")
+    .select("id,username,display_name,role,status,disabled_at,updated_at,created_at")
+    .order("created_at", { ascending: false });
+
+  if (error?.message.includes("status") || error?.message.includes("disabled_at") || error?.message.includes("updated_at")) {
+    const legacy = await supabase
+      .from("app_users")
+      .select("id,username,display_name,role,created_at")
+      .order("created_at", { ascending: false });
+    data = (legacy.data ?? []).map((user) => ({
+      ...user,
+      status: "enabled",
+      disabled_at: null,
+      updated_at: null,
+    }));
+    error = legacy.error;
+  }
+
+  if (isMissingSchemaError(error)) return { data: [], error: "Run migration 202606080004_app_user_management.sql", isDemo: false };
+  if (error) return { data: [], error: error.message, isDemo: false };
+  return { data: (data ?? []) as AppUser[], error: null, isDemo: false };
+}
+
+type OfflineStoreStatusFilter = "enabled" | "disabled" | "all";
+
+export async function getOfflineStores({ status = "enabled" }: { status?: OfflineStoreStatusFilter } = {}): Promise<QueryResult<OfflineStore[]>> {
+  if (!hasSupabaseServiceConfig()) {
+    return {
+      data: filterOfflineStoresByStatus(demoOfflineStores, status),
+      error: null,
+      isDemo: true,
+    };
+  }
 
   const supabase = createSupabaseServiceClient();
   let { data, error } = await supabase
@@ -137,14 +180,19 @@ export async function getOfflineStores(): Promise<QueryResult<OfflineStore[]>> {
 
   const storeError = error;
   const masterStores = storeError && !isMissingSchemaError(storeError) ? [] : ((data ?? []) as OfflineStore[]);
+  const disabledStoreIds = new Set(masterStores.filter(isDisabledOfflineStore).map((store) => store.id));
+  const disabledStoreKeys = new Set(masterStores.filter(isDisabledOfflineStore).map(storeKey).filter(Boolean) as string[]);
+  const activeMasterStores = filterDisabledOfflineStores(masterStores, disabledStoreIds, disabledStoreKeys);
 
   const visitsResult = await readVisitStoresForStoreList(supabase);
   const uploadsResult = await readUploadStoresForStoreList(supabase);
-  const stores = mergeOfflineStores([
-    ...masterStores,
-    ...visitsResult.stores,
-    ...uploadsResult.stores,
-  ]);
+  const stores = mergeOfflineStores(status === "disabled"
+    ? masterStores.filter(isDisabledOfflineStore)
+    : [
+        ...(status === "all" ? masterStores : activeMasterStores),
+        ...filterDisabledOfflineStores(visitsResult.stores, disabledStoreIds, disabledStoreKeys),
+        ...filterDisabledOfflineStores(uploadsResult.stores, disabledStoreIds, disabledStoreKeys),
+      ]);
 
   if (stores.length > 0) {
     return {
@@ -247,9 +295,37 @@ function storeFromRegistration(input: {
     channel_type: channelType,
     channel_id: input.channelId ?? channel?.id ?? null,
     address: null,
+    status: "enabled",
+    disabled_at: null,
+    deleted_at: null,
     created_at: input.createdAt ?? "1970-01-01T00:00:00.000Z",
     channels: channel,
   };
+}
+
+function storeKey(store: Pick<OfflineStore, "name" | "city">) {
+  const name = cleanText(store.name);
+  const city = cleanText(store.city);
+  if (!name || !city) return null;
+  return `${city.toLowerCase()}::${name.toLowerCase()}`;
+}
+
+function isDisabledOfflineStore(store: OfflineStore) {
+  return store.status === "disabled" || Boolean(store.disabled_at || store.deleted_at);
+}
+
+function filterOfflineStoresByStatus(stores: OfflineStore[], status: OfflineStoreStatusFilter) {
+  if (status === "all") return stores;
+  return stores.filter((store) => status === "disabled" ? isDisabledOfflineStore(store) : !isDisabledOfflineStore(store));
+}
+
+function filterDisabledOfflineStores(stores: OfflineStore[], disabledStoreIds: Set<string>, disabledStoreKeys: Set<string>) {
+  return stores.filter((store) => {
+    if (isDisabledOfflineStore(store)) return false;
+    if (disabledStoreIds.has(store.id)) return false;
+    const key = storeKey(store);
+    return !key || !disabledStoreKeys.has(key);
+  });
 }
 
 function mergeOfflineStores(stores: OfflineStore[]) {
@@ -260,7 +336,8 @@ function mergeOfflineStores(stores: OfflineStore[]) {
     const city = cleanText(store.city);
     if (!name || !city) continue;
 
-    const key = `${city.toLowerCase()}::${name.toLowerCase()}`;
+    const key = storeKey({ name, city });
+    if (!key) continue;
     const channelType = cleanText(store.channel_type) ?? "other";
     const channel = store.channels ?? demoChannels.find((item) => item.id === store.channel_id || item.code === channelType) ?? null;
     const normalizedStore: OfflineStore = {
@@ -270,6 +347,9 @@ function mergeOfflineStores(stores: OfflineStore[]) {
       channel_type: channelType,
       channel_id: store.channel_id ?? channel?.id ?? null,
       address: store.address ?? null,
+      status: store.status ?? (isDisabledOfflineStore(store) ? "disabled" : "enabled"),
+      disabled_at: store.disabled_at ?? null,
+      deleted_at: store.deleted_at ?? null,
       channels: channel,
     };
 
@@ -284,6 +364,9 @@ function mergeOfflineStores(stores: OfflineStore[]) {
       channel_type: current.channel_type || normalizedStore.channel_type,
       channel_id: current.channel_id ?? normalizedStore.channel_id,
       address: current.address ?? normalizedStore.address,
+      status: current.status ?? normalizedStore.status,
+      disabled_at: current.disabled_at ?? normalizedStore.disabled_at,
+      deleted_at: current.deleted_at ?? normalizedStore.deleted_at,
       channels: current.channels ?? normalizedStore.channels,
       created_at: current.created_at <= normalizedStore.created_at ? current.created_at : normalizedStore.created_at,
     });

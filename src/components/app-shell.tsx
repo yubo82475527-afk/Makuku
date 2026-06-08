@@ -4,6 +4,8 @@ import {
   Gauge,
   ImageUp,
   Menu,
+  Store,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -15,6 +17,8 @@ const navItems = [
   { href: "/mobile/offline-capture", label: { zh: "H5 巡店", en: "Field Capture" }, icon: ImageUp },
   { href: "/offline-price-candidates", label: { zh: "AI 价格复核", en: "AI Price Review" }, icon: ClipboardCheck },
   { href: "/sku-master", label: { zh: "产品主数据", en: "Product Master" }, icon: BarChart3 },
+  { href: "/offline-stores", label: { zh: "门店主数据", en: "Store Master" }, icon: Store },
+  { href: "/users", label: { zh: "用户管理", en: "User Management" }, icon: Users },
 ] as const;
 
 function NavLinks({ locale, className }: { locale: Locale; className: string }) {

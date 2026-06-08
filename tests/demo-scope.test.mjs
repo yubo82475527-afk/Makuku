@@ -15,6 +15,8 @@ test("board navigation exposes the one-week product workflow", () => {
   assert.match(appShell, /Field Capture/);
   assert.match(appShell, /AI Price Review/);
   assert.match(appShell, /Product Master/);
+  assert.match(appShell, /Store Master/);
+  assert.match(appShell, /\/offline-stores/);
 
   assert.doesNotMatch(appShell, /Operating Queue/);
   assert.doesNotMatch(appShell, /AI Debug/);

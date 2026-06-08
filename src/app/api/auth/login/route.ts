@@ -12,6 +12,11 @@ function isMissingTableError(error: { message?: string } | null) {
   return Boolean(error?.message?.includes("Could not find the table"));
 }
 
+function isUserStatusColumnError(error: { message?: string } | null) {
+  const message = error?.message ?? "";
+  return message.includes("status") || message.includes("schema cache");
+}
+
 function canUseLocalDemoLogin(username: string, password: string) {
   return process.env.NODE_ENV !== "production" && username === "demo" && password === "demo123";
 }
@@ -48,11 +53,21 @@ export async function POST(request: Request) {
     }
 
     const supabase = createSupabaseServiceClient();
-    const { data: user, error } = await supabase
+    let { data: user, error } = await supabase
       .from("app_users")
-      .select("id, username, password_hash, display_name, role")
+      .select("id, username, password_hash, display_name, role, status")
       .eq("username", username)
       .single();
+
+    if (isUserStatusColumnError(error)) {
+      const legacy = await supabase
+        .from("app_users")
+        .select("id, username, password_hash, display_name, role")
+        .eq("username", username)
+        .single();
+      user = legacy.data ? { ...legacy.data, status: "enabled" } : null;
+      error = legacy.error;
+    }
 
     if (isMissingTableError(error) && canUseLocalDemoLogin(username, password)) {
       return Response.json({ user: DEMO_USER });
@@ -67,6 +82,10 @@ export async function POST(request: Request) {
 
     if (error || !user) {
       return Response.json({ error: "Invalid username or password" }, { status: 401 });
+    }
+
+    if (user.status === "disabled") {
+      return Response.json({ error: "Account is disabled" }, { status: 403 });
     }
 
     const valid = await comparePassword(password, user.password_hash);
