@@ -30,6 +30,23 @@ test("new store sheet puts required store identity fields before the bound locat
   assert.ok(locateIndex > addressIndex, "location action should be bound to the city/address group");
 });
 
+test("new store sheet labels location region as province city district", () => {
+  assert.match(storeVisitH5, /cityRequired: "省\/市\/区 \*"/);
+  assert.match(storeVisitH5, /city: "省\/市\/区"/);
+  assert.match(storeVisitH5, /storeLocationGroup: "省\/市\/区与详细地址"/);
+  assert.match(storeVisitH5, /自动填充省\/市\/区和详细地址/);
+});
+
+test("new visit store selection keeps the header minimal and create-store action fixed", () => {
+  assert.doesNotMatch(storeVisitH5, /MobileLanguageSwitch/);
+  assert.doesNotMatch(storeVisitH5, /copy\.newVisit/);
+  assert.doesNotMatch(storeVisitH5, /selectedStore \? selectedStore\.name : labels\.selectStoreHint/);
+  assert.doesNotMatch(storeVisitH5, /<p className="mt-1 text-sm leading-5 text-slate-500">\{labels\.selectStoreHint\}<\/p>/);
+  assert.match(storeVisitH5, /setShowCreate\(true\)} className="fixed/);
+  assert.match(storeVisitH5, /bottom-4/);
+  assert.match(storeVisitH5, /pb-24/);
+});
+
 test("LocationIQ reverse API proxies coordinates through a server-only token", () => {
   assert.equal(existsSync(reverseRoutePath), true, "reverse geocode route should exist");
   const reverseRoute = readFileSync(reverseRoutePath, "utf8");
@@ -38,13 +55,25 @@ test("LocationIQ reverse API proxies coordinates through a server-only token", (
   assert.match(reverseRoute, /process\.env\.LOCATIONIQ_API_KEY/);
   assert.match(reverseRoute, /LOCATIONIQ_REGION/);
   assert.match(reverseRoute, /addressdetails/);
-  assert.match(reverseRoute, /normalizeaddress/);
+  assert.doesNotMatch(reverseRoute, /normalizeaddress/);
+  assert.doesNotMatch(reverseRoute, /normalizecity/);
   assert.match(reverseRoute, /city/);
   assert.match(reverseRoute, /town/);
   assert.match(reverseRoute, /village/);
   assert.match(reverseRoute, /municipality/);
   assert.match(reverseRoute, /county/);
   assert.match(reverseRoute, /state/);
+  assert.match(reverseRoute, /state_district/);
+  assert.match(reverseRoute, /city_district/);
+  assert.match(reverseRoute, /district/);
+  assert.match(reverseRoute, /suburb/);
+  assert.match(reverseRoute, /neighbourhood/);
+  assert.match(reverseRoute, /region/);
+  assert.match(reverseRoute, /buildDisplayRegion/);
+  assert.match(reverseRoute, /display_name/);
+  assert.match(reverseRoute, /postcode/);
+  assert.match(reverseRoute, /country/);
+  assert.match(reverseRoute, /buildRegion/);
   assert.match(reverseRoute, /display_name/);
   assert.doesNotMatch(reverseRoute, /raw:/);
 });

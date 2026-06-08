@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { Locale } from "@/lib/i18n/config";
 import { getMobileCopy } from "@/lib/mobile-i18n";
-import { MobileLanguageSwitch } from "@/components/mobile-language-switch";
 
 const maxImages = 6;
 const maxUploadBytes = 8 * 1024 * 1024;
@@ -73,27 +72,27 @@ function uiCopy(locale: Locale) {
         createStore: "新建门店",
         storeNameRequired: "门店名称 *",
         channelTypeRequired: "门店类型 *",
-        cityRequired: "城市/区域 *",
+        cityRequired: "省/市/区 *",
         addressOptional: "地址（选填）",
         createFailed: "创建门店失败",
-        createRequired: "请填写门店名称和城市/区域。",
+        createRequired: "请填写门店名称和省/市/区。",
         selectedStore: "已选门店",
         changeStore: "重选门店",
-        city: "区域/城市",
+        city: "省/市/区",
         channelType: "门店类型",
         address: "地址",
         storeInfoIncomplete: "门店资料不完整，请重新选择或新建门店。",
         visitDate: "巡店日期",
-        storeLocationGroup: "城市/区域与详细地址",
+        storeLocationGroup: "省/市/区与详细地址",
         storeLocationTitle: "门店定位",
-        storeLocationHint: "免费浏览器定位，经 LocationIQ 识别后自动填充城市区域和地址。",
+        storeLocationHint: "免费浏览器定位，经 LocationIQ 识别后自动填充省/市/区和详细地址。",
         locate: "定位并填充地址",
         locating: "定位中...",
         located: "已定位并填充",
         locationUnavailable: "当前浏览器不支持定位，可继续创建门店。",
         locationFailed: "定位失败或未授权，可继续创建门店。",
-        reverseAddressFailed: "地址识别失败，可手动填写城市区域和地址。",
-        reverseAddressMissing: "已保存经纬度，但未识别出地址，可手动填写。",
+        reverseAddressFailed: "地址识别失败，可手动填写省/市/区和详细地址。",
+        reverseAddressMissing: "已保存经纬度，但未识别出省/市/区或地址，可手动填写。",
         locationAttribution: "Address by LocationIQ",
         signInTitle: "请先登录",
         signInBody: "新增巡店需要绑定导购员账号，登录后会自动带出提交人。",
@@ -106,27 +105,27 @@ function uiCopy(locale: Locale) {
         createStore: "Create Store",
         storeNameRequired: "Store name *",
         channelTypeRequired: "Store type *",
-        cityRequired: "City / region *",
+        cityRequired: "Province / City / District *",
         addressOptional: "Address (optional)",
         createFailed: "Failed to create store",
-        createRequired: "Enter store name and city / region.",
+        createRequired: "Enter store name and province / city / district.",
         selectedStore: "Selected Store",
         changeStore: "Change Store",
-        city: "City / Region",
+        city: "Province / City / District",
         channelType: "Store Type",
         address: "Address",
         storeInfoIncomplete: "Store master data is incomplete. Select or create another store.",
         visitDate: "Visit Date",
-        storeLocationGroup: "City / Region and Address",
+        storeLocationGroup: "Province / City / District and Address",
         storeLocationTitle: "Store Location",
-        storeLocationHint: "Uses free browser location, then LocationIQ fills city / region and address.",
+        storeLocationHint: "Uses free browser location, then LocationIQ fills province / city / district and address.",
         locate: "Locate & Fill Address",
         locating: "Locating...",
         located: "Located and filled",
         locationUnavailable: "Location is not supported in this browser. You can still create the store.",
         locationFailed: "Location failed or was not allowed. You can still create the store.",
-        reverseAddressFailed: "Address lookup failed. Fill city / region and address manually.",
-        reverseAddressMissing: "Coordinates were saved, but no address was found. Fill address manually.",
+        reverseAddressFailed: "Address lookup failed. Fill province / city / district and address manually.",
+        reverseAddressMissing: "Coordinates were saved, but province / city / district or address was not found. Fill manually.",
         locationAttribution: "Address by LocationIQ",
         signInTitle: "Sign In Required",
         signInBody: "New visits must be tied to a field user. Sign in first and the promoter is filled automatically.",
@@ -373,13 +372,12 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
           <Link href={`/${locale}/mobile/offline-capture`} className="mt-1 rounded-full border border-slate-200 bg-white p-2 text-slate-700">
             <ArrowLeft className="h-4 w-4" />
           </Link>
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold uppercase tracking-normal text-blue-600">{copy.aiStoreVisit}</p>
-            <h1 className="mt-2 text-2xl font-bold">{labels.signInTitle}</h1>
-            <p className="mt-1 text-sm text-slate-500">{labels.signInBody}</p>
-          </div>
-          <MobileLanguageSwitch locale={locale} currentPath="/mobile/offline-capture/new" />
-        </header>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold uppercase tracking-normal text-blue-600">{copy.aiStoreVisit}</p>
+          <h1 className="mt-2 text-2xl font-bold">{labels.signInTitle}</h1>
+          <p className="mt-1 text-sm text-slate-500">{labels.signInBody}</p>
+        </div>
+      </header>
         <Link href={`/${locale}/mobile/offline-capture`} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 text-sm font-bold text-white">
           <LogIn className="h-4 w-4" />
           {copy.goToCapture}
@@ -390,16 +388,13 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
 
   return (
     <main className="mx-auto min-h-screen max-w-md bg-slate-50 px-4 py-5 text-slate-950">
-      <header className="mb-5 flex items-start gap-3">
+      <header className="mb-4 flex items-center gap-3">
         <Link href={`/${locale}/mobile/offline-capture`} className="mt-1 rounded-full border border-slate-200 bg-white p-2 text-slate-700">
           <ArrowLeft className="h-4 w-4" />
         </Link>
         <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold uppercase tracking-normal text-blue-600">{copy.aiStoreVisit}</p>
-          <h1 className="mt-2 text-2xl font-bold">{copy.newVisit}</h1>
-          <p className="mt-1 text-sm text-slate-500">{selectedStore ? selectedStore.name : labels.selectStoreHint}</p>
         </div>
-        <MobileLanguageSwitch locale={locale} currentPath="/mobile/offline-capture/new" />
       </header>
 
       {error ? <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
@@ -515,7 +510,6 @@ function StoreSearchStep({ locale, onSelect }: { locale: Locale; onSelect: (stor
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div>
         <h2 className="font-semibold">{labels.selectStore}</h2>
-        <p className="mt-1 text-sm leading-5 text-slate-500">{labels.selectStoreHint}</p>
       </div>
       <div className="relative mt-4">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -528,7 +522,7 @@ function StoreSearchStep({ locale, onSelect }: { locale: Locale; onSelect: (stor
         {loading ? <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-slate-400" /> : null}
       </div>
       {error ? <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
-      <div className="mt-4 space-y-2">
+      <div className="mt-4 space-y-2 pb-24">
         {!loading && results.length === 0 ? <div className="rounded-xl border border-dashed border-slate-300 p-5 text-center text-sm text-slate-500">{labels.noStoreFound}</div> : null}
         {results.map((store) => (
           <button
@@ -548,7 +542,7 @@ function StoreSearchStep({ locale, onSelect }: { locale: Locale; onSelect: (stor
           </button>
         ))}
       </div>
-      <button type="button" onClick={() => setShowCreate(true)} className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 text-sm font-bold text-white">
+      <button type="button" onClick={() => setShowCreate(true)} className="fixed bottom-4 left-1/2 z-40 flex h-12 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-center justify-center gap-2 rounded-xl bg-slate-900 text-sm font-bold text-white shadow-lg">
         <Plus className="h-4 w-4" />
         {labels.createStore}
       </button>

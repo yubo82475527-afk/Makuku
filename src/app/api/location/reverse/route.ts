@@ -5,8 +5,18 @@ type LocationIqAddress = {
   town?: string;
   village?: string;
   municipality?: string;
+  city_district?: string;
+  district?: string;
   county?: string;
+  state_district?: string;
   state?: string;
+  region?: string;
+  suburb?: string;
+  neighbourhood?: string;
+  quarter?: string;
+  hamlet?: string;
+  postcode?: string;
+  country?: string;
 };
 
 type LocationIqReverseResponse = {
@@ -26,9 +36,49 @@ function locationIqBaseUrl() {
   return `https://${region}.locationiq.com/v1/reverse`;
 }
 
-function pickCity(address: LocationIqAddress | undefined) {
+function appendUnique(parts: string[], value: string | undefined) {
+  const cleaned = value?.trim();
+  if (!cleaned || parts.includes(cleaned)) return;
+  parts.push(cleaned);
+}
+
+function buildAddressRegion(address: LocationIqAddress | undefined) {
   if (!address) return null;
-  return address.city ?? address.town ?? address.village ?? address.municipality ?? address.county ?? address.state ?? null;
+  const parts: string[] = [];
+  appendUnique(parts, address.state ?? address.region);
+  appendUnique(parts, address.state_district);
+  appendUnique(parts, address.county);
+  appendUnique(parts, address.city ?? address.town ?? address.village ?? address.municipality);
+  appendUnique(parts, address.city_district ?? address.district);
+  appendUnique(parts, address.suburb ?? address.quarter ?? address.neighbourhood ?? address.hamlet);
+  return parts.length > 0 ? parts.join(" / ") : null;
+}
+
+function isPostcode(value: string) {
+  return /^[\d\s-]{3,}$/.test(value);
+}
+
+function buildDisplayRegion(displayName: string | undefined, address: LocationIqAddress | undefined) {
+  if (!displayName) return null;
+  const parts = displayName.split(",").map((part) => part.trim()).filter(Boolean);
+  const removableTail = new Set(
+    [address?.country, address?.postcode, address?.state, address?.region]
+      .map((value) => value?.trim().toLowerCase())
+      .filter(Boolean) as string[],
+  );
+
+  while (parts.length > 0) {
+    const tail = parts[parts.length - 1].toLowerCase();
+    if (!removableTail.has(tail) && !isPostcode(parts[parts.length - 1])) break;
+    parts.pop();
+  }
+
+  const administrativeParts = parts.slice(1).slice(-3).reverse();
+  return administrativeParts.length > 0 ? administrativeParts.join(" / ") : null;
+}
+
+function buildRegion(data: LocationIqReverseResponse) {
+  return buildDisplayRegion(data.display_name, data.address) ?? buildAddressRegion(data.address);
 }
 
 export async function GET(request: Request) {
@@ -50,7 +100,6 @@ export async function GET(request: Request) {
   url.searchParams.set("lon", String(lon));
   url.searchParams.set("format", "json");
   url.searchParams.set("addressdetails", "1");
-  url.searchParams.set("normalizeaddress", "1");
 
   try {
     const response = await fetch(url, { cache: "no-store" });
@@ -60,7 +109,7 @@ export async function GET(request: Request) {
     }
 
     return Response.json({
-      city: pickCity(data.address),
+      city: buildRegion(data),
       address: data.display_name ?? null,
       provider: "locationiq",
     });
