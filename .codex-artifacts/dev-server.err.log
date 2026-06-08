@@ -1,0 +1,649 @@
+⨯ Error: aborted
+    at ignore-listed frames {
+  code: 'ECONNRESET'
+}
+⨯ Error: aborted
+    at ignore-listed frames {
+  code: 'ECONNRESET'
+}
+⨯ ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  [90m1 |[0m [36mimport[0m { [33mAppShell[0m } [36mfrom[0m [32m"@/components/app-shell"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { [33mStoreMasterTable[0m } [36mfrom[0m [32m"@/components/store-master-table"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { [33mButton[0m, [33mCard[0m, [33mDataNotice[0m, [33mSelectInput[0m, [33mTextInput[0m } [36mfrom[0m [32m"@/components/ui"[0m;
+  [90m4 |[0m [36mimport[0m { getChannels, getOfflineStores } [36mfrom[0m [32m"@/lib/data"[0m;
+  [90m5 |[0m [36mimport[0m { getPageI18n } [36mfrom[0m [32m"@/lib/i18n/server"[0m;
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  [90m1 |[0m [36mimport[0m { [33mAppShell[0m } [36mfrom[0m [32m"@/components/app-shell"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { [33mStoreMasterTable[0m } [36mfrom[0m [32m"@/components/store-master-table"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { [33mButton[0m, [33mCard[0m, [33mDataNotice[0m, [33mSelectInput[0m, [33mTextInput[0m } [36mfrom[0m [32m"@/components/ui"[0m;
+  [90m4 |[0m [36mimport[0m { getChannels, getOfflineStores } [36mfrom[0m [32m"@/lib/data"[0m;
+  [90m5 |[0m [36mimport[0m { getPageI18n } [36mfrom[0m [32m"@/lib/i18n/server"[0m;
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  [90m1 |[0m [36mimport[0m { [33mAppShell[0m } [36mfrom[0m [32m"@/components/app-shell"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { [33mStoreMasterTable[0m } [36mfrom[0m [32m"@/components/store-master-table"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { [33mButton[0m, [33mCard[0m, [33mDataNotice[0m, [33mSelectInput[0m, [33mTextInput[0m } [36mfrom[0m [32m"@/components/ui"[0m;
+  [90m4 |[0m [36mimport[0m { getChannels, getOfflineStores } [36mfrom[0m [32m"@/lib/data"[0m;
+  [90m5 |[0m [36mimport[0m { getPageI18n } [36mfrom[0m [32m"@/lib/i18n/server"[0m;
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  [90m1 |[0m [36mimport[0m { [33mAppShell[0m } [36mfrom[0m [32m"@/components/app-shell"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { [33mStoreMasterTable[0m } [36mfrom[0m [32m"@/components/store-master-table"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { [33mButton[0m, [33mCard[0m, [33mDataNotice[0m, [33mSelectInput[0m, [33mTextInput[0m } [36mfrom[0m [32m"@/components/ui"[0m;
+  [90m4 |[0m [36mimport[0m { getChannels, getOfflineStores } [36mfrom[0m [32m"@/lib/data"[0m;
+  [90m5 |[0m [36mimport[0m { getPageI18n } [36mfrom[0m [32m"@/lib/i18n/server"[0m;
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  [90m1 |[0m [36mimport[0m { [33mAppShell[0m } [36mfrom[0m [32m"@/components/app-shell"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { [33mStoreMasterTable[0m } [36mfrom[0m [32m"@/components/store-master-table"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { [33mButton[0m, [33mCard[0m, [33mDataNotice[0m, [33mSelectInput[0m, [33mTextInput[0m } [36mfrom[0m [32m"@/components/ui"[0m;
+  [90m4 |[0m [36mimport[0m { getChannels, getOfflineStores } [36mfrom[0m [32m"@/lib/data"[0m;
+  [90m5 |[0m [36mimport[0m { getPageI18n } [36mfrom[0m [32m"@/lib/i18n/server"[0m;
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  [90m1 |[0m [36mimport[0m { [33mAppShell[0m } [36mfrom[0m [32m"@/components/app-shell"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { [33mStoreMasterTable[0m } [36mfrom[0m [32m"@/components/store-master-table"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { [33mButton[0m, [33mCard[0m, [33mDataNotice[0m, [33mSelectInput[0m, [33mTextInput[0m } [36mfrom[0m [32m"@/components/ui"[0m;
+  [90m4 |[0m [36mimport[0m { getChannels, getOfflineStores } [36mfrom[0m [32m"@/lib/data"[0m;
+  [90m5 |[0m [36mimport[0m { getPageI18n } [36mfrom[0m [32m"@/lib/i18n/server"[0m;
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  [90m1 |[0m [36mimport[0m { [33mAppShell[0m } [36mfrom[0m [32m"@/components/app-shell"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { [33mStoreMasterTable[0m } [36mfrom[0m [32m"@/components/store-master-table"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { [33mButton[0m, [33mCard[0m, [33mDataNotice[0m, [33mSelectInput[0m, [33mTextInput[0m } [36mfrom[0m [32m"@/components/ui"[0m;
+  [90m4 |[0m [36mimport[0m { getChannels, getOfflineStores } [36mfrom[0m [32m"@/lib/data"[0m;
+  [90m5 |[0m [36mimport[0m { getPageI18n } [36mfrom[0m [32m"@/lib/i18n/server"[0m;
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  [90m1 |[0m [36mimport[0m { [33mAppShell[0m } [36mfrom[0m [32m"@/components/app-shell"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { [33mStoreMasterTable[0m } [36mfrom[0m [32m"@/components/store-master-table"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { [33mButton[0m, [33mCard[0m, [33mDataNotice[0m, [33mSelectInput[0m, [33mTextInput[0m } [36mfrom[0m [32m"@/components/ui"[0m;
+  [90m4 |[0m [36mimport[0m { getChannels, getOfflineStores } [36mfrom[0m [32m"@/lib/data"[0m;
+  [90m5 |[0m [36mimport[0m { getPageI18n } [36mfrom[0m [32m"@/lib/i18n/server"[0m;
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  [90m1 |[0m [36mimport[0m { [33mAppShell[0m } [36mfrom[0m [32m"@/components/app-shell"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { [33mStoreMasterTable[0m } [36mfrom[0m [32m"@/components/store-master-table"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { [33mButton[0m, [33mCard[0m, [33mDataNotice[0m, [33mSelectInput[0m, [33mTextInput[0m } [36mfrom[0m [32m"@/components/ui"[0m;
+  [90m4 |[0m [36mimport[0m { getChannels, getOfflineStores } [36mfrom[0m [32m"@/lib/data"[0m;
+  [90m5 |[0m [36mimport[0m { getPageI18n } [36mfrom[0m [32m"@/lib/i18n/server"[0m;
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  [90m1 |[0m [36mimport[0m { [33mAppShell[0m } [36mfrom[0m [32m"@/components/app-shell"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { [33mStoreMasterTable[0m } [36mfrom[0m [32m"@/components/store-master-table"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { [33mButton[0m, [33mCard[0m, [33mDataNotice[0m, [33mSelectInput[0m, [33mTextInput[0m } [36mfrom[0m [32m"@/components/ui"[0m;
+  [90m4 |[0m [36mimport[0m { getChannels, getOfflineStores } [36mfrom[0m [32m"@/lib/data"[0m;
+  [90m5 |[0m [36mimport[0m { getPageI18n } [36mfrom[0m [32m"@/lib/i18n/server"[0m;
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  [90m1 |[0m [36mimport[0m { [33mAppShell[0m } [36mfrom[0m [32m"@/components/app-shell"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { [33mStoreMasterTable[0m } [36mfrom[0m [32m"@/components/store-master-table"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { [33mButton[0m, [33mCard[0m, [33mDataNotice[0m, [33mSelectInput[0m, [33mTextInput[0m } [36mfrom[0m [32m"@/components/ui"[0m;
+  [90m4 |[0m [36mimport[0m { getChannels, getOfflineStores } [36mfrom[0m [32m"@/lib/data"[0m;
+  [90m5 |[0m [36mimport[0m { getPageI18n } [36mfrom[0m [32m"@/lib/i18n/server"[0m;
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  [90m1 |[0m [36mimport[0m { [33mAppShell[0m } [36mfrom[0m [32m"@/components/app-shell"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { [33mStoreMasterTable[0m } [36mfrom[0m [32m"@/components/store-master-table"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { [33mButton[0m, [33mCard[0m, [33mDataNotice[0m, [33mSelectInput[0m, [33mTextInput[0m } [36mfrom[0m [32m"@/components/ui"[0m;
+  [90m4 |[0m [36mimport[0m { getChannels, getOfflineStores } [36mfrom[0m [32m"@/lib/data"[0m;
+  [90m5 |[0m [36mimport[0m { getPageI18n } [36mfrom[0m [32m"@/lib/i18n/server"[0m;
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  [90m1 |[0m [36mimport[0m { [33mAppShell[0m } [36mfrom[0m [32m"@/components/app-shell"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { [33mStoreMasterTable[0m } [36mfrom[0m [32m"@/components/store-master-table"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { [33mButton[0m, [33mCard[0m, [33mDataNotice[0m, [33mSelectInput[0m, [33mTextInput[0m } [36mfrom[0m [32m"@/components/ui"[0m;
+  [90m4 |[0m [36mimport[0m { getChannels, getOfflineStores } [36mfrom[0m [32m"@/lib/data"[0m;
+  [90m5 |[0m [36mimport[0m { getPageI18n } [36mfrom[0m [32m"@/lib/i18n/server"[0m;
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  [90m1 |[0m [36mimport[0m { [33mAppShell[0m } [36mfrom[0m [32m"@/components/app-shell"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { [33mStoreMasterTable[0m } [36mfrom[0m [32m"@/components/store-master-table"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { [33mButton[0m, [33mCard[0m, [33mDataNotice[0m, [33mSelectInput[0m, [33mTextInput[0m } [36mfrom[0m [32m"@/components/ui"[0m;
+  [90m4 |[0m [36mimport[0m { getChannels, getOfflineStores } [36mfrom[0m [32m"@/lib/data"[0m;
+  [90m5 |[0m [36mimport[0m { getPageI18n } [36mfrom[0m [32m"@/lib/i18n/server"[0m;
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  [90m1 |[0m [36mimport[0m { [33mAppShell[0m } [36mfrom[0m [32m"@/components/app-shell"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { [33mStoreMasterTable[0m } [36mfrom[0m [32m"@/components/store-master-table"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { [33mButton[0m, [33mCard[0m, [33mDataNotice[0m, [33mSelectInput[0m, [33mTextInput[0m } [36mfrom[0m [32m"@/components/ui"[0m;
+  [90m4 |[0m [36mimport[0m { getChannels, getOfflineStores } [36mfrom[0m [32m"@/lib/data"[0m;
+  [90m5 |[0m [36mimport[0m { getPageI18n } [36mfrom[0m [32m"@/lib/i18n/server"[0m;
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  [90m1 |[0m [36mimport[0m { [33mAppShell[0m } [36mfrom[0m [32m"@/components/app-shell"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { [33mStoreMasterTable[0m } [36mfrom[0m [32m"@/components/store-master-table"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { [33mButton[0m, [33mCard[0m, [33mDataNotice[0m, [33mSelectInput[0m, [33mTextInput[0m } [36mfrom[0m [32m"@/components/ui"[0m;
+  [90m4 |[0m [36mimport[0m { getChannels, getOfflineStores } [36mfrom[0m [32m"@/lib/data"[0m;
+  [90m5 |[0m [36mimport[0m { getPageI18n } [36mfrom[0m [32m"@/lib/i18n/server"[0m;
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  [90m1 |[0m [36mimport[0m { [33mAppShell[0m } [36mfrom[0m [32m"@/components/app-shell"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { [33mStoreMasterTable[0m } [36mfrom[0m [32m"@/components/store-master-table"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { [33mButton[0m, [33mCard[0m, [33mDataNotice[0m, [33mSelectInput[0m, [33mTextInput[0m } [36mfrom[0m [32m"@/components/ui"[0m;
+  [90m4 |[0m [36mimport[0m { getChannels, getOfflineStores } [36mfrom[0m [32m"@/lib/data"[0m;
+  [90m5 |[0m [36mimport[0m { getPageI18n } [36mfrom[0m [32m"@/lib/i18n/server"[0m;
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  [90m1 |[0m [36mimport[0m { [33mAppShell[0m } [36mfrom[0m [32m"@/components/app-shell"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { [33mStoreMasterTable[0m } [36mfrom[0m [32m"@/components/store-master-table"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { [33mButton[0m, [33mCard[0m, [33mDataNotice[0m, [33mSelectInput[0m, [33mTextInput[0m } [36mfrom[0m [32m"@/components/ui"[0m;
+  [90m4 |[0m [36mimport[0m { getChannels, getOfflineStores } [36mfrom[0m [32m"@/lib/data"[0m;
+  [90m5 |[0m [36mimport[0m { getPageI18n } [36mfrom[0m [32m"@/lib/i18n/server"[0m;
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  [90m1 |[0m [36mimport[0m { [33mAppShell[0m } [36mfrom[0m [32m"@/components/app-shell"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { [33mStoreMasterTable[0m } [36mfrom[0m [32m"@/components/store-master-table"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { [33mButton[0m, [33mCard[0m, [33mDataNotice[0m, [33mSelectInput[0m, [33mTextInput[0m } [36mfrom[0m [32m"@/components/ui"[0m;
+  [90m4 |[0m [36mimport[0m { getChannels, getOfflineStores } [36mfrom[0m [32m"@/lib/data"[0m;
+  [90m5 |[0m [36mimport[0m { getPageI18n } [36mfrom[0m [32m"@/lib/i18n/server"[0m;
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  [90m1 |[0m [36mimport[0m { [33mAppShell[0m } [36mfrom[0m [32m"@/components/app-shell"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { [33mStoreMasterTable[0m } [36mfrom[0m [32m"@/components/store-master-table"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { [33mButton[0m, [33mCard[0m, [33mDataNotice[0m, [33mSelectInput[0m, [33mTextInput[0m } [36mfrom[0m [32m"@/components/ui"[0m;
+  [90m4 |[0m [36mimport[0m { getChannels, getOfflineStores } [36mfrom[0m [32m"@/lib/data"[0m;
+  [90m5 |[0m [36mimport[0m { getPageI18n } [36mfrom[0m [32m"@/lib/i18n/server"[0m;
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  [90m1 |[0m [36mimport[0m { [33mAppShell[0m } [36mfrom[0m [32m"@/components/app-shell"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { [33mStoreMasterTable[0m } [36mfrom[0m [32m"@/components/store-master-table"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { [33mButton[0m, [33mCard[0m, [33mDataNotice[0m, [33mSelectInput[0m, [33mTextInput[0m } [36mfrom[0m [32m"@/components/ui"[0m;
+  [90m4 |[0m [36mimport[0m { getChannels, getOfflineStores } [36mfrom[0m [32m"@/lib/data"[0m;
+  [90m5 |[0m [36mimport[0m { getPageI18n } [36mfrom[0m [32m"@/lib/i18n/server"[0m;
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  [90m1 |[0m [36mimport[0m { [33mAppShell[0m } [36mfrom[0m [32m"@/components/app-shell"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { [33mStoreMasterTable[0m } [36mfrom[0m [32m"@/components/store-master-table"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { [33mButton[0m, [33mCard[0m, [33mDataNotice[0m, [33mSelectInput[0m, [33mTextInput[0m } [36mfrom[0m [32m"@/components/ui"[0m;
+  [90m4 |[0m [36mimport[0m { getChannels, getOfflineStores } [36mfrom[0m [32m"@/lib/data"[0m;
+  [90m5 |[0m [36mimport[0m { getPageI18n } [36mfrom[0m [32m"@/lib/i18n/server"[0m;
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  [90m1 |[0m [36mimport[0m { [33mAppShell[0m } [36mfrom[0m [32m"@/components/app-shell"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { [33mStoreMasterTable[0m } [36mfrom[0m [32m"@/components/store-master-table"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { [33mButton[0m, [33mCard[0m, [33mDataNotice[0m, [33mSelectInput[0m, [33mTextInput[0m } [36mfrom[0m [32m"@/components/ui"[0m;
+  [90m4 |[0m [36mimport[0m { getChannels, getOfflineStores } [36mfrom[0m [32m"@/lib/data"[0m;
+  [90m5 |[0m [36mimport[0m { getPageI18n } [36mfrom[0m [32m"@/lib/i18n/server"[0m;
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  [90m1 |[0m [36mimport[0m { [33mAppShell[0m } [36mfrom[0m [32m"@/components/app-shell"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { [33mStoreMasterTable[0m } [36mfrom[0m [32m"@/components/store-master-table"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { [33mButton[0m, [33mCard[0m, [33mDataNotice[0m, [33mSelectInput[0m, [33mTextInput[0m } [36mfrom[0m [32m"@/components/ui"[0m;
+  [90m4 |[0m [36mimport[0m { getChannels, getOfflineStores } [36mfrom[0m [32m"@/lib/data"[0m;
+  [90m5 |[0m [36mimport[0m { getPageI18n } [36mfrom[0m [32m"@/lib/i18n/server"[0m;
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  [90m1 |[0m [36mimport[0m { [33mAppShell[0m } [36mfrom[0m [32m"@/components/app-shell"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { [33mStoreMasterTable[0m } [36mfrom[0m [32m"@/components/store-master-table"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { [33mButton[0m, [33mCard[0m, [33mDataNotice[0m, [33mSelectInput[0m, [33mTextInput[0m } [36mfrom[0m [32m"@/components/ui"[0m;
+  [90m4 |[0m [36mimport[0m { getChannels, getOfflineStores } [36mfrom[0m [32m"@/lib/data"[0m;
+  [90m5 |[0m [36mimport[0m { getPageI18n } [36mfrom[0m [32m"@/lib/i18n/server"[0m;
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  [90m1 |[0m [36mimport[0m { [33mAppShell[0m } [36mfrom[0m [32m"@/components/app-shell"[0m;
+[31m[1m>[0m [90m2 |[0m [36mimport[0m { [33mStoreMasterTable[0m } [36mfrom[0m [32m"@/components/store-master-table"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m3 |[0m [36mimport[0m { [33mButton[0m, [33mCard[0m, [33mDataNotice[0m, [33mSelectInput[0m, [33mTextInput[0m } [36mfrom[0m [32m"@/components/ui"[0m;
+  [90m4 |[0m [36mimport[0m { getChannels, getOfflineStores } [36mfrom[0m [32m"@/lib/data"[0m;
+  [90m5 |[0m [36mimport[0m { getPageI18n } [36mfrom[0m [32m"@/lib/i18n/server"[0m;
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+[browser] Uncaught Error: ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  1 | import { AppShell } from "@/components/app-shell";
+> 2 | import { StoreMasterTable } from "@/components/store-master-table";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  3 | import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
+  4 | import { getChannels, getOfflineStores } from "@/lib/data";
+  5 | import { getPageI18n } from "@/lib/i18n/server";
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+    at <unknown> (Error: ./src/app/[locale]/offline-stores/page.tsx:2:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (Error: (./src/app/[locale]/offline-stores/page.tsx:2:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+[browser] Uncaught Error: ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  1 | import { AppShell } from "@/components/app-shell";
+> 2 | import { StoreMasterTable } from "@/components/store-master-table";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  3 | import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
+  4 | import { getChannels, getOfflineStores } from "@/lib/data";
+  5 | import { getPageI18n } from "@/lib/i18n/server";
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+    at <unknown> (Error: ./src/app/[locale]/offline-stores/page.tsx:2:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (Error: (./src/app/[locale]/offline-stores/page.tsx:2:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+[browser] Uncaught Error: ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  1 | import { AppShell } from "@/components/app-shell";
+> 2 | import { StoreMasterTable } from "@/components/store-master-table";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  3 | import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
+  4 | import { getChannels, getOfflineStores } from "@/lib/data";
+  5 | import { getPageI18n } from "@/lib/i18n/server";
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+    at <unknown> (Error: ./src/app/[locale]/offline-stores/page.tsx:2:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (Error: (./src/app/[locale]/offline-stores/page.tsx:2:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+[browser] Uncaught Error: ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  1 | import { AppShell } from "@/components/app-shell";
+> 2 | import { StoreMasterTable } from "@/components/store-master-table";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  3 | import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
+  4 | import { getChannels, getOfflineStores } from "@/lib/data";
+  5 | import { getPageI18n } from "@/lib/i18n/server";
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+    at <unknown> (Error: ./src/app/[locale]/offline-stores/page.tsx:2:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (Error: (./src/app/[locale]/offline-stores/page.tsx:2:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+[browser] Uncaught Error: ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  1 | import { AppShell } from "@/components/app-shell";
+> 2 | import { StoreMasterTable } from "@/components/store-master-table";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  3 | import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
+  4 | import { getChannels, getOfflineStores } from "@/lib/data";
+  5 | import { getPageI18n } from "@/lib/i18n/server";
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+    at <unknown> (Error: ./src/app/[locale]/offline-stores/page.tsx:2:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (Error: (./src/app/[locale]/offline-stores/page.tsx:2:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+[browser] ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  1 | import { AppShell } from "@/components/app-shell";
+> 2 | import { StoreMasterTable } from "@/components/store-master-table";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  3 | import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
+  4 | import { getChannels, getOfflineStores } from "@/lib/data";
+  5 | import { getPageI18n } from "@/lib/i18n/server";
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  1 | import { AppShell } from "@/components/app-shell";
+> 2 | import { StoreMasterTable } from "@/components/store-master-table";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  3 | import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
+  4 | import { getChannels, getOfflineStores } from "@/lib/data";
+  5 | import { getPageI18n } from "@/lib/i18n/server";
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  1 | import { AppShell } from "@/components/app-shell";
+> 2 | import { StoreMasterTable } from "@/components/store-master-table";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  3 | import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
+  4 | import { getChannels, getOfflineStores } from "@/lib/data";
+  5 | import { getPageI18n } from "@/lib/i18n/server";
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  1 | import { AppShell } from "@/components/app-shell";
+> 2 | import { StoreMasterTable } from "@/components/store-master-table";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  3 | import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
+  4 | import { getChannels, getOfflineStores } from "@/lib/data";
+  5 | import { getPageI18n } from "@/lib/i18n/server";
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  1 | import { AppShell } from "@/components/app-shell";
+> 2 | import { StoreMasterTable } from "@/components/store-master-table";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  3 | import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
+  4 | import { getChannels, getOfflineStores } from "@/lib/data";
+  5 | import { getPageI18n } from "@/lib/i18n/server";
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  1 | import { AppShell } from "@/components/app-shell";
+> 2 | import { StoreMasterTable } from "@/components/store-master-table";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  3 | import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
+  4 | import { getChannels, getOfflineStores } from "@/lib/data";
+  5 | import { getPageI18n } from "@/lib/i18n/server";
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  1 | import { AppShell } from "@/components/app-shell";
+> 2 | import { StoreMasterTable } from "@/components/store-master-table";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  3 | import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
+  4 | import { getChannels, getOfflineStores } from "@/lib/data";
+  5 | import { getPageI18n } from "@/lib/i18n/server";
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  1 | import { AppShell } from "@/components/app-shell";
+> 2 | import { StoreMasterTable } from "@/components/store-master-table";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  3 | import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
+  4 | import { getChannels, getOfflineStores } from "@/lib/data";
+  5 | import { getPageI18n } from "@/lib/i18n/server";
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  1 | import { AppShell } from "@/components/app-shell";
+> 2 | import { StoreMasterTable } from "@/components/store-master-table";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  3 | import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
+  4 | import { getChannels, getOfflineStores } from "@/lib/data";
+  5 | import { getPageI18n } from "@/lib/i18n/server";
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  1 | import { AppShell } from "@/components/app-shell";
+> 2 | import { StoreMasterTable } from "@/components/store-master-table";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  3 | import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
+  4 | import { getChannels, getOfflineStores } from "@/lib/data";
+  5 | import { getPageI18n } from "@/lib/i18n/server";
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  1 | import { AppShell } from "@/components/app-shell";
+> 2 | import { StoreMasterTable } from "@/components/store-master-table";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  3 | import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
+  4 | import { getChannels, getOfflineStores } from "@/lib/data";
+  5 | import { getPageI18n } from "@/lib/i18n/server";
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  1 | import { AppShell } from "@/components/app-shell";
+> 2 | import { StoreMasterTable } from "@/components/store-master-table";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  3 | import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
+  4 | import { getChannels, getOfflineStores } from "@/lib/data";
+  5 | import { getPageI18n } from "@/lib/i18n/server";
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+https://nextjs.org/docs/messages/module-not-found 
+[browser] ./src/app/[locale]/offline-stores/page.tsx:2:1
+Module not found: Can't resolve '@/components/store-master-table'
+  1 | import { AppShell } from "@/components/app-shell";
+> 2 | import { StoreMasterTable } from "@/components/store-master-table";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  3 | import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
+  4 | import { getChannels, getOfflineStores } from "@/lib/data";
+  5 | import { getPageI18n } from "@/lib/i18n/server";
+
+Import map: aliased to relative './src/components/store-master-table' inside of [project]/
+
+https://nextjs.org/docs/messages/module-not-found 
