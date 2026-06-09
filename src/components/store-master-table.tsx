@@ -37,7 +37,7 @@ function formatCreatedAt(value: string, locale: string) {
 }
 
 function storeCreator(store: OfflineStore) {
-  return store.created_by_name ?? store.created_by_user ?? store.created_by ?? "-";
+  return store.created_by_name ?? store.created_by_user ?? store.created_by ?? store.created_by_user_id ?? "-";
 }
 
 export function StoreMasterTable({

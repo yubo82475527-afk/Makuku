@@ -30,6 +30,11 @@ function isStoreStatusColumnError(error: { message?: string } | null) {
   return message.includes("status") || message.includes("disabled_at") || message.includes("schema cache");
 }
 
+function isStoreCreatorColumnError(error: { message?: string } | null) {
+  const message = error?.message ?? "";
+  return message.includes("created_by") || message.includes("created_by_user_id") || message.includes("created_by_name") || message.includes("schema cache");
+}
+
 function isLegacyDisabledColumnError(error: { message?: string } | null) {
   const message = error?.message ?? "";
   return message.includes("deleted_at") || message.includes("schema cache");
@@ -111,7 +116,7 @@ async function readStoreMasterOptions({ q, limit }: { q: string; limit: number }
   const keyword = q.trim();
   let query = supabase
     .from("offline_stores")
-    .select("id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_at,channels(id,code,name,type)")
+    .select("id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,created_at,channels(id,code,name,type)")
     .order("name")
     .limit(limit);
 
@@ -124,7 +129,7 @@ async function readStoreMasterOptions({ q, limit }: { q: string; limit: number }
   if (error?.message.includes("channels") || error?.message.includes("schema cache")) {
     let legacyQuery = supabase
       .from("offline_stores")
-      .select("id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_at")
+      .select("id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,created_at")
       .order("name")
       .limit(limit);
     if (keyword) legacyQuery = legacyQuery.or(`name.ilike.%${keyword}%,city.ilike.%${keyword}%,province.ilike.%${keyword}%,city_name.ilike.%${keyword}%,district.ilike.%${keyword}%`);
@@ -148,7 +153,7 @@ async function readStoreMasterOptions({ q, limit }: { q: string; limit: number }
   if (isStoreRegionColumnError(error)) {
     let legacyRegionQuery = supabase
       .from("offline_stores")
-      .select("id,name,city,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_at,channels(id,code,name,type)")
+      .select("id,name,city,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,created_at,channels(id,code,name,type)")
       .order("name")
       .limit(limit);
     if (keyword) legacyRegionQuery = legacyRegionQuery.or(`name.ilike.%${keyword}%,city.ilike.%${keyword}%`);
@@ -210,6 +215,9 @@ export async function POST(request: Request) {
     const longitude = cleanOptionalNumber(body.longitude);
     const locationAccuracyM = cleanOptionalNumber(body.location_accuracy_m);
     const locationCapturedAt = String(body.location_captured_at ?? "").trim() || null;
+    const createdByUserId = String(body.created_by_user_id ?? body.createdByUserId ?? "").trim() || null;
+    const createdByName = String(body.created_by_name ?? body.createdByName ?? "").trim() || null;
+    const createdBy = String(body.created_by ?? createdByName ?? "").trim() || null;
 
     if (!name || !city || (!channelId && !channelTypeFromBody)) {
       return Response.json({ error: "Missing required fields: name, city, channel_id" }, { status: 400 });
@@ -243,14 +251,52 @@ export async function POST(request: Request) {
         longitude,
         location_accuracy_m: locationAccuracyM,
         location_captured_at: locationCapturedAt,
+        created_by: createdBy,
+        created_by_user_id: createdByUserId,
+        created_by_name: createdByName,
       })
       .select("*, channels(id,code,name,type)")
       .single();
 
+    if (isStoreCreatorColumnError(error)) {
+      const noCreator = await supabase
+        .from("offline_stores")
+        .insert({
+          name,
+          city,
+          province,
+          city_name: cityName,
+          district,
+          channel_type: channelType,
+          channel_id: channelId,
+          address: address || null,
+          latitude,
+          longitude,
+          location_accuracy_m: locationAccuracyM,
+          location_captured_at: locationCapturedAt,
+        })
+        .select("*, channels(id,code,name,type)")
+        .single();
+      data = noCreator.data;
+      error = noCreator.error;
+    }
+
     if (isLocationColumnError(error)) {
       const noLocation = await supabase
         .from("offline_stores")
-        .insert({ name, city, province, city_name: cityName, district, channel_type: channelType, channel_id: channelId, address: address || null })
+        .insert({
+          name,
+          city,
+          province,
+          city_name: cityName,
+          district,
+          channel_type: channelType,
+          channel_id: channelId,
+          address: address || null,
+          created_by: createdBy,
+          created_by_user_id: createdByUserId,
+          created_by_name: createdByName,
+        })
         .select("*, channels(id,code,name,type)")
         .single();
       data = noLocation.data;
@@ -270,6 +316,9 @@ export async function POST(request: Request) {
           longitude,
           location_accuracy_m: locationAccuracyM,
           location_captured_at: locationCapturedAt,
+          created_by: createdBy,
+          created_by_user_id: createdByUserId,
+          created_by_name: createdByName,
         })
         .select("*, channels(id,code,name,type)")
         .single();
@@ -285,6 +334,16 @@ export async function POST(request: Request) {
         .single();
       data = legacy.data;
       error = legacy.error;
+    }
+
+    if (isStoreCreatorColumnError(error)) {
+      const noCreatorLegacy = await supabase
+        .from("offline_stores")
+        .insert({ name, city, province, city_name: cityName, district, channel_type: channelType, channel_id: channelId, address: address || null })
+        .select("*, channels(id,code,name,type)")
+        .single();
+      data = noCreatorLegacy.data;
+      error = noCreatorLegacy.error;
     }
 
     if (isMissingSchemaError(error) && process.env.NODE_ENV !== "production") {
@@ -303,6 +362,9 @@ export async function POST(request: Request) {
           longitude,
           location_accuracy_m: locationAccuracyM,
           location_captured_at: locationCapturedAt,
+          created_by: createdBy,
+          created_by_user_id: createdByUserId,
+          created_by_name: createdByName,
         },
         demo: true,
       });

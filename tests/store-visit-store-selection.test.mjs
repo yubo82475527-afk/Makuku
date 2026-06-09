@@ -16,6 +16,9 @@ test("new H5 store visit requires selecting store master data before capture", (
   assert.match(storeVisitH5, /StoreSearchStep/);
   assert.match(storeVisitH5, /CreateStoreSheet/);
   assert.match(storeVisitH5, /storeInfoIncomplete/);
+  assert.match(storeVisitH5, /<StoreSearchStep locale=\{locale\} user=\{user\}/);
+  assert.match(storeVisitH5, /created_by_user_id: user\.id/);
+  assert.match(storeVisitH5, /created_by_name: user\.displayName/);
 
   assert.doesNotMatch(storeVisitH5, /placeholder=\{copy\.region\}/);
   assert.doesNotMatch(storeVisitH5, /value=\{channel\}/);

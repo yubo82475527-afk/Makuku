@@ -212,6 +212,7 @@ export type OfflineStore = {
   disabled_at?: string | null;
   deleted_at?: string | null;
   created_by?: string | null;
+  created_by_user_id?: string | null;
   created_by_name?: string | null;
   created_by_user?: string | null;
   created_at: string;

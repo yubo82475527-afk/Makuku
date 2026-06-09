@@ -418,7 +418,7 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
       {submitStatus ? <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">{submitStatus}</div> : null}
 
       {!selectedStore ? (
-        <StoreSearchStep locale={locale} onSelect={(store) => { setSelectedStore(store); setError(null); }} />
+        <StoreSearchStep locale={locale} user={user} onSelect={(store) => { setSelectedStore(store); setError(null); }} />
       ) : (
         <>
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -481,7 +481,7 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
   );
 }
 
-function StoreSearchStep({ locale, onSelect }: { locale: Locale; onSelect: (store: OfflineStoreOption) => void }) {
+function StoreSearchStep({ locale, user, onSelect }: { locale: Locale; user: AppUser; onSelect: (store: OfflineStoreOption) => void }) {
   const labels = uiCopy(locale);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<OfflineStoreOption[]>([]);
@@ -569,6 +569,7 @@ function StoreSearchStep({ locale, onSelect }: { locale: Locale; onSelect: (stor
       {showCreate ? (
         <CreateStoreSheet
           locale={locale}
+          user={user}
           onClose={() => setShowCreate(false)}
           onCreated={(store) => {
             setShowCreate(false);
@@ -580,7 +581,7 @@ function StoreSearchStep({ locale, onSelect }: { locale: Locale; onSelect: (stor
   );
 }
 
-function CreateStoreSheet({ locale, onClose, onCreated }: { locale: Locale; onClose: () => void; onCreated: (store: OfflineStoreOption) => void }) {
+function CreateStoreSheet({ locale, user, onClose, onCreated }: { locale: Locale; user: AppUser; onClose: () => void; onCreated: (store: OfflineStoreOption) => void }) {
   const labels = uiCopy(locale);
   const [name, setName] = useState("");
   const [city, setCity] = useState("");
@@ -700,6 +701,9 @@ function CreateStoreSheet({ locale, onClose, onCreated }: { locale: Locale; onCl
           longitude: storeLocation?.longitude ?? null,
           location_accuracy_m: storeLocation?.location_accuracy_m ?? null,
           location_captured_at: storeLocation?.location_captured_at ?? null,
+          created_by_user_id: user.id,
+          created_by_name: user.displayName,
+          created_by: user.displayName,
         }),
       });
       const data = await res.json().catch(() => ({}));

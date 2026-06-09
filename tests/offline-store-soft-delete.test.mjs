@@ -6,6 +6,7 @@ const offlineStoresApi = readFileSync("src/app/api/offline-stores/route.ts", "ut
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const typesFile = readFileSync("src/lib/types.ts", "utf8");
 const offlineStoresPage = readFileSync("src/app/[locale]/offline-stores/page.tsx", "utf8");
+const creatorMigration = readFileSync("supabase/migrations/202606100002_offline_store_creator_fields.sql", "utf8");
 const storeMasterTable = existsSync("src/components/store-master-table.tsx")
   ? readFileSync("src/components/store-master-table.tsx", "utf8")
   : "";
@@ -69,6 +70,20 @@ test("store master page exposes delete action for stores", () => {
   assert.match(storeMasterTable, /\u521b\u5efa\u4eba|Created By/);
   assert.match(storeMasterTable, /whitespace-nowrap py-3 pr-3/);
   assert.match(typesFile, /created_by\?: string \| null/);
+  assert.match(typesFile, /created_by_user_id\?: string \| null/);
+  assert.match(creatorMigration, /add column if not exists created_by text/i);
+  assert.match(creatorMigration, /add column if not exists created_by_user_id text/i);
+  assert.match(creatorMigration, /add column if not exists created_by_name text/i);
+  assert.match(creatorMigration, /from public\.offline_store_visits/i);
+  assert.match(creatorMigration, /with first_visit_creator as/i);
+  assert.match(creatorMigration, /distinct on \(store_id\)/i);
+  assert.match(creatorMigration, /uploader_user_id/i);
+  assert.match(creatorMigration, /uploader_name/i);
+  assert.doesNotMatch(creatorMigration, /from lateral/i);
+  assert.match(offlineStoresApi, /createdByUserId/);
+  assert.match(offlineStoresApi, /created_by_user_id: createdByUserId/);
+  assert.match(offlineStoresApi, /created_by_name: createdByName/);
+  assert.match(offlineStoresApi, /isStoreCreatorColumnError/);
   assert.doesNotMatch(storeMasterTable, /window\.confirm/);
   assert.doesNotMatch(storeMasterTable, /Delete Store|Bulk Delete|Confirm Delete/);
 });
