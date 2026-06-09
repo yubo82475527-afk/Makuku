@@ -5,6 +5,7 @@ import {
   demoChannels,
   demoCompetitors,
   demoMaterialMaster,
+  demoMarketBenchmarks,
   demoOfflineStores,
   demoOfflineStoreVisits,
   demoOfflineUploads,
@@ -24,6 +25,7 @@ import type {
   DashboardCollectionEfficiency,
   DashboardInsight,
   MaterialMaster,
+  MarketBenchmark,
   OfflineStore,
   OfflineUpload,
   OfflineStoreVisit,
@@ -58,6 +60,17 @@ export type AiPriceCandidateFilters = {
   dateTo?: string;
   status?: "pending" | "approved" | "rejected";
   limit?: number;
+};
+
+export type ProductSegmentPriceIndexFilters = {
+  province?: string;
+  cityName?: string;
+  district?: string;
+  line?: string;
+  priceBand?: string;
+  size?: string;
+  status?: "low_index" | "near_index" | "missing_benchmark" | "all";
+  sort?: "priceIndexAsc" | "priceIndexDesc" | "problemStoresDesc" | "latest";
 };
 
 async function fromSupabase<T>(query: PromiseLike<{ data: unknown; error: { message: string } | null }>, fallback: T): Promise<QueryResult<T>> {
@@ -116,6 +129,24 @@ export async function getChannels(): Promise<QueryResult<ChannelMaster[]>> {
   if (isMissingSchemaError(error)) return { data: demoChannels, error: null, isDemo: false };
   if (error) return { data: demoChannels, error: error.message, isDemo: true };
   return { data: (data ?? []) as ChannelMaster[], error: null, isDemo: false };
+}
+
+export async function getMarketBenchmarks(): Promise<QueryResult<MarketBenchmark[]>> {
+  if (!hasSupabaseServiceConfig()) return { data: demoMarketBenchmarks, error: null, isDemo: true };
+
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("market_benchmarks")
+    .select("*, competitor_products(*, brands(id,name), sku_matches(*, sku_master(*)))")
+    .order("market")
+    .order("product_line")
+    .order("size");
+
+  if (isMissingSchemaError(error) || error?.message.includes("market_benchmarks")) {
+    return { data: demoMarketBenchmarks, error: "Run migration 202606090001_market_benchmarks_and_store_regions.sql", isDemo: true };
+  }
+  if (error) return { data: demoMarketBenchmarks, error: error.message, isDemo: true };
+  return { data: (data ?? []) as MarketBenchmark[], error: null, isDemo: false };
 }
 
 export async function getAppUsers(): Promise<QueryResult<AppUser[]>> {
@@ -389,9 +420,14 @@ export async function getAiPriceCandidates(filters: AiPriceCandidateFilters = {}
 
   const supabase = createSupabaseServiceClient();
   const shouldFilterVisitDate = Boolean(filters.dateFrom || filters.dateTo);
+  const visitColumns = "id,store_name,city,province,city_name,district,channel_type,visit_date,created_at";
+  const legacyVisitColumns = "id,store_name,city,channel_type,visit_date,created_at";
   const visitSelect = shouldFilterVisitDate
-    ? "offline_store_visits!inner(id,store_name,city,channel_type,visit_date,created_at)"
-    : "offline_store_visits(id,store_name,city,channel_type,visit_date,created_at)";
+    ? `offline_store_visits!inner(${visitColumns})`
+    : `offline_store_visits(${visitColumns})`;
+  const legacyVisitSelect = shouldFilterVisitDate
+    ? `offline_store_visits!inner(${legacyVisitColumns})`
+    : `offline_store_visits(${legacyVisitColumns})`;
   let query = supabase
     .from("ai_price_candidates")
     .select(`*, ${visitSelect}`)
@@ -407,7 +443,25 @@ export async function getAiPriceCandidates(filters: AiPriceCandidateFilters = {}
     query = query.order("created_at", { ascending: false });
   }
 
-  const { data, error } = await query;
+  let { data, error } = await query;
+
+  if (isMissingSchemaError(error)) {
+    let legacyQuery = supabase
+      .from("ai_price_candidates")
+      .select(`*, ${legacyVisitSelect}`)
+      .limit(filters.limit ?? 200);
+    if (filters.dateFrom) legacyQuery = legacyQuery.gte("offline_store_visits.visit_date", filters.dateFrom);
+    if (filters.dateTo) legacyQuery = legacyQuery.lte("offline_store_visits.visit_date", filters.dateTo);
+    if (filters.status) legacyQuery = legacyQuery.eq("status", filters.status);
+    if (filters.status === "approved") {
+      legacyQuery = legacyQuery.order("reviewed_at", { ascending: false }).order("created_at", { ascending: false });
+    } else {
+      legacyQuery = legacyQuery.order("created_at", { ascending: false });
+    }
+    const legacyResult = await legacyQuery;
+    data = legacyResult.data;
+    error = legacyResult.error;
+  }
 
   if (error?.message.includes("ai_price_candidates")) {
     return { data: [], error: "Run migration 202605280005_ai_price_candidates.sql", isDemo: false };
@@ -676,13 +730,22 @@ export async function getOpportunityActions(locale = "zh"): Promise<QueryResult<
 }
 
 export async function getProductSegmentBattles(locale = "zh"): Promise<QueryResult<{ summary: ProductSegmentBattleSummary; battles: ProductSegmentBattle[] }>> {
-  const [skuResult, materialResult, competitorsResult, snapshotsResult, promosResult, candidatesResult] = await Promise.all([
+  return getProductSegmentPriceIndexBattles(locale);
+}
+
+export async function getProductSegmentPriceIndexBattles(
+  locale = "zh",
+  filters: ProductSegmentPriceIndexFilters = {},
+): Promise<QueryResult<{ summary: ProductSegmentBattleSummary; battles: ProductSegmentBattle[] }>> {
+  const [skuResult, materialResult, competitorsResult, snapshotsResult, promosResult, candidatesResult, benchmarkResult, storesResult] = await Promise.all([
     getSkuMaster(),
     getMaterialMaster(),
     getCompetitorProducts(),
     getPriceSnapshots(),
     getPromoEvents(),
     getAiPriceCandidates({ limit: 5000 }),
+    getMarketBenchmarks(),
+    getOfflineStores({ status: "enabled" }),
   ]);
 
   let battles = buildProductSegmentBattles({
@@ -693,6 +756,8 @@ export async function getProductSegmentBattles(locale = "zh"): Promise<QueryResu
     snapshots: snapshotsResult.data,
     promos: promosResult.data,
     candidates: candidatesResult.data,
+    benchmarks: benchmarkResult.data,
+    stores: storesResult.data,
   });
   if (battles.every((battle) => battle.evidenceCount === 0)) {
     battles = buildProductSegmentBattles({
@@ -703,8 +768,11 @@ export async function getProductSegmentBattles(locale = "zh"): Promise<QueryResu
       snapshots: demoPriceSnapshots,
       promos: demoPromoEvents,
       candidates: [],
+      benchmarks: demoMarketBenchmarks,
+      stores: demoOfflineStores,
     });
   }
+  battles = filterProductSegmentBattles(battles, filters);
 
   return {
     data: {
@@ -714,11 +782,15 @@ export async function getProductSegmentBattles(locale = "zh"): Promise<QueryResu
         belowFloorSegmentCount: battles.filter((battle) => battle.floorGapPct !== null && battle.floorGapPct < 0).length,
         evidenceCount: battles.reduce((sum, battle) => sum + battle.evidenceCount, 0),
         competitorProductCount: battles.reduce((sum, battle) => sum + battle.competitorProductCount, 0),
+        lowIndexSegmentCount: battles.filter((battle) => battle.priceIndex !== null && battle.priceIndex < 95).length,
+        nearIndexSegmentCount: battles.filter((battle) => battle.priceIndex !== null && battle.priceIndex >= 95 && battle.priceIndex <= 105).length,
+        missingBenchmarkSegmentCount: battles.filter((battle) => battle.benchmarkPricePerPiece === null).length,
+        problemStoreCount: new Set(battles.flatMap((battle) => battle.problemStoreNames)).size,
       },
       battles,
     },
-    error: skuResult.error ?? materialResult.error ?? competitorsResult.error ?? snapshotsResult.error ?? promosResult.error ?? candidatesResult.error,
-    isDemo: skuResult.isDemo || materialResult.isDemo || competitorsResult.isDemo || snapshotsResult.isDemo || promosResult.isDemo || candidatesResult.isDemo,
+    error: skuResult.error ?? materialResult.error ?? competitorsResult.error ?? snapshotsResult.error ?? promosResult.error ?? candidatesResult.error ?? benchmarkResult.error ?? storesResult.error,
+    isDemo: skuResult.isDemo || materialResult.isDemo || competitorsResult.isDemo || snapshotsResult.isDemo || promosResult.isDemo || candidatesResult.isDemo || benchmarkResult.isDemo || storesResult.isDemo,
   };
 }
 
@@ -787,14 +859,17 @@ function buildProductSegmentBattles(input: {
   snapshots: PriceSnapshot[];
   promos: PromoEvent[];
   candidates: AiPriceCandidate[];
+  benchmarks: MarketBenchmark[];
+  stores: OfflineStore[];
 }): ProductSegmentBattle[] {
-  const groups = new Map<string, { line: string; size: string; skus: SkuMaster[]; materialItems: MaterialMaster[] }>();
+  const groups = new Map<string, { category: string; line: string; size: string; priceBand: string; skus: SkuMaster[]; materialItems: MaterialMaster[] }>();
 
   for (const sku of input.skuMaster.filter((item) => item.active)) {
     const line = productLineLabel(sku.pack_type);
     const size = cleanText(sku.size) ?? "Unknown";
-    const key = productSegmentKey(line, size);
-    const group = groups.get(key) ?? { line, size, skus: [], materialItems: [] };
+    const priceBand = sku.segment;
+    const key = productSegmentKey(line, size, priceBand);
+    const group = groups.get(key) ?? { category: "Diapers", line, size, priceBand, skus: [], materialItems: [] };
     group.skus.push(sku);
     groups.set(key, group);
   }
@@ -802,8 +877,9 @@ function buildProductSegmentBattles(input: {
   for (const item of input.materialMaster) {
     const line = cleanText(item.sub_category) ?? cleanText(item.type) ?? "Unknown";
     const size = cleanText(item.sub_type) ?? "Unknown";
-    const key = productSegmentKey(line, size);
-    const group = groups.get(key) ?? { line, size, skus: [], materialItems: [] };
+    const priceBand = inferPriceBand(item.sub_brand ?? item.tenant_sku_name);
+    const key = productSegmentKey(line, size, priceBand);
+    const group = groups.get(key) ?? { category: cleanText(item.category) ?? "Diapers", line, size, priceBand, skus: [], materialItems: [] };
     group.materialItems.push(item);
     groups.set(key, group);
   }
@@ -821,7 +897,8 @@ function buildProductSegmentBattles(input: {
   for (const candidate of input.candidates.filter((item) => !isMakukuBrandName(item.raw_brand))) {
     const line = inferProductLine(candidate.raw_product || candidate.matched_label || candidate.raw_brand);
     const size = inferProductSize(candidate.raw_product || candidate.matched_label);
-    candidateSegment.set(candidate.id, productSegmentKey(line, size));
+    const priceBand = inferPriceBand(candidate.raw_product || candidate.matched_label);
+    candidateSegment.set(candidate.id, productSegmentKey(line, size, priceBand));
   }
 
   const battles = Array.from(groups.entries()).map(([key, group]) => {
@@ -844,6 +921,7 @@ function buildProductSegmentBattles(input: {
       return competitorSegment.get(product.id) === key;
     });
     const candidates = input.candidates.filter((candidate) => candidateSegment.get(candidate.id) === key);
+    const benchmark = pickMarketBenchmark(input.benchmarks, group);
     const competitorProductCount = competitors.length || new Set(
       candidates.map((candidate) => `${cleanText(candidate.raw_brand) ?? "-"}|${cleanText(candidate.raw_product) ?? "-"}`),
     ).size;
@@ -856,6 +934,7 @@ function buildProductSegmentBattles(input: {
     const targetPriceMax = maxOrNull(targetPrices);
     const floorPriceMin = minOrNull(floorPrices);
     const floorPriceMax = maxOrNull(floorPrices);
+    const regionParts = battleRegionParts(benchmark, candidates, input.stores);
     const priceEvidence = [
       ...snapshots.map((snapshot) => ({
         price: snapshot.price_per_piece,
@@ -885,15 +964,30 @@ function buildProductSegmentBattles(input: {
       .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
     const targetGapPct = lowest && targetPriceMin ? ((lowest.price - targetPriceMin) / targetPriceMin) * 100 : null;
     const floorGapPct = lowest && floorPriceMin ? ((lowest.price - floorPriceMin) / floorPriceMin) * 100 : null;
+    const benchmarkPricePerPiece = benchmark?.benchmark_price_per_piece ?? null;
+    const priceIndex = targetPriceMin && benchmarkPricePerPiece ? Math.round((targetPriceMin / benchmarkPricePerPiece) * 1000) / 10 : null;
     const promoSeverity = maxSeverity(promos.map((promo) => promo.severity));
     const evidenceCount = snapshots.length + promos.length + candidates.length;
     const severity = productBattleSeverity({ targetGapPct, floorGapPct, promoSeverity, evidenceCount });
     const segmentLabels = Array.from(new Set(group.skus.map((sku) => sku.segment)));
+    const problemStores = buildProblemStores({
+      candidates,
+      stores: input.stores,
+      priceIndex,
+      floorGapPct,
+      benchmarkMissing: !benchmark,
+    });
 
     return {
       id: key,
+      market: benchmark?.market ?? "Indonesia",
+      province: regionParts.province,
+      cityName: regionParts.cityName,
+      district: regionParts.district,
+      category: group.category,
       line: group.line,
       size: group.size,
+      priceBand: group.priceBand,
       label: `${group.line} / ${group.size}`,
       segmentLabels,
       makukuSkuCount: group.skus.length || group.materialItems.length,
@@ -908,17 +1002,185 @@ function buildProductSegmentBattles(input: {
       lowestCompetitorPricePerPiece: lowest?.price ?? null,
       strongestCompetitorBrand: lowest?.brand ?? null,
       strongestChannel: lowest?.channel ?? null,
+      benchmarkSkuName: benchmark?.benchmark_sku_name ?? null,
+      benchmarkPricePerPiece,
+      priceIndex,
+      problemStoreCount: problemStores.length,
+      pendingEvidenceCount: candidates.filter((candidate) => candidate.status === "pending").length,
+      worstProblemStore: problemStores[0] ?? null,
+      problemStoreNames: problemStores.map((store) => store.name),
       targetGapPct,
       floorGapPct,
       severity,
       latestCapturedAt,
-      href: `/${input.locale}/prices?line=${encodeURIComponent(group.line)}&size=${encodeURIComponent(group.size)}`,
+      href: benchmark
+        ? buildDashboardPriceHref(input.locale, {
+          line: group.line,
+          size: group.size,
+          priceBand: group.priceBand,
+          province: regionParts.province,
+          cityName: regionParts.cityName,
+          district: regionParts.district,
+        })
+        : buildMarketBenchmarkHref(input.locale, {
+          line: group.line,
+          size: group.size,
+          priceBand: group.priceBand,
+        }),
     } satisfies ProductSegmentBattle;
   });
 
   return battles
     .sort((a, b) => productBattleSortScore(b) - productBattleSortScore(a))
     .slice(0, 12);
+}
+
+function filterProductSegmentBattles(battles: ProductSegmentBattle[], filters: ProductSegmentPriceIndexFilters) {
+  const filtered = battles.filter((battle) => {
+    if (filters.province && battle.province !== filters.province) return false;
+    if (filters.cityName && battle.cityName !== filters.cityName) return false;
+    if (filters.district && battle.district !== filters.district) return false;
+    if (filters.line && battle.line !== filters.line) return false;
+    if (filters.priceBand && battle.priceBand !== filters.priceBand) return false;
+    if (filters.size && battle.size !== filters.size) return false;
+    if (filters.status === "low_index" && !(battle.priceIndex !== null && battle.priceIndex < 95)) return false;
+    if (filters.status === "near_index" && !(battle.priceIndex !== null && battle.priceIndex >= 95 && battle.priceIndex <= 105)) return false;
+    if (filters.status === "missing_benchmark" && battle.benchmarkPricePerPiece !== null) return false;
+    return true;
+  });
+
+  const priceIndexSort = (a: ProductSegmentBattle, b: ProductSegmentBattle) => (a.priceIndex ?? Number.POSITIVE_INFINITY) - (b.priceIndex ?? Number.POSITIVE_INFINITY);
+  const problemStoreSort = (a: ProductSegmentBattle, b: ProductSegmentBattle) => b.problemStoreCount - a.problemStoreCount;
+  if (filters.sort === "priceIndexAsc") return filtered.sort(priceIndexSort);
+  if (filters.sort === "priceIndexDesc") return filtered.sort((a, b) => -priceIndexSort(a, b));
+  if (filters.sort === "problemStoresDesc") return filtered.sort(problemStoreSort);
+  if (filters.sort === "latest") return filtered.sort((a, b) => new Date(b.latestCapturedAt ?? 0).getTime() - new Date(a.latestCapturedAt ?? 0).getTime());
+  return filtered;
+}
+
+function pickMarketBenchmark(benchmarks: MarketBenchmark[], group: { category: string; line: string; size: string; priceBand: string }) {
+  return benchmarks
+    .filter((benchmark) => benchmark.active)
+    .filter((benchmark) => sameLoose(benchmark.category, group.category))
+    .filter((benchmark) => sameLoose(benchmark.product_line, group.line))
+    .filter((benchmark) => sameLoose(benchmark.size, group.size))
+    .filter((benchmark) => sameLoose(benchmark.price_band, group.priceBand))
+    .sort((a, b) => benchmarkSpecificity(b) - benchmarkSpecificity(a))[0] ?? null;
+}
+
+function benchmarkSpecificity(benchmark: MarketBenchmark) {
+  return [benchmark.province, benchmark.city_name, benchmark.district].filter(cleanText).length;
+}
+
+function sameLoose(left: string | null | undefined, right: string | null | undefined) {
+  return (left ?? "").trim().toLowerCase() === (right ?? "").trim().toLowerCase();
+}
+
+function splitRegion(value: string | null | undefined) {
+  const parts = (value ?? "").split(" / ").map((part) => part.trim()).filter(Boolean);
+  return {
+    province: cleanRegionText(parts[0]),
+    cityName: cleanRegionText(parts[1]),
+    district: cleanRegionText(parts[2]),
+  };
+}
+
+function storeRegion(store: Pick<OfflineStore, "city" | "province" | "city_name" | "district"> | null | undefined) {
+  const fallback = splitRegion(store?.city);
+  return {
+    province: cleanRegionText(store?.province) ?? fallback.province,
+    cityName: cleanRegionText(store?.city_name) ?? fallback.cityName,
+    district: cleanRegionText(store?.district) ?? fallback.district,
+  };
+}
+
+function visitRegion(visit: AiPriceCandidate["offline_store_visits"]) {
+  const fallback = splitRegion(visit?.city);
+  return {
+    province: cleanRegionText(visit?.province) ?? fallback.province,
+    cityName: cleanRegionText(visit?.city_name) ?? fallback.cityName,
+    district: cleanRegionText(visit?.district) ?? fallback.district,
+  };
+}
+
+function battleRegionParts(benchmark: MarketBenchmark | null, candidates: AiPriceCandidate[], stores: OfflineStore[]) {
+  const benchmarkRegion = {
+    province: cleanRegionText(benchmark?.province),
+    cityName: cleanRegionText(benchmark?.city_name),
+    district: cleanRegionText(benchmark?.district),
+  };
+  if (benchmarkRegion.province || benchmarkRegion.cityName || benchmarkRegion.district) return benchmarkRegion;
+
+  const candidateVisit = candidates.find((candidate) => candidate.offline_store_visits)?.offline_store_visits ?? null;
+  const candidateRegion = visitRegion(candidateVisit);
+  if (candidateRegion.province || candidateRegion.cityName || candidateRegion.district) return candidateRegion;
+
+  return storeRegion(stores[0] ?? null);
+}
+
+function buildProblemStores(input: {
+  candidates: AiPriceCandidate[];
+  stores: OfflineStore[];
+  priceIndex: number | null;
+  floorGapPct: number | null;
+  benchmarkMissing: boolean;
+}) {
+  const shouldFlagSegment = (input.priceIndex !== null && input.priceIndex < 95) || (input.floorGapPct !== null && input.floorGapPct < 0) || input.benchmarkMissing;
+  const byName = new Map<string, NonNullable<ProductSegmentBattle["worstProblemStore"]>>();
+
+  for (const candidate of input.candidates) {
+    const visit = candidate.offline_store_visits;
+    if (!visit && !shouldFlagSegment) continue;
+    const name = cleanStoreName(visit?.store_name) ?? "Unknown Store";
+    const region = visitRegion(visit);
+    const tags = [
+      candidate.status === "pending" ? "pending review" : null,
+      input.benchmarkMissing ? "missing benchmark" : null,
+      input.priceIndex !== null && input.priceIndex < 95 ? "low index" : null,
+    ].filter(Boolean) as string[];
+    byName.set(name, {
+      id: visit?.id ?? null,
+      name,
+      province: region.province,
+      cityName: region.cityName,
+      district: region.district,
+      evidence: `${candidate.raw_brand} ${candidate.raw_product}`.trim() || "photo price evidence",
+      pricePerPiece: candidate.reviewed_price_per_piece ?? candidate.price_per_piece,
+      tags,
+    });
+  }
+
+
+  return Array.from(byName.values()).sort((a, b) => {
+    const priceCompare = (a.pricePerPiece ?? Number.POSITIVE_INFINITY) - (b.pricePerPiece ?? Number.POSITIVE_INFINITY);
+    return priceCompare || a.name.localeCompare(b.name);
+  });
+}
+
+function buildDashboardPriceHref(locale: string, input: {
+  line: string;
+  size: string;
+  priceBand: string;
+  province: string | null;
+  cityName: string | null;
+  district: string | null;
+}) {
+  const params = new URLSearchParams();
+  params.set("line", input.line);
+  params.set("size", input.size);
+  params.set("priceBand", input.priceBand);
+  if (input.province) params.set("province", input.province);
+  if (input.cityName) params.set("cityName", input.cityName);
+  if (input.district) params.set("district", input.district);
+  return `/${locale}/prices?${params.toString()}`;
+}
+
+function buildMarketBenchmarkHref(locale: string, input: { line: string; size: string; priceBand: string }) {
+  const params = new URLSearchParams();
+  params.set("line", input.line);
+  params.set("size", input.size);
+  params.set("priceBand", input.priceBand);
+  return `/${locale}/market-benchmarks?${params.toString()}`;
 }
 
 function productLineLabel(value: SkuMaster["pack_type"]) {
@@ -948,6 +1210,14 @@ function inferProductSize(value: string | null | undefined) {
   return match?.[1] ?? "Unknown";
 }
 
+function inferPriceBand(value: string | null | undefined) {
+  const text = (value ?? "").toLowerCase();
+  if (text.includes("value") || text.includes("economy") || text.includes("ekonomi")) return "value";
+  if (text.includes("comfort") || text.includes("gold") || text.includes("mid")) return "mid";
+  if (text.includes("premium") || text.includes("slim") || text.includes("air")) return "premium";
+  return "unknown";
+}
+
 function isMakukuBrandName(value: string | null | undefined) {
   return (value ?? "").toLowerCase().includes("makuku");
 }
@@ -966,8 +1236,8 @@ function isProductBattlePriceEvidence(item: {
   return isPositiveNumber(item.price);
 }
 
-function productSegmentKey(line: string, size: string) {
-  return `${slugKey(line)}-${slugKey(size)}`;
+function productSegmentKey(line: string, size: string, priceBand = "unknown") {
+  return `${slugKey(line)}-${slugKey(size)}-${slugKey(priceBand)}`;
 }
 
 function productBattleSeverity(input: {
@@ -983,9 +1253,10 @@ function productBattleSeverity(input: {
 }
 
 function productBattleSortScore(battle: ProductSegmentBattle) {
+  const indexPressure = battle.priceIndex === null ? 0 : Math.max(0, 105 - battle.priceIndex) * 8;
   const floorPressure = battle.floorGapPct === null ? 0 : Math.max(0, -battle.floorGapPct) * 4;
   const targetPressure = battle.targetGapPct === null ? 0 : Math.max(0, -battle.targetGapPct) * 2;
-  return actionSeverityRank(battle.severity) * 100 + floorPressure + targetPressure + battle.evidenceCount * 5 + battle.competitorProductCount;
+  return actionSeverityRank(battle.severity) * 100 + indexPressure + floorPressure + targetPressure + battle.problemStoreCount * 20 + battle.evidenceCount * 5 + battle.competitorProductCount;
 }
 
 function minOrNull(values: number[]) {
@@ -1618,6 +1889,20 @@ function formatDiscountLabel(discountRate: number | null) {
 function cleanText(value: unknown) {
   const text = typeof value === "string" ? value.trim() : "";
   return text.length > 0 ? text : null;
+}
+
+function cleanRegionText(value: unknown) {
+  const text = cleanText(value);
+  if (!text) return null;
+  if (/^\d+$/.test(text)) return null;
+  return text;
+}
+
+function cleanStoreName(value: unknown) {
+  const text = cleanText(value);
+  if (!text) return null;
+  if (/^\d+$/.test(text)) return null;
+  return text;
 }
 
 function isPositiveNumber(value: unknown): value is number {

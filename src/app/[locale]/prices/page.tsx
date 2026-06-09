@@ -11,7 +11,7 @@ export default async function PricesPage({
   searchParams,
 }: {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ brand?: string; channel?: string; sku?: string; line?: string; size?: string }>;
+  searchParams: Promise<{ brand?: string; channel?: string; sku?: string; line?: string; priceBand?: string; size?: string; province?: string; cityName?: string; district?: string; store?: string }>;
 }) {
   const { locale, dict } = await getPageI18n(routeParams);
   const params = await searchParams;
@@ -20,7 +20,12 @@ export default async function PricesPage({
   if (params.channel) currentParams.set("channel", params.channel);
   if (params.sku) currentParams.set("sku", params.sku);
   if (params.line) currentParams.set("line", params.line);
+  if (params.priceBand) currentParams.set("priceBand", params.priceBand);
   if (params.size) currentParams.set("size", params.size);
+  if (params.province) currentParams.set("province", params.province);
+  if (params.cityName) currentParams.set("cityName", params.cityName);
+  if (params.district) currentParams.set("district", params.district);
+  if (params.store) currentParams.set("store", params.store);
   const queryString = currentParams.toString();
   const currentPath = `/${locale}/prices${queryString ? `?${queryString}` : ""}`;
   const exportHref = `/api/price-snapshots/export${queryString ? `?${queryString}` : ""}`;
@@ -39,11 +44,14 @@ export default async function PricesPage({
     const productSegment = product ? resolveProductSegment(product) : { line: "Unknown", size: "Unknown" };
     const line = sku ? productLineLabel(sku.pack_type) : productSegment.line;
     const size = sku?.size ?? productSegment.size;
+    const priceBand = sku?.segment ?? product?.segment ?? "unknown";
     if (params.brand && product?.brand_id !== params.brand) return false;
     if (params.channel && snapshot.channel !== params.channel) return false;
     if (params.sku && match?.sku_master_id !== params.sku) return false;
     if (params.line && line !== params.line) return false;
+    if (params.priceBand && priceBand !== params.priceBand) return false;
     if (params.size && size !== params.size) return false;
+    if (params.store && !product?.shop_name?.toLowerCase().includes(params.store.toLowerCase())) return false;
     return true;
   });
 
@@ -51,7 +59,7 @@ export default async function PricesPage({
     <AppShell locale={locale} dict={dict} title={dict.prices.title} currentPath="/prices" isDemo={pricesResult.isDemo}>
       <DataNotice dict={dict} error={pricesResult.error ?? productsResult.error ?? brandsResult.error} />
       <Card className="mb-4">
-        <form className="grid gap-3 md:grid-cols-6">
+        <form className="grid gap-3 md:grid-cols-6 xl:grid-cols-10">
           <SelectInput name="brand" defaultValue={params.brand ?? ""}>
             <option value="">{dict.common.allBrands}</option>
             {brandsResult.data.filter((brand) => !brand.is_own_brand).map((brand) => <option key={brand.id} value={brand.id}>{brand.name}</option>)}
@@ -67,10 +75,21 @@ export default async function PricesPage({
             <option value="">{locale === "zh" ? "\u5168\u90e8\u4ea7\u54c1\u7ebf" : "All lines"}</option>
             {productLines.map((line) => <option key={line} value={line}>{line}</option>)}
           </SelectInput>
+          <SelectInput name="priceBand" defaultValue={params.priceBand ?? ""}>
+            <option value="">{locale === "zh" ? "全部系列" : "All series"}</option>
+            <option value="premium">premium</option>
+            <option value="mid">mid</option>
+            <option value="value">value</option>
+            <option value="unknown">unknown</option>
+          </SelectInput>
           <SelectInput name="size" defaultValue={params.size ?? ""}>
             <option value="">{locale === "zh" ? "\u5168\u90e8\u5c3a\u7801" : "All sizes"}</option>
             {productSizes.map((size) => <option key={size} value={size}>{size}</option>)}
           </SelectInput>
+          <TextInput name="province" placeholder={locale === "zh" ? "省/州" : "Province"} defaultValue={params.province ?? ""} />
+          <TextInput name="cityName" placeholder={locale === "zh" ? "城市" : "City"} defaultValue={params.cityName ?? ""} />
+          <TextInput name="district" placeholder={locale === "zh" ? "区/县" : "District"} defaultValue={params.district ?? ""} />
+          <TextInput name="store" placeholder={locale === "zh" ? "门店" : "Store"} defaultValue={params.store ?? ""} />
           <TextInput name="sku" placeholder={dict.prices.skuId} defaultValue={params.sku ?? ""} />
           <Button type="submit">{dict.common.filter}</Button>
         </form>

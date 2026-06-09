@@ -2,7 +2,7 @@ import { Download } from "lucide-react";
 import Link from "next/link";
 import { AppShell } from "@/components/app-shell";
 import { AiPriceCandidateActions } from "@/components/ai-price-candidate-actions";
-import { Badge, Button, Card, DataNotice, EmptyState, TextInput } from "@/components/ui";
+import { Badge, Button, Card, DataNotice, EmptyState, SelectInput } from "@/components/ui";
 import { formatIdr, formatJakartaTime } from "@/lib/format";
 import { getAiPriceCandidates } from "@/lib/data";
 import { getPageI18n } from "@/lib/i18n/server";
@@ -56,170 +56,154 @@ export default async function OfflinePriceCandidatesPage({
   if (dateTo) exportParams.set("date_to", dateTo);
   if (statusFilter) exportParams.set("status", statusFilter);
   const exportHref = `/api/ai-price-candidates/export${exportParams.size > 0 ? `?${exportParams.toString()}` : ""}`;
-  const [result, summaryResult] = await Promise.all([
-    getAiPriceCandidates({
-      dateFrom: dateFrom || undefined,
-      dateTo: dateTo || undefined,
-      status: statusFilter,
-    }),
-    getAiPriceCandidates({
-      dateFrom: dateFrom || undefined,
-      dateTo: dateTo || undefined,
-      limit: 5000,
-    }),
-  ]);
+  const result = await getAiPriceCandidates({
+    dateFrom: dateFrom || undefined,
+    dateTo: dateTo || undefined,
+    status: statusFilter,
+  });
   const candidates = result.data;
-  const summaryCandidates = summaryResult.data;
-  const pending = summaryCandidates.filter((item) => item.status === "pending").length;
-  const approved = summaryCandidates.filter((item) => item.status === "approved").length;
-  const approvedAccuracies = summaryCandidates
-    .filter((item) => item.status === "approved")
-    .map(accuracy)
-    .filter((value): value is number => value !== null);
-  const approvedAccuracy = approvedAccuracies.length
-    ? approvedAccuracies.reduce((sum, value) => sum + value, 0) / approvedAccuracies.length
-    : null;
-  const statusHref = (status: "pending" | "approved" | "all") => {
-    const next = new URLSearchParams();
-    if (dateFrom) next.set("date_from", dateFrom);
-    if (dateTo) next.set("date_to", dateTo);
-    if (status !== "pending") next.set("status", status);
-    const query = next.toString();
-    return `/${locale}/offline-price-candidates${query ? `?${query}` : ""}`;
-  };
-  const clearDateHref = () => {
-    const next = new URLSearchParams();
-    if (currentStatus !== "pending") next.set("status", currentStatus);
-    const query = next.toString();
-    return `/${locale}/offline-price-candidates${query ? `?${query}` : ""}`;
-  };
-  const tabClass = (status: "pending" | "approved" | "all") =>
-    status === currentStatus
-      ? "inline-flex h-9 items-center justify-center rounded-md bg-slate-900 px-3 text-sm font-medium text-white"
-      : "inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50";
+  const pageTitle = locale === "zh" ? "照片价格复核" : "Photo Price Review";
 
   return (
-    <AppShell locale={locale} dict={dict} title="AI Price Candidates" currentPath="/offline-price-candidates" isDemo={result.isDemo}>
-      <DataNotice error={result.error ?? summaryResult.error} dict={dict} />
+    <AppShell locale={locale} dict={dict} title={pageTitle} currentPath="/offline-price-candidates" isDemo={result.isDemo}>
+      <DataNotice error={result.error} dict={dict} />
 
-      <div className="mb-4 grid gap-3 md:grid-cols-3">
-        <Card>
-          <div className="text-xs font-medium uppercase text-slate-500">Pending Review</div>
-          <div className="mt-2 text-2xl font-semibold">{pending}</div>
-        </Card>
-        <Card>
-          <div className="text-xs font-medium uppercase text-slate-500">Approved</div>
-          <div className="mt-2 text-2xl font-semibold">{approved}</div>
-        </Card>
-        <Card>
-          <div className="text-xs font-medium uppercase text-slate-500">Approved Accuracy</div>
-          <div className="mt-2 text-2xl font-semibold">{formatAccuracy(approvedAccuracy)}</div>
-        </Card>
-      </div>
+      <Card className="mb-4">
+        <form className="grid gap-3 md:grid-cols-[minmax(160px,220px)_minmax(280px,1fr)_minmax(120px,180px)]">
+          <SelectInput name="status" defaultValue={currentStatus}>
+            <option value="pending">{locale === "zh" ? "待复核" : "Pending"}</option>
+            <option value="approved">{locale === "zh" ? "已复核" : "Approved"}</option>
+            <option value="all">{locale === "zh" ? "全部状态" : "All statuses"}</option>
+          </SelectInput>
+          <DateRangeFilter locale={locale} dateFrom={dateFrom} dateTo={dateTo} />
+          <Button type="submit">{dict.common.filter}</Button>
+        </form>
+      </Card>
 
       <Card>
-        <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="font-semibold">AI detected price candidates</h2>
-            <p className="mt-1 text-sm text-slate-500">Review AI extracted prices before they enter the price monitor.</p>
-          </div>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-semibold">{pageTitle}</h2>
           <a href={exportHref} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
             <Download className="h-4 w-4" />
             Export CSV
           </a>
         </div>
-        <div className="mb-4 flex flex-wrap gap-2">
-          <Link href={statusHref("pending")} className={tabClass("pending")}>待审批</Link>
-          <Link href={statusHref("approved")} className={tabClass("approved")}>已审批</Link>
-          <Link href={statusHref("all")} className={tabClass("all")}>全部</Link>
-        </div>
-        <form className="mb-4 grid gap-3 md:grid-cols-[minmax(0,180px)_minmax(0,180px)_auto_auto]">
-          {currentStatus !== "pending" ? <input type="hidden" name="status" value={currentStatus} /> : null}
-          <TextInput name="date_from" type="date" defaultValue={dateFrom} aria-label="Visit date from" />
-          <TextInput name="date_to" type="date" defaultValue={dateTo} aria-label="Visit date to" />
-          <Button type="submit">{dict.common.filter}</Button>
-          <Link href={clearDateHref()} className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
-            {dict.common.viewAll}
-          </Link>
-        </form>
         {candidates.length === 0 ? <EmptyState text="No AI price candidates yet. Run Store Visit analysis first." /> : null}
         {candidates.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1600px] text-left text-sm">
-              <thead className="border-b border-slate-200 text-xs uppercase text-slate-500">
-                <tr>
-                  <th className="py-2 pr-3">Visit</th>
-                  <th className="py-2 pr-3">Raw Brand</th>
-                  <th className="py-2 pr-3">Raw Product</th>
-                  <th className="py-2 pr-3">AI Package</th>
-                  <th className="py-2 pr-3">AI Pcs</th>
-                  <th className="py-2 pr-3">AI Per Piece</th>
-                  <th className="py-2 pr-3">Reviewed Per Piece</th>
-                  <th className="py-2 pr-3">Accuracy</th>
-                  <th className="py-2 pr-3">Match</th>
-                  <th className="py-2 pr-3">Score</th>
-                  <th className="py-2 pr-3">Warnings</th>
-                  <th className="py-2 pr-3">Status</th>
-                  <th className="py-2 pr-3">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {candidates.map((candidate) => {
-                  const visit = candidate.offline_store_visits;
-                  const rowAccuracy = accuracy(candidate);
-                  return (
-                    <tr key={candidate.id}>
-                      <td className="py-3 pr-3">
-                        <div className="font-medium">{visit?.store_name ?? "-"}</div>
-                        <div className="text-xs text-slate-500">
-                          {visit ? <Link className="underline" href={`/${locale}/mobile/offline-capture/${visit.id}`}>Visit detail</Link> : null}
-                        </div>
-                        <div className="text-xs text-slate-500">{candidate.created_at ? formatJakartaTime(candidate.created_at) : "-"}</div>
-                      </td>
-                      <td className="py-3 pr-3">{candidate.raw_brand || "-"}</td>
-                      <td className="max-w-xs py-3 pr-3">{candidate.raw_product || "-"}</td>
-                      <td className="py-3 pr-3">{candidate.parsed_price_idr ? formatIdr(candidate.parsed_price_idr) : "-"}</td>
-                      <td className="py-3 pr-3">{candidate.piece_count ?? "-"}</td>
-                      <td className="py-3 pr-3 font-medium">{candidate.price_per_piece ? formatIdr(candidate.price_per_piece) : "-"}</td>
-                      <td className="py-3 pr-3 font-medium">{candidate.reviewed_price_per_piece ? `${formatIdr(candidate.reviewed_price_per_piece)}/pc` : "-"}</td>
-                      <td className="py-3 pr-3">
-                        <Badge tone={accuracyTone(rowAccuracy)}>{formatAccuracy(rowAccuracy)}</Badge>
-                      </td>
-                      <td className="py-3 pr-3">
-                        <div><Badge>{candidate.matched_entity_type}</Badge></div>
-                        <div className="mt-1 max-w-xs text-xs text-slate-500">{candidate.matched_label ?? "-"}</div>
-                      </td>
-                      <td className="py-3 pr-3">
-                        <Badge tone={scoreTone(candidate.match_score)}>{Math.round(candidate.match_score * 100)}%</Badge>
-                        <div className="mt-1 text-xs text-slate-500">AI {Math.round(candidate.ai_confidence * 100)}%</div>
-                      </td>
-                      <td className="max-w-xs py-3 pr-3">
-                        {(candidate.warnings ?? []).length === 0 ? <span className="text-slate-400">-</span> : null}
-                        <div className="space-y-1">
-                          {(candidate.warnings ?? []).map((warning, index) => (
-                            <div key={index} className="text-xs text-amber-700">{warning.message}</div>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="py-3 pr-3"><Badge>{candidate.status}</Badge></td>
-                      <td className="py-3 pr-3">
-                        {candidate.status !== "approved" ? (
-                          <AiPriceCandidateActions id={candidate.id} status={candidate.status} price={candidate.parsed_price_idr} pieceCount={candidate.piece_count} />
-                        ) : (
-                          <div className="text-xs text-slate-500">
-                            <div>{candidate.reviewed_at ? formatJakartaTime(candidate.reviewed_at) : "-"}</div>
-                            {candidate.reviewed_price_per_piece ? <div>{formatIdr(candidate.reviewed_price_per_piece)}/pc</div> : null}
+          <div className="space-y-3">
+            {candidates.map((candidate) => {
+              const visit = candidate.offline_store_visits;
+              const rowAccuracy = accuracy(candidate);
+              const warnings = candidate.warnings ?? [];
+              return (
+                <article key={candidate.id} className="rounded-lg border border-slate-200 bg-white px-4 py-4">
+                  <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,320px)]">
+                    <div className="min-w-0 space-y-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="text-base font-semibold text-slate-950">{candidate.raw_brand || "-"}</h3>
+                            <Badge>{candidate.status}</Badge>
+                            <Badge tone={scoreTone(candidate.match_score)}>AI {Math.round(candidate.ai_confidence * 100)}%</Badge>
                           </div>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                          <div className="mt-1 break-words text-sm text-slate-700">{candidate.raw_product || "-"}</div>
+                        </div>
+                        <div className="text-right text-xs text-slate-500">
+                          <div className="font-medium text-slate-700">{visit?.store_name ?? "-"}</div>
+                          {visit ? <Link className="underline" href={`/${locale}/mobile/offline-capture/${visit.id}`}>Visit detail</Link> : null}
+                          <div>{candidate.created_at ? formatJakartaTime(candidate.created_at) : "-"}</div>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <ReviewMetric label={locale === "zh" ? "AI 识别包装价" : "AI detected package"} value={candidate.parsed_price_idr ? formatIdr(candidate.parsed_price_idr) : "-"} />
+                        <ReviewMetric label={locale === "zh" ? "AI 识别片数" : "AI detected pcs"} value={candidate.piece_count ?? "-"} />
+                        <ReviewMetric label={locale === "zh" ? "AI 单片价" : "AI per piece"} value={candidate.price_per_piece ? formatIdr(candidate.price_per_piece) : "-"} strong />
+                        <ReviewMetric label={locale === "zh" ? "复核准确率" : "Review accuracy"} value={<Badge tone={accuracyTone(rowAccuracy)}>{formatAccuracy(rowAccuracy)}</Badge>} />
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div className="rounded-md bg-slate-50 px-3 py-2">
+                          <div className="text-xs font-medium uppercase text-slate-500">{locale === "zh" ? "匹配对象" : "Matched to"}</div>
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-700">
+                            <Badge>{candidate.matched_entity_type}</Badge>
+                            <span className="min-w-0 break-words">{candidate.matched_label ?? "-"}</span>
+                          </div>
+                          <div className="mt-1 text-xs text-slate-500">Match {Math.round(candidate.match_score * 100)}%</div>
+                        </div>
+                        <div className="rounded-md bg-slate-50 px-3 py-2">
+                          <div className="text-xs font-medium uppercase text-slate-500">{locale === "zh" ? "复核后单片价" : "Reviewed per piece"}</div>
+                          <div className="mt-1 text-sm font-semibold text-slate-900">{candidate.reviewed_price_per_piece ? `${formatIdr(candidate.reviewed_price_per_piece)}/pc` : "-"}</div>
+                          <div className="mt-1 text-xs text-slate-500">{candidate.reviewed_at ? formatJakartaTime(candidate.reviewed_at) : locale === "zh" ? "尚未复核" : "Not reviewed yet"}</div>
+                        </div>
+                      </div>
+
+                      {warnings.length > 0 ? (
+                        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+                          <div className="text-xs font-medium uppercase text-amber-800">{locale === "zh" ? "风险提示" : "Warnings"}</div>
+                          <div className="mt-1 space-y-1">
+                            {warnings.map((warning, index) => (
+                              <div key={index} className="text-xs text-amber-800">{warning.message}</div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                      <div className="mb-3 text-xs font-medium uppercase text-slate-500">{locale === "zh" ? "复核输入" : "Review input"}</div>
+                      {candidate.status !== "approved" ? (
+                        <AiPriceCandidateActions id={candidate.id} status={candidate.status} price={candidate.parsed_price_idr} pieceCount={candidate.piece_count} />
+                      ) : (
+                        <div className="text-sm text-slate-600">
+                          <div>{locale === "zh" ? "已复核" : "Approved"}</div>
+                          <div className="mt-1 text-xs text-slate-500">{candidate.reviewed_at ? formatJakartaTime(candidate.reviewed_at) : "-"}</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         ) : null}
       </Card>
     </AppShell>
+  );
+}
+
+function ReviewMetric({ label, value, strong = false }: { label: string; value: React.ReactNode; strong?: boolean }) {
+  return (
+    <div className="rounded-md bg-slate-50 px-3 py-2">
+      <div className="text-xs font-medium uppercase text-slate-500">{label}</div>
+      <div className={strong ? "mt-1 text-sm font-semibold text-slate-950" : "mt-1 text-sm text-slate-800"}>{value}</div>
+    </div>
+  );
+}
+
+function DateRangeFilter({ locale, dateFrom, dateTo }: { locale: string; dateFrom: string; dateTo: string }) {
+  const label = locale === "zh" ? "巡店日期范围" : "Visit date range";
+  const fromLabel = locale === "zh" ? "开始日期" : "Start date";
+  const toLabel = locale === "zh" ? "结束日期" : "End date";
+  const separator = locale === "zh" ? "至" : "to";
+
+  return (
+    <fieldset aria-label={label} className="flex min-h-10 items-center rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus-within:border-slate-500 focus-within:ring-2 focus-within:ring-slate-200">
+      <input
+        name="date_from"
+        type="date"
+        defaultValue={dateFrom}
+        aria-label={fromLabel}
+        className="min-w-0 flex-1 bg-transparent py-2 outline-none [color-scheme:light]"
+      />
+      <span className="mx-2 shrink-0 text-xs font-medium text-slate-400">{separator}</span>
+      <input
+        name="date_to"
+        type="date"
+        defaultValue={dateTo}
+        aria-label={toLabel}
+        className="min-w-0 flex-1 bg-transparent py-2 outline-none [color-scheme:light]"
+      />
+    </fieldset>
   );
 }

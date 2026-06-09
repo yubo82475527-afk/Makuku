@@ -198,6 +198,9 @@ export type OfflineStore = {
   id: string;
   name: string;
   city: string;
+  province?: string | null;
+  city_name?: string | null;
+  district?: string | null;
   channel_type: string;
   channel_id: string | null;
   address: string | null;
@@ -210,6 +213,27 @@ export type OfflineStore = {
   deleted_at?: string | null;
   created_at: string;
   channels?: Pick<ChannelMaster, "id" | "code" | "name" | "type"> | null;
+};
+
+export type MarketBenchmark = {
+  id: string;
+  market: string;
+  province: string | null;
+  city_name: string | null;
+  district: string | null;
+  category: string;
+  product_line: string;
+  price_band: string;
+  size: string;
+  benchmark_competitor_product_id: string | null;
+  benchmark_sku_name: string;
+  benchmark_price_per_piece: number;
+  currency: string;
+  active: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string | null;
+  competitor_products?: CompetitorProduct | null;
 };
 
 export type SkuMatch = {
@@ -331,6 +355,9 @@ export type OfflineStoreVisit = {
   analysis_status?: StoreVisitAnalysisStatus | null;
   analysis_error?: string | null;
   city: string;
+  province?: string | null;
+  city_name?: string | null;
+  district?: string | null;
   channel_type: string;
   store_id?: string | null;
   channel_id?: string | null;
@@ -379,7 +406,7 @@ export type AiPriceCandidate = {
   created_at: string;
   reviewed_at: string | null;
   reviewed_by: string | null;
-  offline_store_visits?: Pick<OfflineStoreVisit, "id" | "store_name" | "city" | "channel_type" | "visit_date" | "created_at"> | null;
+  offline_store_visits?: Pick<OfflineStoreVisit, "id" | "store_name" | "city" | "province" | "city_name" | "district" | "channel_type" | "visit_date" | "created_at"> | null;
 };
 
 export type PromoEvent = {
@@ -532,8 +559,14 @@ export type DashboardCategoryChannelMatrix = {
 
 export type ProductSegmentBattle = {
   id: string;
+  market: string;
+  province: string | null;
+  cityName: string | null;
+  district: string | null;
+  category: string;
   line: string;
   size: string;
+  priceBand: string;
   label: string;
   segmentLabels: Segment[];
   makukuSkuCount: number;
@@ -548,6 +581,22 @@ export type ProductSegmentBattle = {
   lowestCompetitorPricePerPiece: number | null;
   strongestCompetitorBrand: string | null;
   strongestChannel: Channel | null;
+  benchmarkSkuName: string | null;
+  benchmarkPricePerPiece: number | null;
+  priceIndex: number | null;
+  problemStoreCount: number;
+  pendingEvidenceCount: number;
+  worstProblemStore: {
+    id: string | null;
+    name: string;
+    province: string | null;
+    cityName: string | null;
+    district: string | null;
+    evidence: string;
+    pricePerPiece: number | null;
+    tags: string[];
+  } | null;
+  problemStoreNames: string[];
   targetGapPct: number | null;
   floorGapPct: number | null;
   severity: Severity;
@@ -561,6 +610,10 @@ export type ProductSegmentBattleSummary = {
   belowFloorSegmentCount: number;
   evidenceCount: number;
   competitorProductCount: number;
+  lowIndexSegmentCount: number;
+  nearIndexSegmentCount: number;
+  missingBenchmarkSegmentCount: number;
+  problemStoreCount: number;
 };
 
 export type OpportunityActionType =

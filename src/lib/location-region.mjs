@@ -43,6 +43,16 @@ function joinRegion(parts) {
   return regionParts.length > 0 ? regionParts.join(" / ") : null;
 }
 
+function regionToParts(region) {
+  const parts = truncateRegion((region ?? "").split(" / ").map((part) => part.trim()).filter(Boolean));
+  return {
+    province: parts[0] ?? null,
+    cityName: parts[1] ?? null,
+    district: parts[2] ?? null,
+    region: parts.length > 0 ? parts.join(" / ") : null,
+  };
+}
+
 function isInside(latitude, longitude, bounds) {
   return latitude >= bounds.minLat && latitude <= bounds.maxLat && longitude >= bounds.minLon && longitude <= bounds.maxLon;
 }
@@ -163,4 +173,8 @@ export function buildLocationRegion(data, coordinates) {
   }
 
   return pickBetterRegion(buildGenericAddressRegion(address), buildGenericDisplayRegion(data?.display_name, address));
+}
+
+export function buildLocationRegionParts(data, coordinates) {
+  return regionToParts(buildLocationRegion(data, coordinates));
 }

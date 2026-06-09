@@ -24,6 +24,9 @@ type OfflineStoreOption = {
   id: string;
   name: string;
   city: string;
+  province?: string | null;
+  city_name?: string | null;
+  district?: string | null;
   channel_type: string;
   channel_id?: string | null;
   address?: string | null;
@@ -43,6 +46,9 @@ type StoreLocationEvidence = {
 
 type ReverseLocationResponse = {
   city?: string | null;
+  province?: string | null;
+  cityName?: string | null;
+  district?: string | null;
   address?: string | null;
   error?: string;
 };
@@ -578,6 +584,9 @@ function CreateStoreSheet({ locale, onClose, onCreated }: { locale: Locale; onCl
   const labels = uiCopy(locale);
   const [name, setName] = useState("");
   const [city, setCity] = useState("");
+  const [province, setProvince] = useState("");
+  const [cityName, setCityName] = useState("");
+  const [district, setDistrict] = useState("");
   const [channels, setChannels] = useState<ChannelOption[]>([]);
   const [selectedChannelId, setSelectedChannelId] = useState("");
   const [channelsLoading, setChannelsLoading] = useState(true);
@@ -647,6 +656,9 @@ function CreateStoreSheet({ locale, onClose, onCreated }: { locale: Locale; onCl
             return;
           }
           if (data.city) setCity(data.city);
+          if (data.province) setProvince(data.province);
+          if (data.cityName) setCityName(data.cityName);
+          if (data.district) setDistrict(data.district);
           if (data.address) setAddress(data.address);
           setLocationStatus(data.city || data.address ? "" : labels.reverseAddressMissing);
         } catch {
@@ -678,6 +690,9 @@ function CreateStoreSheet({ locale, onClose, onCreated }: { locale: Locale; onCl
         body: JSON.stringify({
           name,
           city,
+          province,
+          city_name: cityName,
+          district,
           channel_id: selectedChannel?.id,
           channel_type: selectedChannel?.code,
           address,

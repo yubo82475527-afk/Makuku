@@ -5,6 +5,16 @@ export async function POST(request: Request) {
   try {
     const { body, isForm } = await readRequestBody(request);
     const supabase = createSupabaseServiceClient();
+    const { data: brand, error: brandError } = await supabase
+      .from("brands")
+      .select("id,name,is_own_brand")
+      .eq("id", body.brand_id)
+      .single();
+    if (brandError) return Response.json({ error: brandError.message }, { status: 400 });
+    if (brand?.is_own_brand || isOwnBrandName(brand?.name)) {
+      return Response.json({ error: "Own brand cannot be added as a competitor" }, { status: 400 });
+    }
+
     const { data: product, error } = await supabase
       .from("competitor_products")
       .insert({
@@ -30,7 +40,7 @@ export async function POST(request: Request) {
         sku_master_id: body.sku_master_id,
         match_score: Number(body.match_score ?? 0.85),
         match_method: body.match_method ?? "manual",
-        reviewed: body.reviewed === "on" || body.reviewed === true,
+        reviewed: true,
       });
       if (matchError) return Response.json({ error: matchError.message }, { status: 400 });
     }
@@ -40,4 +50,8 @@ export async function POST(request: Request) {
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
   }
+}
+
+function isOwnBrandName(value: string | null | undefined) {
+  return value?.trim().toLowerCase() === "makuku";
 }

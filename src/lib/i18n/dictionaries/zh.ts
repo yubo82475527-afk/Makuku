@@ -152,7 +152,7 @@ const zh: typeof en = {
     addButton: "新增商品",
   },
   prices: {
-    title: "每日竞品价格表",
+    title: "门店价格快照",
     addTitle: "新增价格快照",
     skuId: "SKU id",
     listIdr: "标价 IDR",

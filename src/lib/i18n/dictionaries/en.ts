@@ -150,7 +150,7 @@ const en = {
     addButton: "Add Product",
   },
   prices: {
-    title: "Daily Competitor Price Table",
+    title: "Store Price Snapshots",
     addTitle: "Add Price Snapshot",
     skuId: "SKU id",
     listIdr: "List IDR",

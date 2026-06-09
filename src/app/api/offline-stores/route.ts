@@ -20,6 +20,11 @@ function isLocationColumnError(error: { message?: string } | null) {
   return message.includes("latitude") || message.includes("longitude") || message.includes("location_accuracy_m") || message.includes("location_captured_at");
 }
 
+function isStoreRegionColumnError(error: { message?: string } | null) {
+  const message = error?.message ?? "";
+  return message.includes("province") || message.includes("city_name") || message.includes("district") || message.includes("schema cache");
+}
+
 function isStoreStatusColumnError(error: { message?: string } | null) {
   const message = error?.message ?? "";
   return message.includes("status") || message.includes("disabled_at") || message.includes("schema cache");
@@ -39,6 +44,9 @@ type StoreRef = {
   id: string;
   name: string;
   city: string;
+  province?: string | null;
+  city_name?: string | null;
+  district?: string | null;
   channel_type: string;
   channel_id?: string | null;
   address?: string | null;
@@ -63,6 +71,9 @@ function parseStoreRefs(body: { stores?: unknown }) {
       id,
       name,
       city,
+      province: typeof ref.province === "string" && ref.province.trim() ? ref.province.trim() : null,
+      city_name: typeof ref.city_name === "string" && ref.city_name.trim() ? ref.city_name.trim() : null,
+      district: typeof ref.district === "string" && ref.district.trim() ? ref.district.trim() : null,
       channel_type: channelType,
       channel_id: typeof ref.channel_id === "string" && ref.channel_id.trim() ? ref.channel_id.trim() : null,
       address: typeof ref.address === "string" && ref.address.trim() ? ref.address.trim() : null,
@@ -89,7 +100,7 @@ function filterDemoStoreMasterOptions(q: string, limit: number) {
   const keyword = q.toLowerCase();
   return demoOfflineStores
     .filter((store) => !isDisabledStore(store))
-    .filter((store) => !keyword || store.name.toLowerCase().includes(keyword) || store.city.toLowerCase().includes(keyword))
+    .filter((store) => !keyword || [store.name, store.city, store.province, store.city_name, store.district].some((value) => (value ?? "").toLowerCase().includes(keyword)))
     .slice(0, limit);
 }
 
@@ -100,11 +111,11 @@ async function readStoreMasterOptions({ q, limit }: { q: string; limit: number }
   const keyword = q.trim();
   let query = supabase
     .from("offline_stores")
-    .select("id,name,city,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_at,channels(id,code,name,type)")
+    .select("id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_at,channels(id,code,name,type)")
     .order("name")
     .limit(limit);
 
-  if (keyword) query = query.or(`name.ilike.%${keyword}%,city.ilike.%${keyword}%`);
+  if (keyword) query = query.or(`name.ilike.%${keyword}%,city.ilike.%${keyword}%,province.ilike.%${keyword}%,city_name.ilike.%${keyword}%,district.ilike.%${keyword}%`);
 
   const initial = await query;
   let data = initial.data as OfflineStore[] | null;
@@ -113,10 +124,10 @@ async function readStoreMasterOptions({ q, limit }: { q: string; limit: number }
   if (error?.message.includes("channels") || error?.message.includes("schema cache")) {
     let legacyQuery = supabase
       .from("offline_stores")
-      .select("id,name,city,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_at")
+      .select("id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_at")
       .order("name")
       .limit(limit);
-    if (keyword) legacyQuery = legacyQuery.or(`name.ilike.%${keyword}%,city.ilike.%${keyword}%`);
+    if (keyword) legacyQuery = legacyQuery.or(`name.ilike.%${keyword}%,city.ilike.%${keyword}%,province.ilike.%${keyword}%,city_name.ilike.%${keyword}%,district.ilike.%${keyword}%`);
     const legacy = await legacyQuery;
     data = legacy.data as OfflineStore[] | null;
     error = legacy.error;
@@ -125,13 +136,25 @@ async function readStoreMasterOptions({ q, limit }: { q: string; limit: number }
   if (isStoreStatusColumnError(error)) {
     let noStatusQuery = supabase
       .from("offline_stores")
-      .select("id,name,city,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,created_at,channels(id,code,name,type)")
+      .select("id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,created_at,channels(id,code,name,type)")
       .order("name")
       .limit(limit);
-    if (keyword) noStatusQuery = noStatusQuery.or(`name.ilike.%${keyword}%,city.ilike.%${keyword}%`);
+    if (keyword) noStatusQuery = noStatusQuery.or(`name.ilike.%${keyword}%,city.ilike.%${keyword}%,province.ilike.%${keyword}%,city_name.ilike.%${keyword}%,district.ilike.%${keyword}%`);
     const noStatus = await noStatusQuery;
     data = noStatus.data as OfflineStore[] | null;
     error = noStatus.error;
+  }
+
+  if (isStoreRegionColumnError(error)) {
+    let legacyRegionQuery = supabase
+      .from("offline_stores")
+      .select("id,name,city,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_at,channels(id,code,name,type)")
+      .order("name")
+      .limit(limit);
+    if (keyword) legacyRegionQuery = legacyRegionQuery.or(`name.ilike.%${keyword}%,city.ilike.%${keyword}%`);
+    const legacyRegion = await legacyRegionQuery;
+    data = legacyRegion.data as OfflineStore[] | null;
+    error = legacyRegion.error;
   }
 
   if (error) return { stores: filterDemoStoreMasterOptions(q, limit), error: error.message, demo: true };
@@ -177,6 +200,9 @@ export async function POST(request: Request) {
     const { body, isForm } = await readRequestBody(request);
     const name = String(body.name ?? "").trim();
     const city = String(body.city ?? "").trim();
+    const province = String(body.province ?? "").trim() || null;
+    const cityName = String(body.city_name ?? body.cityName ?? "").trim() || null;
+    const district = String(body.district ?? "").trim() || null;
     const channelId = String(body.channel_id ?? "").trim() || null;
     const channelTypeFromBody = String(body.channel_type ?? "").trim();
     const address = String(body.address ?? "").trim();
@@ -207,6 +233,9 @@ export async function POST(request: Request) {
       .insert({
         name,
         city,
+        province,
+        city_name: cityName,
+        district,
         channel_type: channelType,
         channel_id: channelId,
         address: address || null,
@@ -221,17 +250,37 @@ export async function POST(request: Request) {
     if (isLocationColumnError(error)) {
       const noLocation = await supabase
         .from("offline_stores")
-        .insert({ name, city, channel_type: channelType, channel_id: channelId, address: address || null })
+        .insert({ name, city, province, city_name: cityName, district, channel_type: channelType, channel_id: channelId, address: address || null })
         .select("*, channels(id,code,name,type)")
         .single();
       data = noLocation.data;
       error = noLocation.error;
     }
 
+    if (isStoreRegionColumnError(error)) {
+      const noRegion = await supabase
+        .from("offline_stores")
+        .insert({
+          name,
+          city,
+          channel_type: channelType,
+          channel_id: channelId,
+          address: address || null,
+          latitude,
+          longitude,
+          location_accuracy_m: locationAccuracyM,
+          location_captured_at: locationCapturedAt,
+        })
+        .select("*, channels(id,code,name,type)")
+        .single();
+      data = noRegion.data;
+      error = noRegion.error;
+    }
+
     if (error?.message.includes("channel_id") || error?.message.includes("channels")) {
       const legacy = await supabase
         .from("offline_stores")
-        .insert({ name, city, channel_type: channelType, address: address || null })
+        .insert({ name, city, province, city_name: cityName, district, channel_type: channelType, address: address || null })
         .select("*")
         .single();
       data = legacy.data;
@@ -244,6 +293,9 @@ export async function POST(request: Request) {
           id: `demo-store-${Date.now()}`,
           name,
           city,
+          province,
+          city_name: cityName,
+          district,
           channel_type: channelType,
           channel_id: channelId,
           address: address || null,
@@ -304,6 +356,9 @@ export async function DELETE(request: Request) {
       const derivedDisablePayloads = derivedRefs.map((store) => ({
         name: store.name,
         city: store.city,
+        province: store.province ?? null,
+        city_name: store.city_name ?? null,
+        district: store.district ?? null,
         channel_type: store.channel_type,
         channel_id: store.channel_id,
         address: store.address,
@@ -338,6 +393,9 @@ export async function DELETE(request: Request) {
         const legacyDerivedPayloads = derivedRefs.map((store) => ({
           name: store.name,
           city: store.city,
+          province: store.province ?? null,
+          city_name: store.city_name ?? null,
+          district: store.district ?? null,
           channel_type: store.channel_type,
           channel_id: store.channel_id,
           address: store.address,

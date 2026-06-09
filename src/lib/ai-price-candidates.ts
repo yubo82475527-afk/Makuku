@@ -238,7 +238,7 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
   const { data, error } = await supabase
     .from("ai_price_candidates")
     .insert(rows)
-    .select("*, offline_store_visits(id,store_name,city,channel_type,visit_date,created_at)");
+    .select("*, offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,created_at)");
 
   if (error?.message.includes("ai_price_candidates")) {
     return [];

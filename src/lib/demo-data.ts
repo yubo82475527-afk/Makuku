@@ -4,6 +4,7 @@ import type {
   Brand,
   ChannelMaster,
   CompetitorProduct,
+  MarketBenchmark,
   MaterialMaster,
   OfflineStore,
   OfflineStoreVisit,
@@ -107,7 +108,10 @@ export const demoOfflineStores: OfflineStore[] = [
   {
     id: "demo-store-jakarta",
     name: "Jakarta Baby Care - Kelapa Gading",
-    city: "Jakarta",
+    city: "DKI Jakarta / Jakarta / Kelapa Gading",
+    province: "DKI Jakarta",
+    city_name: "Jakarta",
+    district: "Kelapa Gading",
     channel_type: "baby_store",
     channel_id: "ch-baby-store",
     address: "Kelapa Gading, Jakarta",
@@ -117,7 +121,10 @@ export const demoOfflineStores: OfflineStore[] = [
   {
     id: "demo-store-surabaya",
     name: "Surabaya Modern Trade - Pakuwon",
-    city: "Surabaya",
+    city: "Jawa Timur / Surabaya / Pakuwon",
+    province: "Jawa Timur",
+    city_name: "Surabaya",
+    district: "Pakuwon",
     channel_type: "modern_trade",
     channel_id: "ch-modern-trade",
     address: "Pakuwon City, Surabaya",
@@ -191,6 +198,32 @@ export const demoPriceSnapshots: PriceSnapshot[] = [
   } as PriceSnapshot;
 });
 
+export const demoMarketBenchmarks: MarketBenchmark[] = [
+  ["mb1", "Indonesia", "DKI Jakarta", "Jakarta", "Kelapa Gading", "Diapers", "Pants", "premium", "M", "c1", "MamyPoko Pants Royal Soft M32", 2600, "IDR"],
+  ["mb2", "Indonesia", "Jawa Timur", "Surabaya", "Pakuwon", "Diapers", "Pants", "mid", "L", "c2", "Sweety Gold Pants L32", 2300, "IDR"],
+  ["mb3", "Indonesia", null, null, null, "Diapers", "Tape", "premium", "NB", "c6", "Merries Tape NB44", 2250, "IDR"],
+  ["mb4", "Indonesia", null, null, null, "Diapers", "Pants", "premium", "XL", "c5", "Pampers Baby Dry Pants XL30", 2500, "IDR"],
+].map(([id, market, province, city_name, district, category, product_line, price_band, size, benchmark_competitor_product_id, benchmark_sku_name, benchmark_price_per_piece, currency]) => ({
+  id,
+  market,
+  province,
+  city_name,
+  district,
+  category,
+  product_line,
+  price_band,
+  size,
+  benchmark_competitor_product_id,
+  benchmark_sku_name,
+  benchmark_price_per_piece,
+  currency,
+  active: true,
+  notes: null,
+  created_at: iso(120),
+  updated_at: null,
+  competitor_products: demoCompetitors.find((product) => product.id === benchmark_competitor_product_id) ?? null,
+}) as MarketBenchmark);
+
 export const demoPromoEvents: PromoEvent[] = [
   ["e1", "c1", "s2", "shopee", "flash_sale", "MamyPoko M32 flash sale under floor", "Flash sale plus voucher pushes M32 below Makuku floor.", 2780, 2120, -16.9, "critical", null, 2],
   ["e2", "c2", "s7", "shopee", "price_drop", "Sweety L32 voucher stack price drop", "Voucher stack created a 10% drop versus prior snapshot.", 2380, 2090, -9.1, "high", null, 6],
@@ -262,7 +295,7 @@ export const demoOfflineUploads: OfflineUpload[] = [
   {
     id: "u1",
     uploader_name: "Rina",
-    city: "Bandung",
+    city: "Jawa Barat / Bandung / Buah Batu",
     store_name: "Transmart Buah Batu",
     channel_type: "hypermarket",
     image_path: "demo/merries-bandung.jpg",
@@ -289,7 +322,7 @@ export const demoOfflineUploads: OfflineUpload[] = [
   {
     id: "u2",
     uploader_name: "Dimas",
-    city: "Jakarta",
+    city: "DKI Jakarta / Jakarta / Kelapa Gading",
     store_name: "Lottemart Kelapa Gading",
     channel_type: "modern_trade",
     image_path: "demo/pampers-jakarta.jpg",
@@ -304,7 +337,10 @@ export const demoOfflineStoreVisits: OfflineStoreVisit[] = [
   {
     id: "v1",
     store_name: "Transmart Buah Batu",
-    city: "Bandung",
+    city: "Jawa Barat / Bandung / Buah Batu",
+    province: "Jawa Barat",
+    city_name: "Bandung",
+    district: "Buah Batu",
     channel_type: "modern_trade",
     store_id: "demo-store-surabaya",
     channel_id: "ch-modern-trade",

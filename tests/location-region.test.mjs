@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildLocationRegion } from "../src/lib/location-region.mjs";
+import { buildLocationRegion, buildLocationRegionParts } from "../src/lib/location-region.mjs";
 
 test("China reverse geocode keeps municipality non-empty without using a business quarter as district", () => {
   const region = buildLocationRegion({
@@ -115,4 +115,26 @@ test("Indonesia reverse geocode limits region to province city district when vil
   });
 
   assert.equal(region, "Bali / Denpasar / Denpasar Barat");
+});
+
+test("reverse geocode exposes structured province city district parts for dashboard filters", () => {
+  const parts = buildLocationRegionParts({
+    display_name: "Dauh Puri Kelod, Denpasar Barat, Denpasar, Bali, 80113, Indonesia",
+    address: {
+      village: "Dauh Puri Kelod",
+      city_district: "Denpasar Barat",
+      city: "Denpasar",
+      state: "Bali",
+      postcode: "80113",
+      country: "Indonesia",
+      country_code: "id",
+    },
+  });
+
+  assert.deepEqual(parts, {
+    province: "Bali",
+    cityName: "Denpasar",
+    district: "Denpasar Barat",
+    region: "Bali / Denpasar / Denpasar Barat",
+  });
 });

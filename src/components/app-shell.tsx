@@ -1,10 +1,12 @@
 import {
   BarChart3,
   ClipboardCheck,
+  Database,
   Gauge,
-  ImageUp,
+  MapPinned,
   Menu,
   Store,
+  Tags,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -12,31 +14,63 @@ import type { ReactNode } from "react";
 import { localeLabels, replacePathLocale, type Locale } from "@/lib/i18n/config";
 import type { Dictionary } from "@/lib/i18n/get-dictionary";
 
-const navItems = [
-  { href: "/dashboard", label: { zh: "老板看板", en: "Executive Board" }, icon: Gauge },
-  { href: "/mobile/offline-capture", label: { zh: "H5 巡店", en: "Field Capture" }, icon: ImageUp },
-  { href: "/offline-price-candidates", label: { zh: "AI 价格复核", en: "AI Price Review" }, icon: ClipboardCheck },
-  { href: "/sku-master", label: { zh: "产品主数据", en: "Product Master" }, icon: BarChart3 },
-  { href: "/offline-stores", label: { zh: "门店主数据", en: "Store Master" }, icon: Store },
-  { href: "/users", label: { zh: "用户管理", en: "User Management" }, icon: Users },
+const navGroups = [
+  {
+    label: null,
+    items: [
+      { href: "/dashboard", label: { zh: "仪表盘", en: "Dashboard" }, icon: Gauge },
+    ],
+  },
+  {
+    label: { zh: "价格监控", en: "Price Monitoring" },
+    items: [
+      { href: "/prices", label: { zh: "SKU价格监控", en: "SKU Price Monitor" }, icon: BarChart3 },
+      { href: "/offline-price-candidates", label: { zh: "照片价格复核", en: "Photo Price Review" }, icon: ClipboardCheck },
+    ],
+  },
+  {
+    label: { zh: "价格定位管理", en: "Price Positioning" },
+    items: [
+      { href: "/competitors", label: { zh: "竞品映射管理", en: "Competitor Mapping" }, icon: Tags },
+      { href: "/market-benchmarks", label: { zh: "市场标杆管理", en: "Market Benchmarks" }, icon: MapPinned },
+    ],
+  },
+  {
+    label: { zh: "主数据", en: "Master Data" },
+    items: [
+      { href: "/sku-master", label: { zh: "产品主数据", en: "Product Master" }, icon: Database },
+      { href: "/offline-stores", label: { zh: "门店主数据", en: "Store Master" }, icon: Store },
+      { href: "/users", label: { zh: "用户管理", en: "User Management" }, icon: Users },
+    ],
+  },
 ] as const;
 
-function NavLinks({ locale, className }: { locale: Locale; className: string }) {
+function NavLinks({ locale, currentPath, className }: { locale: Locale; currentPath: string; className: string }) {
   return (
     <nav className={className}>
-      {navItems.map((item) => {
-        const Icon = item.icon;
-        return (
-          <Link
-            key={item.href}
-            href={`/${locale}${item.href}`}
-            className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
-          >
-            <Icon className="h-4 w-4" />
-            {item.label[locale]}
-          </Link>
-        );
-      })}
+      {navGroups.map((group, groupIndex) => (
+        <div key={group.label?.en ?? "root"} className={groupIndex === 0 ? "" : "mt-4"}>
+          {group.label ? <div className="px-3 pb-1 text-xs font-semibold text-slate-500">{group.label[locale]}</div> : null}
+          <div className="space-y-1">
+            {group.items.map((item) => {
+              const Icon = item.icon;
+              const active = currentPath === item.href || currentPath.startsWith(`${item.href}?`);
+              return (
+                <Link
+                  key={item.href}
+                  href={`/${locale}${item.href}`}
+                  className={active
+                    ? "flex items-center gap-3 rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white"
+                    : "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"}
+                >
+                  <Icon className="h-4 w-4" />
+                  {item.label[locale]}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </nav>
   );
 }
@@ -70,7 +104,7 @@ export function AppShell({
           <div className="text-lg font-semibold">{dict.app.name}</div>
           <div className="text-xs text-slate-500">{appSubtitle}</div>
         </div>
-        <NavLinks locale={locale} className="space-y-1 px-3 py-4" />
+        <NavLinks locale={locale} currentPath={currentPath} className="px-3 py-4" />
       </aside>
       <main className="lg:pl-64">
         <header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 lg:px-8">
@@ -88,7 +122,7 @@ export function AppShell({
                   <div className="text-sm font-semibold">{dict.app.name}</div>
                   <div className="text-xs text-slate-500">{appSubtitle}</div>
                 </div>
-                <NavLinks locale={locale} className="space-y-1 pt-2" />
+                <NavLinks locale={locale} currentPath={currentPath} className="pt-2" />
               </div>
             </details>
             <div className="min-w-0">

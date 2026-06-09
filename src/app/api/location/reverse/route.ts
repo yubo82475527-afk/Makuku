@@ -1,4 +1,4 @@
-import { buildLocationRegion } from "@/lib/location-region.mjs";
+import { buildLocationRegionParts } from "@/lib/location-region.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -67,8 +67,13 @@ export async function GET(request: Request) {
       return Response.json({ error: data.error ?? "Reverse geocoding failed" }, { status: response.status });
     }
 
+    const region = buildLocationRegionParts(data, { latitude: lat, longitude: lon });
+
     return Response.json({
-      city: buildLocationRegion(data, { latitude: lat, longitude: lon }),
+      city: region.region,
+      province: region.province,
+      cityName: region.cityName,
+      district: region.district,
       address: data.display_name ?? null,
       provider: "locationiq",
     });

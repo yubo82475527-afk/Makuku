@@ -1,8 +1,11 @@
 import { AppShell } from "@/components/app-shell";
+import { ProductMasterSearchSelect } from "@/components/product-master-search-select";
 import { Badge, Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
-import { getBrands, getCompetitorProducts, getSkuMaster } from "@/lib/data";
+import { getBrands, getCompetitorProducts, getMaterialMaster } from "@/lib/data";
 import { getPageI18n } from "@/lib/i18n/server";
 import { translateEnum } from "@/lib/i18n/get-dictionary";
+import type { MaterialMaster, SkuMaster } from "@/lib/types";
+import Link from "next/link";
 
 export default async function CompetitorsPage({
   params: routeParams,
@@ -13,12 +16,15 @@ export default async function CompetitorsPage({
 }) {
   const { locale, dict } = await getPageI18n(routeParams);
   const params = await searchParams;
-  const [productsResult, brandsResult, skuResult] = await Promise.all([
+  const [productsResult, brandsResult, materialResult] = await Promise.all([
     getCompetitorProducts(),
     getBrands(),
-    getSkuMaster(),
+    getMaterialMaster(),
   ]);
+  const ownBrandIds = new Set(brandsResult.data.filter((brand) => brand.is_own_brand || isOwnBrandName(brand.name)).map((brand) => brand.id));
   const products = productsResult.data.filter((product) => {
+    if (ownBrandIds.has(product.brand_id)) return false;
+    if (isOwnBrandName(product.brands?.name)) return false;
     if (params.brand && product.brand_id !== params.brand) return false;
     if (params.channel && product.channel !== params.channel) return false;
     if (params.size && product.size !== params.size) return false;
@@ -26,13 +32,13 @@ export default async function CompetitorsPage({
   });
 
   return (
-    <AppShell locale={locale} dict={dict} title={dict.competitors.title} currentPath="/competitors" isDemo={productsResult.isDemo}>
-      <DataNotice dict={dict} error={productsResult.error ?? brandsResult.error ?? skuResult.error} />
+    <AppShell locale={locale} dict={dict} title={dict.competitors.title} currentPath="/competitors" isDemo={productsResult.isDemo || materialResult.isDemo}>
+      <DataNotice dict={dict} error={productsResult.error ?? brandsResult.error ?? materialResult.error} />
       <Card className="mb-4">
         <form className="grid gap-3 md:grid-cols-4">
           <SelectInput name="brand" defaultValue={params.brand ?? ""}>
             <option value="">{dict.common.allBrands}</option>
-            {brandsResult.data.filter((brand) => !brand.is_own_brand).map((brand) => <option key={brand.id} value={brand.id}>{brand.name}</option>)}
+            {brandsResult.data.filter((brand) => !brand.is_own_brand && !isOwnBrandName(brand.name)).map((brand) => <option key={brand.id} value={brand.id}>{brand.name}</option>)}
           </SelectInput>
           <SelectInput name="channel" defaultValue={params.channel ?? ""}>
             <option value="">{dict.common.allChannels}</option>
@@ -43,45 +49,6 @@ export default async function CompetitorsPage({
           </SelectInput>
           <TextInput name="size" placeholder={dict.common.size} defaultValue={params.size ?? ""} />
           <Button type="submit">{dict.common.filter}</Button>
-        </form>
-      </Card>
-
-      <Card className="mb-4">
-        <h2 className="mb-3 font-semibold">{dict.competitors.addTitle}</h2>
-        <form action="/api/competitors" method="post" className="grid gap-3 md:grid-cols-4 xl:grid-cols-8">
-          <input type="hidden" name="return_to" value={`/${locale}/competitors`} />
-          <SelectInput name="brand_id" required>
-            {brandsResult.data.filter((brand) => !brand.is_own_brand).map((brand) => <option key={brand.id} value={brand.id}>{brand.name}</option>)}
-          </SelectInput>
-          <TextInput name="raw_title" placeholder={dict.competitors.rawTitle} required className="md:col-span-2" />
-          <TextInput name="normalized_name" placeholder={dict.competitors.normalizedName} required className="md:col-span-2" />
-          <SelectInput name="channel" defaultValue="shopee">
-            <option value="shopee">{translateEnum(dict, "channel", "shopee")}</option>
-            <option value="offline">{translateEnum(dict, "channel", "offline")}</option>
-            <option value="tiktok">{translateEnum(dict, "channel", "tiktok")}</option>
-            <option value="manual">{translateEnum(dict, "channel", "manual")}</option>
-          </SelectInput>
-          <TextInput name="shop_name" placeholder={dict.competitors.shopStore} />
-          <TextInput name="product_url" placeholder={dict.competitors.productUrl} />
-          <SelectInput name="pack_type" defaultValue="pants">
-            <option value="pants">{translateEnum(dict, "packType", "pants")}</option>
-            <option value="tape">{translateEnum(dict, "packType", "tape")}</option>
-            <option value="unknown">{translateEnum(dict, "packType", "unknown")}</option>
-          </SelectInput>
-          <TextInput name="size" placeholder={dict.common.size} />
-          <TextInput name="piece_count" type="number" placeholder={dict.common.pcs} required />
-          <SelectInput name="segment" defaultValue="premium">
-            <option value="premium">{translateEnum(dict, "segment", "premium")}</option>
-            <option value="mid">{translateEnum(dict, "segment", "mid")}</option>
-            <option value="value">{translateEnum(dict, "segment", "value")}</option>
-            <option value="unknown">{translateEnum(dict, "segment", "unknown")}</option>
-          </SelectInput>
-          <SelectInput name="sku_master_id">
-            <option value="">{dict.competitors.matchSku}</option>
-            {skuResult.data.map((sku) => <option key={sku.id} value={sku.id}>{sku.makuku_sku_name}</option>)}
-          </SelectInput>
-          <TextInput name="match_score" type="number" step="0.01" placeholder={dict.competitors.matchScore} />
-          <Button type="submit">{dict.competitors.addButton}</Button>
         </form>
       </Card>
 
@@ -96,14 +63,18 @@ export default async function CompetitorsPage({
                 <th className="py-2 pr-3">{dict.common.size}</th>
                 <th className="py-2 pr-3">{dict.common.pcs}</th>
                 <th className="py-2 pr-3">{dict.common.segment}</th>
-                <th className="py-2 pr-3">{dict.common.makukuSku}</th>
+                <th className="py-2 pr-3">{locale === "zh" ? "关联产品主数据" : "Map product master"}</th>
                 <th className="py-2 pr-3">{dict.common.score}</th>
-                <th className="py-2 pr-3">{dict.common.reviewed}</th>
+                <th className="py-2 pr-3">{locale === "zh" ? "标杆" : "Benchmark"}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
               {products.map((product) => {
                 const match = product.sku_matches?.[0];
+                const selectedMaterialCode = findMaterialCodeForSku(match?.sku_master, materialResult.data);
+                const setBenchmarkHref = match?.sku_master
+                  ? `/${locale}/market-benchmarks?competitorProductId=${encodeURIComponent(product.id)}`
+                  : null;
                 return (
                   <tr key={product.id}>
                     <td className="py-3 pr-3 font-medium">{product.brands?.name}</td>
@@ -112,9 +83,25 @@ export default async function CompetitorsPage({
                     <td className="py-3 pr-3">{product.size}</td>
                     <td className="py-3 pr-3">{product.piece_count}</td>
                     <td className="py-3 pr-3">{translateEnum(dict, "segment", product.segment)}</td>
-                    <td className="py-3 pr-3">{match?.sku_master?.makuku_sku_name ?? "-"}</td>
+                    <td className="min-w-72 py-3 pr-3">
+                      <form action="/api/sku-matches" method="post" className="flex flex-wrap items-center gap-2">
+                        <input type="hidden" name="return_to" value={`/${locale}/competitors`} />
+                        <input type="hidden" name="competitor_product_id" value={product.id} />
+                        {match?.id ? <input type="hidden" name="match_id" value={match.id} /> : null}
+                        <ProductMasterSearchSelect materials={materialResult.data} selectedCode={selectedMaterialCode} locale={locale} />
+                        <Button type="submit" className="h-9 whitespace-nowrap">{locale === "zh" ? "保存关联" : "Save"}</Button>
+                      </form>
+                    </td>
                     <td className="py-3 pr-3">{match ? `${Math.round(match.match_score * 100)}%` : "-"}</td>
-                    <td className="py-3 pr-3">{match?.reviewed ? dict.common.yes : dict.common.no}</td>
+                    <td className="py-3 pr-3">
+                      {setBenchmarkHref ? (
+                        <Link href={setBenchmarkHref} className="font-medium text-blue-700 hover:underline">
+                          {locale === "zh" ? "设为市场标杆" : "Set benchmark"}
+                        </Link>
+                      ) : (
+                        <span className="text-xs text-slate-400">{locale === "zh" ? "未关联产品主数据" : "Missing product master"}</span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -124,4 +111,23 @@ export default async function CompetitorsPage({
       </Card>
     </AppShell>
   );
+}
+
+function isOwnBrandName(value: string | null | undefined) {
+  return value?.trim().toLowerCase() === "makuku";
+}
+
+function findMaterialCodeForSku(sku: SkuMaster | null | undefined, materials: MaterialMaster[]) {
+  if (!sku) return "";
+  const normalizedSkuName = normalizeText(sku.makuku_sku_name);
+  const matched = materials.find((material) => {
+    if (normalizeText(material.tenant_sku_name) !== normalizedSkuName) return false;
+    if (normalizeText(material.sub_type) !== normalizeText(sku.size)) return false;
+    return Number(material.pack_count) === Number(sku.piece_count);
+  }) ?? materials.find((material) => normalizeText(material.tenant_sku_name) === normalizedSkuName);
+  return matched?.tenant_sku_code ?? "";
+}
+
+function normalizeText(value: string | null | undefined) {
+  return (value ?? "").trim().toLowerCase();
 }
