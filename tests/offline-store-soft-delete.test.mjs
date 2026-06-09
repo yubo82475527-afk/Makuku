@@ -52,6 +52,7 @@ test("store master page exposes delete action for stores", () => {
   assert.match(offlineStoresPage, /searchParams: Promise/);
   assert.match(offlineStoresPage, /statusFilter/);
   assert.match(offlineStoresPage, /getOfflineStores\(\{ status: statusFilter \}\)/);
+  assert.match(dataFile, /\.order\("created_at", \{ ascending: false \}\)/);
   assert.match(storeMasterTable, /selectedIds/);
   assert.match(storeMasterTable, /bulkDisable/);
   assert.match(storeMasterTable, /storeStatusPayload/);
@@ -60,6 +61,14 @@ test("store master page exposes delete action for stores", () => {
   assert.match(storeMasterTable, /Disable Store/);
   assert.match(storeMasterTable, /Bulk Disable/);
   assert.match(storeMasterTable, /statusFilter/);
+  assert.match(storeMasterTable, /function StatusTabs/);
+  assert.match(storeMasterTable, /inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1/);
+  assert.match(storeMasterTable, /formatCreatedAt/);
+  assert.match(storeMasterTable, /storeCreator/);
+  assert.match(storeMasterTable, /\u521b\u5efa\u65f6\u95f4|Created At/);
+  assert.match(storeMasterTable, /\u521b\u5efa\u4eba|Created By/);
+  assert.match(storeMasterTable, /whitespace-nowrap py-3 pr-3/);
+  assert.match(typesFile, /created_by\?: string \| null/);
   assert.doesNotMatch(storeMasterTable, /window\.confirm/);
   assert.doesNotMatch(storeMasterTable, /Delete Store|Bulk Delete|Confirm Delete/);
 });

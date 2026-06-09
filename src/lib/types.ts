@@ -211,6 +211,9 @@ export type OfflineStore = {
   status?: "enabled" | "disabled" | null;
   disabled_at?: string | null;
   deleted_at?: string | null;
+  created_by?: string | null;
+  created_by_name?: string | null;
+  created_by_user?: string | null;
   created_at: string;
   channels?: Pick<ChannelMaster, "id" | "code" | "name" | "type"> | null;
 };
@@ -376,12 +379,13 @@ export type OfflineStoreVisit = {
   signed_images?: {
     path: string;
     url: string | null;
-    category?: StoreVisitImageCategory;
+    category?: OfflineImageType | StoreVisitImageCategory;
   }[];
 };
 
 export type AiPriceCandidateStatus = "pending" | "approved" | "rejected";
 export type AiPriceCandidateMatchType = "material_master" | "competitor_product" | "unmatched";
+export type AiPriceCandidateReviewMethod = "auto_rule" | "manual" | "bulk_manual";
 
 export type AiPriceCandidate = {
   id: string;
@@ -406,7 +410,56 @@ export type AiPriceCandidate = {
   created_at: string;
   reviewed_at: string | null;
   reviewed_by: string | null;
+  rejection_reason?: string | null;
+  review_job_id?: string | null;
+  review_method?: AiPriceCandidateReviewMethod | null;
   offline_store_visits?: Pick<OfflineStoreVisit, "id" | "store_name" | "city" | "province" | "city_name" | "district" | "channel_type" | "visit_date" | "created_at"> | null;
+};
+
+export type AiPriceReviewRule = {
+  id: string;
+  name: string;
+  min_ai_confidence: number;
+  min_match_score: number;
+  require_matched_entity: boolean;
+  require_no_warnings: boolean;
+  require_price_and_piece: boolean;
+  active: boolean;
+  created_at: string;
+  updated_at: string | null;
+};
+
+export type AiPriceReviewJobStatus = "queued" | "running" | "completed" | "failed";
+export type AiPriceReviewJobAction = "approve" | "reject";
+export type AiPriceReviewJobItemStatus = "queued" | "processing" | "succeeded" | "skipped" | "failed";
+
+export type AiPriceReviewJob = {
+  id: string;
+  action: AiPriceReviewJobAction;
+  status: AiPriceReviewJobStatus;
+  rule_snapshot: Partial<AiPriceReviewRule>;
+  filter_snapshot: Record<string, unknown>;
+  rejection_reason: string | null;
+  total_count: number;
+  success_count: number;
+  skipped_count: number;
+  failed_count: number;
+  created_by: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string | null;
+};
+
+export type AiPriceReviewJobItem = {
+  id: string;
+  job_id: string;
+  candidate_id: string;
+  status: AiPriceReviewJobItemStatus;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string | null;
+  ai_price_candidates?: AiPriceCandidate | null;
 };
 
 export type PromoEvent = {

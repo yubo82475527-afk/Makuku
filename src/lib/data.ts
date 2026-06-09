@@ -17,6 +17,7 @@ import { createSupabaseAnonClient, createSupabaseServiceClient, hasSupabaseConfi
 import type {
   Alert,
   AiPriceCandidate,
+  AiPriceReviewRule,
   AppUser,
   Brand,
   ChannelMaster,
@@ -43,6 +44,7 @@ import type {
 } from "@/lib/types";
 
 type QueryResult<T> = { data: T; error: string | null; isDemo: boolean };
+export type PaginatedQueryResult<T> = QueryResult<T[]> & { total: number; page: number; perPage: number };
 
 export type OfflineStoreVisitFilters = {
   q?: string;
@@ -60,6 +62,8 @@ export type AiPriceCandidateFilters = {
   dateTo?: string;
   status?: "pending" | "approved" | "rejected";
   limit?: number;
+  page?: number;
+  perPage?: number;
 };
 
 export type ProductSegmentPriceIndexFilters = {
@@ -71,6 +75,19 @@ export type ProductSegmentPriceIndexFilters = {
   size?: string;
   status?: "low_index" | "near_index" | "missing_benchmark" | "all";
   sort?: "priceIndexAsc" | "priceIndexDesc" | "problemStoresDesc" | "latest";
+};
+
+const defaultAiPriceReviewRule: AiPriceReviewRule = {
+  id: "demo-default-ai-price-review-rule",
+  name: "Default bulk review rule",
+  min_ai_confidence: 0.95,
+  min_match_score: 0.9,
+  require_matched_entity: true,
+  require_no_warnings: true,
+  require_price_and_piece: true,
+  active: true,
+  created_at: "1970-01-01T00:00:00.000Z",
+  updated_at: null,
 };
 
 async function fromSupabase<T>(query: PromiseLike<{ data: unknown; error: { message: string } | null }>, fallback: T): Promise<QueryResult<T>> {
@@ -198,13 +215,13 @@ export async function getOfflineStores({ status = "enabled" }: { status?: Offlin
   let { data, error } = await supabase
     .from("offline_stores")
     .select("*, channels(id,code,name,type)")
-    .order("name");
+    .order("created_at", { ascending: false });
 
   if (error?.message.includes("channels") || error?.message.includes("schema cache")) {
     const legacy = await supabase
       .from("offline_stores")
       .select("*")
-      .order("name");
+      .order("created_at", { ascending: false });
     data = legacy.data;
     error = legacy.error;
   }
@@ -398,14 +415,17 @@ function mergeOfflineStores(stores: OfflineStore[]) {
       status: current.status ?? normalizedStore.status,
       disabled_at: current.disabled_at ?? normalizedStore.disabled_at,
       deleted_at: current.deleted_at ?? normalizedStore.deleted_at,
+      created_by: current.created_by ?? normalizedStore.created_by,
+      created_by_name: current.created_by_name ?? normalizedStore.created_by_name,
+      created_by_user: current.created_by_user ?? normalizedStore.created_by_user,
       channels: current.channels ?? normalizedStore.channels,
-      created_at: current.created_at <= normalizedStore.created_at ? current.created_at : normalizedStore.created_at,
+      created_at: current.created_at ?? normalizedStore.created_at,
     });
   }
 
   return Array.from(merged.values()).sort((a, b) => {
-    const cityCompare = a.city.localeCompare(b.city);
-    return cityCompare || a.name.localeCompare(b.name);
+    const dateCompare = new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime();
+    return dateCompare || a.name.localeCompare(b.name);
   });
 }
 
@@ -479,6 +499,120 @@ export async function getAiPriceCandidates(filters: AiPriceCandidateFilters = {}
     });
   }
   return { data: rows, error: null, isDemo: false };
+}
+
+export async function getAiPriceCandidatesPage(filters: AiPriceCandidateFilters = {}): Promise<PaginatedQueryResult<AiPriceCandidate>> {
+  const page = Math.max(1, Math.floor(filters.page ?? 1));
+  const perPage = Math.min(200, Math.max(1, Math.floor(filters.perPage ?? filters.limit ?? 50)));
+
+  if (!hasSupabaseServiceConfig()) {
+    return {
+      data: [],
+      total: 0,
+      page,
+      perPage,
+      error: "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY",
+      isDemo: true,
+    };
+  }
+
+  const supabase = createSupabaseServiceClient();
+  const shouldFilterVisitDate = Boolean(filters.dateFrom || filters.dateTo);
+  const visitColumns = "id,store_name,city,province,city_name,district,channel_type,visit_date,created_at";
+  const legacyVisitColumns = "id,store_name,city,channel_type,visit_date,created_at";
+  const visitSelect = shouldFilterVisitDate
+    ? `offline_store_visits!inner(${visitColumns})`
+    : `offline_store_visits(${visitColumns})`;
+  const legacyVisitSelect = shouldFilterVisitDate
+    ? `offline_store_visits!inner(${legacyVisitColumns})`
+    : `offline_store_visits(${legacyVisitColumns})`;
+
+  const from = (page - 1) * perPage;
+  const to = from + perPage - 1;
+  let query = supabase
+    .from("ai_price_candidates")
+    .select(`*, ${visitSelect}`, { count: "exact" })
+    .range(from, to);
+
+  if (filters.dateFrom) query = query.gte("offline_store_visits.visit_date", filters.dateFrom);
+  if (filters.dateTo) query = query.lte("offline_store_visits.visit_date", filters.dateTo);
+  if (filters.status) query = query.eq("status", filters.status);
+  query = filters.status === "approved"
+    ? query.order("reviewed_at", { ascending: false }).order("created_at", { ascending: false })
+    : query.order("created_at", { ascending: false });
+
+  let { data, error, count } = await query;
+
+  if (isMissingSchemaError(error)) {
+    let legacyQuery = supabase
+      .from("ai_price_candidates")
+      .select(`*, ${legacyVisitSelect}`, { count: "exact" })
+      .range(from, to);
+    if (filters.dateFrom) legacyQuery = legacyQuery.gte("offline_store_visits.visit_date", filters.dateFrom);
+    if (filters.dateTo) legacyQuery = legacyQuery.lte("offline_store_visits.visit_date", filters.dateTo);
+    if (filters.status) legacyQuery = legacyQuery.eq("status", filters.status);
+    legacyQuery = filters.status === "approved"
+      ? legacyQuery.order("reviewed_at", { ascending: false }).order("created_at", { ascending: false })
+      : legacyQuery.order("created_at", { ascending: false });
+    const legacyResult = await legacyQuery;
+    data = legacyResult.data;
+    error = legacyResult.error;
+    count = legacyResult.count;
+  }
+
+  if (error?.message.includes("ai_price_candidates")) {
+    return { data: [], total: 0, page, perPage, error: "Run migration 202605280005_ai_price_candidates.sql", isDemo: false };
+  }
+  if (error) return { data: [], total: 0, page, perPage, error: error.message, isDemo: false };
+  return { data: (data ?? []) as AiPriceCandidate[], total: count ?? 0, page, perPage, error: null, isDemo: false };
+}
+
+export async function getAiPriceReviewRule(): Promise<QueryResult<AiPriceReviewRule>> {
+  if (!hasSupabaseServiceConfig()) return { data: defaultAiPriceReviewRule, error: null, isDemo: true };
+
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("ai_price_review_rules")
+    .select("*")
+    .eq("active", true)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error?.message.includes("ai_price_review_rules") || isMissingSchemaError(error)) {
+    return { data: defaultAiPriceReviewRule, error: "Run migration 202606100001_ai_price_candidate_bulk_review.sql", isDemo: false };
+  }
+  if (error) return { data: defaultAiPriceReviewRule, error: error.message, isDemo: false };
+  return { data: (data ?? defaultAiPriceReviewRule) as AiPriceReviewRule, error: null, isDemo: false };
+}
+
+export async function upsertAiPriceReviewRule(input: Partial<AiPriceReviewRule>): Promise<QueryResult<AiPriceReviewRule>> {
+  if (!hasSupabaseServiceConfig()) return { data: { ...defaultAiPriceReviewRule, ...input, active: true }, error: null, isDemo: true };
+
+  const supabase = createSupabaseServiceClient();
+  const payload = {
+    name: String(input.name ?? defaultAiPriceReviewRule.name),
+    min_ai_confidence: Number(input.min_ai_confidence ?? defaultAiPriceReviewRule.min_ai_confidence),
+    min_match_score: Number(input.min_match_score ?? defaultAiPriceReviewRule.min_match_score),
+    require_matched_entity: Boolean(input.require_matched_entity ?? defaultAiPriceReviewRule.require_matched_entity),
+    require_no_warnings: Boolean(input.require_no_warnings ?? defaultAiPriceReviewRule.require_no_warnings),
+    require_price_and_piece: Boolean(input.require_price_and_piece ?? defaultAiPriceReviewRule.require_price_and_piece),
+    active: true,
+    updated_at: new Date().toISOString(),
+  };
+
+  await supabase.from("ai_price_review_rules").update({ active: false, updated_at: new Date().toISOString() }).eq("active", true);
+  const { data, error } = await supabase
+    .from("ai_price_review_rules")
+    .insert(payload)
+    .select("*")
+    .single();
+
+  if (error?.message.includes("ai_price_review_rules") || isMissingSchemaError(error)) {
+    return { data: defaultAiPriceReviewRule, error: "Run migration 202606100001_ai_price_candidate_bulk_review.sql", isDemo: false };
+  }
+  if (error) return { data: defaultAiPriceReviewRule, error: error.message, isDemo: false };
+  return { data: data as AiPriceReviewRule, error: null, isDemo: false };
 }
 
 export async function getCompetitorProducts(): Promise<QueryResult<CompetitorProduct[]>> {

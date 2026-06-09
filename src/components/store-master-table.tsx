@@ -24,6 +24,22 @@ function statusHref(locale: string, status: StoreStatusFilter) {
   return status === "enabled" ? `/${locale}/offline-stores` : `/${locale}/offline-stores?status=${status}`;
 }
 
+function formatCreatedAt(value: string, locale: string) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-GB", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function storeCreator(store: OfflineStore) {
+  return store.created_by_name ?? store.created_by_user ?? store.created_by ?? "-";
+}
+
 export function StoreMasterTable({
   stores,
   locale,
@@ -146,16 +162,12 @@ export function StoreMasterTable({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-2">
-          <StatusLink href={statusHref(locale, "enabled")} active={statusFilter === "enabled"} label={isZh ? "\u542f\u7528\u72b6\u6001" : "Enabled"} />
-          <StatusLink href={statusHref(locale, "disabled")} active={statusFilter === "disabled"} label={isZh ? "\u7981\u7528\u72b6\u6001" : "Disabled"} />
-          <StatusLink href={statusHref(locale, "all")} active={statusFilter === "all"} label={isZh ? "\u5168\u90e8" : "All"} />
-        </div>
+        <StatusTabs locale={locale} statusFilter={statusFilter} />
         <button
           type="button"
           onClick={bulkDisable}
           disabled={selectedVisibleIds.length === 0 || loading}
-          className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {disabling ? <Ban className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
           {disabling ? (isZh ? "\u6279\u91cf\u7981\u7528" : "Bulk Disable") : (isZh ? "\u6279\u91cf\u542f\u7528" : "Bulk Enable")}
@@ -186,7 +198,7 @@ export function StoreMasterTable({
       {notice ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{notice}</div> : null}
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[980px] text-left text-sm">
+        <table className="w-full min-w-[1280px] text-left text-sm">
           <thead className="border-b border-slate-200 text-xs uppercase text-slate-500">
             <tr>
               <th className="w-10 py-2 pr-3">
@@ -203,6 +215,8 @@ export function StoreMasterTable({
               <th className="py-2 pr-3">{isZh ? "\u57ce\u5e02" : "City"}</th>
               <th className="py-2 pr-3">{isZh ? "\u6240\u5c5e\u6e20\u9053" : "Channel"}</th>
               <th className="py-2 pr-3">{isZh ? "\u5730\u5740" : "Address"}</th>
+              <th className="py-2 pr-3">{isZh ? "\u521b\u5efa\u65f6\u95f4" : "Created At"}</th>
+              <th className="py-2 pr-3">{isZh ? "\u521b\u5efa\u4eba" : "Created By"}</th>
               <th className="py-2 pr-3">{isZh ? "\u64cd\u4f5c" : "Actions"}</th>
             </tr>
           </thead>
@@ -221,18 +235,20 @@ export function StoreMasterTable({
                     />
                   </td>
                   <td className="py-3 pr-3 font-medium">{store.name}</td>
-                  <td className="py-3 pr-3">
+                  <td className="whitespace-nowrap py-3 pr-3">
                     <Badge tone={disabled ? "medium" : "low"}>{disabled ? (isZh ? "\u7981\u7528" : "Disabled") : (isZh ? "\u542f\u7528" : "Enabled")}</Badge>
                   </td>
                   <td className="py-3 pr-3">{store.city}</td>
                   <td className="py-3 pr-3"><Badge>{store.channels?.name ?? store.channel_type}</Badge></td>
                   <td className="py-3 pr-3">{store.address ?? "-"}</td>
-                  <td className="py-3 pr-3">
+                  <td className="whitespace-nowrap py-3 pr-3 text-slate-600">{formatCreatedAt(store.created_at, locale)}</td>
+                  <td className="whitespace-nowrap py-3 pr-3 text-slate-600">{storeCreator(store)}</td>
+                  <td className="whitespace-nowrap py-3 pr-3">
                     <button
                       type="button"
                       onClick={() => disabled ? singleEnable(store) : singleDisable(store)}
                       disabled={loading}
-                      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                      className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
                     >
                       {disabled ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Ban className="h-3.5 w-3.5" />}
                       {disabled ? (isZh ? "\u542f\u7528" : "Enable") : (isZh ? "\u7981\u7528" : "Disable")}
@@ -248,16 +264,31 @@ export function StoreMasterTable({
   );
 }
 
-function StatusLink({ href, active, label }: { href: string; active: boolean; label: string }) {
+function StatusTabs({ locale, statusFilter }: { locale: string; statusFilter: StoreStatusFilter }) {
+  const isZh = locale === "zh";
+  const tabs: Array<{ value: StoreStatusFilter; label: string }> = [
+    { value: "enabled", label: isZh ? "\u542f\u7528" : "Enabled" },
+    { value: "disabled", label: isZh ? "\u7981\u7528" : "Disabled" },
+    { value: "all", label: isZh ? "\u5168\u90e8" : "All" },
+  ];
+
   return (
-    <Link
-      href={href}
-      className={active
-        ? "rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white"
-        : "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"}
-    >
-      {label}
-    </Link>
+    <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+      {tabs.map((tab) => {
+        const active = statusFilter === tab.value;
+        return (
+          <Link
+            key={tab.value}
+            href={statusHref(locale, tab.value)}
+            className={active
+              ? "inline-flex h-8 items-center whitespace-nowrap rounded-md bg-white px-3 text-sm font-semibold text-slate-950 shadow-sm"
+              : "inline-flex h-8 items-center whitespace-nowrap rounded-md px-3 text-sm font-medium text-slate-600 hover:bg-white"}
+          >
+            {tab.label}
+          </Link>
+        );
+      })}
+    </div>
   );
 }
 

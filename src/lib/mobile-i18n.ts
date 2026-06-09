@@ -1,5 +1,5 @@
 import type { Locale } from "@/lib/i18n/config";
-import type { StoreVisitAnalysisStatus, StoreVisitImageCategory } from "@/lib/types";
+import type { OfflineImageType, StoreVisitAnalysisStatus, StoreVisitImageCategory } from "@/lib/types";
 
 type ResultCopy = Record<
   | "validation"
@@ -257,10 +257,11 @@ export function mobileAnalysisStatusLabel(locale: Locale, status: StoreVisitAnal
   }
 }
 
-export function mobileImageCategoryLabel(locale: Locale, category: StoreVisitImageCategory | "uncategorized" | null | undefined) {
+export function mobileImageCategoryLabel(locale: Locale, category: OfflineImageType | StoreVisitImageCategory | "uncategorized" | null | undefined) {
   const copy = getMobileCopy(locale);
   switch (category) {
     case "makuku_shelf":
+    case "own_shelf":
       return copy.makukuShelfPhotos;
     case "competitor_shelf":
       return copy.competitorShelfPhotos;

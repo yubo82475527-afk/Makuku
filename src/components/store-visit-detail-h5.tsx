@@ -29,6 +29,11 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeImage, setActiveImage] = useState<{ url: string; label: string } | null>(null);
+
+  function openImagePreview(url: string, label: string) {
+    setActiveImage({ url, label });
+  }
 
   const loadVisit = useCallback(async () => {
     setLoading(true);
@@ -142,8 +147,16 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                     {group.images.map((image) => (
                       <div key={image.path} className="aspect-square overflow-hidden rounded-xl bg-slate-100">
                         {image.url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={image.url} alt={mobileImageCategoryLabel(locale, group.category)} className="h-full w-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => openImagePreview(image.url as string, mobileImageCategoryLabel(locale, group.category))}
+                            onPointerUp={() => openImagePreview(image.url as string, mobileImageCategoryLabel(locale, group.category))}
+                            className="block h-full w-full cursor-pointer"
+                            aria-label={locale === "zh" ? "放大照片" : "Preview photo"}
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={image.url} alt={mobileImageCategoryLabel(locale, group.category)} className="h-full w-full object-cover" />
+                          </button>
                         ) : null}
                       </div>
                     ))}
@@ -152,6 +165,31 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
               ))}
             </div>
           </section>
+        </div>
+      ) : null}
+
+      {activeImage ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setActiveImage(null)}
+        >
+          <div className="max-h-full max-w-full" onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setActiveImage(null)}
+              className="mb-3 rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm"
+            >
+              {locale === "zh" ? "关闭" : "Close"}
+            </button>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={activeImage.url}
+              alt={activeImage.label}
+              className="max-h-[82vh] max-w-full rounded-xl object-contain shadow-2xl"
+            />
+          </div>
         </div>
       ) : null}
     </main>

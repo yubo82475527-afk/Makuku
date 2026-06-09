@@ -1,5 +1,5 @@
 import { createSupabaseServiceClient } from "@/lib/supabase";
-import type { OfflineStoreVisit, StoreVisitImageCategory } from "@/lib/types";
+import type { OfflineStoreVisit } from "@/lib/types";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -9,11 +9,16 @@ async function attachSignedImageUrls(visit: OfflineStoreVisit) {
   const supabase = createSupabaseServiceClient();
   const imagePaths = Array.isArray(visit.image_urls) ? visit.image_urls : [];
   const categories = Array.isArray(visit.image_categories) ? visit.image_categories : [];
-  const signedImages = await Promise.all(imagePaths.map(async (path, index) => {
+  const legacySignedImages = await Promise.all(imagePaths.map(async (path, index) => {
     const { data } = await supabase.storage.from("store-visits").createSignedUrl(path, 60 * 60);
-    return { path, url: data?.signedUrl ?? null, category: categories[index] as StoreVisitImageCategory | undefined };
+    return { path, url: data?.signedUrl ?? null, category: categories[index] };
   }));
-  return { ...visit, signed_images: signedImages };
+  const tableSignedImages = await Promise.all((visit.offline_visit_images ?? []).map(async (image) => {
+    if (image.image_url) return { path: image.image_path, url: image.image_url, category: image.image_type };
+    const { data } = await supabase.storage.from("offline-visit-images").createSignedUrl(image.image_path, 60 * 60);
+    return { path: image.image_path, url: data?.signedUrl ?? null, category: image.image_type };
+  }));
+  return { ...visit, signed_images: [...tableSignedImages, ...legacySignedImages] };
 }
 
 export async function GET(_request: Request, ctx: RouteContext) {
@@ -22,7 +27,7 @@ export async function GET(_request: Request, ctx: RouteContext) {
     const supabase = createSupabaseServiceClient();
     const { data, error } = await supabase
       .from("offline_store_visits")
-      .select("*")
+      .select("*, offline_visit_images(*)")
       .eq("id", id)
       .single();
 

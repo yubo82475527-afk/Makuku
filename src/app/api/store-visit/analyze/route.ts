@@ -1,4 +1,5 @@
 import { revalidatePath } from "next/cache";
+import { autoApproveAiPriceCandidatesForVisit } from "@/lib/ai-price-review";
 import { generateAiPriceCandidates } from "@/lib/ai-price-candidates";
 import { runStoreVisitAiAnalysisForVisit } from "@/lib/store-visit-ai-debug";
 import { createSupabaseServiceClient } from "@/lib/supabase";
@@ -50,6 +51,8 @@ export async function POST(request: Request) {
     const aiAnalysis = await runStoreVisitAiAnalysisForVisit({ visitId });
     const aiResult = aiAnalysis.normalized;
     const candidates = await generateAiPriceCandidates({ visitId, aiResult });
+    const autoReview = await autoApproveAiPriceCandidatesForVisit({ supabase, visitId, candidates });
+    const autoReviewedCount = autoReview.approvedCount;
 
     const { data: updated, error: updateError } = await supabase
       .from("offline_store_visits")
@@ -71,6 +74,9 @@ export async function POST(request: Request) {
           signed_image_count: aiAnalysis.signed_image_count,
           image_input_mode: aiAnalysis.image_input_mode,
           ai_price_candidate_count: candidates.length,
+          auto_reviewed_count: autoReviewedCount,
+          auto_review_method: "auto_rule",
+          auto_review_failed_count: autoReview.failedCount,
         },
         analysis_status: "completed",
         visit_status: "analyzed",
@@ -87,7 +93,7 @@ export async function POST(request: Request) {
     revalidatePath("/en/mobile/offline-capture");
     revalidatePath(`/en/mobile/offline-capture/${visitId}`);
 
-    return Response.json({ visit: updated, ai_result: aiResult });
+    return Response.json({ visit: updated, ai_result: aiResult, auto_reviewed_count: autoReviewedCount });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     if (visitId) await failVisit(visitId, message);

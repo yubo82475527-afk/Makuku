@@ -56,6 +56,13 @@ test("new H5 store visit keeps visit date compact instead of a full store-info c
   assert.doesNotMatch(storeVisitH5, /<h2 className="font-semibold">\{copy\.storeInformation\}<\/h2>/);
 });
 
+test("selected store card wraps long mobile region and address values", () => {
+  assert.match(storeVisitH5, /overflow-hidden rounded-2xl/);
+  assert.match(storeVisitH5, /grid-cols-\[5\.5rem_minmax\(0,1fr\)\]/);
+  assert.match(storeVisitH5, /break-words text-right/);
+  assert.doesNotMatch(storeVisitH5, /min-w-0 truncate text-sm font-medium text-slate-900/);
+});
+
 test("mobile visit list uses top settings menu for language and logout", () => {
   assert.match(storeVisitsListH5, /MobileCaptureSettingsMenu/);
   assert.match(storeVisitsListH5, /localStorage\.removeItem\(storageKey\)/);
