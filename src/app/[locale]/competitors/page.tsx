@@ -64,7 +64,8 @@ export default async function CompetitorsPage({
                 <th className="py-2 pr-3">{dict.common.pcs}</th>
                 <th className="py-2 pr-3">{dict.common.segment}</th>
                 <th className="py-2 pr-3">{locale === "zh" ? "关联产品主数据" : "Map product master"}</th>
-                <th className="py-2 pr-3">{dict.common.score}</th>
+                <th className="py-2 pr-3">{locale === "zh" ? "关联状态" : "Mapping status"}</th>
+                <th className="py-2 pr-3">{locale === "zh" ? "关联方式" : "Mapping method"}</th>
                 <th className="py-2 pr-3">{locale === "zh" ? "标杆" : "Benchmark"}</th>
               </tr>
             </thead>
@@ -92,7 +93,10 @@ export default async function CompetitorsPage({
                         <Button type="submit" className="h-9 whitespace-nowrap">{locale === "zh" ? "保存关联" : "Save"}</Button>
                       </form>
                     </td>
-                    <td className="py-3 pr-3">{match ? `${Math.round(match.match_score * 100)}%` : "-"}</td>
+                    <td className="py-3 pr-3">
+                      <Badge tone={match ? "low" : "neutral"}>{match ? locale === "zh" ? "已关联" : "Mapped" : locale === "zh" ? "未关联" : "Unmapped"}</Badge>
+                    </td>
+                    <td className="py-3 pr-3">{match ? formatMatchMethod(match.match_method, locale) : "-"}</td>
                     <td className="py-3 pr-3">
                       {setBenchmarkHref ? (
                         <Link href={setBenchmarkHref} className="font-medium text-blue-700 hover:underline">
@@ -130,4 +134,11 @@ function findMaterialCodeForSku(sku: SkuMaster | null | undefined, materials: Ma
 
 function normalizeText(value: string | null | undefined) {
   return (value ?? "").trim().toLowerCase();
+}
+
+function formatMatchMethod(value: string | null | undefined, locale: string) {
+  const method = normalizeText(value);
+  if (method === "manual") return locale === "zh" ? "人工确认" : "Manual confirmed";
+  if (method.includes("ai") || method.includes("auto") || method.includes("rule")) return locale === "zh" ? "AI建议" : "AI suggested";
+  return locale === "zh" ? "系统导入" : "System import";
 }

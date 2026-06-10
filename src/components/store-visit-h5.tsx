@@ -7,7 +7,8 @@ import { useEffect, useState } from "react";
 import type { Locale } from "@/lib/i18n/config";
 import { getMobileCopy } from "@/lib/mobile-i18n";
 
-const maxImages = 6;
+const maxImages = 20;
+const uploadConcurrency = 3;
 const maxUploadBytes = 8 * 1024 * 1024;
 const compressionMaxSide = 1600;
 const compressionQuality = 0.78;
@@ -66,6 +67,7 @@ type PendingImage = {
 };
 
 type PendingImagesByCategory = Record<ImageCategory, PendingImage[]>;
+type PendingImageUpload = PendingImage & { category: ImageCategory };
 
 function emptyImagesByCategory(): PendingImagesByCategory {
   return {
@@ -216,6 +218,73 @@ async function compressImage(file: File) {
   return compressed.size < file.size || file.size > maxUploadBytes ? compressed : file;
 }
 
+async function uploadVisitImage({
+  visitId,
+  image,
+  index,
+  submitFailed,
+}: {
+  visitId: string;
+  image: PendingImageUpload;
+  index: number;
+  submitFailed: string;
+}) {
+  const file = await compressImage(image.file);
+  if (file.size > maxUploadBytes) {
+    throw new Error(`Photo ${index + 1} is still ${formatMb(file.size)} after compression. Please choose a smaller photo.`);
+  }
+
+  const imageFormData = new FormData();
+  imageFormData.set("image", file);
+  imageFormData.set("image_category", image.category);
+  const imageRes = await fetch(`/api/store-visit/${visitId}/images`, {
+    method: "POST",
+    body: imageFormData,
+  });
+  const imageData = await imageRes.json().catch(() => ({}));
+  if (!imageRes.ok) {
+    throw new Error(`Photo ${index + 1} upload failed: ${imageData.error ?? submitFailed}`);
+  }
+}
+
+async function uploadImagesWithConcurrency({
+  visitId,
+  images,
+  concurrency,
+  submitFailed,
+  onProgress,
+}: {
+  visitId: string;
+  images: PendingImageUpload[];
+  concurrency: number;
+  submitFailed: string;
+  onProgress: (completedCount: number) => void;
+}) {
+  let nextIndex = 0;
+  let completedCount = 0;
+  let stopped = false;
+
+  async function worker() {
+    while (!stopped) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= images.length) return;
+
+      try {
+        await uploadVisitImage({ visitId, image: images[index], index, submitFailed });
+        completedCount += 1;
+        onProgress(completedCount);
+      } catch (error) {
+        stopped = true;
+        throw error;
+      }
+    }
+  }
+
+  const workerCount = Math.min(Math.max(1, concurrency), images.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+}
+
 export function StoreVisitH5({ locale }: { locale: Locale }) {
   const router = useRouter();
   const copy = getMobileCopy(locale);
@@ -297,16 +366,6 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
     setError(null);
 
     try {
-      const compressedImages = [];
-      for (let index = 0; index < flattenedImages.length; index += 1) {
-        setSubmitStatus(`Compressing photo ${index + 1}/${flattenedImages.length}...`);
-        const file = await compressImage(flattenedImages[index].file);
-        if (file.size > maxUploadBytes) {
-          throw new Error(`Photo ${index + 1} is still ${formatMb(file.size)} after compression. Please choose a smaller photo.`);
-        }
-        compressedImages.push({ file, category: flattenedImages[index].category });
-      }
-
       setSubmitStatus("Creating store visit...");
       const res = await fetch("/api/store-visit", {
         method: "POST",
@@ -333,20 +392,14 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
       const visitId = String(data.visit?.id ?? "");
       if (!visitId) throw new Error("Store visit was created without an id.");
 
-      for (let index = 0; index < compressedImages.length; index += 1) {
-        setSubmitStatus(`Uploading photo ${index + 1}/${compressedImages.length}...`);
-        const imageFormData = new FormData();
-        imageFormData.set("image", compressedImages[index].file);
-        imageFormData.set("image_category", compressedImages[index].category);
-        const imageRes = await fetch(`/api/store-visit/${visitId}/images`, {
-          method: "POST",
-          body: imageFormData,
-        });
-        const imageData = await imageRes.json().catch(() => ({}));
-        if (!imageRes.ok) {
-          throw new Error(`Photo ${index + 1} upload failed: ${imageData.error ?? copy.submitFailed}`);
-        }
-      }
+      setSubmitStatus(`正在处理 0/${flattenedImages.length}`);
+      await uploadImagesWithConcurrency({
+        visitId,
+        images: flattenedImages,
+        concurrency: uploadConcurrency,
+        submitFailed: copy.submitFailed,
+        onProgress: (completedCount) => setSubmitStatus(`正在处理 ${completedCount}/${flattenedImages.length}`),
+      });
 
       setSubmitStatus("Starting analysis...");
       void fetch("/api/store-visit/analyze", {

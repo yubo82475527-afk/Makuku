@@ -1,14 +1,20 @@
 import { revalidatePath } from "next/cache";
 import { createSupabaseServiceClient } from "@/lib/supabase";
-import type { OfflineStoreVisit, StoreVisitImageCategory } from "@/lib/types";
+import type { OfflineImageType, OfflineStoreVisit, StoreVisitImageCategory } from "@/lib/types";
 
-const bucketName = "store-visits";
-const maxImages = 6;
+const bucketName = "offline-visit-images";
+const maxImages = 20;
 const maxFileSizeBytes = 8 * 1024 * 1024;
 const imageCategories: StoreVisitImageCategory[] = ["makuku_shelf", "competitor_shelf", "storefront"];
 
 function isImageCategory(value: string): value is StoreVisitImageCategory {
   return imageCategories.includes(value as StoreVisitImageCategory);
+}
+
+function toOfflineImageType(category: StoreVisitImageCategory): OfflineImageType {
+  if (category === "makuku_shelf") return "own_shelf";
+  if (category === "competitor_shelf") return "competitor_shelf";
+  return "other";
 }
 
 type RouteContext = {
@@ -43,7 +49,7 @@ export async function POST(request: Request, ctx: RouteContext) {
     const supabase = createSupabaseServiceClient();
     const { data: visit, error: visitError } = await supabase
       .from("offline_store_visits")
-      .select("*")
+      .select("*, offline_visit_images(id)")
       .eq("id", id)
       .single();
     if (visitError || !visit) {
@@ -51,26 +57,40 @@ export async function POST(request: Request, ctx: RouteContext) {
     }
 
     const typedVisit = visit as OfflineStoreVisit;
-    const imageUrls = Array.isArray(typedVisit.image_urls) ? typedVisit.image_urls : [];
-    const existingCategories = Array.isArray(typedVisit.image_categories) ? typedVisit.image_categories : [];
-    if (imageUrls.length >= maxImages) {
-      return Response.json({ error: "Upload up to 6 images" }, { status: 400 });
+    const legacyImageCount = Array.isArray(typedVisit.image_urls) ? typedVisit.image_urls.length : 0;
+    const tableImageCount = Array.isArray(typedVisit.offline_visit_images) ? typedVisit.offline_visit_images.length : 0;
+    if (legacyImageCount + tableImageCount >= maxImages) {
+      return Response.json({ error: "Upload up to 20 images" }, { status: 400 });
     }
 
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-    const path = `store-visits/${id}/${Date.now()}-${safeName}`;
+    const imageType = toOfflineImageType(category);
+    const path = `${id}/${imageType}/${Date.now()}-${safeName}`;
     const { error: uploadError } = await supabase.storage
       .from(bucketName)
       .upload(path, file, { contentType: file.type, upsert: false });
     if (uploadError) return Response.json({ error: uploadError.message }, { status: 400 });
 
-    const nextImageUrls = [...imageUrls, path];
-    const nextCategories = [...existingCategories, category];
+    const { data: image, error: imageInsertError } = await supabase
+      .from("offline_visit_images")
+      .insert({
+        visit_id: id,
+        image_type: imageType,
+        image_path: path,
+        image_url: null,
+        file_name: file.name,
+        content_type: file.type,
+        file_size: file.size,
+        analysis_status: "pending",
+        vision_result: {},
+      })
+      .select("*")
+      .single();
+    if (imageInsertError) return Response.json({ error: imageInsertError.message }, { status: 400 });
+
     const { data: updated, error: updateError } = await supabase
       .from("offline_store_visits")
       .update({
-        image_urls: nextImageUrls,
-        image_categories: nextCategories,
         visit_status: "uploaded",
         analysis_status: "pending",
         analysis_error: null,
@@ -87,7 +107,7 @@ export async function POST(request: Request, ctx: RouteContext) {
     revalidatePath(`/zh/mobile/offline-capture/${id}`);
     revalidatePath(`/en/mobile/offline-capture/${id}`);
 
-    return Response.json({ visit: updated, image_path: path });
+    return Response.json({ visit: updated, image_path: path, image });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
   }

@@ -5,6 +5,8 @@ import assert from "node:assert/strict";
 const storeVisitH5 = readFileSync("src/components/store-visit-h5.tsx", "utf8");
 const storeVisitsListH5 = readFileSync("src/components/store-visits-list-h5.tsx", "utf8");
 const storeVisitApi = readFileSync("src/app/api/store-visit/route.ts", "utf8");
+const storeVisitImagesApi = readFileSync("src/app/api/store-visit/[id]/images/route.ts", "utf8");
+const storeVisitAiDebug = readFileSync("src/lib/store-visit-ai-debug.ts", "utf8");
 const offlineStoresApi = readFileSync("src/app/api/offline-stores/route.ts", "utf8");
 const typesFile = readFileSync("src/lib/types.ts", "utf8");
 
@@ -64,6 +66,59 @@ test("selected store card wraps long mobile region and address values", () => {
   assert.match(storeVisitH5, /grid-cols-\[5\.5rem_minmax\(0,1fr\)\]/);
   assert.match(storeVisitH5, /break-words text-right/);
   assert.doesNotMatch(storeVisitH5, /min-w-0 truncate text-sm font-medium text-slate-900/);
+});
+
+test("new H5 store visit allows up to 20 uploaded photos", () => {
+  assert.match(storeVisitH5, /const maxImages = 20/);
+  assert.match(storeVisitH5, /slice\(0, maxImages - totalImageCount\)/);
+  assert.match(storeVisitH5, /flattenedImages\.length > maxImages/);
+  assert.match(storeVisitH5, /totalImageCount}\/{maxImages}/);
+  assert.match(storeVisitH5, /disabled=\{totalImageCount >= maxImages\}/);
+});
+
+test("new H5 store visit submits photos with limited concurrency after creating the visit", () => {
+  assert.match(storeVisitH5, /const uploadConcurrency = 3/);
+  assert.match(storeVisitH5, /async function uploadImagesWithConcurrency/);
+  assert.match(storeVisitH5, /await uploadImagesWithConcurrency\(\{\s*visitId,\s*images: flattenedImages,\s*concurrency: uploadConcurrency,/s);
+  assert.match(storeVisitH5, /completedCount \+= 1/);
+  assert.match(storeVisitH5, /setSubmitStatus\(`正在处理 \$\{completedCount\}\/\$\{flattenedImages\.length\}`\)/);
+
+  const createVisitIndex = storeVisitH5.indexOf('fetch("/api/store-visit"');
+  const uploadIndex = storeVisitH5.indexOf("await uploadImagesWithConcurrency");
+  const analyzeIndex = storeVisitH5.indexOf('fetch("/api/store-visit/analyze"');
+  assert.ok(createVisitIndex >= 0, "visit should be created before image upload");
+  assert.ok(uploadIndex > createVisitIndex, "image upload should start after visit creation");
+  assert.ok(analyzeIndex > uploadIndex, "analysis should start after all image uploads complete");
+  assert.doesNotMatch(storeVisitH5, /const compressedImages = \[\];[\s\S]+Uploading photo \$\{index \+ 1\}/);
+});
+
+test("store visit image API allows the same 20-photo cap as the H5 client", () => {
+  assert.match(storeVisitImagesApi, /const maxImages = 20/);
+  assert.match(storeVisitImagesApi, /Upload up to 20 images/);
+  assert.match(storeVisitImagesApi, /offline_visit_images\(id\)/);
+  assert.match(storeVisitImagesApi, /legacyImageCount \+ tableImageCount/);
+  assert.doesNotMatch(storeVisitImagesApi, /const maxImages = 6/);
+  assert.doesNotMatch(storeVisitImagesApi, /Upload up to 6 images/);
+});
+
+test("store visit image API stores concurrent uploads as image rows instead of racing on arrays", () => {
+  assert.match(storeVisitImagesApi, /const bucketName = "offline-visit-images"/);
+  assert.match(storeVisitImagesApi, /function toOfflineImageType/);
+  assert.match(storeVisitImagesApi, /\.from\("offline_visit_images"\)/);
+  assert.match(storeVisitImagesApi, /\.insert\(\{/);
+  assert.match(storeVisitImagesApi, /visit_id: id/);
+  assert.match(storeVisitImagesApi, /image_path: path/);
+  assert.doesNotMatch(storeVisitImagesApi, /image_urls: nextImageUrls/);
+  assert.doesNotMatch(storeVisitImagesApi, /image_categories: nextCategories/);
+});
+
+test("store visit AI analysis reads new image rows and legacy image arrays", () => {
+  assert.match(storeVisitAiDebug, /offline_visit_images\(\*\)/);
+  assert.match(storeVisitAiDebug, /offline-visit-images/);
+  assert.match(storeVisitAiDebug, /store-visits/);
+  assert.match(storeVisitAiDebug, /fromOfflineImageType/);
+  assert.match(storeVisitAiDebug, /\.\.\.tableImagePaths,\s*\.\.\.legacyImagePaths/s);
+  assert.match(storeVisitAiDebug, /\.\.\.tableImageCategories,\s*\.\.\.legacyImageCategories/s);
 });
 
 test("mobile visit list uses top settings menu for language and logout", () => {

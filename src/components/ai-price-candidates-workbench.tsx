@@ -544,7 +544,7 @@ function ReviewRuleModal({
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="text-lg font-semibold text-slate-950">{copy.reviewRule}</h3>
-            <p className="mt-1 text-sm text-slate-500">AI ≥ {Math.round(rule.min_ai_confidence * 100)}%, Match ≥ {Math.round(rule.min_match_score * 100)}%</p>
+            <p className="mt-1 text-sm text-slate-500">AI ≥ {Math.round(rule.min_ai_confidence * 100)}%, {copy.matchScore} ≥ {Math.round(rule.min_match_score * 100)}%</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-md border border-slate-300 px-3 py-1 text-sm">{copy.close}</button>
         </div>
@@ -905,7 +905,7 @@ function getWorkbenchCopy(locale: string) {
       reviewRule: "审核规则",
       ruleSettings: "规则设置",
       aiConfidence: "AI 置信度",
-      matchScore: "匹配分",
+      matchScore: "商品命中度",
       requireMatch: "必须有匹配对象",
       noWarnings: "无风险提示",
       priceAndPcs: "价格和片数完整",
@@ -943,7 +943,7 @@ function getWorkbenchCopy(locale: string) {
         aiPackage: "AI 包装价",
         pcs: "片数",
         perPiece: "单片价",
-        match: "匹配分",
+        match: "商品命中度",
         warnings: "风险提示",
         evidence: "依据",
         status: "状态",
