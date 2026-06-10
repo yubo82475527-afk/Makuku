@@ -13,6 +13,10 @@ test("new H5 store visit starts analysis automatically after uploads before retu
   assert.ok(listRedirectIndex >= 0, "submit flow should keep returning to the visit list");
   assert.ok(analyzeIndex < listRedirectIndex, "analysis should start before returning to the visit list");
   assert.match(storeVisitH5, /body:\s*JSON\.stringify\(\{\s*visit_id:\s*visitId\s*\}\)/s);
+  assert.match(storeVisitH5, /const analyzeRes = await fetch\("\/api\/store-visit\/analyze"/);
+  assert.match(storeVisitH5, /setSubmitStatus\(labels\.analyzingPrices\)/);
+  assert.match(storeVisitH5, /if \(!analyzeRes\.ok\)/);
+  assert.doesNotMatch(storeVisitH5, /void fetch\("\/api\/store-visit\/analyze"/);
 });
 
 test("store visit analysis auto-approves AI price candidates that match the active rule", () => {
@@ -21,4 +25,18 @@ test("store visit analysis auto-approves AI price candidates that match the acti
   assert.match(analyzeRoute, /autoReviewedCount/);
   assert.match(analyzeRoute, /auto_reviewed_count/);
   assert.match(analyzeRoute, /review_method.*auto_rule|auto_rule.*review_method/s);
+});
+
+test("store visit analysis accepts new image rows as well as legacy image arrays", () => {
+  assert.match(analyzeRoute, /offline_visit_images\(id\)/);
+  assert.match(analyzeRoute, /legacyImageCount/);
+  assert.match(analyzeRoute, /tableImageCount/);
+  assert.match(analyzeRoute, /legacyImageCount \+ tableImageCount/);
+  assert.doesNotMatch(analyzeRoute, /const imagePaths = Array\.isArray\(typedVisit\.image_urls\) \? typedVisit\.image_urls : \[\];\s*if \(imagePaths\.length === 0\)/s);
+});
+
+test("store visit analysis failures keep retryable status and error details", () => {
+  assert.match(analyzeRoute, /analysis_status: "failed"/);
+  assert.match(analyzeRoute, /visit_status: "uploaded"/);
+  assert.match(analyzeRoute, /analysis_error: message/);
 });

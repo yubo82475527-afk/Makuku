@@ -26,7 +26,9 @@ type VisitListItem = {
   city?: string | null;
   channel_type?: string | null;
   visit_date: string;
+  visit_status?: string | null;
   analysis_status?: StoreVisitAnalysisStatus | null;
+  analysis_error?: string | null;
   ai_result?: StoreVisitAiResult | null;
   photo_count?: number;
   created_at: string;
@@ -63,6 +65,10 @@ function statusClass(status: StoreVisitAnalysisStatus | null | undefined) {
     default:
       return "bg-amber-50 text-amber-700 ring-amber-200";
   }
+}
+
+function canRetryAnalysis(status: StoreVisitAnalysisStatus | null | undefined, visitStatus: string | null | undefined) {
+  return status === "failed" || (visitStatus === "uploaded" && (!status || status === "pending"));
 }
 
 function riskClass(level: StockRiskLevel) {
@@ -159,6 +165,7 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
   const [todayCount, setTodayCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [reanalyzingVisitId, setReanalyzingVisitId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -264,6 +271,29 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
     setPassword("");
     setLoginError(null);
     setLoading(false);
+  }
+
+  async function reanalyzeVisit(visitId: string) {
+    if (!user?.id) return;
+    setReanalyzingVisitId(visitId);
+    setError(null);
+    try {
+      const res = await fetch("/api/store-visit/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visit_id: visitId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error ?? copy.aiAnalysisFailed);
+      }
+      await loadVisits(1, false, user);
+    } catch {
+      setError(copy.aiAnalysisFailed);
+      await loadVisits(1, false, user);
+    } finally {
+      setReanalyzingVisitId(null);
+    }
   }
 
   useEffect(() => {
@@ -375,49 +405,64 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
         ) : null}
         {visits.map((visit) => {
           const status = visit.analysis_status ?? "pending";
+          const retryable = canRetryAnalysis(status, visit.visit_status);
           const risk = visit.ai_result?.stock_risk?.level;
           const summary = visit.ai_result?.store_summary;
           return (
-            <Link
-              key={visit.id}
-              href={`/${locale}/mobile/offline-capture/${visit.id}`}
-              className="block rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm active:scale-[0.99]"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h2 className="truncate text-base font-bold">{visit.store_name}</h2>
-                  <p className="mt-1 truncate text-xs text-slate-500">{visit.region ?? "-"} / {visit.channel ?? "-"}</p>
+            <article key={visit.id} className="rounded-xl border border-slate-200 bg-white shadow-sm">
+              <Link
+                href={`/${locale}/mobile/offline-capture/${visit.id}`}
+                className="block p-4 text-left active:scale-[0.99]"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 className="truncate text-base font-bold">{visit.store_name}</h2>
+                    <p className="mt-1 truncate text-xs text-slate-500">{visit.region ?? "-"} / {visit.channel ?? "-"}</p>
+                  </div>
+                  <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-slate-400" />
                 </div>
-                <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-slate-400" />
-              </div>
 
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <Badge className={statusClass(status)}>{mobileAnalysisStatusLabel(locale, status)}</Badge>
-                {risk ? <Badge className={riskClass(risk)}>{risk}</Badge> : null}
-              </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <Badge className={statusClass(status)}>{mobileAnalysisStatusLabel(locale, status)}</Badge>
+                  {risk ? <Badge className={riskClass(risk)}>{risk}</Badge> : null}
+                </div>
 
-              {summary ? (
-                <p
-                  className="mt-3 overflow-hidden text-sm leading-5 text-slate-700"
-                  style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}
-                >
-                  {summary}
-                </p>
-              ) : (
-                <p className="mt-3 text-sm text-slate-400">{copy.noSummaryYet}</p>
-              )}
+                {summary ? (
+                  <p
+                    className="mt-3 overflow-hidden text-sm leading-5 text-slate-700"
+                    style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}
+                  >
+                    {summary}
+                  </p>
+                ) : (
+                  <p className="mt-3 text-sm text-slate-400">{visit.analysis_error ?? copy.noSummaryYet}</p>
+                )}
 
-              <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-500">
-                <span className="inline-flex items-center gap-1.5">
-                  <CalendarDays className="h-3.5 w-3.5" />
-                  {formatVisitDate(visit.visit_date, locale)}
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <ImageIcon className="h-3.5 w-3.5" />
-                  {visit.photo_count ?? 0} {copy.photos}
-                </span>
-              </div>
-            </Link>
+                <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-500">
+                  <span className="inline-flex items-center gap-1.5">
+                    <CalendarDays className="h-3.5 w-3.5" />
+                    {formatVisitDate(visit.visit_date, locale)}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <ImageIcon className="h-3.5 w-3.5" />
+                    {visit.photo_count ?? 0} {copy.photos}
+                  </span>
+                </div>
+              </Link>
+              {retryable ? (
+                <div className="border-t border-slate-100 px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => reanalyzeVisit(visit.id)}
+                    disabled={reanalyzingVisitId === visit.id}
+                    className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-blue-600 text-sm font-bold text-white disabled:opacity-60"
+                  >
+                    {reanalyzingVisitId === visit.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    {copy.retryAnalyze}
+                  </button>
+                </div>
+              ) : null}
+            </article>
           );
         })}
       </section>

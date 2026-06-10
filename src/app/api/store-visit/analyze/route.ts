@@ -11,7 +11,7 @@ async function failVisit(visitId: string, message: string) {
     .from("offline_store_visits")
     .update({
       analysis_status: "failed",
-      visit_status: "failed",
+      visit_status: "uploaded",
       analysis_error: message,
     })
     .eq("id", visitId);
@@ -27,14 +27,15 @@ export async function POST(request: Request) {
     const supabase = createSupabaseServiceClient();
     const { data: visit, error } = await supabase
       .from("offline_store_visits")
-      .select("*")
+      .select("*, offline_visit_images(id)")
       .eq("id", visitId)
       .single();
     if (error || !visit) return Response.json({ error: error?.message ?? "Visit not found" }, { status: 404 });
 
     const typedVisit = visit as OfflineStoreVisit;
-    const imagePaths = Array.isArray(typedVisit.image_urls) ? typedVisit.image_urls : [];
-    if (imagePaths.length === 0) {
+    const legacyImageCount = Array.isArray(typedVisit.image_urls) ? typedVisit.image_urls.length : 0;
+    const tableImageCount = Array.isArray(typedVisit.offline_visit_images) ? typedVisit.offline_visit_images.length : 0;
+    if (legacyImageCount + tableImageCount === 0) {
       await failVisit(visitId, "No images found for this visit");
       return Response.json({ error: "No images found for this visit" }, { status: 400 });
     }

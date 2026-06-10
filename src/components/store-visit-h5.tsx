@@ -98,6 +98,10 @@ function uiCopy(locale: Locale) {
         city: "省/市/区",
         channelType: "门店类型",
         address: "地址",
+        creatingVisit: "正在创建巡店...",
+        processingPhotos: "正在处理",
+        analyzingPrices: "照片已上传，正在解析价格...",
+        submitted: "已提交",
         storeInfoIncomplete: "门店资料不完整，请重新选择或新建门店。",
         visitDate: "巡店日期",
         storeLocationGroup: "省/市/区与详细地址",
@@ -133,6 +137,10 @@ function uiCopy(locale: Locale) {
         city: "Province / City / District",
         channelType: "Store Type",
         address: "Address",
+        creatingVisit: "Creating store visit...",
+        processingPhotos: "Processing",
+        analyzingPrices: "Photos uploaded. Parsing prices...",
+        submitted: "Submitted.",
         storeInfoIncomplete: "Store master data is incomplete. Select or create another store.",
         visitDate: "Visit Date",
         storeLocationGroup: "Province / City / District and Address",
@@ -362,11 +370,11 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
     }
 
     setSubmitting(true);
-    setSubmitStatus("Compressing photos...");
+    setSubmitStatus(`${labels.processingPhotos} 0/${flattenedImages.length}`);
     setError(null);
 
     try {
-      setSubmitStatus("Creating store visit...");
+      setSubmitStatus(labels.creatingVisit);
       const res = await fetch("/api/store-visit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -392,29 +400,27 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
       const visitId = String(data.visit?.id ?? "");
       if (!visitId) throw new Error("Store visit was created without an id.");
 
-      setSubmitStatus(`正在处理 0/${flattenedImages.length}`);
+      setSubmitStatus(`${labels.processingPhotos} 0/${flattenedImages.length}`);
       await uploadImagesWithConcurrency({
         visitId,
         images: flattenedImages,
         concurrency: uploadConcurrency,
         submitFailed: copy.submitFailed,
-        onProgress: (completedCount) => setSubmitStatus(`正在处理 ${completedCount}/${flattenedImages.length}`),
+        onProgress: (completedCount) => setSubmitStatus(`${labels.processingPhotos} ${completedCount}/${flattenedImages.length}`),
       });
 
-      setSubmitStatus("Starting analysis...");
-      void fetch("/api/store-visit/analyze", {
+      setSubmitStatus(labels.analyzingPrices);
+      const analyzeRes = await fetch("/api/store-visit/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ visit_id: visitId }),
-      })
-        .then(async (analysisRes) => {
-          if (analysisRes.ok) return;
-          const analysisData = await analysisRes.json().catch(() => ({}));
-          window.alert(`${copy.aiAnalysisFailed}: ${analysisData.error ?? copy.networkRetry}`);
-        })
-        .catch(() => window.alert(copy.aiAnalysisFailed));
+      });
+      const analyzeData = await analyzeRes.json().catch(() => ({}));
+      if (!analyzeRes.ok) {
+        throw new Error(`${copy.aiAnalysisFailed}: ${analyzeData.error ?? copy.networkRetry}`);
+      }
 
-      setSubmitStatus("Submitted.");
+      setSubmitStatus(labels.submitted);
       router.push(`/${locale}/mobile/offline-capture`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : copy.networkRetry);
@@ -837,9 +843,9 @@ function CreateStoreSheet({ locale, user, onClose, onCreated }: { locale: Locale
 
 function ReadOnlyRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-3 rounded-lg bg-slate-50 px-3 py-2">
-      <span className="whitespace-nowrap text-xs font-semibold leading-5 text-slate-500">{label}</span>
-      <span className="min-w-0 break-words text-right text-sm font-medium leading-5 text-slate-900">{value}</span>
+    <div className="grid grid-cols-1 items-start gap-1 rounded-lg bg-slate-50 px-3 py-2 sm:grid-cols-[7.5rem_minmax(0,1fr)] sm:gap-3">
+      <span className="min-w-0 break-words text-xs font-semibold leading-5 text-slate-500">{label}</span>
+      <span className="min-w-0 break-words text-left text-sm font-medium leading-5 text-slate-900 sm:text-right">{value}</span>
     </div>
   );
 }

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 
 const storeVisitH5 = readFileSync("src/components/store-visit-h5.tsx", "utf8");
 const storeVisitsListH5 = readFileSync("src/components/store-visits-list-h5.tsx", "utf8");
+const storeVisitDetailH5 = readFileSync("src/components/store-visit-detail-h5.tsx", "utf8");
 const storeVisitApi = readFileSync("src/app/api/store-visit/route.ts", "utf8");
 const storeVisitImagesApi = readFileSync("src/app/api/store-visit/[id]/images/route.ts", "utf8");
 const storeVisitAiDebug = readFileSync("src/lib/store-visit-ai-debug.ts", "utf8");
@@ -63,8 +64,9 @@ test("new H5 store visit keeps visit date compact instead of a full store-info c
 
 test("selected store card wraps long mobile region and address values", () => {
   assert.match(storeVisitH5, /overflow-hidden rounded-2xl/);
-  assert.match(storeVisitH5, /grid-cols-\[5\.5rem_minmax\(0,1fr\)\]/);
-  assert.match(storeVisitH5, /break-words text-right/);
+  assert.match(storeVisitH5, /grid-cols-1/);
+  assert.match(storeVisitH5, /sm:grid-cols-\[7\.5rem_minmax\(0,1fr\)\]/);
+  assert.match(storeVisitH5, /break-words text-left/);
   assert.doesNotMatch(storeVisitH5, /min-w-0 truncate text-sm font-medium text-slate-900/);
 });
 
@@ -81,7 +83,7 @@ test("new H5 store visit submits photos with limited concurrency after creating 
   assert.match(storeVisitH5, /async function uploadImagesWithConcurrency/);
   assert.match(storeVisitH5, /await uploadImagesWithConcurrency\(\{\s*visitId,\s*images: flattenedImages,\s*concurrency: uploadConcurrency,/s);
   assert.match(storeVisitH5, /completedCount \+= 1/);
-  assert.match(storeVisitH5, /setSubmitStatus\(`正在处理 \$\{completedCount\}\/\$\{flattenedImages\.length\}`\)/);
+  assert.match(storeVisitH5, /setSubmitStatus\(`\$\{labels\.processingPhotos\} \$\{completedCount\}\/\$\{flattenedImages\.length\}`\)/);
 
   const createVisitIndex = storeVisitH5.indexOf('fetch("/api/store-visit"');
   const uploadIndex = storeVisitH5.indexOf("await uploadImagesWithConcurrency");
@@ -129,6 +131,18 @@ test("mobile visit list uses top settings menu for language and logout", () => {
   assert.match(storeVisitsListH5, /Settings/);
   assert.match(storeVisitsListH5, /LogOut/);
   assert.doesNotMatch(storeVisitsListH5, /\{copy\.new\}/);
+});
+
+test("mobile visit list and detail expose retry analysis for failed or uploaded visits", () => {
+  assert.match(storeVisitsListH5, /function canRetryAnalysis/);
+  assert.match(storeVisitsListH5, /retryAnalyze/);
+  assert.match(storeVisitsListH5, /reanalyzeVisit/);
+  assert.match(storeVisitsListH5, /fetch\("\/api\/store-visit\/analyze"/);
+  assert.match(storeVisitsListH5, /analysis_status.*failed|failed.*analysis_status/s);
+  assert.match(storeVisitDetailH5, /canRetryAnalysis/);
+  assert.match(storeVisitDetailH5, /copy\.retryAnalyze/);
+  assert.match(storeVisitDetailH5, /analysis_status\?:/);
+  assert.match(storeVisitDetailH5, /visit_status\?:/);
 });
 
 test("store visit API accepts selected store and optional location fields", () => {

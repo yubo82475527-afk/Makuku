@@ -16,12 +16,17 @@ type StoreVisitDetail = {
   channel?: string | null;
   promoter?: string | null;
   visit_date: string;
+  visit_status?: string | null;
   analysis_status?: "pending" | "analyzing" | "completed" | "failed" | null;
   analysis_error?: string | null;
   ai_result?: StoreVisitAiResult | null;
   summary_result?: Record<string, unknown> | null;
   signed_images?: { path: string; url: string | null; category?: StoreVisitImageCategory }[];
 };
+
+function canRetryAnalysis(status: StoreVisitDetail["analysis_status"], visitStatus: StoreVisitDetail["visit_status"]) {
+  return status === "failed" || (visitStatus === "uploaded" && (!status || status === "pending"));
+}
 
 export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string }) {
   const copy = getMobileCopy(locale);
@@ -83,6 +88,8 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   }
 
   const status = visit?.analysis_status ?? "pending";
+  const retryable = canRetryAnalysis(status, visit?.visit_status);
+  const canRunAnalysis = retryable || status === "pending";
   const images = visit?.signed_images ?? [];
   const imageGroups = [
     { category: "makuku_shelf" as const, images: images.filter((image) => image.category === "makuku_shelf") },
@@ -121,10 +128,12 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                 <div className="text-xs font-medium uppercase text-slate-500">{copy.analysisStatus}</div>
                 <div className="mt-1 text-lg font-bold">{mobileAnalysisStatusLabel(locale, status)}</div>
               </div>
-              <button type="button" onClick={analyze} disabled={analyzing || status === "analyzing"} className="inline-flex h-10 items-center gap-2 rounded-lg bg-blue-600 px-3 text-sm font-bold text-white disabled:opacity-60">
-                {analyzing || status === "analyzing" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                {status === "failed" ? copy.retryAnalyze : copy.analyzeStore}
-              </button>
+              {canRunAnalysis ? (
+                <button type="button" onClick={analyze} disabled={analyzing || status === "analyzing"} className="inline-flex h-10 items-center gap-2 rounded-lg bg-blue-600 px-3 text-sm font-bold text-white disabled:opacity-60">
+                  {analyzing || status === "analyzing" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  {retryable ? copy.retryAnalyze : copy.analyzeStore}
+                </button>
+              ) : null}
             </div>
             {visit.analysis_error ? <p className="mt-3 text-sm text-red-600">{copy.aiAnalysisFailed}: {visit.analysis_error}</p> : null}
           </section>
