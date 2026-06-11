@@ -3,6 +3,7 @@ import { formReturnRedirect, readRequestBody } from "@/lib/request";
 import { demoOfflineStores } from "@/lib/demo-data";
 import { getOfflineStores } from "@/lib/data";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
+import { requireAdminSession, requireAppSession } from "@/lib/auth-session";
 import type { OfflineStore } from "@/lib/types";
 
 function isMissingSchemaError(error: { message?: string } | null) {
@@ -202,6 +203,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireAppSession(request);
+    if (auth.response) return auth.response;
     const { body, isForm } = await readRequestBody(request);
     const name = String(body.name ?? "").trim();
     const city = String(body.city ?? "").trim();
@@ -215,9 +218,9 @@ export async function POST(request: Request) {
     const longitude = cleanOptionalNumber(body.longitude);
     const locationAccuracyM = cleanOptionalNumber(body.location_accuracy_m);
     const locationCapturedAt = String(body.location_captured_at ?? "").trim() || null;
-    const createdByUserId = String(body.created_by_user_id ?? body.createdByUserId ?? "").trim() || null;
-    const createdByName = String(body.created_by_name ?? body.createdByName ?? "").trim() || null;
-    const createdBy = String(body.created_by ?? createdByName ?? "").trim() || null;
+    const createdByUserId = String(body.created_by_user_id ?? body.createdByUserId ?? auth.session.id).trim() || null;
+    const createdByName = String(body.created_by_name ?? body.createdByName ?? auth.session.displayName).trim() || null;
+    const createdBy = String(body.created_by ?? createdByName ?? auth.session.displayName).trim() || null;
 
     if (!name || !city || (!channelId && !channelTypeFromBody)) {
       return Response.json({ error: "Missing required fields: name, city, channel_id" }, { status: 400 });
@@ -385,6 +388,8 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const auth = await requireAdminSession(request);
+    if (auth.response) return auth.response;
     const { searchParams } = new URL(request.url);
     const bodyResult = request.headers.get("content-type")?.includes("application/json")
       ? await readRequestBody(request)
@@ -489,6 +494,8 @@ export async function DELETE(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const auth = await requireAdminSession(request);
+    if (auth.response) return auth.response;
     const { body } = await readRequestBody(request);
     const ids = parseStoreIds(body as { id?: unknown; ids?: unknown });
     const uuidIds = ids.filter(isUuid);

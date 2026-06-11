@@ -12,6 +12,7 @@ import {
   Store,
   Tags,
   Users,
+  LogOut,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
@@ -19,6 +20,11 @@ import { localeLabels, replacePathLocale, type Locale } from "@/lib/i18n/config"
 import type { Dictionary } from "@/lib/i18n/get-dictionary";
 
 const sidebarStorageKey = "makuku_sidebar_collapsed";
+
+type HeaderUser = {
+  displayName: string;
+  role: string;
+};
 
 const navGroups = [
   {
@@ -118,6 +124,7 @@ export function AppShell({
   const languageLabel = locale === "zh" ? "语言" : "Language";
   const mobileNavLabel = locale === "zh" ? "目录" : "Menu";
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [headerUser, setHeaderUser] = useState<HeaderUser | null>(null);
   const sidebarToggleLabel = sidebarCollapsed
     ? (locale === "zh" ? "展开菜单" : "Expand sidebar")
     : (locale === "zh" ? "缩小菜单" : "Collapse sidebar");
@@ -129,12 +136,30 @@ export function AppShell({
     return () => window.cancelAnimationFrame(frame);
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/session")
+      .then((response) => response.json())
+      .then((data) => {
+        if (!cancelled && data.user) setHeaderUser(data.user as HeaderUser);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   function toggleSidebar() {
     setSidebarCollapsed((current) => {
       const next = !current;
       localStorage.setItem(sidebarStorageKey, String(next));
       return next;
     });
+  }
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+    window.location.href = `/${locale}/login`;
   }
 
   return (
@@ -185,6 +210,20 @@ export function AppShell({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {headerUser ? (
+              <div className="hidden items-center gap-2 text-xs text-slate-600 sm:flex">
+                <span className="max-w-32 truncate font-medium text-slate-800">{headerUser.displayName}</span>
+                <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-500">{headerUser.role}</span>
+                <button
+                  type="button"
+                  onClick={logout}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  {locale === "zh" ? "退出" : "Logout"}
+                </button>
+              </div>
+            ) : null}
             <Link
               href={replacePathLocale(`/${locale}${currentPath}`, otherLocale)}
               className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"

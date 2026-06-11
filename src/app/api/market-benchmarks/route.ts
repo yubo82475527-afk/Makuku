@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { formReturnRedirect, readRequestBody } from "@/lib/request";
 import { getMarketBenchmarks } from "@/lib/data";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
+import { requireAdminSession } from "@/lib/auth-session";
 import type { CompetitorProduct, PriceSnapshot, SkuMaster } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +42,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireAdminSession(request);
+  if (auth.response) return auth.response;
   const { body, isForm } = await readRequestBody(request);
   const supabase = hasSupabaseServiceConfig() ? createSupabaseServiceClient() : null;
   const payload = await deriveBenchmarkPayload(body, supabase);
@@ -69,6 +72,8 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const auth = await requireAdminSession(request);
+  if (auth.response) return auth.response;
   const { body } = await readRequestBody(request);
   const id = clean(body.id);
   if (!id) return Response.json({ error: "Missing benchmark id" }, { status: 400 });

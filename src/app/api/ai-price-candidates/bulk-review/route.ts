@@ -1,4 +1,5 @@
 import { getAiPriceReviewRule } from "@/lib/data";
+import { requireAdminSession } from "@/lib/auth-session";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
 
 const maxJobItems = 5000;
@@ -39,6 +40,8 @@ function cleanFilters(value: unknown) {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireAdminSession(request);
+  if (auth.response) return auth.response;
   if (!hasSupabaseServiceConfig()) {
     return Response.json({ error: "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY" }, { status: 500 });
   }

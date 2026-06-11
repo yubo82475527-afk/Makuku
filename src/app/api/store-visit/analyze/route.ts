@@ -3,6 +3,7 @@ import { autoApproveAiPriceCandidatesForVisit } from "@/lib/ai-price-review";
 import { generateAiPriceCandidates } from "@/lib/ai-price-candidates";
 import { runStoreVisitAiAnalysisForVisit } from "@/lib/store-visit-ai-debug";
 import { createSupabaseServiceClient } from "@/lib/supabase";
+import { requireAppSession } from "@/lib/auth-session";
 import type { OfflineStoreVisit } from "@/lib/types";
 
 async function failVisit(visitId: string, message: string) {
@@ -18,6 +19,8 @@ async function failVisit(visitId: string, message: string) {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireAppSession(request);
+  if (auth.response) return auth.response;
   let visitId = "";
   try {
     const body = await request.json().catch(() => ({}));

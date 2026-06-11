@@ -1,4 +1,5 @@
 import { getAiPriceReviewRule, upsertAiPriceReviewRule } from "@/lib/data";
+import { requireAdminSession } from "@/lib/auth-session";
 
 function finiteNumber(value: unknown, fallback: number) {
   const parsed = Number(value);
@@ -11,6 +12,8 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
+  const auth = await requireAdminSession(request);
+  if (auth.response) return auth.response;
   const body = await request.json().catch(() => ({}));
   const result = await upsertAiPriceReviewRule({
     name: String(body.name ?? "Default bulk review rule"),

@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { createSupabaseServiceClient } from "@/lib/supabase";
+import { requireAppSession } from "@/lib/auth-session";
 import type { OfflineImageType, OfflineStoreVisit, StoreVisitImageCategory } from "@/lib/types";
 
 const bucketName = "offline-visit-images";
@@ -23,6 +24,8 @@ type RouteContext = {
 
 export async function POST(request: Request, ctx: RouteContext) {
   try {
+    const auth = await requireAppSession(request);
+    if (auth.response) return auth.response;
     const { id } = await ctx.params;
     let formData: FormData;
     try {

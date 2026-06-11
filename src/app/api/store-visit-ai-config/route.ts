@@ -5,6 +5,7 @@ import {
   verifyStoreVisitAiTestToken,
 } from "@/lib/store-visit-ai-config";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
+import { requireAdminSession } from "@/lib/auth-session";
 
 export async function GET() {
   const configs = await listStoreVisitAiConfigs();
@@ -13,6 +14,8 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireAdminSession(request);
+    if (auth.response) return auth.response;
     if (!hasSupabaseServiceConfig()) {
       return Response.json({ error: "Missing Supabase service configuration" }, { status: 500 });
     }

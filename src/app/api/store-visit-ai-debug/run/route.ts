@@ -1,8 +1,11 @@
 import { createStoreVisitAiTestToken, normalizeStoreVisitAiConfigInput } from "@/lib/store-visit-ai-config";
 import { runStoreVisitAiAnalysisForVisit } from "@/lib/store-visit-ai-debug";
+import { requireAdminSession } from "@/lib/auth-session";
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireAdminSession(request);
+    if (auth.response) return auth.response;
     const body = await request.json().catch(() => ({}));
     const visitId = String(body.visit_id ?? "").trim();
     if (!visitId) return Response.json({ error: "Missing visit_id" }, { status: 400 });

@@ -7,10 +7,13 @@ import {
 import { revalidatePath } from "next/cache";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import { formReturnRedirect, readRequestBody } from "@/lib/request";
+import { requireAdminSession } from "@/lib/auth-session";
 import type { CompetitorProduct, PriceSnapshot, PromoEvent, SkuMatch, SkuMaster } from "@/lib/types";
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireAdminSession(request);
+    if (auth.response) return auth.response;
     const { body, isForm } = await readRequestBody(request);
     const supabase = createSupabaseServiceClient();
 
@@ -99,6 +102,8 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const auth = await requireAdminSession(request);
+    if (auth.response) return auth.response;
     const body = await request.json().catch(() => ({}));
     const ids = Array.isArray(body.ids)
       ? body.ids.map((id: unknown) => String(id).trim()).filter(Boolean)

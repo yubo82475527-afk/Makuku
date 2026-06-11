@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import crypto from "crypto";
 import { formReturnRedirect, readRequestBody } from "@/lib/request";
+import { requireAdminSession } from "@/lib/auth-session";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import type { AppUserRole, AppUserStatus } from "@/lib/types";
 
@@ -38,6 +39,8 @@ function revalidateUserViews() {
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireAdminSession(request);
+    if (auth.response) return auth.response;
     const { body, isForm } = await readRequestBody(request);
     const username = normalizeUsername(body.username);
     const displayName = clean(body.display_name);
@@ -74,6 +77,8 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const auth = await requireAdminSession(request);
+    if (auth.response) return auth.response;
     const { body } = await readRequestBody(request);
     const id = clean(body.id);
     const status = normalizeStatus(body.status);

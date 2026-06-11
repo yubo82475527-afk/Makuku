@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { formReturnRedirect, readRequestBody } from "@/lib/request";
 import { getChannels } from "@/lib/data";
 import { createSupabaseServiceClient } from "@/lib/supabase";
+import { requireAdminSession } from "@/lib/auth-session";
 
 export async function GET() {
   const result = await getChannels();
@@ -14,6 +15,8 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireAdminSession(request);
+    if (auth.response) return auth.response;
     const { body, isForm } = await readRequestBody(request);
     const code = String(body.code ?? "").trim().toLowerCase().replaceAll(" ", "_");
     const name = String(body.name ?? "").trim();

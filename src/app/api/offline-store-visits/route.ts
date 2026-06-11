@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { formReturnRedirect, readRequestBody } from "@/lib/request";
 import { getOfflineStoreVisits } from "@/lib/data";
 import { createSupabaseServiceClient } from "@/lib/supabase";
+import { requireAppSession } from "@/lib/auth-session";
 
 export async function GET(request: Request) {
   try {
@@ -30,14 +31,16 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireAppSession(request);
+    if (auth.response) return auth.response;
     const { body, isForm } = await readRequestBody(request);
     const storeName = String(body.store_name ?? "").trim();
     const city = String(body.city ?? "").trim();
     let channelType = String(body.channel_type ?? "").trim();
     let channelId = String(body.channel_id ?? "").trim() || null;
     const storeId = String(body.store_id ?? "").trim() || null;
-    const uploaderName = String(body.uploader_name ?? "").trim();
-    const uploaderUserId = String(body.user_id ?? body.uploader_user_id ?? "").trim();
+    const uploaderName = String(body.uploader_name ?? auth.session.displayName).trim();
+    const uploaderUserId = String(body.user_id ?? body.uploader_user_id ?? auth.session.id).trim();
     const visitDate = String(body.visit_date ?? new Date().toISOString().slice(0, 10)).trim();
 
     if (!storeName || !city || !uploaderName) {

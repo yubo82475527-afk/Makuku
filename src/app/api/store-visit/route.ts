@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { createSupabaseServiceClient } from "@/lib/supabase";
+import { requireAppSession } from "@/lib/auth-session";
 
 const bucketName = "store-visits";
 const maxImages = 6;
@@ -250,6 +251,8 @@ async function resolveStoreMaster(input: {
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireAppSession(request);
+    if (auth.response) return auth.response;
     if (isJsonRequest(request)) {
       const body = await request.json().catch(() => ({}));
       const storeId = clean(body.store_id) || null;
