@@ -40,6 +40,17 @@ function isJsonRequest(request: Request) {
   return request.headers.get("content-type")?.includes("application/json") ?? false;
 }
 
+function jakartaDateInputValue(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
 async function insertVisit(input: {
   storeName: string;
   city: string;
@@ -246,7 +257,7 @@ export async function POST(request: Request) {
       const storeName = clean(body.store_name);
       const city = clean(body.city) || clean(body.region);
       const channelType = clean(body.channel_type) || clean(body.channel);
-      const visitDate = clean(body.visit_date) || new Date().toISOString().slice(0, 10);
+      const visitDate = clean(body.visit_date) || jakartaDateInputValue();
       const promoter = clean(body.promoter);
       const userId = clean(body.user_id) || clean(body.uploader_user_id) || null;
       const latitude = cleanOptionalNumber(body.latitude);
@@ -292,7 +303,7 @@ export async function POST(request: Request) {
     const channelId = clean(formData.get("channel_id")) || null;
     const city = clean(formData.get("city")) || clean(formData.get("region"));
     const channelType = clean(formData.get("channel_type")) || clean(formData.get("channel"));
-    const visitDate = clean(formData.get("visit_date")) || new Date().toISOString().slice(0, 10);
+    const visitDate = clean(formData.get("visit_date")) || jakartaDateInputValue();
     const promoter = clean(formData.get("promoter"));
     const userId = clean(formData.get("user_id")) || clean(formData.get("uploader_user_id")) || null;
     const files = formData.getAll("images").filter((file): file is File => file instanceof File);

@@ -633,7 +633,7 @@ export async function getPriceSnapshots(): Promise<QueryResult<PriceSnapshot[]>>
   return fromSupabase<PriceSnapshot[]>(
     supabase
       .from("price_snapshots")
-      .select("*, competitor_products(*, brands(id,name), sku_matches(*, sku_master(*)))")
+      .select("*, competitor_products(*, brands(id,name), sku_matches(*, sku_master(*))), ai_price_candidates(id, offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))")
       .order("captured_at", { ascending: false })
       .limit(100),
     demoPriceSnapshots,

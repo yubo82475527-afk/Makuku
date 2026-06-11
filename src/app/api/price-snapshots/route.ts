@@ -4,6 +4,7 @@ import {
   normalizePriceSnapshot,
   shouldCreateAlertFromPromoEvent,
 } from "@/lib/business";
+import { revalidatePath } from "next/cache";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import { formReturnRedirect, readRequestBody } from "@/lib/request";
 import type { CompetitorProduct, PriceSnapshot, PromoEvent, SkuMatch, SkuMaster } from "@/lib/types";
@@ -93,5 +94,38 @@ export async function POST(request: Request) {
     return Response.json({ data: snapshot, promo_event: promoEvent });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const ids = Array.isArray(body.ids)
+      ? body.ids.map((id: unknown) => String(id).trim()).filter(Boolean)
+      : [];
+
+    if (ids.length === 0) {
+      return Response.json({ error: "No price snapshots selected" }, { status: 400 });
+    }
+
+    const supabase = createSupabaseServiceClient();
+    const { data, error } = await supabase
+      .from("price_snapshots")
+      .delete()
+      .in("id", ids)
+      .select("id");
+
+    if (error) {
+      return Response.json({ error: error.message }, { status: 400 });
+    }
+
+    revalidatePath("/zh/prices");
+    revalidatePath("/en/prices");
+    revalidatePath("/zh/dashboard");
+    revalidatePath("/en/dashboard");
+
+    return Response.json({ deleted_count: data?.length ?? ids.length });
+  } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : "Delete failed" }, { status: 500 });
   }
 }

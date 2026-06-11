@@ -1,23 +1,43 @@
 import { createSupabaseServiceClient } from "@/lib/supabase";
+import { formatIdr, formatJakartaTime, formatPricePerPiece } from "@/lib/format";
 import type { PriceSnapshot } from "@/lib/types";
 
-const csvColumns = [
-  "snapshot_id",
-  "captured_at",
-  "brand",
-  "product",
-  "channel",
-  "list_price_idr",
-  "promo_price_idr",
-  "voucher_value_idr",
-  "shipping_subsidy_idr",
-  "net_price_idr",
-  "price_per_piece",
-  "promo_type",
-  "source",
-  "evidence_url",
-  "created_at",
-];
+const csvColumns = {
+  zh: [
+    "采集时间",
+    "品牌",
+    "商品",
+    "渠道",
+    "标价",
+    "包装价",
+    "券",
+    "到手价",
+    "单片价",
+    "门店名称",
+    "省",
+    "市",
+    "区",
+    "采集人",
+    "创建时间",
+  ],
+  en: [
+    "Captured",
+    "Brand",
+    "Product",
+    "Channel",
+    "List",
+    "Package",
+    "Voucher",
+    "Net",
+    "IDR/pc",
+    "Store",
+    "Province",
+    "City",
+    "District",
+    "Collector",
+    "Create Time",
+  ],
+};
 
 function csvEscape(value: string | number | null | undefined) {
   const text = value === null || value === undefined ? "" : String(value);
@@ -36,11 +56,19 @@ export async function GET(request: Request) {
     const brand = searchParams.get("brand");
     const channel = searchParams.get("channel");
     const sku = searchParams.get("sku");
+    const line = searchParams.get("line");
+    const priceBand = searchParams.get("priceBand");
+    const size = searchParams.get("size");
+    const province = searchParams.get("province");
+    const cityName = searchParams.get("cityName");
+    const district = searchParams.get("district");
+    const store = searchParams.get("store");
+    const locale = searchParams.get("locale") === "zh" ? "zh" : "en";
     const supabase = createSupabaseServiceClient();
 
     const { data, error } = await supabase
       .from("price_snapshots")
-      .select("*, competitor_products(*, brands(id,name), sku_matches(*, sku_master(*)))")
+      .select("*, competitor_products(*, brands(id,name), sku_matches(*, sku_master(*))), ai_price_candidates(id, offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))")
       .order("captured_at", { ascending: false })
       .limit(5000);
     if (error) return Response.json({ error: error.message }, { status: 500 });
@@ -48,31 +76,47 @@ export async function GET(request: Request) {
     const snapshots = ((data ?? []) as PriceSnapshot[]).filter((snapshot) => {
       const product = snapshot.competitor_products;
       const match = product?.sku_matches?.[0];
+      const skuMaster = match?.sku_master;
+      const productSegment = product ? resolveProductSegment(product) : { line: "Unknown", size: "Unknown" };
+      const productLine = skuMaster ? productLineLabel(skuMaster.pack_type) : productSegment.line;
+      const productSize = skuMaster?.size ?? productSegment.size;
+      const productPriceBand = skuMaster?.segment ?? product?.segment ?? "unknown";
       if (brand && product?.brand_id !== brand) return false;
       if (channel && snapshot.channel !== channel) return false;
       if (sku && match?.sku_master_id !== sku) return false;
+      if (line && productLine !== line) return false;
+      if (priceBand && productPriceBand !== priceBand) return false;
+      if (size && productSize !== size) return false;
+      const region = storeRegionForSnapshot(snapshot);
+      if (province && !matchesText(region.province, province)) return false;
+      if (cityName && !matchesText(region.cityName, cityName)) return false;
+      if (district && !matchesText(region.district, district)) return false;
+      if (store && !matchesText(storeNameForSnapshot(snapshot), store)) return false;
       return true;
     });
 
-    const rows = snapshots.map((snapshot) => [
-      snapshot.id,
-      snapshot.captured_at,
-      snapshot.competitor_products?.brands?.name,
-      snapshot.competitor_products?.normalized_name,
-      snapshot.channel,
-      snapshot.list_price_idr,
-      snapshot.promo_price_idr,
-      snapshot.voucher_value_idr,
-      snapshot.shipping_subsidy_idr,
-      snapshot.net_price_idr,
-      snapshot.price_per_piece,
-      snapshot.promo_type,
-      snapshot.source,
-      snapshot.evidence_url,
-      snapshot.created_at,
-    ].map(csvEscape).join(","));
+    const rows = snapshots.map((snapshot) => {
+      const region = storeRegionForSnapshot(snapshot);
+      return [
+        formatSnapshotCapturedAt(snapshot),
+        snapshot.competitor_products?.brands?.name,
+        snapshot.competitor_products?.normalized_name,
+        channelLabel(snapshot.channel, locale),
+        formatIdr(snapshot.list_price_idr),
+        formatIdr(snapshot.promo_price_idr),
+        formatIdr(snapshot.voucher_value_idr),
+        formatIdr(snapshot.net_price_idr),
+        formatPricePerPiece(snapshot.price_per_piece),
+        storeNameForSnapshot(snapshot),
+        region.province ?? "-",
+        region.cityName ?? "-",
+        region.district ?? "-",
+        uploaderNameForSnapshot(snapshot),
+        formatSnapshotCreatedAt(snapshot),
+      ].map(csvEscape).join(",");
+    });
 
-    const csv = [csvColumns.join(","), ...rows].join("\r\n");
+    const csv = [csvColumns[locale].map(csvEscape).join(","), ...rows].join("\r\n");
     return new Response(`\uFEFF${csv}`, {
       headers: {
         "Content-Type": "text/csv;charset=utf-8",
@@ -83,4 +127,109 @@ export async function GET(request: Request) {
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Export failed" }, { status: 500 });
   }
+}
+
+type PriceSnapshotForStoreRegion = {
+  captured_at?: string | null;
+  created_at?: string | null;
+  competitor_products?: { shop_name?: string | null } | null;
+  ai_price_candidates?: {
+    offline_store_visits?: {
+      store_name?: string | null;
+      city?: string | null;
+      province?: string | null;
+      city_name?: string | null;
+      district?: string | null;
+      visit_date?: string | null;
+      uploader_name?: string | null;
+    } | null;
+  }[];
+};
+
+function storeVisitForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
+  return snapshot.ai_price_candidates?.find((candidate) => candidate.offline_store_visits)?.offline_store_visits ?? null;
+}
+
+function storeNameForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
+  return cleanDisplayText(storeVisitForSnapshot(snapshot)?.store_name) ?? cleanDisplayText(snapshot.competitor_products?.shop_name) ?? "-";
+}
+
+function uploaderNameForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
+  return cleanDisplayText(storeVisitForSnapshot(snapshot)?.uploader_name) ?? "-";
+}
+
+function formatSnapshotCapturedAt(snapshot: PriceSnapshotForStoreRegion) {
+  const visitDate = cleanDisplayText(storeVisitForSnapshot(snapshot)?.visit_date);
+  if (visitDate) return visitDate.slice(0, 10);
+  return formatJakartaTime(snapshot.captured_at);
+}
+
+function formatSnapshotCreatedAt(snapshot: PriceSnapshotForStoreRegion) {
+  return formatJakartaTime(snapshot.created_at);
+}
+
+function channelLabel(value: string, locale: string) {
+  if (value === "offline") return locale === "zh" ? "线下" : "Offline";
+  if (value === "manual") return locale === "zh" ? "手工" : "Manual";
+  if (value === "shopee") return "Shopee";
+  if (value === "tiktok") return "TikTok";
+  return value;
+}
+
+function storeRegionForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
+  const visit = storeVisitForSnapshot(snapshot);
+  const legacyRegion = splitLegacyRegion(visit?.city);
+  return {
+    province: cleanDisplayText(visit?.province) ?? legacyRegion.province,
+    cityName: cleanDisplayText(visit?.city_name) ?? legacyRegion.cityName,
+    district: cleanDisplayText(visit?.district) ?? legacyRegion.district,
+  };
+}
+
+function cleanDisplayText(value: string | null | undefined) {
+  const text = String(value ?? "").trim();
+  return text && text !== "-" ? text : null;
+}
+
+function splitLegacyRegion(value: string | null | undefined) {
+  const parts = String(value ?? "")
+    .replaceAll("，", ",")
+    .split(/[/>|,]/)
+    .map((part) => cleanDisplayText(part))
+    .filter(Boolean) as string[];
+  if (parts.length >= 3) return { province: parts[0], cityName: parts[1], district: parts[2] };
+  if (parts.length === 2) return { province: null, cityName: parts[0], district: parts[1] };
+  if (parts.length === 1) return { province: null, cityName: parts[0], district: null };
+  return { province: null, cityName: null, district: null };
+}
+
+function matchesText(value: string | null | undefined, query: string) {
+  return String(value ?? "").toLowerCase().includes(query.trim().toLowerCase());
+}
+
+function productLineLabel(value: string) {
+  if (value === "pants") return "Pants";
+  if (value === "tape") return "Tape";
+  return "Unknown";
+}
+
+function resolveProductSegment(product: { pack_type: string; size: string | null; raw_title: string; normalized_name: string }) {
+  const title = product.normalized_name || product.raw_title;
+  return {
+    line: product.pack_type === "unknown" ? inferProductLine(title) : productLineLabel(product.pack_type),
+    size: product.size || inferProductSize(title),
+  };
+}
+
+function inferProductLine(value: string | null | undefined) {
+  const text = (value ?? "").toLowerCase();
+  if (text.includes("tape")) return "Tape";
+  if (text.includes("pants") || text.includes("pant")) return "Pants";
+  return "Pants";
+}
+
+function inferProductSize(value: string | null | undefined) {
+  const text = (value ?? "").toUpperCase();
+  const match = text.match(/\b(NB\/NB-S|XXXXL|XXXL|XXL|XL|NB|L|M|S)\b/);
+  return match?.[1] ?? "Unknown";
 }
