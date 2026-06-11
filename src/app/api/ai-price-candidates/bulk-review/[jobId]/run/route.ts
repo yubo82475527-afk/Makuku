@@ -3,11 +3,15 @@ import { approveAiPriceCandidate, candidateMatchesReviewRule, rejectAiPriceCandi
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
 import type { AiPriceCandidate, AiPriceReviewRule } from "@/lib/types";
 
+const BATCH_REVIEW_CHUNK_SIZE = 10;
+
 function revalidateReviewPaths() {
   revalidatePath("/zh/offline-price-candidates");
   revalidatePath("/en/offline-price-candidates");
   revalidatePath("/zh/prices");
   revalidatePath("/en/prices");
+  revalidatePath("/zh/competitors");
+  revalidatePath("/en/competitors");
 }
 
 function cleanJobReviewOverrides(value: unknown) {
@@ -90,7 +94,7 @@ export async function POST(_request: Request, ctx: { params: Promise<{ jobId: st
     .eq("job_id", jobId)
     .eq("status", "queued")
     .order("created_at", { ascending: true })
-    .limit(50);
+    .limit(BATCH_REVIEW_CHUNK_SIZE);
   if (itemError) return Response.json({ error: itemError.message }, { status: 500 });
 
   for (const item of items ?? []) {

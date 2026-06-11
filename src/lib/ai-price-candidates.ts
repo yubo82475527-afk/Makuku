@@ -42,6 +42,17 @@ function tokenScore(query: string, target: string) {
   return hits / queryTokens.length;
 }
 
+function compactText(value: string | null | undefined) {
+  return normalizeText(value).replace(/\s+/g, "");
+}
+
+function competitorBrandsMatch(candidateBrand: string | null | undefined, productBrand: string | null | undefined) {
+  const candidate = compactText(candidateBrand);
+  const product = compactText(productBrand);
+  if (!candidate || !product) return false;
+  return candidate === product;
+}
+
 function normalizePieceCount(value: number | null | undefined) {
   const parsed = Number(value ?? 0);
   if (!Number.isFinite(parsed) || parsed <= 0) return null;
@@ -118,6 +129,7 @@ function pickBestMaterial(candidate: { brand: string; product: string; parsedPri
 function pickBestCompetitor(candidate: { brand: string; product: string }, products: CompetitorProduct[]) {
   let best: { item: CompetitorProduct; score: number } | null = null;
   for (const item of products) {
+    if (!competitorBrandsMatch(candidate.brand, item.brands?.name)) continue;
     const brandScore = tokenScore(candidate.brand, item.brands?.name ?? "");
     const productScore = tokenScore(candidate.product, [item.normalized_name, item.raw_title, item.size, item.piece_count].filter(Boolean).join(" "));
     const score = Math.min(1, brandScore * 0.45 + productScore * 0.55);
