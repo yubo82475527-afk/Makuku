@@ -1,7 +1,7 @@
 import { AppShell } from "@/components/app-shell";
-import { PriceSnapshotActions } from "@/components/price-snapshot-actions";
-import { Badge, Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
-import { formatIdr, formatJakartaTime, formatPricePerPiece } from "@/lib/format";
+import { Download } from "lucide-react";
+import { PriceSnapshotsTable } from "@/components/price-snapshots-table";
+import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
 import { getBrands, getCompetitorProducts, getPriceSnapshots } from "@/lib/data";
 import { getPageI18n } from "@/lib/i18n/server";
 import { translateEnum } from "@/lib/i18n/get-dictionary";
@@ -26,8 +26,8 @@ export default async function PricesPage({
   if (params.cityName) currentParams.set("cityName", params.cityName);
   if (params.district) currentParams.set("district", params.district);
   if (params.store) currentParams.set("store", params.store);
+  currentParams.set("locale", locale);
   const queryString = currentParams.toString();
-  const currentPath = `/${locale}/prices${queryString ? `?${queryString}` : ""}`;
   const exportHref = `/api/price-snapshots/export${queryString ? `?${queryString}` : ""}`;
   const [pricesResult, productsResult, brandsResult] = await Promise.all([
     getPriceSnapshots(),
@@ -35,7 +35,6 @@ export default async function PricesPage({
     getBrands(),
   ]);
   const productSegments = productsResult.data.map((product) => resolveProductSegment(product));
-  const productLines = Array.from(new Set([...productSegments.map((segment) => segment.line), params.line].filter(Boolean) as string[])).sort();
   const productSizes = Array.from(new Set([...productSegments.map((segment) => segment.size), params.size].filter(Boolean) as string[])).sort();
   const prices = pricesResult.data.filter((snapshot) => {
     const product = snapshot.competitor_products;
@@ -51,7 +50,11 @@ export default async function PricesPage({
     if (params.line && line !== params.line) return false;
     if (params.priceBand && priceBand !== params.priceBand) return false;
     if (params.size && size !== params.size) return false;
-    if (params.store && !product?.shop_name?.toLowerCase().includes(params.store.toLowerCase())) return false;
+    const region = storeRegionForSnapshot(snapshot);
+    if (params.province && !matchesText(region.province, params.province)) return false;
+    if (params.cityName && !matchesText(region.cityName, params.cityName)) return false;
+    if (params.district && !matchesText(region.district, params.district)) return false;
+    if (params.store && !matchesText(storeNameForSnapshot(snapshot), params.store)) return false;
     return true;
   });
 
@@ -59,7 +62,7 @@ export default async function PricesPage({
     <AppShell locale={locale} dict={dict} title={dict.prices.title} currentPath="/prices" isDemo={pricesResult.isDemo}>
       <DataNotice dict={dict} error={pricesResult.error ?? productsResult.error ?? brandsResult.error} />
       <Card className="mb-4">
-        <form className="grid gap-3 md:grid-cols-6 xl:grid-cols-10">
+        <form className="grid gap-3 md:grid-cols-5 xl:grid-cols-9">
           <SelectInput name="brand" defaultValue={params.brand ?? ""}>
             <option value="">{dict.common.allBrands}</option>
             {brandsResult.data.filter((brand) => !brand.is_own_brand).map((brand) => <option key={brand.id} value={brand.id}>{brand.name}</option>)}
@@ -70,10 +73,6 @@ export default async function PricesPage({
             <option value="offline">{translateEnum(dict, "channel", "offline")}</option>
             <option value="tiktok">{translateEnum(dict, "channel", "tiktok")}</option>
             <option value="manual">{translateEnum(dict, "channel", "manual")}</option>
-          </SelectInput>
-          <SelectInput name="line" defaultValue={params.line ?? ""}>
-            <option value="">{locale === "zh" ? "\u5168\u90e8\u4ea7\u54c1\u7ebf" : "All lines"}</option>
-            {productLines.map((line) => <option key={line} value={line}>{line}</option>)}
           </SelectInput>
           <SelectInput name="priceBand" defaultValue={params.priceBand ?? ""}>
             <option value="">{locale === "zh" ? "全部系列" : "All series"}</option>
@@ -98,50 +97,72 @@ export default async function PricesPage({
       <Card>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <h2 className="font-semibold">{dict.prices.title}</h2>
-          <PriceSnapshotActions products={productsResult.data} locale={locale} returnTo={currentPath} exportHref={exportHref} />
+          <a
+            href={exportHref}
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            <Download className="h-4 w-4" />
+            {locale === "zh" ? "导出 CSV" : "Export CSV"}
+          </a>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1100px] text-left text-sm">
-            <thead className="border-b border-slate-200 text-xs uppercase text-slate-500">
-              <tr>
-                <th className="py-2 pr-3">{dict.prices.captured}</th>
-                <th className="py-2 pr-3">{dict.common.brand}</th>
-                <th className="py-2 pr-3">{dict.common.product}</th>
-                <th className="py-2 pr-3">{dict.common.channel}</th>
-                <th className="py-2 pr-3">{dict.prices.list}</th>
-                <th className="py-2 pr-3">{dict.prices.promo}</th>
-                <th className="py-2 pr-3">{dict.prices.voucher}</th>
-                <th className="py-2 pr-3">{dict.prices.net}</th>
-                <th className="py-2 pr-3">{dict.prices.idrPerPc}</th>
-                <th className="py-2 pr-3">{dict.prices.promoType}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {prices.map((snapshot) => {
-                const sku = snapshot.competitor_products?.sku_matches?.[0]?.sku_master;
-                const underFloor = sku && snapshot.price_per_piece < sku.floor_price_per_piece;
-                const underTarget = sku && snapshot.price_per_piece < sku.target_price_per_piece * 0.92;
-                return (
-                  <tr key={snapshot.id} className={underFloor ? "bg-red-50" : underTarget ? "bg-yellow-50" : undefined}>
-                    <td className="py-3 pr-3">{formatJakartaTime(snapshot.captured_at)}</td>
-                    <td className="py-3 pr-3 font-medium">{snapshot.competitor_products?.brands?.name}</td>
-                    <td className="py-3 pr-3">{snapshot.competitor_products?.normalized_name}</td>
-                    <td className="py-3 pr-3"><Badge>{translateEnum(dict, "channel", snapshot.channel)}</Badge></td>
-                    <td className="py-3 pr-3">{formatIdr(snapshot.list_price_idr)}</td>
-                    <td className="py-3 pr-3">{formatIdr(snapshot.promo_price_idr)}</td>
-                    <td className="py-3 pr-3">{formatIdr(snapshot.voucher_value_idr)}</td>
-                    <td className="py-3 pr-3">{formatIdr(snapshot.net_price_idr)}</td>
-                    <td className="py-3 pr-3 font-semibold">{formatPricePerPiece(snapshot.price_per_piece)}</td>
-                    <td className="py-3 pr-3">{snapshot.promo_type ?? "-"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <PriceSnapshotsTable snapshots={prices} locale={locale} />
       </Card>
     </AppShell>
   );
+}
+
+type PriceSnapshotForStoreRegion = {
+  captured_at?: string | null;
+  competitor_products?: { shop_name?: string | null } | null;
+  ai_price_candidates?: {
+    offline_store_visits?: {
+      store_name?: string | null;
+      city?: string | null;
+      province?: string | null;
+      city_name?: string | null;
+      district?: string | null;
+      visit_date?: string | null;
+    } | null;
+  }[];
+};
+
+function storeVisitForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
+  return snapshot.ai_price_candidates?.find((candidate) => candidate.offline_store_visits)?.offline_store_visits ?? null;
+}
+
+function storeNameForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
+  return cleanDisplayText(storeVisitForSnapshot(snapshot)?.store_name) ?? cleanDisplayText(snapshot.competitor_products?.shop_name) ?? "-";
+}
+
+function storeRegionForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
+  const visit = storeVisitForSnapshot(snapshot);
+  const legacyRegion = splitLegacyRegion(visit?.city);
+  return {
+    province: cleanDisplayText(visit?.province) ?? legacyRegion.province,
+    cityName: cleanDisplayText(visit?.city_name) ?? legacyRegion.cityName,
+    district: cleanDisplayText(visit?.district) ?? legacyRegion.district,
+  };
+}
+
+function cleanDisplayText(value: string | null | undefined) {
+  const text = String(value ?? "").trim();
+  return text && text !== "-" ? text : null;
+}
+
+function splitLegacyRegion(value: string | null | undefined) {
+  const parts = String(value ?? "")
+    .replaceAll("，", ",")
+    .split(/[/>|,]/)
+    .map((part) => cleanDisplayText(part))
+    .filter(Boolean) as string[];
+  if (parts.length >= 3) return { province: parts[0], cityName: parts[1], district: parts[2] };
+  if (parts.length === 2) return { province: null, cityName: parts[0], district: parts[1] };
+  if (parts.length === 1) return { province: null, cityName: parts[0], district: null };
+  return { province: null, cityName: null, district: null };
+}
+
+function matchesText(value: string | null | undefined, query: string) {
+  return String(value ?? "").toLowerCase().includes(query.trim().toLowerCase());
 }
 
 function productLineLabel(value: string) {

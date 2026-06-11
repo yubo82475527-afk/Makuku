@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { approveAiPriceCandidate, rejectAiPriceCandidate } from "@/lib/ai-price-review";
 import { createSupabaseServiceClient } from "@/lib/supabase";
+import { requireAdminSession } from "@/lib/auth-session";
 
 function revalidateReviewPaths() {
   revalidatePath("/zh/offline-price-candidates");
@@ -13,6 +14,8 @@ function revalidateReviewPaths() {
 
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
+    const auth = await requireAdminSession(request);
+    if (auth.response) return auth.response;
     const { id } = await ctx.params;
     const body = await request.json().catch(() => ({}));
     const action = String(body.action ?? "").trim();
@@ -74,6 +77,8 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
   }
 }
 
-export async function DELETE() {
+export async function DELETE(request: Request) {
+  const auth = await requireAdminSession(request);
+  if (auth.response) return auth.response;
   return Response.json({ error: "Use PATCH action=reject to keep review audit history." }, { status: 405 });
 }

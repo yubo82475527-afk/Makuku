@@ -1,12 +1,15 @@
 import { revalidatePath } from "next/cache";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
+import { requireAdminSession } from "@/lib/auth-session";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
 };
 
-export async function POST(_request: Request, ctx: RouteContext) {
+export async function POST(request: Request, ctx: RouteContext) {
   try {
+    const auth = await requireAdminSession(request);
+    if (auth.response) return auth.response;
     if (!hasSupabaseServiceConfig()) {
       return Response.json({ error: "Missing Supabase service configuration" }, { status: 500 });
     }

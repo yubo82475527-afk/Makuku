@@ -82,7 +82,8 @@ test("bulk review API creates jobs and processes them in chunks", () => {
   assert.match(bulkRoute, /ai_price_review_jobs/);
   assert.match(bulkRoute, /ai_price_review_job_items/);
   assert.match(jobRoute, /ai_price_review_jobs/);
-  assert.match(runRoute, /limit\(50\)/);
+  assert.match(runRoute, /BATCH_REVIEW_CHUNK_SIZE\s*=\s*10/);
+  assert.match(runRoute, /limit\(BATCH_REVIEW_CHUNK_SIZE\)/);
   assert.match(runRoute, /candidateMatchesReviewRule/);
   assert.match(runRoute, /approveAiPriceCandidate/);
   assert.match(runRoute, /bulk_manual/);

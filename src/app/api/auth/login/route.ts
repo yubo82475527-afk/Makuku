@@ -1,4 +1,5 @@
 import { createSupabaseServiceClient } from "@/lib/supabase";
+import { createSessionCookie, isAllowedAdminRole } from "@/lib/auth-session";
 import crypto from "crypto";
 
 const DEMO_USER = {
@@ -47,6 +48,7 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const username = String(body.username ?? "").trim().toLowerCase();
     const password = String(body.password ?? "");
+    const purpose = String(body.purpose ?? "").trim();
 
     if (!username || !password) {
       return Response.json({ error: "Username and password are required" }, { status: 400 });
@@ -70,7 +72,13 @@ export async function POST(request: Request) {
     }
 
     if (isMissingTableError(error) && canUseLocalDemoLogin(username, password)) {
-      return Response.json({ user: DEMO_USER });
+      if (purpose === "pc_console" && !isAllowedAdminRole(DEMO_USER.role)) {
+        return Response.json({ error: "Manager or admin account required" }, { status: 403 });
+      }
+      return Response.json(
+        { user: DEMO_USER },
+        { headers: { "Set-Cookie": createSessionCookie({ id: DEMO_USER.id, username: DEMO_USER.username, displayName: DEMO_USER.displayName, role: DEMO_USER.role }) } },
+      );
     }
 
     if (isMissingTableError(error)) {
@@ -93,14 +101,21 @@ export async function POST(request: Request) {
       return Response.json({ error: "Invalid username or password" }, { status: 401 });
     }
 
-    return Response.json({
-      user: {
-        id: user.id,
-        username: user.username,
-        displayName: user.display_name,
-        role: user.role,
-      },
-    });
+    const responseUser = {
+      id: user.id,
+      username: user.username,
+      displayName: user.display_name,
+      role: user.role,
+    };
+
+    if (purpose === "pc_console" && !isAllowedAdminRole(responseUser.role)) {
+      return Response.json({ error: "Manager or admin account required" }, { status: 403 });
+    }
+
+    return Response.json(
+      { user: responseUser },
+      { headers: { "Set-Cookie": createSessionCookie(responseUser) } },
+    );
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
   }

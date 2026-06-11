@@ -251,6 +251,24 @@ export type SkuMatch = {
   sku_master?: SkuMaster | null;
 };
 
+export type PriceSnapshotVisit = {
+  id: string;
+  store_name: string;
+  city: string;
+  province?: string | null;
+  city_name?: string | null;
+  district?: string | null;
+  channel_type?: string | null;
+  visit_date?: string | null;
+  uploader_name?: string | null;
+  created_at?: string | null;
+};
+
+export type PriceSnapshotCandidate = {
+  id: string;
+  offline_store_visits?: PriceSnapshotVisit | null;
+};
+
 export type PriceSnapshot = {
   id: string;
   competitor_product_id: string;
@@ -267,6 +285,7 @@ export type PriceSnapshot = {
   evidence_url: string | null;
   created_at: string;
   competitor_products?: CompetitorProduct | null;
+  ai_price_candidates?: PriceSnapshotCandidate[];
 };
 
 export type OfflineUpload = {

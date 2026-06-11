@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { formReturnRedirect } from "@/lib/request";
 import { createSupabaseServiceClient } from "@/lib/supabase";
+import { requireAppSession } from "@/lib/auth-session";
 import type { OfflineImageType } from "@/lib/types";
 
 const imageTypes: OfflineImageType[] = ["own_shelf", "competitor_shelf", "promo_tag", "other"];
@@ -13,6 +14,8 @@ function isImageType(value: string): value is OfflineImageType {
 
 export async function POST(request: Request, ctx: RouteContext<"/api/offline-store-visits/[id]/images">) {
   try {
+    const auth = await requireAppSession(request);
+    if (auth.response) return auth.response;
     const { id } = await ctx.params;
     const formData = await request.formData();
     const body = Object.fromEntries(formData.entries());
@@ -83,7 +86,10 @@ export async function POST(request: Request, ctx: RouteContext<"/api/offline-sto
     revalidatePath("/en/mobile/offline-capture");
 
     if (formData.get("auto_analyze") === "1") {
-      fetch(new URL(`/api/offline-visit-images/${image.id}/analyze`, request.url), { method: "POST" }).catch(() => {});
+      fetch(new URL(`/api/offline-visit-images/${image.id}/analyze`, request.url), {
+        method: "POST",
+        headers: { cookie: request.headers.get("cookie") ?? "" },
+      }).catch(() => {});
     }
 
     if (formData.get("json") === "1") return Response.json({ image });

@@ -1,9 +1,12 @@
 import { mockOcrFromUpload } from "@/lib/business";
 import { formReturnRedirect } from "@/lib/request";
 import { createSupabaseServiceClient } from "@/lib/supabase";
+import { requireAdminSession } from "@/lib/auth-session";
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireAdminSession(request);
+    if (auth.response) return auth.response;
     const formData = await request.formData();
     const file = formData.get("image");
     const uploaderName = String(formData.get("uploader_name") ?? "");

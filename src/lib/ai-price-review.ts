@@ -209,15 +209,8 @@ export async function autoApproveAiPriceCandidatesForVisit({
 }
 
 async function ensureCompetitorProduct(supabase: SupabaseServiceClient, candidate: Record<string, unknown>, pieceCount: number) {
-  if (candidate.matched_entity_type === "competitor_product" && candidate.matched_entity_id) {
-    const { data: product, error: productError } = await supabase
-      .from("competitor_products")
-      .select("*, brands(id,name), sku_matches(*, sku_master(*))")
-      .eq("id", candidate.matched_entity_id)
-      .single();
-    if (productError || !product) throw new Error(productError?.message ?? "Matched product not found");
-    return product as CompetitorProduct;
-  }
+  const reusableProduct = await findReusableMatchedCompetitorProduct(supabase, candidate);
+  if (reusableProduct) return reusableProduct as CompetitorProduct;
 
   const brandName = String(candidate.raw_brand ?? "").trim();
   const productName = String(candidate.raw_product ?? "").trim();
@@ -279,6 +272,41 @@ async function ensureCompetitorProduct(supabase: SupabaseServiceClient, candidat
     .single();
   if (productCreateError) throw new Error(productCreateError.message);
   return createdProduct as CompetitorProduct;
+}
+
+async function findReusableMatchedCompetitorProduct(supabase: SupabaseServiceClient, candidate: Record<string, unknown>) {
+  if (candidate.matched_entity_type !== "competitor_product" || !candidate.matched_entity_id) return null;
+
+  const { data: product, error: productError } = await supabase
+    .from("competitor_products")
+    .select("*, brands(id,name), sku_matches(*, sku_master(*))")
+    .eq("id", candidate.matched_entity_id)
+    .single();
+  if (productError || !product) throw new Error(productError?.message ?? "Matched product not found");
+  if (!candidateBrandMatchesProductBrand(candidate, product)) return null;
+  return product;
+}
+
+function candidateBrandMatchesProductBrand(candidate: Record<string, unknown>, product: CompetitorProduct) {
+  return competitorBrandsMatch(String(candidate.raw_brand ?? ""), product.brands?.name);
+}
+
+function normalizeText(value: string | null | undefined) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function compactText(value: string | null | undefined) {
+  return normalizeText(value).replace(/\s+/g, "");
+}
+
+function competitorBrandsMatch(candidateBrand: string | null | undefined, productBrand: string | null | undefined) {
+  const candidate = compactText(candidateBrand);
+  const product = compactText(productBrand);
+  if (!candidate || !product) return false;
+  return candidate === product;
 }
 
 async function updateAiPriceCandidateWithReviewMethodFallback(

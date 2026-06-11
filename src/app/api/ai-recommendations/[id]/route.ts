@@ -1,7 +1,10 @@
 import { createSupabaseServiceClient } from "@/lib/supabase";
+import { requireAdminSession } from "@/lib/auth-session";
 
 export async function PATCH(request: Request, ctx: RouteContext<"/api/ai-recommendations/[id]">) {
   try {
+    const auth = await requireAdminSession(request);
+    if (auth.response) return auth.response;
     const { id } = await ctx.params;
     const body = await request.json();
     const supabase = createSupabaseServiceClient();

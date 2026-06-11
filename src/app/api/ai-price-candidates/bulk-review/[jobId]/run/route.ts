@@ -1,13 +1,18 @@
 import { revalidatePath } from "next/cache";
 import { approveAiPriceCandidate, candidateMatchesReviewRule, rejectAiPriceCandidate } from "@/lib/ai-price-review";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
+import { requireAdminSession } from "@/lib/auth-session";
 import type { AiPriceCandidate, AiPriceReviewRule } from "@/lib/types";
+
+const BATCH_REVIEW_CHUNK_SIZE = 10;
 
 function revalidateReviewPaths() {
   revalidatePath("/zh/offline-price-candidates");
   revalidatePath("/en/offline-price-candidates");
   revalidatePath("/zh/prices");
   revalidatePath("/en/prices");
+  revalidatePath("/zh/competitors");
+  revalidatePath("/en/competitors");
 }
 
 function cleanJobReviewOverrides(value: unknown) {
@@ -61,7 +66,9 @@ async function refreshJobCounts(supabase: ReturnType<typeof createSupabaseServic
   return job;
 }
 
-export async function POST(_request: Request, ctx: { params: Promise<{ jobId: string }> }) {
+export async function POST(request: Request, ctx: { params: Promise<{ jobId: string }> }) {
+  const auth = await requireAdminSession(request);
+  if (auth.response) return auth.response;
   if (!hasSupabaseServiceConfig()) {
     return Response.json({ error: "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY" }, { status: 500 });
   }
@@ -90,7 +97,7 @@ export async function POST(_request: Request, ctx: { params: Promise<{ jobId: st
     .eq("job_id", jobId)
     .eq("status", "queued")
     .order("created_at", { ascending: true })
-    .limit(50);
+    .limit(BATCH_REVIEW_CHUNK_SIZE);
   if (itemError) return Response.json({ error: itemError.message }, { status: 500 });
 
   for (const item of items ?? []) {

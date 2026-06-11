@@ -1,3 +1,5 @@
+"use client";
+
 import {
   BarChart3,
   ClipboardCheck,
@@ -5,14 +7,24 @@ import {
   Gauge,
   MapPinned,
   Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
   Store,
   Tags,
   Users,
+  LogOut,
 } from "lucide-react";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { localeLabels, replacePathLocale, type Locale } from "@/lib/i18n/config";
 import type { Dictionary } from "@/lib/i18n/get-dictionary";
+
+const sidebarStorageKey = "makuku_sidebar_collapsed";
+
+type HeaderUser = {
+  displayName: string;
+  role: string;
+};
 
 const navGroups = [
   {
@@ -45,26 +57,41 @@ const navGroups = [
   },
 ] as const;
 
-function NavLinks({ locale, currentPath, className }: { locale: Locale; currentPath: string; className: string }) {
+function NavLinks({
+  locale,
+  currentPath,
+  className,
+  collapsed = false,
+}: {
+  locale: Locale;
+  currentPath: string;
+  className: string;
+  collapsed?: boolean;
+}) {
   return (
     <nav className={className}>
       {navGroups.map((group, groupIndex) => (
-        <div key={group.label?.en ?? "root"} className={groupIndex === 0 ? "" : "mt-4"}>
-          {group.label ? <div className="px-3 pb-1 text-xs font-semibold text-slate-500">{group.label[locale]}</div> : null}
+        <div key={group.label?.en ?? "root"} className={groupIndex === 0 ? "" : collapsed ? "mt-3" : "mt-4"}>
+          {group.label && !collapsed ? <div className="px-3 pb-1 text-xs font-semibold text-slate-500">{group.label[locale]}</div> : null}
           <div className="space-y-1">
             {group.items.map((item) => {
               const Icon = item.icon;
               const active = currentPath === item.href || currentPath.startsWith(`${item.href}?`);
+              const baseClass = collapsed
+                ? "flex h-10 items-center justify-center rounded-md text-sm font-medium"
+                : "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium";
               return (
                 <Link
                   key={item.href}
                   href={`/${locale}${item.href}`}
+                  title={item.label[locale]}
+                  aria-label={item.label[locale]}
                   className={active
-                    ? "flex items-center gap-3 rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white"
-                    : "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"}
+                    ? `${baseClass} bg-slate-900 text-white`
+                    : `${baseClass} text-slate-700 hover:bg-slate-100`}
                 >
-                  <Icon className="h-4 w-4" />
-                  {item.label[locale]}
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span className={collapsed ? "sr-only" : "truncate"}>{item.label[locale]}</span>
                 </Link>
               );
             })}
@@ -96,17 +123,69 @@ export function AppShell({
   const timezonePricing = locale === "zh" ? "Asia/Jakarta 时区 / IDR 价格" : "Asia/Jakarta timezone / IDR pricing";
   const languageLabel = locale === "zh" ? "语言" : "Language";
   const mobileNavLabel = locale === "zh" ? "目录" : "Menu";
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [headerUser, setHeaderUser] = useState<HeaderUser | null>(null);
+  const sidebarToggleLabel = sidebarCollapsed
+    ? (locale === "zh" ? "展开菜单" : "Expand sidebar")
+    : (locale === "zh" ? "缩小菜单" : "Collapse sidebar");
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      setSidebarCollapsed(localStorage.getItem(sidebarStorageKey) === "true");
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/session")
+      .then((response) => response.json())
+      .then((data) => {
+        if (!cancelled && data.user) setHeaderUser(data.user as HeaderUser);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function toggleSidebar() {
+    setSidebarCollapsed((current) => {
+      const next = !current;
+      localStorage.setItem(sidebarStorageKey, String(next));
+      return next;
+    });
+  }
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+    window.location.href = `/${locale}/login`;
+  }
 
   return (
     <div className="min-h-screen">
-      <aside className="fixed inset-y-0 left-0 z-10 hidden w-64 border-r border-slate-200 bg-white lg:block">
-        <div className="border-b border-slate-200 px-5 py-4">
-          <div className="text-lg font-semibold">{dict.app.name}</div>
-          <div className="text-xs text-slate-500">{appSubtitle}</div>
+      <aside className={sidebarCollapsed
+        ? "fixed inset-y-0 left-0 z-10 hidden w-[64px] border-r border-slate-200 bg-white transition-[width] duration-200 lg:block"
+        : "fixed inset-y-0 left-0 z-10 hidden w-64 border-r border-slate-200 bg-white transition-[width] duration-200 lg:block"}
+      >
+        <div className={sidebarCollapsed ? "flex min-h-16 items-center justify-center border-b border-slate-200 px-2 py-3" : "flex min-h-16 items-center justify-between gap-3 border-b border-slate-200 px-5 py-3"}>
+          <div className={sidebarCollapsed ? "sr-only" : "min-w-0"}>
+            <div className="truncate text-lg font-semibold">{dict.app.name}</div>
+            <div className="truncate text-xs text-slate-500">{appSubtitle}</div>
+          </div>
+          <button
+            type="button"
+            aria-label={sidebarToggleLabel}
+            title={sidebarToggleLabel}
+            onClick={toggleSidebar}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+          >
+            {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          </button>
         </div>
-        <NavLinks locale={locale} currentPath={currentPath} className="px-3 py-4" />
+        <NavLinks locale={locale} currentPath={currentPath} collapsed={sidebarCollapsed} className={sidebarCollapsed ? "px-2 py-3" : "px-3 py-4"} />
       </aside>
-      <main className="lg:pl-64">
+      <main className={sidebarCollapsed ? "lg:pl-[64px]" : "lg:pl-64"}>
         <header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 lg:px-8">
           <div className="flex min-w-0 items-center gap-3">
             <details className="relative lg:hidden">
@@ -131,6 +210,20 @@ export function AppShell({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {headerUser ? (
+              <div className="hidden items-center gap-2 text-xs text-slate-600 sm:flex">
+                <span className="max-w-32 truncate font-medium text-slate-800">{headerUser.displayName}</span>
+                <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-500">{headerUser.role}</span>
+                <button
+                  type="button"
+                  onClick={logout}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  {locale === "zh" ? "退出" : "Logout"}
+                </button>
+              </div>
+            ) : null}
             <Link
               href={replacePathLocale(`/${locale}${currentPath}`, otherLocale)}
               className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"

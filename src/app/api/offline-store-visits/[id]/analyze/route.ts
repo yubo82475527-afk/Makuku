@@ -1,7 +1,10 @@
 import { createSupabaseServiceClient } from "@/lib/supabase";
+import { requireAppSession } from "@/lib/auth-session";
 
 export async function POST(request: Request, ctx: RouteContext<"/api/offline-store-visits/[id]/analyze">) {
   try {
+    const auth = await requireAppSession(request);
+    if (auth.response) return auth.response;
     const { id } = await ctx.params;
     const supabase = createSupabaseServiceClient();
     const { data: images, error } = await supabase
@@ -13,7 +16,10 @@ export async function POST(request: Request, ctx: RouteContext<"/api/offline-sto
 
     const baseUrl = new URL(request.url);
     await Promise.all((images ?? []).map((image) =>
-      fetch(new URL(`/api/offline-visit-images/${image.id}/analyze`, baseUrl), { method: "POST" }).catch(() => null),
+      fetch(new URL(`/api/offline-visit-images/${image.id}/analyze`, baseUrl), {
+        method: "POST",
+        headers: { cookie: request.headers.get("cookie") ?? "" },
+      }).catch(() => null),
     ));
 
     return Response.json({ queued: images?.length ?? 0 });

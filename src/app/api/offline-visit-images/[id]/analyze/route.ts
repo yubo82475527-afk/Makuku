@@ -1,10 +1,13 @@
 import { revalidatePath } from "next/cache";
 import { analyzeOfflineImage } from "@/lib/offline-vision";
 import { createSupabaseServiceClient } from "@/lib/supabase";
+import { requireAppSession } from "@/lib/auth-session";
 import type { OfflineImageType } from "@/lib/types";
 
-export async function POST(_request: Request, ctx: RouteContext<"/api/offline-visit-images/[id]/analyze">) {
+export async function POST(request: Request, ctx: RouteContext<"/api/offline-visit-images/[id]/analyze">) {
   try {
+    const auth = await requireAppSession(request);
+    if (auth.response) return auth.response;
     const { id } = await ctx.params;
     const supabase = createSupabaseServiceClient();
     const { data: image, error: imageError } = await supabase

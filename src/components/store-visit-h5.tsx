@@ -77,6 +77,13 @@ function emptyImagesByCategory(): PendingImagesByCategory {
   };
 }
 
+function localDateInputValue(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function uiCopy(locale: Locale) {
   return locale === "zh"
     ? {
@@ -297,7 +304,7 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
   const router = useRouter();
   const copy = getMobileCopy(locale);
   const labels = uiCopy(locale);
-  const [visitDate, setVisitDate] = useState(new Date().toISOString().slice(0, 10));
+  const [visitDate, setVisitDate] = useState(localDateInputValue);
   const [user, setUser] = useState<AppUser | null>(null);
   const [userLoaded, setUserLoaded] = useState(false);
   const [selectedStore, setSelectedStore] = useState<OfflineStoreOption | null>(null);

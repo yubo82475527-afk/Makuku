@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 const pricesPage = readFileSync("src/app/[locale]/prices/page.tsx", "utf8");
+const priceSnapshotsTable = readFileSync("src/components/price-snapshots-table.tsx", "utf8");
 const competitorsPage = readFileSync("src/app/[locale]/competitors/page.tsx", "utf8");
 const competitorsRoute = readFileSync("src/app/api/competitors/route.ts", "utf8");
 const skuMatchesRoute = readFileSync("src/app/api/sku-matches/route.ts", "utf8");
@@ -13,8 +14,9 @@ const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const productMasterSearchSelect = readFileSync("src/components/product-master-search-select.tsx", "utf8");
 
 test("SKU price monitor stays a price fact view without benchmark configuration actions", () => {
-  assert.match(pricesPage, /PriceSnapshotActions/);
-  assert.match(pricesPage, /price_per_piece/);
+  assert.match(pricesPage, /Export CSV|导出 CSV/);
+  assert.doesNotMatch(pricesPage, /PriceSnapshotActions/);
+  assert.match(priceSnapshotsTable, /price_per_piece/);
   assert.doesNotMatch(pricesPage, /market-benchmarks/);
   assert.doesNotMatch(pricesPage, /Set as benchmark|设为市场标杆|benchmark_competitor_product_id/);
 });

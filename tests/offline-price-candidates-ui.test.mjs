@@ -43,6 +43,10 @@ test("photo price review moves rule settings and reject reason into modals", () 
   assert.match(workbench, /ruleModalOpen/);
   assert.match(workbench, /RejectReasonDialog/);
   assert.match(workbench, /rejectDialog/);
+  assert.match(workbench, /onJobCreated/);
+  assert.match(workbench, /await rejectSelected\(reason, \(\) => \{/);
+  assert.match(workbench, /dialogClosed = true;\s*setRejectDialog\(null\);/);
+  assert.doesNotMatch(workbench, /setRejectDialog\(null\);\s*try \{/);
   assert.match(workbench, /\/api\/ai-price-review-rules/);
   assert.doesNotMatch(workbench, /ReviewRulePanel/);
   assert.doesNotMatch(workbench, /placeholder=\{copy\.rejectReason\} className="h-9 min-w-64/);

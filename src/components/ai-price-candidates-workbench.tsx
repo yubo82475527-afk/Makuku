@@ -25,6 +25,10 @@ function stopReviewRowClick(event: MouseEvent) {
   event.stopPropagation();
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 export function AiPriceCandidatesWorkbench({
   items,
   total,
@@ -169,12 +173,15 @@ export function AiPriceCandidatesWorkbench({
       nextJob = payload.job;
       if (nextJob) setActiveJob(nextJob);
       await refreshJob(jobId);
+      if (nextJob && nextJob.status !== "completed" && nextJob.status !== "failed") {
+        await sleep(180);
+      }
     }
     setSelectedIds([]);
     router.refresh();
   }
 
-  async function createJob(action: "approve" | "reject", options: { rejectionReason?: string }) {
+  async function createJob(action: "approve" | "reject", options: { rejectionReason?: string; onJobCreated?: () => void }) {
     const reviewOverrides = action === "approve" ? reviewOverridesForSelected() : undefined;
     const response = await fetch("/api/ai-price-candidates/bulk-review", {
       method: "POST",
@@ -191,6 +198,8 @@ export function AiPriceCandidatesWorkbench({
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error ?? copy.createBatchFailed);
     setActiveJob(payload.job);
+    await refreshJob(payload.job.id);
+    options.onJobCreated?.();
     await runJob(payload.job.id);
   }
 
@@ -198,8 +207,8 @@ export function AiPriceCandidatesWorkbench({
     await createJob("approve", {});
   }
 
-  async function rejectSelected(reason: string) {
-    await createJob("reject", { rejectionReason: reason });
+  async function rejectSelected(reason: string, onJobCreated?: () => void) {
+    await createJob("reject", { rejectionReason: reason, onJobCreated });
   }
 
   async function rejectSingle(candidateId: string, reason: string) {
@@ -215,9 +224,24 @@ export function AiPriceCandidatesWorkbench({
   }
 
   async function submitReject(reason: string) {
-    if (!rejectDialog) return;
-    if (rejectDialog.mode === "bulk") await rejectSelected(reason);
-    if (rejectDialog.mode === "single") await rejectSingle(rejectDialog.candidateId, reason);
+    const dialog = rejectDialog;
+    if (!dialog) return;
+
+    if (dialog.mode === "bulk") {
+      let dialogClosed = false;
+      try {
+        await rejectSelected(reason, () => {
+          dialogClosed = true;
+          setRejectDialog(null);
+        });
+      } catch (error) {
+        if (!dialogClosed) throw error;
+        window.alert(error instanceof Error ? error.message : copy.reviewActionFailed);
+      }
+      return;
+    }
+
+    await rejectSingle(dialog.candidateId, reason);
     setRejectDialog(null);
   }
 

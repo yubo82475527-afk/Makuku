@@ -1,10 +1,13 @@
 import { revalidatePath } from "next/cache";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import { formReturnRedirect, readRequestBody } from "@/lib/request";
+import { requireAdminSession } from "@/lib/auth-session";
 import type { MaterialMaster, PackType, Segment } from "@/lib/types";
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireAdminSession(request);
+    if (auth.response) return auth.response;
     const { body, isForm } = await readRequestBody(request);
     const competitorProductId = String(body.competitor_product_id ?? "");
     const materialSkuCode = String(body.material_sku_code ?? "");

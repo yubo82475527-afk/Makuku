@@ -1,8 +1,11 @@
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import { formReturnRedirect, readRequestBody } from "@/lib/request";
+import { requireAdminSession } from "@/lib/auth-session";
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireAdminSession(request);
+    if (auth.response) return auth.response;
     const { body, isForm } = await readRequestBody(request);
     const supabase = createSupabaseServiceClient();
     const payload = {
@@ -27,6 +30,8 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const auth = await requireAdminSession(request);
+    if (auth.response) return auth.response;
     const body = await request.json();
     if (!body.id) return Response.json({ error: "Missing id" }, { status: 400 });
     const supabase = createSupabaseServiceClient();

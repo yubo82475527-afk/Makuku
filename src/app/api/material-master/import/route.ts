@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx";
 import { revalidatePath } from "next/cache";
 import { createSupabaseServiceClient } from "@/lib/supabase";
+import { requireAdminSession } from "@/lib/auth-session";
 
 type MaterialImportRow = {
   tenant_sku_code: string;
@@ -91,6 +92,8 @@ function parseWorkbook(buffer: ArrayBuffer) {
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireAdminSession(request);
+    if (auth.response) return auth.response;
     const formData = await request.formData();
     const file = formData.get("file");
 

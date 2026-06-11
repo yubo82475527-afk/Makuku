@@ -1,8 +1,11 @@
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import { formReturnRedirect, readRequestBody } from "@/lib/request";
+import { requireAdminSession } from "@/lib/auth-session";
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireAdminSession(request);
+    if (auth.response) return auth.response;
     const { body, isForm } = await readRequestBody(request);
     const supabase = createSupabaseServiceClient();
     const { data: brand, error: brandError } = await supabase

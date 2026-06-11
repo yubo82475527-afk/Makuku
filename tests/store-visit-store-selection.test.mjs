@@ -59,6 +59,13 @@ test("new store sheet loads offline channel master data for store type", () => {
 
 test("new H5 store visit keeps visit date compact instead of a full store-info card", () => {
   assert.match(storeVisitH5, /labels\.visitDate/);
+  assert.match(storeVisitH5, /function localDateInputValue/);
+  assert.match(storeVisitH5, /getFullYear/);
+  assert.match(storeVisitH5, /getMonth\(\) \+ 1/);
+  assert.doesNotMatch(storeVisitH5, /useState\(new Date\(\)\.toISOString\(\)\.slice\(0, 10\)\)/);
+  assert.match(storeVisitApi, /function jakartaDateInputValue/);
+  assert.match(storeVisitApi, /timeZone: "Asia\/Jakarta"/);
+  assert.doesNotMatch(storeVisitApi, /clean\(body\.visit_date\) \|\| new Date\(\)\.toISOString\(\)\.slice\(0, 10\)/);
   assert.doesNotMatch(storeVisitH5, /<h2 className="font-semibold">\{copy\.storeInformation\}<\/h2>/);
 });
 

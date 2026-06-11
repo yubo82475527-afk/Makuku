@@ -1,10 +1,13 @@
 import { calculatePriceGapVsMakuku, normalizePriceSnapshot } from "@/lib/business";
 import { formReturnRedirect, readRequestBody } from "@/lib/request";
 import { createSupabaseServiceClient } from "@/lib/supabase";
+import { requireAdminSession } from "@/lib/auth-session";
 import type { CompetitorProduct, SkuMatch, SkuMaster } from "@/lib/types";
 
 export async function POST(request: Request, ctx: RouteContext<"/api/offline-visit-images/[id]/confirm">) {
   try {
+    const auth = await requireAdminSession(request);
+    if (auth.response) return auth.response;
     const { id } = await ctx.params;
     const { body, isForm } = await readRequestBody(request);
     const supabase = createSupabaseServiceClient();
