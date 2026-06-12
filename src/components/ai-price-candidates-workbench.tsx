@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
 import { Badge, Button, EmptyState } from "@/components/ui";
 import { formatIdr, formatJakartaTime } from "@/lib/format";
-import type { AiPriceCandidate, AiPriceReviewJob, AiPriceReviewJobItem, AiPriceReviewRule } from "@/lib/types";
+import type { AiPriceCandidate, AiPriceCandidateMatchType, AiPriceReviewJob, AiPriceReviewJobItem, AiPriceReviewRule, CompetitorProduct, MaterialMaster } from "@/lib/types";
 
 type WorkbenchFilters = {
   status?: "pending" | "approved" | "rejected";
@@ -17,6 +17,7 @@ type WorkbenchFilters = {
 
 type StatusTabValue = "pending" | "approved" | "rejected" | "all";
 type RejectDialogState = { mode: "bulk" } | { mode: "single"; candidateId: string } | null;
+type MatchDialogState = { candidate: AiPriceCandidate } | null;
 type ReviewInput = { price: string; pieces: string };
 type ReviewOverride = { price_idr: number; piece_count: number };
 type WorkbenchCopy = ReturnType<typeof getWorkbenchCopy>;
@@ -54,6 +55,7 @@ export function AiPriceCandidatesWorkbench({
   const [jobItems, setJobItems] = useState<AiPriceReviewJobItem[]>([]);
   const [ruleModalOpen, setRuleModalOpen] = useState(false);
   const [rejectDialog, setRejectDialog] = useState<RejectDialogState>(null);
+  const [matchDialog, setMatchDialog] = useState<MatchDialogState>(null);
   const [reviewInputs, setReviewInputs] = useState<Record<string, ReviewInput>>({});
   const [savedReviewInputs, setSavedReviewInputs] = useState<Record<string, ReviewInput>>({});
   const [savingReviewInputId, setSavingReviewInputId] = useState<string | null>(null);
@@ -365,7 +367,13 @@ export function AiPriceCandidatesWorkbench({
                     </td>
                     <td className="px-3 py-3 font-medium">{reviewedPricePerPiece ? formatIdr(reviewedPricePerPiece) : "-"}</td>
                     <td className="px-3 py-3">{Math.round(candidate.ai_confidence * 100)}%</td>
-                    <td className="px-3 py-3">{Math.round(candidate.match_score * 100)}%</td>
+                    <td className="min-w-52 px-3 py-3" onClick={stopReviewRowClick}>
+                      <MatchedSkuCell
+                        candidate={candidate}
+                        copy={copy}
+                        onEdit={() => setMatchDialog({ candidate })}
+                      />
+                    </td>
                     <td className="px-3 py-3" onClick={stopReviewRowClick}>
                       {warningMessages.length ? (
                         <button
@@ -412,8 +420,18 @@ export function AiPriceCandidatesWorkbench({
       </div>
 
       <ReviewRuleModal open={ruleModalOpen} initialRule={rule} copy={copy} onClose={() => setRuleModalOpen(false)} />
+      <MatchEditorDialog
+        key={matchDialog ? `match-${matchDialog.candidate.id}` : "match-closed"}
+        state={matchDialog}
+        copy={copy}
+        onClose={() => setMatchDialog(null)}
+        onUpdated={() => {
+          setMatchDialog(null);
+          router.refresh();
+        }}
+      />
       <RejectReasonDialog
-        key={rejectDialog ? `${rejectDialog.mode}-${"candidateId" in rejectDialog ? rejectDialog.candidateId : "bulk"}` : "closed"}
+        key={rejectDialog ? `reject-${rejectDialog.mode}-${"candidateId" in rejectDialog ? rejectDialog.candidateId : "bulk"}` : "reject-closed"}
         open={Boolean(rejectDialog)}
         copy={copy}
         onClose={() => setRejectDialog(null)}
@@ -425,6 +443,7 @@ export function AiPriceCandidatesWorkbench({
         copy={copy}
         onClose={() => setActiveCandidate(null)}
         onReject={(candidateId) => setRejectDialog({ mode: "single", candidateId })}
+        onEditMatch={(candidate) => setMatchDialog({ candidate })}
         onUpdated={() => {
           setActiveCandidate(null);
           router.refresh();
@@ -646,6 +665,222 @@ function RejectReasonDialog({
   );
 }
 
+function MatchedSkuCell({
+  candidate,
+  copy,
+  onEdit,
+}: {
+  candidate: AiPriceCandidate;
+  copy: WorkbenchCopy;
+  onEdit: () => void;
+}) {
+  const label = matchedSkuLabel(candidate, copy);
+  return (
+    <div className="space-y-1">
+      <div className="font-medium text-slate-900">{Math.round(candidate.match_score * 100)}%</div>
+      <div className="max-w-52 truncate text-xs text-slate-500" title={label}>{label}</div>
+      {candidate.status === "pending" ? (
+        <button type="button" onClick={onEdit} className="text-xs font-medium text-blue-700 hover:underline">
+          {copy.editMatch}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function MatchEditorDialog({
+  state,
+  copy,
+  onClose,
+  onUpdated,
+}: {
+  state: MatchDialogState;
+  copy: WorkbenchCopy;
+  onClose: () => void;
+  onUpdated: () => void;
+}) {
+  const candidate = state?.candidate ?? null;
+  const [matchType, setMatchType] = useState<AiPriceCandidateMatchType>(candidate?.matched_entity_type ?? "unmatched");
+  const [selectedId, setSelectedId] = useState(candidate?.matched_entity_id ?? "");
+  const [query, setQuery] = useState("");
+  const [materials, setMaterials] = useState<MaterialMaster[]>([]);
+  const [products, setProducts] = useState<CompetitorProduct[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!candidate) return;
+    let active = true;
+    async function loadOptions() {
+      setLoading(true);
+      try {
+        const [materialsRes, productsRes] = await Promise.all([
+          fetch("/api/material-master/export"),
+          fetch("/api/competitors"),
+        ]);
+        const [materialsPayload, productsPayload] = await Promise.all([
+          materialsRes.json().catch(() => ({})),
+          productsRes.json().catch(() => ({})),
+        ]);
+        if (!active) return;
+        setMaterials((materialsPayload.items ?? materialsPayload.materials ?? []) as MaterialMaster[]);
+        setProducts((productsPayload.products ?? productsPayload.items ?? []) as CompetitorProduct[]);
+      } catch {
+        if (active) setError(copy.loadMatchOptionsFailed);
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+    void loadOptions();
+    return () => {
+      active = false;
+    };
+  }, [candidate, copy.loadMatchOptionsFailed]);
+
+  if (!candidate) return null;
+  const currentCandidate = candidate;
+
+  const materialOptions = filterMaterials(materials, query).slice(0, 30);
+  const productOptions = filterCompetitorProducts(products, query).slice(0, 30);
+  const selectedLabel = matchType === "material_master"
+    ? formatMaterialMatchLabel(materials.find((item) => item.tenant_sku_code === selectedId)) || query
+    : matchType === "competitor_product"
+      ? formatCompetitorMatchLabel(products.find((item) => item.id === selectedId)) || query
+      : "";
+
+  async function save() {
+    if (matchType !== "unmatched" && !selectedId) {
+      setError(copy.selectMatchFirst);
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/ai-price-candidates/${currentCandidate.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update_match",
+          matched_entity_type: matchType,
+          matched_entity_id: matchType === "unmatched" ? null : selectedId,
+          matched_label: matchType === "unmatched" ? null : selectedLabel,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error ?? copy.saveMatchFailed);
+      onUpdated();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : copy.saveMatchFailed);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[55] flex items-center justify-center bg-slate-900/30 p-4">
+      <div className="w-full max-w-2xl rounded-lg bg-white p-5 shadow-xl">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-950">{copy.editMatch}</h3>
+            <p className="mt-1 text-sm text-slate-500">{currentCandidate.raw_brand} · {currentCandidate.raw_product}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-md border border-slate-300 px-3 py-1 text-sm">{copy.close}</button>
+        </div>
+
+        <div className="mt-4 inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+          {(["material_master", "competitor_product", "unmatched"] as const).map((type) => (
+            <button
+              key={type}
+              type="button"
+              onClick={() => {
+                setMatchType(type);
+                setSelectedId("");
+                setQuery("");
+              }}
+              className={matchType === type
+                ? "h-8 rounded-md bg-white px-3 text-sm font-semibold text-slate-950 shadow-sm"
+                : "h-8 rounded-md px-3 text-sm font-medium text-slate-600"}
+            >
+              {copy.matchTypes[type]}
+            </button>
+          ))}
+        </div>
+
+        {matchType !== "unmatched" ? (
+          <label className="mt-4 block text-sm font-medium text-slate-700">
+            {copy.searchMatch}
+            <input
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setSelectedId("");
+              }}
+              placeholder={matchType === "material_master" ? copy.searchMakukuSku : copy.searchCompetitorSku}
+              className="mt-1 h-9 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-500"
+            />
+          </label>
+        ) : (
+          <div className="mt-4 rounded-md bg-slate-50 p-3 text-sm text-slate-600">{copy.unmatchedHint}</div>
+        )}
+
+        {loading ? <div className="mt-3 text-sm text-slate-500">{copy.loadingMatchOptions}</div> : null}
+        {matchType === "material_master" ? (
+          <OptionList>
+            {materialOptions.map((material) => (
+              <MatchOptionButton
+                key={material.tenant_sku_code}
+                selected={selectedId === material.tenant_sku_code}
+                title={formatMaterialMatchLabel(material)}
+                subtitle={[material.sub_brand, material.sub_category, material.sub_type, material.pack_count ? `${material.pack_count} pcs` : null].filter(Boolean).join(" / ")}
+                onClick={() => {
+                  setSelectedId(material.tenant_sku_code);
+                  setQuery(formatMaterialMatchLabel(material));
+                }}
+              />
+            ))}
+          </OptionList>
+        ) : null}
+        {matchType === "competitor_product" ? (
+          <OptionList>
+            {productOptions.map((product) => (
+              <MatchOptionButton
+                key={product.id}
+                selected={selectedId === product.id}
+                title={formatCompetitorMatchLabel(product)}
+                subtitle={[product.pack_type, product.size, product.piece_count ? `${product.piece_count} pcs` : null].filter(Boolean).join(" / ")}
+                onClick={() => {
+                  setSelectedId(product.id);
+                  setQuery(formatCompetitorMatchLabel(product));
+                }}
+              />
+            ))}
+          </OptionList>
+        ) : null}
+
+        {error ? <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" onClick={onClose} disabled={saving} className="inline-flex h-9 items-center rounded-md border border-slate-300 px-3 text-sm text-slate-700">{copy.cancel}</button>
+          <Button type="button" disabled={saving} onClick={save}>{copy.saveMatch}</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OptionList({ children }: { children: ReactNode }) {
+  return <div className="mt-3 max-h-72 overflow-y-auto rounded-md border border-slate-200 p-1">{children}</div>;
+}
+
+function MatchOptionButton({ title, subtitle, selected, onClick }: { title: string; subtitle: string; selected: boolean; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className={`block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-slate-50 ${selected ? "bg-slate-100" : ""}`}>
+      <span className="block font-medium text-slate-900">{title}</span>
+      {subtitle ? <span className="mt-0.5 block text-xs text-slate-500">{subtitle}</span> : null}
+    </button>
+  );
+}
+
 function RuleCheckbox({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
   return (
     <label className="flex items-center gap-2 text-sm text-slate-700">
@@ -662,6 +897,7 @@ function CandidateDetailDrawer({
   onClose,
   onReject,
   onUpdated,
+  onEditMatch,
 }: {
   candidate: AiPriceCandidate | null;
   locale: string;
@@ -669,6 +905,7 @@ function CandidateDetailDrawer({
   onClose: () => void;
   onReject: (candidateId: string) => void;
   onUpdated: () => void;
+  onEditMatch: (candidate: AiPriceCandidate) => void;
 }) {
   if (!candidate) return null;
   return (
@@ -680,6 +917,7 @@ function CandidateDetailDrawer({
       onClose={onClose}
       onReject={onReject}
       onUpdated={onUpdated}
+      onEditMatch={onEditMatch}
     />
   );
 }
@@ -691,6 +929,7 @@ function CandidateDetailDrawerContent({
   onClose,
   onReject,
   onUpdated,
+  onEditMatch,
 }: {
   candidate: AiPriceCandidate;
   locale: string;
@@ -698,6 +937,7 @@ function CandidateDetailDrawerContent({
   onClose: () => void;
   onReject: (candidateId: string) => void;
   onUpdated: () => void;
+  onEditMatch: (candidate: AiPriceCandidate) => void;
 }) {
   const [visitImages, setVisitImages] = useState<{ path: string; url: string | null; category?: string }[] | null>(() => candidate.visit_id ? null : []);
   const [price, setPrice] = useState(candidate.parsed_price_idr ? String(Math.round(candidate.parsed_price_idr)) : "");
@@ -762,9 +1002,19 @@ function CandidateDetailDrawerContent({
           <DetailMetric label={copy.visitDate} value={candidate.offline_store_visits?.visit_date ?? shortTime(candidate.created_at)} />
           <DetailMetric label={copy.aiConfidence} value={`${Math.round(candidate.ai_confidence * 100)}%`} />
           <DetailMetric label={copy.matchScore} value={`${Math.round(candidate.match_score * 100)}%`} />
-          <DetailMetric label={copy.matchedTo} value={candidate.matched_label ?? candidate.matched_entity_type} />
+          <DetailMetric label={copy.matchedTo} value={matchedSkuLabel(candidate, copy)} />
           <DetailMetric label={copy.table.status} value={copy.status[candidate.status] ?? candidate.status} />
         </div>
+
+        {candidate.status === "pending" ? (
+          <button
+            type="button"
+            onClick={() => onEditMatch(candidate)}
+            className="mt-3 inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"
+          >
+            {copy.editMatch}
+          </button>
+        ) : null}
 
         {candidate.offline_store_visits ? (
           <Link className="mt-4 inline-flex text-sm font-medium text-slate-700 underline" href={`/${locale}/mobile/offline-capture/${candidate.offline_store_visits.id}`}>
@@ -908,6 +1158,53 @@ function warningMessagesForCandidate(candidate: AiPriceCandidate) {
     .filter(Boolean);
 }
 
+function matchedSkuLabel(candidate: AiPriceCandidate, copy: WorkbenchCopy) {
+  return candidate.matched_sku_label || candidate.matched_label || (candidate.matched_entity_type === "unmatched" ? copy.unmatched : candidate.matched_entity_type);
+}
+
+function normalizeSearchText(value: string | number | null | undefined) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function includesQuery(values: Array<string | number | null | undefined>, query: string) {
+  const normalizedQuery = normalizeSearchText(query);
+  if (!normalizedQuery) return true;
+  return values.some((value) => normalizeSearchText(value).includes(normalizedQuery));
+}
+
+function formatMaterialMatchLabel(material: MaterialMaster | undefined) {
+  if (!material) return "";
+  return `${material.tenant_sku_code} · ${material.tenant_sku_name}`;
+}
+
+function formatCompetitorMatchLabel(product: CompetitorProduct | undefined) {
+  if (!product) return "";
+  return `${product.brands?.name ?? ""} · ${product.normalized_name}`.trim();
+}
+
+function filterMaterials(materials: MaterialMaster[], query: string) {
+  return materials.filter((material) => includesQuery([
+    material.tenant_sku_code,
+    material.tenant_sku_name,
+    material.sub_brand,
+    material.sub_category,
+    material.type,
+    material.sub_type,
+    material.pack_count,
+  ], query));
+}
+
+function filterCompetitorProducts(products: CompetitorProduct[], query: string) {
+  return products.filter((product) => includesQuery([
+    product.brands?.name,
+    product.normalized_name,
+    product.raw_title,
+    product.pack_type,
+    product.size,
+    product.piece_count,
+  ], query));
+}
+
 function getWorkbenchCopy(locale: string) {
   if (locale === "zh") {
     return {
@@ -942,6 +1239,22 @@ function getWorkbenchCopy(locale: string) {
       invalidReviewInput: "请先补全选中行的包装价和片数",
       confirmSaveReviewInput: "是否保存本次修改的包装价和片数？",
       saveReviewInputFailed: "保存复核输入失败",
+      editMatch: "编辑匹配",
+      saveMatch: "保存匹配",
+      saveMatchFailed: "保存匹配失败",
+      searchMatch: "搜索匹配 SKU",
+      searchMakukuSku: "搜索 Makuku SKU / 物料编码 / 商品名",
+      searchCompetitorSku: "搜索竞品 SKU / 品牌 / 商品名",
+      selectMatchFirst: "请先选择一个匹配对象",
+      loadMatchOptionsFailed: "加载匹配选项失败",
+      loadingMatchOptions: "匹配选项加载中...",
+      unmatched: "未匹配",
+      unmatchedHint: "保存为未匹配后，该候选不能直接通过，需要先补齐匹配。",
+      matchTypes: {
+        material_master: "Makuku SKU",
+        competitor_product: "竞品商品",
+        unmatched: "未匹配",
+      } as Record<string, string>,
       viewEvidence: "查看依据",
       riskIndicatorLabel: (count: number) => `${count} 条风险提示`,
       previewPhoto: "查看大图",
@@ -1023,6 +1336,22 @@ function getWorkbenchCopy(locale: string) {
     invalidReviewInput: "Complete package price and piece count for selected rows first.",
     confirmSaveReviewInput: "Save the edited package price and piece count?",
     saveReviewInputFailed: "Failed to save review input",
+    editMatch: "Edit match",
+    saveMatch: "Save match",
+    saveMatchFailed: "Failed to save match",
+    searchMatch: "Search matched SKU",
+    searchMakukuSku: "Search Makuku SKU / material code / product name",
+    searchCompetitorSku: "Search competitor SKU / brand / product name",
+    selectMatchFirst: "Select a match first",
+    loadMatchOptionsFailed: "Failed to load match options",
+    loadingMatchOptions: "Loading match options...",
+    unmatched: "Unmatched",
+    unmatchedHint: "If saved as unmatched, this candidate cannot be approved until a match is selected.",
+    matchTypes: {
+      material_master: "Makuku SKU",
+      competitor_product: "Competitor product",
+      unmatched: "Unmatched",
+    } as Record<string, string>,
     viewEvidence: "View evidence",
     riskIndicatorLabel: (count: number) => `${count} risk warning${count === 1 ? "" : "s"}`,
     previewPhoto: "Preview photo",

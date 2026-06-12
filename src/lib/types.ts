@@ -425,6 +425,7 @@ export type AiPriceCandidate = {
   matched_entity_type: AiPriceCandidateMatchType;
   matched_entity_id: string | null;
   matched_label: string | null;
+  matched_sku_label?: string | null;
   match_score: number;
   warnings: { type?: string; message: string }[];
   status: AiPriceCandidateStatus;

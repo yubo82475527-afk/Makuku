@@ -1,9 +1,17 @@
 import { createSupabaseServiceClient } from "@/lib/supabase";
-import type { OfflineStoreVisit } from "@/lib/types";
+import type { OfflineImageType, OfflineStoreVisit, StoreVisitImageCategory } from "@/lib/types";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
 };
+
+function toStoreVisitImageCategory(category: OfflineImageType | StoreVisitImageCategory | null | undefined): StoreVisitImageCategory | undefined {
+  if (category === "own_shelf") return "makuku_shelf";
+  if (category === "competitor_shelf") return "competitor_shelf";
+  if (category === "other" || category === "promo_tag") return "storefront";
+  if (category === "makuku_shelf" || category === "storefront") return category;
+  return undefined;
+}
 
 async function attachSignedImageUrls(visit: OfflineStoreVisit) {
   const supabase = createSupabaseServiceClient();
@@ -11,12 +19,13 @@ async function attachSignedImageUrls(visit: OfflineStoreVisit) {
   const categories = Array.isArray(visit.image_categories) ? visit.image_categories : [];
   const legacySignedImages = await Promise.all(imagePaths.map(async (path, index) => {
     const { data } = await supabase.storage.from("store-visits").createSignedUrl(path, 60 * 60);
-    return { path, url: data?.signedUrl ?? null, category: categories[index] };
+    return { path, url: data?.signedUrl ?? null, category: toStoreVisitImageCategory(categories[index]) };
   }));
   const tableSignedImages = await Promise.all((visit.offline_visit_images ?? []).map(async (image) => {
-    if (image.image_url) return { path: image.image_path, url: image.image_url, category: image.image_type };
+    const category = toStoreVisitImageCategory(image.image_type);
+    if (image.image_url) return { path: image.image_path, url: image.image_url, category };
     const { data } = await supabase.storage.from("offline-visit-images").createSignedUrl(image.image_path, 60 * 60);
-    return { path: image.image_path, url: data?.signedUrl ?? null, category: image.image_type };
+    return { path: image.image_path, url: data?.signedUrl ?? null, category };
   }));
   return { ...visit, signed_images: [...tableSignedImages, ...legacySignedImages] };
 }

@@ -7,6 +7,8 @@ const workbenchPath = "src/components/ai-price-candidates-workbench.tsx";
 const workbench = readFileSync(workbenchPath, "utf8");
 const storeVisitRoute = readFileSync("src/app/api/store-visit/[id]/route.ts", "utf8");
 const storeVisitDetailH5 = readFileSync("src/components/store-visit-detail-h5.tsx", "utf8");
+const candidateRoute = readFileSync("src/app/api/ai-price-candidates/[id]/route.ts", "utf8");
+const dataFile = readFileSync("src/lib/data.ts", "utf8");
 
 test("photo price review keeps compact date filter and export action", () => {
   assert.doesNotMatch(candidatesPage, /SelectInput/);
@@ -116,6 +118,25 @@ test("photo price review exposes evidence drawer and readable warning details", 
   assert.match(workbench, /\/api\/store-visit\/\$\{candidate\.visit_id\}/);
 });
 
+test("photo price review shows and edits matched SKU on pending candidates", () => {
+  assert.match(workbench, /matchedSkuLabel/);
+  assert.match(workbench, /copy\.editMatch/);
+  assert.match(workbench, /MatchEditorDialog/);
+  assert.match(workbench, /candidate\.status === "pending"/);
+  assert.match(workbench, /action: "update_match"/);
+  assert.match(dataFile, /materialMatchesByCode/);
+  assert.match(dataFile, /competitorMatchesById/);
+});
+
+test("photo price candidate API updates pending match without touching snapshots or sku matches", () => {
+  assert.match(candidateRoute, /action === "update_match"/);
+  assert.match(candidateRoute, /matched_entity_type/);
+  assert.match(candidateRoute, /match_score: matchType === "unmatched" \? 0 : 1/);
+  assert.match(candidateRoute, /\.eq\("status", "pending"\)/);
+  assert.doesNotMatch(candidateRoute, /\.from\("price_snapshots"\)[\s\S]*action === "update_match"/);
+  assert.doesNotMatch(candidateRoute, /\.from\("sku_matches"\)[\s\S]*action === "update_match"/);
+});
+
 test("photo price review uses row click drawer with compact risk indicators and image preview", () => {
   assert.match(workbench, /openCandidateDrawer/);
   assert.match(workbench, /onClick=\{\(\) => openCandidateDrawer\(candidate\)\}/);
@@ -133,6 +154,8 @@ test("store visit detail route returns signed photos from new image table and le
   assert.match(storeVisitRoute, /offline-visit-images/);
   assert.match(storeVisitRoute, /store-visits/);
   assert.match(storeVisitRoute, /signed_images/);
+  assert.match(storeVisitRoute, /own_shelf[\s\S]+makuku_shelf/);
+  assert.match(storeVisitRoute, /toStoreVisitImageCategory/);
 });
 
 test("mobile store visit detail can preview photos from the thumbnail grid", () => {

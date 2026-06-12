@@ -2,6 +2,13 @@ import { revalidatePath } from "next/cache";
 import { approveAiPriceCandidate, rejectAiPriceCandidate } from "@/lib/ai-price-review";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import { requireAdminSession } from "@/lib/auth-session";
+import type { AiPriceCandidateMatchType } from "@/lib/types";
+
+type CompetitorProductMatchRow = {
+  id: string;
+  normalized_name: string;
+  brands?: { id?: string; name?: string | null } | Array<{ id?: string; name?: string | null }> | null;
+};
 
 function revalidateReviewPaths() {
   revalidatePath("/zh/offline-price-candidates");
@@ -36,6 +43,57 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
           parsed_price_idr: Math.round(price),
           piece_count: Math.floor(pieceCount),
           price_per_piece: pricePerPiece,
+        })
+        .eq("id", id)
+        .eq("status", "pending")
+        .select("*")
+        .single();
+      if (error || !candidate) throw new Error(error?.message ?? "Pending candidate not found");
+      revalidateReviewPaths();
+      return Response.json({ candidate });
+    }
+
+    if (action === "update_match") {
+      const matchType = String(body.matched_entity_type ?? "").trim() as AiPriceCandidateMatchType;
+      const matchId = String(body.matched_entity_id ?? "").trim() || null;
+      let matchedLabel = String(body.matched_label ?? "").trim() || null;
+
+      if (matchType !== "material_master" && matchType !== "competitor_product" && matchType !== "unmatched") {
+        return Response.json({ error: "matched_entity_type is invalid" }, { status: 400 });
+      }
+      if (matchType !== "unmatched" && !matchId) {
+        return Response.json({ error: "matched_entity_id is required" }, { status: 400 });
+      }
+
+      if (matchType === "material_master") {
+        const { data: material, error: materialError } = await supabase
+          .from("material_master")
+          .select("tenant_sku_code,tenant_sku_name")
+          .eq("tenant_sku_code", matchId)
+          .maybeSingle();
+        if (materialError || !material) return Response.json({ error: materialError?.message ?? "Makuku SKU not found" }, { status: 400 });
+        matchedLabel = matchedLabel ?? `${material.tenant_sku_code} · ${material.tenant_sku_name}`;
+      }
+
+      if (matchType === "competitor_product") {
+        const { data: product, error: productError } = await supabase
+          .from("competitor_products")
+          .select("id,normalized_name,brands(id,name)")
+          .eq("id", matchId)
+          .maybeSingle();
+        if (productError || !product) return Response.json({ error: productError?.message ?? "Competitor product not found" }, { status: 400 });
+        const row = product as CompetitorProductMatchRow;
+        const brandName = Array.isArray(row.brands) ? row.brands[0]?.name : row.brands?.name;
+        matchedLabel = matchedLabel ?? [brandName, row.normalized_name].filter(Boolean).join(" · ");
+      }
+
+      const { data: candidate, error } = await supabase
+        .from("ai_price_candidates")
+        .update({
+          matched_entity_type: matchType,
+          matched_entity_id: matchType === "unmatched" ? null : matchId,
+          matched_label: matchType === "unmatched" ? null : matchedLabel,
+          match_score: matchType === "unmatched" ? 0 : 1,
         })
         .eq("id", id)
         .eq("status", "pending")

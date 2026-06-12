@@ -564,7 +564,64 @@ export async function getAiPriceCandidatesPage(filters: AiPriceCandidateFilters 
     return { data: [], total: 0, page, perPage, error: "Run migration 202605280005_ai_price_candidates.sql", isDemo: false };
   }
   if (error) return { data: [], total: 0, page, perPage, error: error.message, isDemo: false };
-  return { data: (data ?? []) as AiPriceCandidate[], total: count ?? 0, page, perPage, error: null, isDemo: false };
+  const candidates = await attachAiPriceCandidateMatchLabels(supabase, (data ?? []) as AiPriceCandidate[]);
+  return { data: candidates, total: count ?? 0, page, perPage, error: null, isDemo: false };
+}
+
+async function attachAiPriceCandidateMatchLabels(supabase: ReturnType<typeof createSupabaseServiceClient>, candidates: AiPriceCandidate[]) {
+  const materialCodes = Array.from(new Set(candidates
+    .filter((candidate) => candidate.matched_entity_type === "material_master" && candidate.matched_entity_id)
+    .map((candidate) => candidate.matched_entity_id as string)));
+  const competitorIds = Array.from(new Set(candidates
+    .filter((candidate) => candidate.matched_entity_type === "competitor_product" && candidate.matched_entity_id)
+    .map((candidate) => candidate.matched_entity_id as string)));
+
+  const materialMatchesByCode = new Map<string, MaterialMaster>();
+  const competitorMatchesById = new Map<string, CompetitorProduct>();
+
+  if (materialCodes.length > 0) {
+    const { data } = await supabase
+      .from("material_master")
+      .select("tenant_sku_code,tenant_sku_name,category,sub_category,brand,sub_brand,type,sub_type,pack_count,box_count,pcs_price,f_expiry_date")
+      .in("tenant_sku_code", materialCodes);
+    for (const item of (data ?? []) as MaterialMaster[]) {
+      materialMatchesByCode.set(item.tenant_sku_code, item);
+    }
+  }
+
+  if (competitorIds.length > 0) {
+    const { data } = await supabase
+      .from("competitor_products")
+      .select("*, brands(id,name)")
+      .in("id", competitorIds);
+    for (const item of (data ?? []) as CompetitorProduct[]) {
+      competitorMatchesById.set(item.id, item);
+    }
+  }
+
+  return candidates.map((candidate) => {
+    if (candidate.matched_entity_type === "material_master" && candidate.matched_entity_id) {
+      const material = materialMatchesByCode.get(candidate.matched_entity_id);
+      return {
+        ...candidate,
+        matched_sku_label: material
+          ? `${material.tenant_sku_code} · ${material.tenant_sku_name}`
+          : candidate.matched_label,
+      };
+    }
+
+    if (candidate.matched_entity_type === "competitor_product" && candidate.matched_entity_id) {
+      const product = competitorMatchesById.get(candidate.matched_entity_id);
+      return {
+        ...candidate,
+        matched_sku_label: product
+          ? `${product.brands?.name ?? ""} · ${product.normalized_name}`.trim()
+          : candidate.matched_label,
+      };
+    }
+
+    return { ...candidate, matched_sku_label: candidate.matched_label };
+  });
 }
 
 export async function getAiPriceReviewRule(): Promise<QueryResult<AiPriceReviewRule>> {
