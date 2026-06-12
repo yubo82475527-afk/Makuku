@@ -8,6 +8,7 @@ const competitorsPage = readFileSync("src/app/[locale]/competitors/page.tsx", "u
 const competitorMappingTable = readFileSync("src/components/competitor-mapping-table.tsx", "utf8");
 const competitorsRoute = readFileSync("src/app/api/competitors/route.ts", "utf8");
 const skuMatchesRoute = readFileSync("src/app/api/sku-matches/route.ts", "utf8");
+const skuMasterBridge = readFileSync("src/lib/sku-master-bridge.ts", "utf8");
 const marketBenchmarksPage = readFileSync("src/app/[locale]/market-benchmarks/page.tsx", "utf8");
 const marketBenchmarksRoute = readFileSync("src/app/api/market-benchmarks/route.ts", "utf8");
 const dashboardPage = readFileSync("src/app/[locale]/dashboard/page.tsx", "utf8");
@@ -26,9 +27,9 @@ test("competitor mapping exposes only a lightweight set-as-benchmark shortcut", 
   assert.match(competitorsPage, /CompetitorMappingTable/);
   assert.match(competitorMappingTable, /setBenchmarkHref/);
   assert.match(competitorMappingTable, /sku_master/);
-  assert.match(competitorMappingTable, /设为市场标杆|Set benchmark/);
-  assert.match(competitorMappingTable, /未关联产品主数据|Missing product master/);
-  assert.match(competitorMappingTable, /关联产品主数据|Map product master/);
+  assert.match(competitorMappingTable, /Set benchmark|设为标杆/);
+  assert.match(competitorMappingTable, /Missing product master|缺少产品主数据/);
+  assert.match(competitorMappingTable, /Map product master|关联产品主数据/);
   assert.match(competitorsPage, /getMaterialMaster/);
   assert.match(competitorMappingTable, /tenant_sku_code/);
   assert.match(competitorMappingTable, /tenant_sku_name/);
@@ -37,8 +38,8 @@ test("competitor mapping exposes only a lightweight set-as-benchmark shortcut", 
   assert.match(competitorMappingTable, /ProductMasterSearchSelect/);
   assert.match(competitorMappingTable, /\/api\/competitors/);
   assert.match(competitorMappingTable, /intent: "update_segment"/);
-  assert.match(competitorMappingTable, /竞品商品等级|Competitor Grade/);
-  assert.match(competitorMappingTable, /Makuku商品等级|Makuku Grade/);
+  assert.match(competitorMappingTable, /Competitor Grade|竞品商品等级/);
+  assert.doesNotMatch(competitorMappingTable, /Makuku Grade|Makuku商品等级/);
   assert.match(productMasterSearchSelect, /name="material_sku_code"/);
   assert.doesNotMatch(competitorsPage, /getSkuMaster/);
   assert.doesNotMatch(competitorMappingTable, /name="reviewed"/);
@@ -56,7 +57,7 @@ test("manual competitor mapping is confirmed without a second approval step", ()
   assert.match(skuMatchesRoute, /sku_matches/);
   assert.match(skuMatchesRoute, /material_sku_code/);
   assert.match(skuMatchesRoute, /ensureSkuMasterFromMaterial/);
-  assert.match(skuMatchesRoute, /\.from\("material_master"\)/);
+  assert.match(skuMasterBridge, /\.from\("material_master"\)/);
   assert.doesNotMatch(competitorsRoute, /body\.reviewed/);
 });
 
@@ -65,8 +66,8 @@ test("market benchmark page is the configuration center with mapped SKU prefill"
   assert.match(marketBenchmarksPage, /selectedCompetitorId/);
   assert.match(marketBenchmarksPage, /latestBenchmarkPrice/);
   assert.match(marketBenchmarksPage, /matchedSku/);
-  assert.match(marketBenchmarksPage, /缺少映射|Missing mapping/);
-  assert.match(marketBenchmarksPage, /负责人|owner|Owner/i);
+  assert.match(marketBenchmarksPage, /Missing mapping|缺少映射/);
+  assert.match(marketBenchmarksPage, /Owner|负责人/i);
   assert.match(marketBenchmarksPage, /benchmark_competitor_product_id/);
   assert.match(marketBenchmarksPage, /readonly|readOnly/);
 });
@@ -84,5 +85,5 @@ test("market benchmark API derives segment from mapped competitor and replaces a
 test("dashboard missing benchmark drilldown goes to benchmark configuration", () => {
   assert.match(dataFile, /buildMarketBenchmarkHref/);
   assert.match(dataFile, /\/market-benchmarks\?/);
-  assert.match(dashboardPage, /补标杆|Add benchmark/);
+  assert.match(dashboardPage, /Add benchmark|补标杆/);
 });

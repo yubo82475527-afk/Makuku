@@ -416,19 +416,8 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
         onProgress: (completedCount) => setSubmitStatus(`${labels.processingPhotos} ${completedCount}/${flattenedImages.length}`),
       });
 
-      setSubmitStatus(labels.analyzingPrices);
-      const analyzeRes = await fetch("/api/store-visit/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ visit_id: visitId }),
-      });
-      const analyzeData = await analyzeRes.json().catch(() => ({}));
-      if (!analyzeRes.ok) {
-        throw new Error(`${copy.aiAnalysisFailed}: ${analyzeData.error ?? copy.networkRetry}`);
-      }
-
       setSubmitStatus(labels.submitted);
-      router.push(`/${locale}/mobile/offline-capture`);
+      router.replace(`/${locale}/mobile/offline-capture`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : copy.networkRetry);
     } finally {

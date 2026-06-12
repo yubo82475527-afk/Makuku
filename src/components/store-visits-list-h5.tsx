@@ -3,7 +3,7 @@
 import { ArrowLeft, CalendarDays, ChevronRight, ImageIcon, Languages, Loader2, LogIn, LogOut, Plus, RefreshCw, Settings } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { localeLabels, replacePathLocale, type Locale } from "@/lib/i18n/config";
 import { getMobileCopy, mobileAnalysisStatusLabel } from "@/lib/mobile-i18n";
 import type { StockRiskLevel, StoreVisitAnalysisStatus, StoreVisitAiResult } from "@/lib/types";
@@ -166,11 +166,13 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [reanalyzingVisitId, setReanalyzingVisitId] = useState<string | null>(null);
+  const [autoAnalyzingVisitIds, setAutoAnalyzingVisitIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const autoAnalysisAttemptedIds = useRef<Set<string>>(new Set());
   const newVisitHref = `/${locale}/mobile/offline-capture/new`;
 
   const loginText = locale === "zh"
@@ -296,6 +298,25 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
     }
   }
 
+  const autoAnalyzeVisit = useCallback(async (visitId: string, currentUser: AppUser) => {
+    autoAnalysisAttemptedIds.current.add(visitId);
+    setAutoAnalyzingVisitIds((current) => current.includes(visitId) ? current : [...current, visitId]);
+    setVisits((current) => current.map((visit) => (
+      visit.id === visitId ? { ...visit, analysis_status: "analyzing", analysis_error: null } : visit
+    )));
+
+    try {
+      await fetch("/api/store-visit/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visit_id: visitId }),
+      });
+    } finally {
+      setAutoAnalyzingVisitIds((current) => current.filter((id) => id !== visitId));
+      await loadVisits(1, false, currentUser);
+    }
+  }, [loadVisits]);
+
   useEffect(() => {
     const timeout = setTimeout(() => {
       const stored = loadUser();
@@ -308,6 +329,18 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
     }, 0);
     return () => clearTimeout(timeout);
   }, [loadVisits]);
+
+  useEffect(() => {
+    if (!user?.id || loading || loadingMore) return;
+    const pendingVisit = visits.find((visit) => (
+      visit.visit_status === "uploaded"
+      && (visit.analysis_status === "pending" || !visit.analysis_status)
+      && !autoAnalyzingVisitIds.includes(visit.id)
+      && !autoAnalysisAttemptedIds.current.has(visit.id)
+    ));
+    if (!pendingVisit) return;
+    void autoAnalyzeVisit(pendingVisit.id, user);
+  }, [autoAnalyzeVisit, autoAnalyzingVisitIds, loading, loadingMore, user, visits]);
 
   if (!user) {
     return (

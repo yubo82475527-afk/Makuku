@@ -1,5 +1,6 @@
 import { normalizePriceSnapshot } from "@/lib/business";
 import { getAiPriceReviewRule } from "@/lib/data";
+import { ensureSkuMasterFromMaterial } from "@/lib/sku-master-bridge";
 import type { AiPriceCandidate, AiPriceCandidateReviewMethod, AiPriceReviewRule, CompetitorProduct } from "@/lib/types";
 
 type SupabaseServiceClient = ReturnType<typeof import("@/lib/supabase").createSupabaseServiceClient>;
@@ -69,7 +70,20 @@ export async function approveAiPriceCandidate({
     throw new Error("Valid piece count is required");
   }
 
-  const competitorProduct = await ensureCompetitorProduct(supabase, candidate, Math.floor(reviewedPieceCount));
+  const candidateRow = candidate as AiPriceCandidate;
+  let competitorProduct: CompetitorProduct | null = null;
+  let skuMasterId: string | null = null;
+  if (candidateRow.matched_entity_type === "material_master" && candidateRow.matched_entity_id) {
+    skuMasterId = await ensureSkuMasterFromMaterial(supabase, candidateRow.matched_entity_id);
+  } else if (candidateRow.matched_entity_type === "competitor_product") {
+    competitorProduct = await ensureCompetitorProduct(supabase, candidate, Math.floor(reviewedPieceCount));
+  } else {
+    throw new Error("Unmatched candidates cannot be approved");
+  }
+  if (candidateRow.matched_entity_type === "competitor_product" && !competitorProduct) {
+    throw new Error("Matched competitor product is required");
+  }
+
   const normalized = normalizePriceSnapshot({
     promo_price_idr: price,
     voucher_value_idr: 0,
@@ -78,10 +92,19 @@ export async function approveAiPriceCandidate({
   });
 
   const visit = candidate.offline_store_visits as { store_name?: string | null; visit_date?: string | null } | null;
+  const snapshotPayload = candidateRow.matched_entity_type === "material_master"
+    ? {
+        competitor_product_id: null,
+        sku_master_id: skuMasterId,
+      }
+    : {
+        competitor_product_id: competitorProduct!.id,
+        sku_master_id: null,
+      };
   const { data: snapshot, error: snapshotError } = await supabase
     .from("price_snapshots")
     .insert({
-      competitor_product_id: competitorProduct.id,
+      ...snapshotPayload,
       channel: "offline",
       list_price_idr: price,
       promo_price_idr: price,

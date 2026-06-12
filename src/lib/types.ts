@@ -144,6 +144,7 @@ export type CompetitorProduct = {
 
 export type SkuMaster = {
   id: string;
+  material_sku_code: string | null;
   makuku_sku_name: string;
   pack_type: PackType;
   size: string;
@@ -272,7 +273,8 @@ export type PriceSnapshotCandidate = {
 
 export type PriceSnapshot = {
   id: string;
-  competitor_product_id: string;
+  competitor_product_id: string | null;
+  sku_master_id: string | null;
   channel: Channel;
   list_price_idr: number;
   promo_price_idr: number;
@@ -286,6 +288,7 @@ export type PriceSnapshot = {
   evidence_url: string | null;
   created_at: string;
   competitor_products?: CompetitorProduct | null;
+  sku_master?: SkuMaster | null;
   ai_price_candidates?: PriceSnapshotCandidate[];
 };
 

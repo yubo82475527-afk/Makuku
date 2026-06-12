@@ -8,6 +8,7 @@ import { revalidatePath } from "next/cache";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import { formReturnRedirect, readRequestBody } from "@/lib/request";
 import { requireAdminSession } from "@/lib/auth-session";
+import { ensureSkuMasterFromMaterial } from "@/lib/sku-master-bridge";
 import type { CompetitorProduct, PriceSnapshot, PromoEvent, SkuMatch, SkuMaster } from "@/lib/types";
 
 export async function POST(request: Request) {
@@ -39,6 +40,7 @@ export async function POST(request: Request) {
       .from("price_snapshots")
       .insert({
         competitor_product_id: competitorProduct.id,
+        sku_master_id: null,
         channel: body.channel ?? competitorProduct.channel,
         list_price_idr: Number(body.list_price_idr),
         promo_price_idr: Number(body.promo_price_idr),
@@ -100,6 +102,89 @@ export async function POST(request: Request) {
   }
 }
 
+export async function PATCH(request: Request) {
+  try {
+    const auth = await requireAdminSession(request);
+    if (auth.response) return auth.response;
+
+    const body = await request.json().catch(() => ({}));
+    const snapshotId = String(body.id ?? "").trim();
+    const ownerType = String(body.owner_type ?? body.ownerType ?? "").trim();
+    const competitorProductId = String(body.competitor_product_id ?? "").trim();
+    const materialSkuCode = body.material_sku_code !== null && body.material_sku_code !== undefined
+      ? String(body.material_sku_code).trim()
+      : "";
+
+    if (!snapshotId || !["competitor", "makuku"].includes(ownerType)) {
+      return Response.json({ error: "id and owner_type are required" }, { status: 400 });
+    }
+    if (ownerType === "competitor" && !competitorProductId) {
+      return Response.json({ error: "competitor_product_id is required for competitor snapshots" }, { status: 400 });
+    }
+    if (ownerType === "makuku" && !materialSkuCode) {
+      return Response.json({ error: "material_sku_code is required for Makuku snapshots" }, { status: 400 });
+    }
+
+    const supabase = createSupabaseServiceClient();
+    let competitorProduct: CompetitorProduct | null = null;
+    let skuMasterId: string | null = null;
+
+    if (ownerType === "competitor") {
+      const { data: product, error: productError } = await supabase
+        .from("competitor_products")
+        .select("*, brands(id,name), sku_matches(*, sku_master(*))")
+        .eq("id", competitorProductId)
+        .single();
+      if (productError || !product) {
+        return Response.json({ error: productError?.message ?? "Product not found" }, { status: 404 });
+      }
+      competitorProduct = product as CompetitorProduct;
+    } else {
+      skuMasterId = await ensureSkuMasterFromMaterial(supabase, materialSkuCode);
+    }
+
+    const { data: snapshot, error: snapshotError } = await supabase
+      .from("price_snapshots")
+      .select("*")
+      .eq("id", snapshotId)
+      .single();
+    if (snapshotError || !snapshot) {
+      return Response.json({ error: snapshotError?.message ?? "Price snapshot not found" }, { status: 404 });
+    }
+
+    const pieceCount = ownerType === "competitor"
+      ? Number(competitorProduct?.piece_count ?? 0)
+      : await getSkuMasterPieceCount(supabase, skuMasterId);
+    if (ownerType === "competitor" && !competitorProduct) {
+      return Response.json({ error: "Product not found" }, { status: 404 });
+    }
+    const normalized = normalizePriceSnapshot({
+      promo_price_idr: Number(snapshot.promo_price_idr ?? 0),
+      voucher_value_idr: Number(snapshot.voucher_value_idr ?? 0),
+      shipping_subsidy_idr: Number(snapshot.shipping_subsidy_idr ?? 0),
+      piece_count: pieceCount,
+    });
+
+    const { data: updated, error: updateError } = await supabase
+      .from("price_snapshots")
+      .update({
+        competitor_product_id: ownerType === "competitor" ? competitorProduct!.id : null,
+        sku_master_id: ownerType === "makuku" ? skuMasterId : null,
+        net_price_idr: normalized.net_price_idr,
+        price_per_piece: normalized.price_per_piece,
+      })
+      .eq("id", snapshotId)
+      .select("*, sku_master(*), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*)))")
+      .single();
+    if (updateError) return Response.json({ error: updateError.message }, { status: 400 });
+
+    revalidatePriceSnapshotPages();
+    return Response.json({ data: updated });
+  } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : "Update failed" }, { status: 500 });
+  }
+}
+
 export async function DELETE(request: Request) {
   try {
     const auth = await requireAdminSession(request);
@@ -133,4 +218,22 @@ export async function DELETE(request: Request) {
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Delete failed" }, { status: 500 });
   }
+}
+
+function revalidatePriceSnapshotPages() {
+  revalidatePath("/zh/prices");
+  revalidatePath("/en/prices");
+  revalidatePath("/zh/dashboard");
+  revalidatePath("/en/dashboard");
+}
+
+async function getSkuMasterPieceCount(supabase: ReturnType<typeof createSupabaseServiceClient>, skuMasterId: string | null) {
+  if (!skuMasterId) return 0;
+  const { data, error } = await supabase
+    .from("sku_master")
+    .select("piece_count")
+    .eq("id", skuMasterId)
+    .single();
+  if (error || !data) throw new Error(error?.message ?? "SKU master not found");
+  return Number(data.piece_count ?? 0);
 }

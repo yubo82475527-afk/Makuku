@@ -77,6 +77,16 @@ function previewText(value: string) {
   return value.slice(0, 800).replace(/\s+/g, " ");
 }
 
+function isJsonResponseFormatCompatibilityError(message: string) {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("response_format") ||
+    normalized.includes("json_object") ||
+    normalized.includes("unknown parameter") ||
+    normalized.includes("unsupported parameter")
+  );
+}
+
 function parseChatCompletionPayload(text: string): ChatCompletionPayload {
   const trimmed = text.trim();
   if (!trimmed) {
@@ -218,8 +228,16 @@ export async function createJsonChatCompletion(input: {
     return "";
   }
 
-  let payload = await requestCompletion(true);
+  let payload: ChatCompletionPayload;
   let responseFormat: "json_object" | "none" = "json_object";
+  try {
+    payload = await requestCompletion(true);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (!isJsonResponseFormatCompatibilityError(message)) throw error;
+    payload = await requestCompletion(false);
+    responseFormat = "none";
+  }
   let text = extractContent(payload);
 
   if (!text) {

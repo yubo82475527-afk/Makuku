@@ -633,7 +633,7 @@ export async function getPriceSnapshots(): Promise<QueryResult<PriceSnapshot[]>>
   return fromSupabase<PriceSnapshot[]>(
     supabase
       .from("price_snapshots")
-      .select("*, competitor_products(*, brands(id,name), sku_matches(*, sku_master(*))), ai_price_candidates(id, offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))")
+      .select("*, sku_master(*), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*))), ai_price_candidates(id, offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))")
       .order("captured_at", { ascending: false })
       .limit(100),
     demoPriceSnapshots,
@@ -1042,6 +1042,7 @@ function buildProductSegmentBattles(input: {
       return competitorSegment.get(product.id) === key;
     });
     const snapshots = input.snapshots.filter((snapshot) => {
+      if (snapshot.sku_master_id && skuIds.has(snapshot.sku_master_id)) return true;
       const product = snapshot.competitor_products;
       if (!product) return false;
       if (product.sku_matches?.some((match) => skuIds.has(match.sku_master_id))) return true;
@@ -1072,7 +1073,7 @@ function buildProductSegmentBattles(input: {
     const priceEvidence = [
       ...snapshots.map((snapshot) => ({
         price: snapshot.price_per_piece,
-        brand: snapshot.competitor_products?.brands?.name ?? null,
+        brand: snapshot.sku_master_id ? "Makuku" : snapshot.competitor_products?.brands?.name ?? null,
         channel: snapshot.channel,
         capturedAt: snapshot.captured_at,
       })),

@@ -95,9 +95,11 @@ test("new H5 store visit submits photos with limited concurrency after creating 
   const createVisitIndex = storeVisitH5.indexOf('fetch("/api/store-visit"');
   const uploadIndex = storeVisitH5.indexOf("await uploadImagesWithConcurrency");
   const analyzeIndex = storeVisitH5.indexOf('fetch("/api/store-visit/analyze"');
+  const listRedirectIndex = storeVisitH5.indexOf('router.replace(`/${locale}/mobile/offline-capture`)');
   assert.ok(createVisitIndex >= 0, "visit should be created before image upload");
   assert.ok(uploadIndex > createVisitIndex, "image upload should start after visit creation");
-  assert.ok(analyzeIndex > uploadIndex, "analysis should start after all image uploads complete");
+  assert.equal(analyzeIndex, -1, "submit page should not wait for analysis after image upload");
+  assert.ok(listRedirectIndex > uploadIndex, "list redirect should happen after all image uploads complete");
   assert.doesNotMatch(storeVisitH5, /const compressedImages = \[\];[\s\S]+Uploading photo \$\{index \+ 1\}/);
 });
 

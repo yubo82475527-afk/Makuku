@@ -26,9 +26,11 @@ function matchesSearch(sku: MaterialMaster, query: string) {
 export function MaterialMasterTable({
   dict,
   rows,
+  locale,
 }: {
   dict: Dictionary;
   rows: MaterialMaster[];
+  locale: string;
 }) {
   const [query, setQuery] = useState("");
   const filteredRows = useMemo(
@@ -55,13 +57,20 @@ export function MaterialMasterTable({
             {dict.skuMaster.totalCount.replace("{count}", String(rows.length))}
           </p>
         </div>
-        <div className="w-full sm:w-80">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap">
           <TextInput
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={dict.skuMaster.searchPlaceholder}
             aria-label={dict.skuMaster.searchPlaceholder}
+            className="w-full sm:w-80"
           />
+          <a
+            href={`/api/material-master/export?locale=${locale}`}
+            className="inline-flex h-10 items-center justify-center whitespace-nowrap rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            {locale === "zh" ? "导出 SKU 主数据" : "Export SKU Master"}
+          </a>
         </div>
       </div>
 

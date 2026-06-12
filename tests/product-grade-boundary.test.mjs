@@ -9,6 +9,8 @@ const aiPriceReviewFile = readFileSync("src/lib/ai-price-review.ts", "utf8");
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const skuMasterPage = readFileSync("src/app/[locale]/sku-master/page.tsx", "utf8");
 const skuMasterTable = readFileSync("src/components/sku-master-segment-table.tsx", "utf8");
+const materialMasterTable = readFileSync("src/components/material-master-table.tsx", "utf8");
+const materialMasterExportRoute = readFileSync("src/app/api/material-master/export/route.ts", "utf8");
 const competitorsPage = readFileSync("src/app/[locale]/competitors/page.tsx", "utf8");
 const pricesPage = readFileSync("src/app/[locale]/prices/page.tsx", "utf8");
 const priceSnapshotsRoute = readFileSync("src/app/api/price-snapshots/route.ts", "utf8");
@@ -35,6 +37,8 @@ test("database migration maps old segment values without touching price snapshot
 
 test("master data pages maintain product grade, while price snapshots stay facts", () => {
   assert.match(skuMasterPage, /SkuMasterSegmentTable/);
+  assert.match(skuMasterPage, /<MaterialMasterTable dict=\{dict\} rows=\{result\.data\} locale=\{locale\}/);
+  assert.match(skuMasterTable, /if \(rows\.length === 0\) return null/);
   assert.match(skuMasterTable, /intent" value="update_segment"/);
   assert.match(competitorsPage, /CompetitorMappingTable/);
   assert.match(competitorMappingTable, /竞品商品等级|Competitor Grade/);
@@ -42,6 +46,16 @@ test("master data pages maintain product grade, while price snapshots stay facts
   assert.match(competitorMappingTable, /intent: "update_segment"/);
   assert.match(pricesPage, /sku\?\.segment \?\? product\?\.segment \?\? "unknown"/);
   assert.doesNotMatch(priceSnapshotsRoute, /segment/);
+});
+
+test("SKU master records can be exported from the product master page", () => {
+  assert.match(materialMasterTable, /\/api\/material-master\/export\?locale=\$\{locale\}/);
+  assert.match(materialMasterTable, /导出 SKU 主数据|Export SKU Master/);
+  assert.match(materialMasterExportRoute, /export async function GET/);
+  assert.match(materialMasterExportRoute, /requireAdminSession/);
+  assert.match(materialMasterExportRoute, /from\("material_master"\)/);
+  assert.match(materialMasterExportRoute, /materialMasterColumns\.map\(csvEscape\)/);
+  assert.match(materialMasterExportRoute, /Content-Disposition/);
 });
 
 test("photo review creates competitor products with unknown grade and derived views do not infer grade from facts", () => {

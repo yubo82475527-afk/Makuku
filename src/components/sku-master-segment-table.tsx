@@ -9,6 +9,8 @@ export function SkuMasterSegmentTable({
   rows: SkuMaster[];
   locale: string;
 }) {
+  if (rows.length === 0) return null;
+
   const isZh = locale === "zh";
   return (
     <Card className="mb-4">

@@ -35,7 +35,7 @@ export default async function SkuMasterPage({
       </Card>
 
       <SkuMasterSegmentTable rows={skuResult.data} locale={locale} />
-      <MaterialMasterTable dict={dict} rows={result.data} />
+      <MaterialMasterTable dict={dict} rows={result.data} locale={locale} />
     </AppShell>
   );
 }

@@ -1,72 +1,61 @@
-import { AppShell } from "@/components/app-shell";
 import { Download } from "lucide-react";
+import { AppShell } from "@/components/app-shell";
 import { PriceSnapshotsTable } from "@/components/price-snapshots-table";
 import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
-import { getBrands, getCompetitorProducts, getPriceSnapshots } from "@/lib/data";
-import { getPageI18n } from "@/lib/i18n/server";
+import { getBrands, getCompetitorProducts, getMaterialMaster, getPriceSnapshots } from "@/lib/data";
 import { translateEnum } from "@/lib/i18n/get-dictionary";
+import { getPageI18n } from "@/lib/i18n/server";
 import { productGradeOptions } from "@/lib/segments";
+import type { PriceSnapshot } from "@/lib/types";
 
 export default async function PricesPage({
   params: routeParams,
   searchParams,
 }: {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ brand?: string; channel?: string; sku?: string; line?: string; priceBand?: string; size?: string; province?: string; cityName?: string; district?: string; store?: string }>;
+  searchParams: Promise<{
+    brand?: string;
+    channel?: string;
+    sku?: string;
+    line?: string;
+    priceBand?: string;
+    size?: string;
+    province?: string;
+    cityName?: string;
+    district?: string;
+    store?: string;
+  }>;
 }) {
   const { locale, dict } = await getPageI18n(routeParams);
   const params = await searchParams;
   const currentParams = new URLSearchParams();
-  if (params.brand) currentParams.set("brand", params.brand);
-  if (params.channel) currentParams.set("channel", params.channel);
-  if (params.sku) currentParams.set("sku", params.sku);
-  if (params.line) currentParams.set("line", params.line);
-  if (params.priceBand) currentParams.set("priceBand", params.priceBand);
-  if (params.size) currentParams.set("size", params.size);
-  if (params.province) currentParams.set("province", params.province);
-  if (params.cityName) currentParams.set("cityName", params.cityName);
-  if (params.district) currentParams.set("district", params.district);
-  if (params.store) currentParams.set("store", params.store);
+  for (const key of ["brand", "channel", "sku", "line", "priceBand", "size", "province", "cityName", "district", "store"] as const) {
+    if (params[key]) currentParams.set(key, params[key]);
+  }
   currentParams.set("locale", locale);
-  const queryString = currentParams.toString();
-  const exportHref = `/api/price-snapshots/export${queryString ? `?${queryString}` : ""}`;
-  const [pricesResult, productsResult, brandsResult] = await Promise.all([
+  const exportHref = `/api/price-snapshots/export?${currentParams.toString()}`;
+
+  const [pricesResult, productsResult, brandsResult, materialsResult] = await Promise.all([
     getPriceSnapshots(),
     getCompetitorProducts(),
     getBrands(),
+    getMaterialMaster(),
   ]);
+
   const productSegments = productsResult.data.map((product) => resolveProductSegment(product));
   const productSizes = Array.from(new Set([...productSegments.map((segment) => segment.size), params.size].filter(Boolean) as string[])).sort();
-  const prices = pricesResult.data.filter((snapshot) => {
-    const product = snapshot.competitor_products;
-    const match = product?.sku_matches?.[0];
-    const sku = match?.sku_master;
-    const productSegment = product ? resolveProductSegment(product) : { line: "Unknown", size: "Unknown" };
-    const line = sku ? productLineLabel(sku.pack_type) : productSegment.line;
-    const size = sku?.size ?? productSegment.size;
-    const priceBand = sku?.segment ?? product?.segment ?? "unknown";
-    if (params.brand && product?.brand_id !== params.brand) return false;
-    if (params.channel && snapshot.channel !== params.channel) return false;
-    if (params.sku && match?.sku_master_id !== params.sku) return false;
-    if (params.line && line !== params.line) return false;
-    if (params.priceBand && priceBand !== params.priceBand) return false;
-    if (params.size && size !== params.size) return false;
-    const region = storeRegionForSnapshot(snapshot);
-    if (params.province && !matchesText(region.province, params.province)) return false;
-    if (params.cityName && !matchesText(region.cityName, params.cityName)) return false;
-    if (params.district && !matchesText(region.district, params.district)) return false;
-    if (params.store && !matchesText(storeNameForSnapshot(snapshot), params.store)) return false;
-    return true;
-  });
+  const prices = pricesResult.data.filter((snapshot) => snapshotMatchesFilters(snapshot, params));
 
   return (
     <AppShell locale={locale} dict={dict} title={dict.prices.title} currentPath="/prices" isDemo={pricesResult.isDemo}>
-      <DataNotice dict={dict} error={pricesResult.error ?? productsResult.error ?? brandsResult.error} />
+      <DataNotice dict={dict} error={pricesResult.error ?? productsResult.error ?? brandsResult.error ?? materialsResult.error} />
       <Card className="mb-4">
         <form className="grid gap-3 md:grid-cols-5 xl:grid-cols-9">
           <SelectInput name="brand" defaultValue={params.brand ?? ""}>
             <option value="">{dict.common.allBrands}</option>
-            {brandsResult.data.filter((brand) => !brand.is_own_brand).map((brand) => <option key={brand.id} value={brand.id}>{brand.name}</option>)}
+            {brandsResult.data.filter((brand) => !brand.is_own_brand).map((brand) => (
+              <option key={brand.id} value={brand.id}>{brand.name}</option>
+            ))}
           </SelectInput>
           <SelectInput name="channel" defaultValue={params.channel ?? ""}>
             <option value="">{dict.common.allChannels}</option>
@@ -82,10 +71,10 @@ export default async function PricesPage({
             ))}
           </SelectInput>
           <SelectInput name="size" defaultValue={params.size ?? ""}>
-            <option value="">{locale === "zh" ? "\u5168\u90e8\u5c3a\u7801" : "All sizes"}</option>
+            <option value="">{locale === "zh" ? "全部尺码" : "All sizes"}</option>
             {productSizes.map((size) => <option key={size} value={size}>{size}</option>)}
           </SelectInput>
-          <TextInput name="province" placeholder={locale === "zh" ? "省/州" : "Province"} defaultValue={params.province ?? ""} />
+          <TextInput name="province" placeholder={locale === "zh" ? "省" : "Province"} defaultValue={params.province ?? ""} />
           <TextInput name="cityName" placeholder={locale === "zh" ? "城市" : "City"} defaultValue={params.cityName ?? ""} />
           <TextInput name="district" placeholder={locale === "zh" ? "区/县" : "District"} defaultValue={params.district ?? ""} />
           <TextInput name="store" placeholder={locale === "zh" ? "门店" : "Store"} defaultValue={params.store ?? ""} />
@@ -105,10 +94,51 @@ export default async function PricesPage({
             {locale === "zh" ? "导出 CSV" : "Export CSV"}
           </a>
         </div>
-        <PriceSnapshotsTable snapshots={prices} locale={locale} />
+        <PriceSnapshotsTable snapshots={prices} products={productsResult.data} materials={materialsResult.data} locale={locale} />
       </Card>
     </AppShell>
   );
+}
+
+function snapshotMatchesFilters(
+  snapshot: PriceSnapshot,
+  params: {
+    brand?: string;
+    channel?: string;
+    sku?: string;
+    line?: string;
+    priceBand?: string;
+    size?: string;
+    province?: string;
+    cityName?: string;
+    district?: string;
+    store?: string;
+  },
+) {
+  const product = snapshot.competitor_products;
+  const sku = snapshot.sku_master ?? product?.sku_matches?.[0]?.sku_master;
+  const productSegment = product ? resolveProductSegment(product) : { line: "Unknown", size: "Unknown" };
+  const line = sku ? productLineLabel(sku.pack_type) : productSegment.line;
+  const size = sku?.size ?? productSegment.size;
+  const priceBand = sku?.segment ?? product?.segment ?? "unknown";
+  if (params.brand && product?.brand_id !== params.brand) return false;
+  if (params.channel && snapshot.channel !== params.channel) return false;
+  if (params.sku && !matchesText(snapshotMakukuMaterialCode(snapshot), params.sku)) return false;
+  if (params.line && line !== params.line) return false;
+  if (params.priceBand && priceBand !== params.priceBand) return false;
+  if (params.size && size !== params.size) return false;
+  const region = storeRegionForSnapshot(snapshot);
+  if (params.province && !matchesText(region.province, params.province)) return false;
+  if (params.cityName && !matchesText(region.cityName, params.cityName)) return false;
+  if (params.district && !matchesText(region.district, params.district)) return false;
+  if (params.store && !matchesText(storeNameForSnapshot(snapshot), params.store)) return false;
+  return true;
+}
+
+function snapshotMakukuMaterialCode(snapshot: PriceSnapshot) {
+  return cleanDisplayText(snapshot.sku_master?.material_sku_code)
+    ?? cleanDisplayText(snapshot.competitor_products?.sku_matches?.[0]?.sku_master?.material_sku_code)
+    ?? "-";
 }
 
 type PriceSnapshotForStoreRegion = {
