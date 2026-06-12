@@ -63,6 +63,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/offline-vis
           product_url: null,
           image_url: image.image_url,
           pack_type: packType,
+          package_type: "unknown",
           size,
           piece_count: pieceCount,
           segment: "unknown",

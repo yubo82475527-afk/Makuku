@@ -5,21 +5,24 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { ProductMasterSearchSelect } from "@/components/product-master-search-select";
 import { Badge, Button, SelectInput } from "@/components/ui";
-import { translateEnum } from "@/lib/i18n/get-dictionary";
 import type { Dictionary } from "@/lib/i18n/get-dictionary";
-import { productGradeLabel, productGradeOptions } from "@/lib/segments";
+import { productGradeOptions } from "@/lib/segments";
 import type { CompetitorProduct, MaterialMaster, Segment, SkuMaster } from "@/lib/types";
+
+type MappingStatus = "pending" | "mapped" | "all";
 
 type CompetitorMappingTableProps = {
   products: CompetitorProduct[];
   materials: MaterialMaster[];
   locale: string;
   dict: Dictionary;
+  mappingStatus: MappingStatus;
 };
 
-export function CompetitorMappingTable({ products, materials, locale, dict }: CompetitorMappingTableProps) {
+export function CompetitorMappingTable({ products, materials, locale, dict, mappingStatus }: CompetitorMappingTableProps) {
   const router = useRouter();
   const copy = getCopy(locale);
+  const showMappingSummaryColumns = mappingStatus !== "pending";
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [gradeDrafts, setGradeDrafts] = useState<Record<string, Segment>>({});
   const [savedGrades, setSavedGrades] = useState<Record<string, Segment>>(() => Object.fromEntries(products.map((product) => [product.id, product.segment])));
@@ -106,23 +109,22 @@ export function CompetitorMappingTable({ products, materials, locale, dict }: Co
       ) : null}
 
       <div className="overflow-x-auto rounded-lg border border-slate-200">
-        <table className="w-full min-w-[1500px] table-fixed text-left text-sm">
+        <table className={`${showMappingSummaryColumns ? "min-w-[1420px]" : "min-w-[1080px]"} w-full table-fixed text-left text-sm`}>
           <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500">
             <tr>
               <th className="w-12 px-3 py-2">
                 <input type="checkbox" checked={allSelected} onChange={togglePage} aria-label={copy.selectCurrentPage} />
               </th>
-              <th className="w-36 px-3 py-2 whitespace-nowrap">{dict.common.brand}</th>
+              <th className="w-52 px-3 py-2 whitespace-nowrap">{dict.common.brand}</th>
               <th className="w-72 px-3 py-2 whitespace-nowrap">{dict.common.product}</th>
-              <th className="w-28 px-3 py-2 whitespace-nowrap">{dict.common.channel}</th>
-              <th className="w-24 px-3 py-2 whitespace-nowrap">{dict.common.size}</th>
+              <th className="w-32 px-3 py-2 whitespace-nowrap">{copy.packageType}</th>
+              <th className="w-20 px-3 py-2 whitespace-nowrap">{dict.common.size}</th>
               <th className="w-20 px-3 py-2 whitespace-nowrap">{dict.common.pcs}</th>
-              <th className="w-56 px-3 py-2 whitespace-nowrap">{copy.competitorGrade}</th>
-              <th className="w-36 px-3 py-2 whitespace-nowrap">{copy.makukuGrade}</th>
+              <th className="w-44 px-3 py-2 whitespace-nowrap">{copy.competitorGrade}</th>
               <th className="w-96 px-3 py-2 whitespace-nowrap">{copy.mapProductMaster}</th>
-              <th className="w-28 px-3 py-2 whitespace-nowrap">{copy.mappingStatus}</th>
-              <th className="w-32 px-3 py-2 whitespace-nowrap">{copy.mappingMethod}</th>
-              <th className="w-36 px-3 py-2 whitespace-nowrap">{copy.benchmark}</th>
+              {showMappingSummaryColumns ? <th className="w-28 px-3 py-2 whitespace-nowrap">{copy.mappingStatus}</th> : null}
+              {showMappingSummaryColumns ? <th className="w-32 px-3 py-2 whitespace-nowrap">{copy.mappingMethod}</th> : null}
+              {showMappingSummaryColumns ? <th className="w-36 px-3 py-2 whitespace-nowrap">{copy.benchmark}</th> : null}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200 bg-white">
@@ -144,11 +146,13 @@ export function CompetitorMappingTable({ products, materials, locale, dict }: Co
                       aria-label={`${copy.selectProduct} ${product.brands?.name ?? ""} ${product.normalized_name}`}
                     />
                   </td>
-                  <td className="px-3 py-3 font-medium whitespace-nowrap">{product.brands?.name}</td>
-                  <td className="px-3 py-3">
+                  <td className="overflow-hidden px-3 py-3 font-medium">
+                    <div className="truncate" title={product.brands?.name ?? ""}>{product.brands?.name}</div>
+                  </td>
+                  <td className="overflow-hidden px-3 py-3">
                     <div className="truncate" title={product.normalized_name}>{product.normalized_name}</div>
                   </td>
-                  <td className="px-3 py-3 whitespace-nowrap"><Badge>{translateEnum(dict, "channel", product.channel)}</Badge></td>
+                  <td className="px-3 py-3 whitespace-nowrap">{product.package_type ?? "unknown"}</td>
                   <td className="px-3 py-3 whitespace-nowrap">{product.size}</td>
                   <td className="px-3 py-3 whitespace-nowrap">{product.piece_count}</td>
                   <td className="px-3 py-3">
@@ -158,14 +162,13 @@ export function CompetitorMappingTable({ products, materials, locale, dict }: Co
                       onBlur={() => maybeSaveGrade(product)}
                       disabled={isSaving}
                       aria-label={`${copy.competitorGrade} ${product.brands?.name ?? ""} ${product.normalized_name}`}
-                      className="h-9 w-40"
+                      className="h-9 w-36"
                     >
                       {productGradeOptions().map((option) => (
                         <option key={option.value} value={option.value}>{option.label}</option>
                       ))}
                     </SelectInput>
                   </td>
-                  <td className="px-3 py-3 whitespace-nowrap">{match?.sku_master ? productGradeLabel(match.sku_master.segment) : "-"}</td>
                   <td className="px-3 py-3">
                     <form action="/api/sku-matches" method="post" className="flex min-w-0 items-center gap-2">
                       <input type="hidden" name="return_to" value={`/${locale}/competitors`} />
@@ -175,19 +178,23 @@ export function CompetitorMappingTable({ products, materials, locale, dict }: Co
                       <Button type="submit" className="h-9 whitespace-nowrap">{copy.saveMapping}</Button>
                     </form>
                   </td>
-                  <td className="px-3 py-3 whitespace-nowrap">
-                    <Badge tone={match ? "low" : "neutral"}>{match ? copy.mapped : copy.unmapped}</Badge>
-                  </td>
-                  <td className="px-3 py-3 whitespace-nowrap">{match ? formatMatchMethod(match.match_method, locale) : "-"}</td>
-                  <td className="px-3 py-3 whitespace-nowrap">
-                    {setBenchmarkHref ? (
-                      <Link href={setBenchmarkHref} className="font-medium text-blue-700 hover:underline">
-                        {copy.setBenchmark}
-                      </Link>
-                    ) : (
-                      <span className="text-xs text-slate-400">{copy.missingProductMaster}</span>
-                    )}
-                  </td>
+                  {showMappingSummaryColumns ? (
+                    <td className="px-3 py-3 whitespace-nowrap">
+                      <Badge tone={match ? "low" : "neutral"}>{match ? copy.mapped : copy.unmapped}</Badge>
+                    </td>
+                  ) : null}
+                  {showMappingSummaryColumns ? <td className="px-3 py-3 whitespace-nowrap">{match ? formatMatchMethod(match.match_method, locale) : "-"}</td> : null}
+                  {showMappingSummaryColumns ? (
+                    <td className="px-3 py-3 whitespace-nowrap">
+                      {setBenchmarkHref ? (
+                        <Link href={setBenchmarkHref} className="font-medium text-blue-700 hover:underline">
+                          {copy.setBenchmark}
+                        </Link>
+                      ) : (
+                        <span className="text-xs text-slate-400">{copy.missingProductMaster}</span>
+                      )}
+                    </td>
+                  ) : null}
                 </tr>
               );
             })}
@@ -224,7 +231,7 @@ function getCopy(locale: string) {
   const isZh = locale === "zh";
   return {
     competitorGrade: isZh ? "竞品商品等级" : "Competitor Grade",
-    makukuGrade: isZh ? "Makuku商品等级" : "Makuku Grade",
+    packageType: isZh ? "包装类型" : "Package Type",
     mapProductMaster: isZh ? "关联产品主数据" : "Map product master",
     mappingStatus: isZh ? "关联状态" : "Mapping status",
     mappingMethod: isZh ? "关联方式" : "Mapping method",

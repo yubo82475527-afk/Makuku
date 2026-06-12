@@ -65,6 +65,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/offline-upl
           product_url: null,
           image_url: upload.image_url,
           pack_type: "pants",
+          package_type: "unknown",
           size: body.size || null,
           piece_count: pieceCount,
           segment: "unknown",

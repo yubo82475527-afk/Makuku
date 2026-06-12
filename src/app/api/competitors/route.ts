@@ -43,6 +43,7 @@ export async function POST(request: Request) {
         product_url: body.product_url || null,
         image_url: body.image_url || null,
         pack_type: body.pack_type,
+        package_type: String(body.package_type ?? "unknown"),
         size: body.size,
         piece_count: Number(body.piece_count),
         segment: normalizeProductGrade(String(body.segment ?? "")),

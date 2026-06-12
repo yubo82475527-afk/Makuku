@@ -133,6 +133,7 @@ export type CompetitorProduct = {
   product_url: string | null;
   image_url: string | null;
   pack_type: PackType;
+  package_type: string;
   size: string | null;
   piece_count: number | null;
   segment: Segment;

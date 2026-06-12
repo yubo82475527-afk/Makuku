@@ -38,7 +38,7 @@ test("master data pages maintain product grade, while price snapshots stay facts
   assert.match(skuMasterTable, /intent" value="update_segment"/);
   assert.match(competitorsPage, /CompetitorMappingTable/);
   assert.match(competitorMappingTable, /竞品商品等级|Competitor Grade/);
-  assert.match(competitorMappingTable, /Makuku商品等级|Makuku Grade/);
+  assert.doesNotMatch(competitorMappingTable, /Makuku商品等级|Makuku Grade/);
   assert.match(competitorMappingTable, /intent: "update_segment"/);
   assert.match(pricesPage, /sku\?\.segment \?\? product\?\.segment \?\? "unknown"/);
   assert.doesNotMatch(priceSnapshotsRoute, /segment/);
@@ -63,7 +63,8 @@ test("competitor mapping supports bulk and blur-confirmed grade maintenance in a
   assert.match(competitorMappingTable, /maybeSaveGrade/);
   assert.match(competitorMappingTable, /window\.confirm\(copy\.confirmSaveGrade\)/);
   assert.match(competitorMappingTable, /onBlur=\{\(\) => maybeSaveGrade\(product\)\}/);
-  assert.match(competitorMappingTable, /min-w-\[1500px\]/);
+  assert.match(competitorMappingTable, /min-w-\[1420px\]/);
+  assert.match(competitorMappingTable, /min-w-\[1080px\]/);
   assert.match(competitorMappingTable, /overflow-x-auto/);
   assert.match(competitorMappingTable, /whitespace-nowrap/);
 });

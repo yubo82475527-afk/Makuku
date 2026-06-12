@@ -264,6 +264,7 @@ async function ensureCompetitorProduct(supabase: SupabaseServiceClient, candidat
       product_url: null,
       image_url: null,
       pack_type: "unknown",
+      package_type: "unknown",
       size: null,
       piece_count: pieceCount,
       segment: "unknown",

@@ -152,6 +152,7 @@ export const demoCompetitors: CompetitorProduct[] = [
   product_url: channel === "shopee" ? `https://shopee.co.id/${id}` : null,
   image_url: null,
   pack_type,
+  package_type: "unknown",
   size,
   piece_count,
   segment,
