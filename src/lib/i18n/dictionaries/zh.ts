@@ -44,7 +44,7 @@ const zh: typeof en = {
     brand: "品牌",
     product: "商品",
     channel: "渠道",
-    segment: "档位",
+    segment: "商品等级",
     makukuSku: "Makuku SKU",
     competitor: "竞品",
   },
@@ -67,9 +67,9 @@ const zh: typeof en = {
       unknown: "未知",
     },
     segment: {
-      premium: "高端",
-      mid: "中端",
-      value: "性价比",
+      AD: "AD",
+      "BD Eco": "BD Eco",
+      "BD MID": "BD MID",
       unknown: "未知",
     },
     uploadStatus: {

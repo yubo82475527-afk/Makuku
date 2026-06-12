@@ -1,6 +1,7 @@
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import { formReturnRedirect, readRequestBody } from "@/lib/request";
 import { requireAdminSession } from "@/lib/auth-session";
+import { normalizeProductGrade } from "@/lib/segments";
 
 export async function POST(request: Request) {
   try {
@@ -8,6 +9,19 @@ export async function POST(request: Request) {
     if (auth.response) return auth.response;
     const { body, isForm } = await readRequestBody(request);
     const supabase = createSupabaseServiceClient();
+    if (body.intent === "update_segment") {
+      const ids = readCompetitorProductIds(body);
+      if (ids.length === 0) return Response.json({ error: "Missing competitor product id" }, { status: 400 });
+      const { data, error } = await supabase
+        .from("competitor_products")
+        .update({ segment: normalizeProductGrade(String(body.segment ?? "")) })
+        .in("id", ids)
+        .select("*");
+      if (error) return Response.json({ error: error.message }, { status: 400 });
+      if (isForm) return formReturnRedirect(request, body, "/competitors");
+      return Response.json({ data, count: data?.length ?? 0 });
+    }
+
     const { data: brand, error: brandError } = await supabase
       .from("brands")
       .select("id,name,is_own_brand")
@@ -31,7 +45,7 @@ export async function POST(request: Request) {
         pack_type: body.pack_type,
         size: body.size,
         piece_count: Number(body.piece_count),
-        segment: body.segment,
+        segment: normalizeProductGrade(String(body.segment ?? "")),
       })
       .select("*")
       .single();
@@ -53,6 +67,38 @@ export async function POST(request: Request) {
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
   }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const auth = await requireAdminSession(request);
+    if (auth.response) return auth.response;
+    const { body, isForm } = await readRequestBody(request);
+    const id = String(body.id ?? "").trim();
+    if (!id) return Response.json({ error: "Missing competitor product id" }, { status: 400 });
+
+    const supabase = createSupabaseServiceClient();
+    const { data, error } = await supabase
+      .from("competitor_products")
+      .update({ segment: normalizeProductGrade(String(body.segment ?? "")) })
+      .eq("id", id)
+      .select("*")
+      .single();
+    if (error) return Response.json({ error: error.message }, { status: 400 });
+
+    if (isForm) return formReturnRedirect(request, body, "/competitors");
+    return Response.json({ data });
+  } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
+  }
+}
+
+function readCompetitorProductIds(body: Record<string, unknown>) {
+  if (Array.isArray(body.ids)) {
+    return body.ids.map((id) => String(id).trim()).filter(Boolean);
+  }
+  const id = String(body.id ?? "").trim();
+  return id ? [id] : [];
 }
 
 function isOwnBrandName(value: string | null | undefined) {

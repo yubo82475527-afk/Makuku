@@ -1,7 +1,7 @@
 export type Channel = "shopee" | "tiktok" | "offline" | "manual";
 export type ChannelType = "online" | "offline";
 export type PackType = "pants" | "tape" | "unknown";
-export type Segment = "premium" | "mid" | "value" | "unknown";
+export type Segment = "AD" | "BD Eco" | "BD MID" | "unknown";
 export type MatchMethod = "rule" | "ai" | "manual";
 export type Severity = "low" | "medium" | "high" | "critical";
 export type PromoEventType =

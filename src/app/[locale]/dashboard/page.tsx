@@ -96,7 +96,7 @@ function ProductSegmentPriceIndexBoard({
         <div>
           <h2 className="font-semibold">{isZh ? "产品段价格指数战况" : "Product Segment Price Index Board"}</h2>
           <p className="mt-1 text-sm text-slate-500">
-            {isZh ? "按省/市/区、产品线、系列、尺码聚合；点击看门店进入对应价格证据。" : "Filter by region and segment; drill into stores and price evidence."}
+            {isZh ? "按省/市/区、产品线、商品等级、尺码聚合；点击看门店进入对应价格证据。" : "Filter by region, line, product grade, and size; drill into stores and price evidence."}
           </p>
         </div>
         <div className="text-sm text-slate-500">{isZh ? "默认：价格指数从低到高" : "Default: lowest index first"}</div>
@@ -107,7 +107,7 @@ function ProductSegmentPriceIndexBoard({
         <FilterSelect name="cityName" value={query.cityName} label={isZh ? "全部城市" : "All cities"} values={options.cityNames} />
         <FilterSelect name="district" value={query.district} label={isZh ? "全部区/县" : "All districts"} values={options.districts} />
         <FilterSelect name="line" value={query.line} label={isZh ? "全部产品线" : "All lines"} values={options.lines} />
-        <FilterSelect name="priceBand" value={query.priceBand} label={isZh ? "全部系列" : "All series"} values={options.priceBands} />
+        <FilterSelect name="priceBand" value={query.priceBand} label={isZh ? "全部商品等级" : "All grades"} values={options.priceBands} />
         <FilterSelect name="size" value={query.size} label={isZh ? "全部尺码" : "All sizes"} values={options.sizes} />
         <SelectInput name="sort" defaultValue={query.sort ?? "priceIndexAsc"}>
           <option value="priceIndexAsc">{isZh ? "价格指数：从低到高" : "Index: low to high"}</option>

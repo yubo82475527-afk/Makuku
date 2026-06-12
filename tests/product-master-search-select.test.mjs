@@ -3,12 +3,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 const competitorsPage = readFileSync("src/app/[locale]/competitors/page.tsx", "utf8");
+const competitorMappingTable = readFileSync("src/components/competitor-mapping-table.tsx", "utf8");
 const componentPath = "src/components/product-master-search-select.tsx";
 const searchSelect = existsSync(componentPath) ? readFileSync(componentPath, "utf8") : "";
 
 test("competitor mapping uses a searchable product master picker", () => {
-  assert.match(competitorsPage, /ProductMasterSearchSelect/);
+  assert.match(competitorsPage, /CompetitorMappingTable/);
   assert.match(competitorsPage, /materials=\{materialResult\.data\}/);
+  assert.match(competitorMappingTable, /ProductMasterSearchSelect/);
+  assert.match(competitorMappingTable, /materials=\{materials\}/);
   assert.doesNotMatch(competitorsPage, /<SelectInput name="material_sku_code"/);
 });
 

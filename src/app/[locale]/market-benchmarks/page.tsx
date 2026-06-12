@@ -74,7 +74,7 @@ export default async function MarketBenchmarksPage({
           <TextInput name="category" placeholder={isZh ? "品类" : "Category"} defaultValue="Diapers" required readOnly />
           <input type="hidden" name="benchmark_competitor_product_id" value={selectedCompetitorId} />
           <ReadonlyField name="product_line" label={isZh ? "产品线" : "Product line"} value={productLine} />
-          <ReadonlyField name="price_band" label={isZh ? "系列/价格带" : "Price band"} value={priceBand} />
+          <ReadonlyField name="price_band" label={isZh ? "商品等级" : "Product grade"} value={priceBand} />
           <ReadonlyField name="size" label={isZh ? "尺码" : "Size"} value={size} />
           <TextInput name="benchmark_sku_name" placeholder={isZh ? "标杆SKU" : "Benchmark SKU"} defaultValue={benchmarkSkuName} required className="md:col-span-2" readOnly={Boolean(selectedCompetitor)} />
           <TextInput name="benchmark_price_per_piece" type="number" step="0.0001" placeholder={isZh ? "标杆单片价" : "Benchmark per piece"} defaultValue={latestBenchmarkPrice?.toString() ?? ""} required />
@@ -95,7 +95,7 @@ export default async function MarketBenchmarksPage({
               <tr>
                 <th className="py-2 pr-3">{isZh ? "状态" : "Status"}</th>
                 <th className="py-2 pr-3">{isZh ? "区域" : "Region"}</th>
-                <th className="py-2 pr-3">{isZh ? "产品段" : "Segment"}</th>
+                <th className="py-2 pr-3">{isZh ? "产品段 / 商品等级" : "Segment / Grade"}</th>
                 <th className="py-2 pr-3">{isZh ? "标杆SKU" : "Benchmark SKU"}</th>
                 <th className="py-2 pr-3">{isZh ? "标杆单片价" : "Per Piece"}</th>
                 <th className="py-2 pr-3">{isZh ? "竞品映射" : "Competitor"}</th>

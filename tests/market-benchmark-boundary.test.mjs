@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 const pricesPage = readFileSync("src/app/[locale]/prices/page.tsx", "utf8");
 const priceSnapshotsTable = readFileSync("src/components/price-snapshots-table.tsx", "utf8");
 const competitorsPage = readFileSync("src/app/[locale]/competitors/page.tsx", "utf8");
+const competitorMappingTable = readFileSync("src/components/competitor-mapping-table.tsx", "utf8");
 const competitorsRoute = readFileSync("src/app/api/competitors/route.ts", "utf8");
 const skuMatchesRoute = readFileSync("src/app/api/sku-matches/route.ts", "utf8");
 const marketBenchmarksPage = readFileSync("src/app/[locale]/market-benchmarks/page.tsx", "utf8");
@@ -22,27 +23,31 @@ test("SKU price monitor stays a price fact view without benchmark configuration 
 });
 
 test("competitor mapping exposes only a lightweight set-as-benchmark shortcut", () => {
-  assert.match(competitorsPage, /setBenchmarkHref/);
-  assert.match(competitorsPage, /sku_master/);
-  assert.match(competitorsPage, /设为市场标杆|Set benchmark/);
-  assert.match(competitorsPage, /未关联产品主数据|Missing product master/);
-  assert.match(competitorsPage, /关联产品主数据|Map product master/);
+  assert.match(competitorsPage, /CompetitorMappingTable/);
+  assert.match(competitorMappingTable, /setBenchmarkHref/);
+  assert.match(competitorMappingTable, /sku_master/);
+  assert.match(competitorMappingTable, /设为市场标杆|Set benchmark/);
+  assert.match(competitorMappingTable, /未关联产品主数据|Missing product master/);
+  assert.match(competitorMappingTable, /关联产品主数据|Map product master/);
   assert.match(competitorsPage, /getMaterialMaster/);
-  assert.match(competitorsPage, /tenant_sku_code/);
-  assert.match(competitorsPage, /tenant_sku_name/);
-  assert.match(competitorsPage, /action="\/api\/sku-matches"/);
-  assert.match(competitorsPage, /name="competitor_product_id"/);
-  assert.match(competitorsPage, /ProductMasterSearchSelect/);
+  assert.match(competitorMappingTable, /tenant_sku_code/);
+  assert.match(competitorMappingTable, /tenant_sku_name/);
+  assert.match(competitorMappingTable, /action="\/api\/sku-matches"/);
+  assert.match(competitorMappingTable, /name="competitor_product_id"/);
+  assert.match(competitorMappingTable, /ProductMasterSearchSelect/);
+  assert.match(competitorMappingTable, /\/api\/competitors/);
+  assert.match(competitorMappingTable, /intent: "update_segment"/);
+  assert.match(competitorMappingTable, /竞品商品等级|Competitor Grade/);
+  assert.match(competitorMappingTable, /Makuku商品等级|Makuku Grade/);
   assert.match(productMasterSearchSelect, /name="material_sku_code"/);
   assert.doesNotMatch(competitorsPage, /getSkuMaster/);
-  assert.doesNotMatch(competitorsPage, /name="reviewed"/);
-  assert.doesNotMatch(competitorsPage, /Review mapping first|先审核映射/);
-  assert.doesNotMatch(competitorsPage, /match\?\.reviewed && match\.sku_master/);
-  assert.doesNotMatch(competitorsPage, /action="\/api\/competitors"/);
-  assert.doesNotMatch(competitorsPage, /dict\.competitors\.addTitle/);
-  assert.doesNotMatch(competitorsPage, /name="raw_title"/);
-  assert.doesNotMatch(competitorsPage, /benchmark_price_per_piece/);
-  assert.doesNotMatch(competitorsPage, /active benchmark/i);
+  assert.doesNotMatch(competitorMappingTable, /name="reviewed"/);
+  assert.doesNotMatch(competitorMappingTable, /Review mapping first|先审核映射/);
+  assert.doesNotMatch(competitorMappingTable, /match\?\.reviewed && match\.sku_master/);
+  assert.doesNotMatch(competitorMappingTable, /dict\.competitors\.addTitle/);
+  assert.doesNotMatch(competitorMappingTable, /name="raw_title"/);
+  assert.doesNotMatch(competitorMappingTable, /benchmark_price_per_piece/);
+  assert.doesNotMatch(competitorMappingTable, /active benchmark/i);
 });
 
 test("manual competitor mapping is confirmed without a second approval step", () => {

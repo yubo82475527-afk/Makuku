@@ -42,7 +42,7 @@ const en = {
     brand: "Brand",
     product: "Product",
     channel: "Channel",
-    segment: "Segment",
+    segment: "Product Grade",
     makukuSku: "Makuku SKU",
     competitor: "Competitor",
   },
@@ -65,9 +65,9 @@ const en = {
       unknown: "Unknown",
     },
     segment: {
-      premium: "Premium",
-      mid: "Mid",
-      value: "Value",
+      AD: "AD",
+      "BD Eco": "BD Eco",
+      "BD MID": "BD MID",
       unknown: "Unknown",
     },
     uploadStatus: {

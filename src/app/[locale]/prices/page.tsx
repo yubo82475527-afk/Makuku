@@ -5,6 +5,7 @@ import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/u
 import { getBrands, getCompetitorProducts, getPriceSnapshots } from "@/lib/data";
 import { getPageI18n } from "@/lib/i18n/server";
 import { translateEnum } from "@/lib/i18n/get-dictionary";
+import { productGradeOptions } from "@/lib/segments";
 
 export default async function PricesPage({
   params: routeParams,
@@ -75,11 +76,10 @@ export default async function PricesPage({
             <option value="manual">{translateEnum(dict, "channel", "manual")}</option>
           </SelectInput>
           <SelectInput name="priceBand" defaultValue={params.priceBand ?? ""}>
-            <option value="">{locale === "zh" ? "全部系列" : "All series"}</option>
-            <option value="premium">premium</option>
-            <option value="mid">mid</option>
-            <option value="value">value</option>
-            <option value="unknown">unknown</option>
+            <option value="">{locale === "zh" ? "全部商品等级" : "All grades"}</option>
+            {productGradeOptions().map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
           </SelectInput>
           <SelectInput name="size" defaultValue={params.size ?? ""}>
             <option value="">{locale === "zh" ? "\u5168\u90e8\u5c3a\u7801" : "All sizes"}</option>

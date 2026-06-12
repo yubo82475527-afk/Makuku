@@ -117,8 +117,9 @@ function derivePackType(material: MaterialMaster): PackType {
 
 function deriveSegment(material: MaterialMaster): Segment {
   const value = `${material.sub_brand ?? ""} ${material.tenant_sku_name ?? ""}`.toLowerCase();
-  if (value.includes("value") || value.includes("basic") || value.includes("性价比")) return "value";
-  if (value.includes("comfort") || value.includes("mid") || value.includes("中端")) return "mid";
-  if (value.includes("premium") || value.includes("slim") || value.includes("air") || value.includes("高端")) return "premium";
+  const category = `${material.category ?? ""} ${material.sub_category ?? ""} ${material.type ?? ""}`.toLowerCase();
+  if (value.includes("adult") || category.includes("adult") || value.includes("ad")) return "AD";
+  if (value.includes("eco") || value.includes("economy") || value.includes("value") || value.includes("basic")) return "BD Eco";
+  if (value.includes("mid") || value.includes("medium") || value.includes("comfort") || value.includes("premium") || value.includes("slim") || value.includes("air")) return "BD MID";
   return "unknown";
 }

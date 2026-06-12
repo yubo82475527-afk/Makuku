@@ -1011,7 +1011,7 @@ function buildProductSegmentBattles(input: {
   for (const item of input.materialMaster) {
     const line = cleanText(item.sub_category) ?? cleanText(item.type) ?? "Unknown";
     const size = cleanText(item.sub_type) ?? "Unknown";
-    const priceBand = inferPriceBand(item.sub_brand ?? item.tenant_sku_name);
+    const priceBand = "unknown";
     const key = productSegmentKey(line, size, priceBand);
     const group = groups.get(key) ?? { category: cleanText(item.category) ?? "Diapers", line, size, priceBand, skus: [], materialItems: [] };
     group.materialItems.push(item);
@@ -1025,14 +1025,14 @@ function buildProductSegmentBattles(input: {
   const competitorSegment = new Map<string, string>();
   for (const product of input.competitors) {
     const segment = competitorProductSegment(product);
-    competitorSegment.set(product.id, productSegmentKey(segment.line, segment.size));
+    competitorSegment.set(product.id, productSegmentKey(segment.line, segment.size, segment.priceBand));
   }
   const candidateSegment = new Map<string, string>();
+  const competitorSegmentById = new Map(input.competitors.map((product) => [product.id, competitorSegment.get(product.id)]));
   for (const candidate of input.candidates.filter((item) => !isMakukuBrandName(item.raw_brand))) {
-    const line = inferProductLine(candidate.raw_product || candidate.matched_label || candidate.raw_brand);
-    const size = inferProductSize(candidate.raw_product || candidate.matched_label);
-    const priceBand = inferPriceBand(candidate.raw_product || candidate.matched_label);
-    candidateSegment.set(candidate.id, productSegmentKey(line, size, priceBand));
+    if (candidate.matched_entity_type !== "competitor_product" || !candidate.matched_entity_id) continue;
+    const segmentKey = competitorSegmentById.get(candidate.matched_entity_id);
+    if (segmentKey) candidateSegment.set(candidate.id, segmentKey);
   }
 
   const battles = Array.from(groups.entries()).map(([key, group]) => {
@@ -1328,7 +1328,7 @@ function competitorProductSegment(product: CompetitorProduct) {
     ? inferProductLine(product.normalized_name || product.raw_title)
     : productLineLabel(product.pack_type);
   const size = cleanText(product.size) ?? inferProductSize(product.normalized_name || product.raw_title);
-  return { line, size };
+  return { line, size, priceBand: product.segment };
 }
 
 function inferProductLine(value: string | null | undefined) {
@@ -1342,14 +1342,6 @@ function inferProductSize(value: string | null | undefined) {
   const text = (value ?? "").toUpperCase();
   const match = text.match(/\b(NB\/NB-S|XXXXL|XXXL|XXL|XL|NB|L|M|S)\b/);
   return match?.[1] ?? "Unknown";
-}
-
-function inferPriceBand(value: string | null | undefined) {
-  const text = (value ?? "").toLowerCase();
-  if (text.includes("value") || text.includes("economy") || text.includes("ekonomi")) return "value";
-  if (text.includes("comfort") || text.includes("gold") || text.includes("mid")) return "mid";
-  if (text.includes("premium") || text.includes("slim") || text.includes("air")) return "premium";
-  return "unknown";
 }
 
 function isMakukuBrandName(value: string | null | undefined) {

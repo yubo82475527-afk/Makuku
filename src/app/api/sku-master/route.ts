@@ -1,6 +1,7 @@
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import { formReturnRedirect, readRequestBody } from "@/lib/request";
 import { requireAdminSession } from "@/lib/auth-session";
+import { normalizeProductGrade } from "@/lib/segments";
 
 export async function POST(request: Request) {
   try {
@@ -8,12 +9,26 @@ export async function POST(request: Request) {
     if (auth.response) return auth.response;
     const { body, isForm } = await readRequestBody(request);
     const supabase = createSupabaseServiceClient();
+    if (body.intent === "update_segment") {
+      const id = String(body.id ?? "").trim();
+      if (!id) return Response.json({ error: "Missing sku master id" }, { status: 400 });
+      const { data, error } = await supabase
+        .from("sku_master")
+        .update({ segment: normalizeProductGrade(String(body.segment ?? "")) })
+        .eq("id", id)
+        .select("*")
+        .single();
+      if (error) return Response.json({ error: error.message }, { status: 400 });
+      if (isForm) return formReturnRedirect(request, body, "/sku-master");
+      return Response.json({ data });
+    }
+
     const payload = {
       makuku_sku_name: body.makuku_sku_name,
       pack_type: body.pack_type,
       size: body.size,
       piece_count: Number(body.piece_count),
-      segment: body.segment,
+      segment: normalizeProductGrade(String(body.segment ?? "")),
       target_price_per_piece: Number(body.target_price_per_piece),
       floor_price_per_piece: Number(body.floor_price_per_piece),
       gross_margin_rate: Number(body.gross_margin_rate),
@@ -42,7 +57,7 @@ export async function PATCH(request: Request) {
         pack_type: body.pack_type,
         size: body.size,
         piece_count: Number(body.piece_count),
-        segment: body.segment,
+        segment: normalizeProductGrade(String(body.segment ?? "")),
         target_price_per_piece: Number(body.target_price_per_piece),
         floor_price_per_piece: Number(body.floor_price_per_piece),
         gross_margin_rate: Number(body.gross_margin_rate),
