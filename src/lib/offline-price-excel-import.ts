@@ -33,6 +33,7 @@ export type OfflinePriceExcelPreview = {
   store_count: number;
   product_spec_count: number;
   snapshot_count: number;
+  skipped_no_price_rows: number;
   error_count: number;
   rows: OfflinePriceExcelRow[];
   errors: Array<{ row_number: number; errors: string[] }>;
@@ -85,9 +86,10 @@ export function parseOfflinePriceExcel(buffer: ArrayBuffer, fileName: string): O
     .filter((row) => rowHasContent(row));
 
   const validRows = rows.filter((row) => row.errors.length === 0);
-  const storeKeys = new Set(validRows.map((row) => storeKey(row)));
-  const productKeys = new Set(validRows.map((row) => productKey(row)));
-  const snapshotCount = validRows.reduce((sum, row) => sum + row.weeks.filter((week) => week.package_price !== null).length, 0);
+  const rowsWithPrices = validRows.filter((row) => hasWeeklyPrice(row));
+  const storeKeys = new Set(rowsWithPrices.map((row) => storeKey(row)));
+  const productKeys = new Set(rowsWithPrices.map((row) => productKey(row)));
+  const snapshotCount = rowsWithPrices.reduce((sum, row) => sum + row.weeks.filter((week) => week.package_price !== null).length, 0);
 
   return {
     file_month: fileMonth,
@@ -95,6 +97,7 @@ export function parseOfflinePriceExcel(buffer: ArrayBuffer, fileName: string): O
     store_count: storeKeys.size,
     product_spec_count: productKeys.size,
     snapshot_count: snapshotCount,
+    skipped_no_price_rows: validRows.length - rowsWithPrices.length,
     error_count: rows.filter((row) => row.errors.length > 0).length,
     rows,
     errors: rows.filter((row) => row.errors.length > 0).map((row) => ({ row_number: row.row_number, errors: row.errors })),
@@ -144,6 +147,8 @@ function parseRow(row: unknown[], rowNumber: number, headerIndex: Map<string, nu
     errors: [],
   };
 
+  if (!hasWeeklyPrice(result)) return result;
+
   if (!result.store_name) result.errors.push("Missing NAMA TOKO");
   if (!result.store_type) result.errors.push("Missing TYPE TOKO");
   if (result.store_type && !isAllowedStoreType(result.store_type)) result.errors.push(`Unsupported TYPE TOKO: ${result.store_type}`);
@@ -152,7 +157,6 @@ function parseRow(row: unknown[], rowNumber: number, headerIndex: Map<string, nu
   if (!result.size) result.errors.push("Missing SIZE");
   if (!result.piece_count) result.errors.push("Invalid PACK");
   if (result.segment === "unknown") result.errors.push("Unknown CATEGORY");
-  if (!result.weeks.some((week) => week.package_price !== null)) result.errors.push("No weekly package price");
   return result;
 }
 
@@ -191,6 +195,10 @@ function rowHasContent(row: OfflinePriceExcelRow) {
     row.size,
     row.piece_count,
   ].some((value) => String(value ?? "").trim() !== "");
+}
+
+function hasWeeklyPrice(row: OfflinePriceExcelRow) {
+  return row.weeks.some((week) => week.package_price !== null);
 }
 
 function valueAt(row: unknown[], headerIndex: Map<string, number>, header: string) {

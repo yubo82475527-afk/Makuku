@@ -10,6 +10,7 @@ type Preview = {
   store_count: number;
   product_spec_count: number;
   snapshot_count: number;
+  skipped_no_price_rows: number;
   error_count: number;
   rows: Array<{
     row_number: number;
@@ -32,6 +33,7 @@ type ImportResult = {
   competitor_products: number;
   makuku_skus: number;
   inserted_snapshots: number;
+  updated_snapshots: number;
   skipped_snapshots: number;
   row_errors: Array<{ row_number: number; errors: string[] }>;
 };
@@ -106,11 +108,12 @@ export function ExcelPriceImportWorkbench({ locale }: { locale: string }) {
 
       {preview ? (
         <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="grid gap-3 md:grid-cols-5">
+          <div className="grid gap-3 md:grid-cols-6">
             <Metric label={copy.totalRows} value={preview.total_rows} />
             <Metric label={copy.stores} value={preview.store_count} />
             <Metric label={copy.products} value={preview.product_spec_count} />
             <Metric label={copy.snapshots} value={preview.snapshot_count} />
+            <Metric label={copy.skippedNoPrice} value={preview.skipped_no_price_rows} />
             <Metric label={copy.errors} value={preview.error_count} />
           </div>
           {preview.error_count > 0 ? (
@@ -198,6 +201,7 @@ function getCopy(locale: string) {
     stores: isZh ? "门店数" : "Stores",
     products: isZh ? "商品规格数" : "Product specs",
     snapshots: isZh ? "可生成快照" : "Snapshots",
+    skippedNoPrice: isZh ? "无价格跳过" : "No-price rows",
     errors: isZh ? "异常行" : "Errors",
     fixErrors: isZh ? "存在异常行，修正后才能导入。" : "Fix error rows before importing.",
     store: isZh ? "门店" : "Store",
@@ -209,7 +213,7 @@ function getCopy(locale: string) {
     pcs: isZh ? "片数" : "Pcs",
     errorColumn: isZh ? "异常" : "Error",
     imported: (result: ImportResult) => isZh
-      ? `导入完成：写入 ${result.inserted_snapshots} 条价格快照，跳过 ${result.skipped_snapshots} 条重复/异常快照，涉及 ${result.stores} 个门店、${result.competitor_products} 个竞品商品。`
-      : `Import complete: inserted ${result.inserted_snapshots} snapshots, skipped ${result.skipped_snapshots}, covering ${result.stores} stores and ${result.competitor_products} competitor products.`,
+      ? `导入完成：写入 ${result.inserted_snapshots} 条价格快照，更新 ${result.updated_snapshots} 条，跳过 ${result.skipped_snapshots} 条异常快照，涉及 ${result.stores} 个门店、${result.competitor_products} 个竞品商品。`
+      : `Import complete: inserted ${result.inserted_snapshots} snapshots, updated ${result.updated_snapshots}, skipped ${result.skipped_snapshots}, covering ${result.stores} stores and ${result.competitor_products} competitor products.`,
   };
 }

@@ -57,15 +57,15 @@ function summarizePreview(preview: OfflinePriceExcelPreview) {
 
 async function importPreview(supabase: Supabase, preview: OfflinePriceExcelPreview) {
   const validRows = preview.rows.filter((row) => row.errors.length === 0);
-  const stores = await ensureStores(supabase, validRows);
-  const brands = await ensureBrands(supabase, validRows);
-  const competitors = await ensureCompetitorProducts(supabase, validRows.filter((row) => !row.is_makuku), brands);
-  const skuMasters = await resolveMakukuSkuMasters(supabase, validRows.filter((row) => row.is_makuku));
-  const existingSnapshotKeys = await readExistingSnapshotKeys(supabase, preview.file_month);
+  const importRows = validRows.filter((row) => row.weeks.some((week) => week.package_price !== null));
+  const stores = await ensureStores(supabase, importRows);
+  const brands = await ensureBrands(supabase, importRows);
+  const competitors = await ensureCompetitorProducts(supabase, importRows.filter((row) => !row.is_makuku), brands);
+  const makukuSkuResolution = await resolveMakukuSkuMasters(supabase, importRows.filter((row) => row.is_makuku));
   const snapshots = [];
   const rowErrors: Array<{ row_number: number; errors: string[] }> = [];
 
-  for (const row of validRows) {
+  for (const row of importRows) {
     const offlineStoreId = stores.get(storeKey(row));
     if (!offlineStoreId) {
       rowErrors.push({ row_number: row.row_number, errors: ["Store was not created"] });
@@ -73,24 +73,16 @@ async function importPreview(supabase: Supabase, preview: OfflinePriceExcelPrevi
     }
 
     const owner = row.is_makuku
-      ? { sku_master_id: skuMasters.get(productKey(row)) ?? null, competitor_product_id: null }
+      ? { sku_master_id: makukuSkuResolution.skuMasters.get(productKey(row)) ?? null, competitor_product_id: null }
       : { sku_master_id: null, competitor_product_id: competitors.get(productKey(row)) ?? null };
     if (!owner.sku_master_id && !owner.competitor_product_id) {
-      rowErrors.push({ row_number: row.row_number, errors: [row.is_makuku ? "Makuku SKU not matched" : "Competitor product was not created"] });
+      const makukuError = makukuSkuResolution.ambiguousKeys.has(productKey(row)) ? "Makuku SKU ambiguous" : "Makuku SKU not matched";
+      rowErrors.push({ row_number: row.row_number, errors: [row.is_makuku ? makukuError : "Competitor product was not created"] });
       continue;
     }
 
     for (const week of row.weeks) {
       if (!week.package_price || !row.piece_count) continue;
-      const duplicateKey = snapshotKey({
-        source: week.source,
-        captured_at: week.captured_at,
-        offline_store_id: offlineStoreId,
-        competitor_product_id: owner.competitor_product_id,
-        sku_master_id: owner.sku_master_id,
-      });
-      if (existingSnapshotKeys.has(duplicateKey)) continue;
-
       const normalized = normalizePriceSnapshot({
         promo_price_idr: week.package_price,
         piece_count: row.piece_count,
@@ -111,23 +103,26 @@ async function importPreview(supabase: Supabase, preview: OfflinePriceExcelPrevi
         source: week.source,
         evidence_url: null,
       });
-      existingSnapshotKeys.add(duplicateKey);
     }
   }
 
   let insertedSnapshots = 0;
+  let updatedSnapshots = 0;
   for (const chunk of chunks(snapshots, 500)) {
-    const { data, error } = await supabase.from("price_snapshots").insert(chunk).select("id");
+    const { data, error } = await supabase.rpc("import_excel_price_snapshots", { snapshots: chunk });
     if (error) throw new Error(error.message);
-    insertedSnapshots += data?.length ?? chunk.length;
+    const summary = Array.isArray(data) ? data[0] : data;
+    insertedSnapshots += Number(summary?.inserted_count ?? 0);
+    updatedSnapshots += Number(summary?.updated_count ?? 0);
   }
 
   return {
-    stores: stores.size,
-    competitor_products: competitors.size,
-    makuku_skus: skuMasters.size,
+    stores: preview.store_count,
+    competitor_products: uniqueBy(importRows.filter((row) => !row.is_makuku), productKey).length,
+    makuku_skus: makukuSkuResolution.skuMasters.size,
     inserted_snapshots: insertedSnapshots,
-    skipped_snapshots: preview.snapshot_count - insertedSnapshots - rowErrors.length,
+    updated_snapshots: updatedSnapshots,
+    skipped_snapshots: rowErrors.length,
     row_errors: rowErrors.slice(0, 100),
   };
 }
@@ -255,53 +250,41 @@ async function resolveMakukuSkuMasters(supabase: Supabase, rows: OfflinePriceExc
   if (skuError) throw new Error(skuError.message);
 
   const resolved = new Map<string, string>();
+  const ambiguousKeys = new Set<string>();
   for (const row of uniqueBy(rows, productKey)) {
-    const material = findMatchingMaterial(row, (materials ?? []) as MaterialMaster[]);
-    if (material?.tenant_sku_code) {
-      resolved.set(productKey(row), await ensureSkuMasterFromMaterial(supabase, material.tenant_sku_code));
+    const materialMatch = findMatchingMaterial(row, (materials ?? []) as MaterialMaster[]);
+    if (materialMatch.status === "ambiguous") {
+      ambiguousKeys.add(productKey(row));
+      continue;
+    }
+    if (materialMatch.material?.tenant_sku_code) {
+      resolved.set(productKey(row), await ensureSkuMasterFromMaterial(supabase, materialMatch.material.tenant_sku_code));
       continue;
     }
     const sku = findMatchingSku(row, (skuMasters ?? []) as SkuMaster[]);
     if (sku?.id) resolved.set(productKey(row), sku.id);
   }
-  return resolved;
-}
-
-async function readExistingSnapshotKeys(supabase: Supabase, fileMonth: string) {
-  const sources = [1, 2, 3, 4].map((week) => `excel_import:${fileMonth}:W${week}`);
-  const { data, error } = await supabase
-    .from("price_snapshots")
-    .select("source,captured_at,offline_store_id,competitor_product_id,sku_master_id")
-    .in("source", sources)
-    .limit(20000);
-  if (error) throw new Error(error.message);
-  return new Set((data ?? []).map(snapshotKey));
-}
-
-function snapshotKey(input: {
-  source: string | null;
-  captured_at: string | null;
-  offline_store_id: string | null;
-  competitor_product_id: string | null;
-  sku_master_id: string | null;
-}) {
-  return [
-    input.source ?? "",
-    new Date(input.captured_at ?? "").toISOString(),
-    input.offline_store_id ?? "",
-    input.competitor_product_id ?? "",
-    input.sku_master_id ?? "",
-  ].join("|");
+  return { skuMasters: resolved, ambiguousKeys };
 }
 
 function findMatchingMaterial(row: OfflinePriceExcelRow, materials: MaterialMaster[]) {
-  const rowName = normalizeKey(`${row.brand} ${row.product_name}`);
-  return materials.find((material) => {
+  const rowLine = inferMakukuProductLine(row);
+  if (!rowLine) return { status: "not_matched" as const, material: null };
+
+  const candidates = materials.filter((material) => {
+    const materialLine = normalizeKey(material.sub_brand);
     if (normalizeKey(material.brand) !== "makuku" && !normalizeKey(material.brand).includes("makuku")) return false;
-    if (normalizeKey(material.sub_type) !== normalizeKey(row.size)) return false;
+    if (rowLine !== materialLine) return false;
+    if (!sizeMatches(material.sub_type, row.size)) return false;
     if (Number(material.pack_count) !== Number(row.piece_count)) return false;
-    return rowName.includes(normalizeKey(material.tenant_sku_name)) || normalizeKey(material.tenant_sku_name).includes(normalizeKey(row.product_name));
+    return true;
   });
+
+  if (candidates.length <= 1) return { status: candidates[0] ? "matched" as const : "not_matched" as const, material: candidates[0] ?? null };
+  candidates.sort((left, right) => scoreMaterialMatch(row, right) - scoreMaterialMatch(row, left));
+  return scoreMaterialMatch(row, candidates[0]) > scoreMaterialMatch(row, candidates[1])
+    ? { status: "matched" as const, material: candidates[0] }
+    : { status: "ambiguous" as const, material: null };
 }
 
 function findMatchingSku(row: OfflinePriceExcelRow, skus: SkuMaster[]) {
@@ -316,8 +299,38 @@ function inferPackType(productName: string) {
   return productName.toLowerCase().includes("tape") ? "tape" : "pants";
 }
 
+function inferMakukuProductLine(row: Pick<OfflinePriceExcelRow, "brand" | "product_name">) {
+  const value = normalizeKey(`${row.brand} ${row.product_name}`);
+  if (value.includes("dry care")) return "dry care";
+  if (value.includes("pro care")) return "pro care";
+  if (value.includes("slim care")) return "slim care";
+  if (value.includes("comfort fit") || value.includes("makuku fit")) return "comfort fit";
+  if (value.includes("slim")) return "slim";
+  return "";
+}
+
+function scoreMaterialMatch(row: OfflinePriceExcelRow, material: MaterialMaster) {
+  const materialName = normalizeKey(material.tenant_sku_name);
+  const rowSpec = extractSizePackSpec(row.product_name);
+  let score = 0;
+  if (rowSpec && materialName.replace(/\s+/g, "").includes(rowSpec.replace(/\s+/g, ""))) score += 100;
+  if (row.product_name.includes("+") && materialName.includes("3 0")) score += 20;
+  if (["super jumbo pack", "jumbo pack", "big pack"].includes(normalizeKey(material.type))) score += 5;
+  return score;
+}
+
+function extractSizePackSpec(value: string) {
+  const match = normalizeKey(value).match(/\b(nb|s|m|l|xl|xxl|xxxl|xxxxl)\s*(\d+\s*\+\s*\d+|\d+)\b/);
+  return match ? match[0] : "";
+}
+
+function sizeMatches(materialSize: unknown, rowSize: string) {
+  const normalizedRowSize = normalizeKey(rowSize);
+  return normalizeKey(materialSize).split(/[^a-z0-9]+/).includes(normalizedRowSize);
+}
+
 function normalizeKey(value: unknown) {
-  return String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  return String(value ?? "").trim().toLowerCase().replace(/[^a-z0-9+]+/g, " ");
 }
 
 function uniqueBy<T>(items: T[], keyFn: (item: T) => string) {
