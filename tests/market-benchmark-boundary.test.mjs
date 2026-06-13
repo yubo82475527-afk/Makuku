@@ -4,8 +4,9 @@ import assert from "node:assert/strict";
 
 const pricesPage = readFileSync("src/app/[locale]/prices/page.tsx", "utf8");
 const priceSnapshotsTable = readFileSync("src/components/price-snapshots-table.tsx", "utf8");
-const competitorsPage = readFileSync("src/app/[locale]/competitors/page.tsx", "utf8");
-const competitorMappingTable = readFileSync("src/components/competitor-mapping-table.tsx", "utf8");
+const competitorMappingsPage = readFileSync("src/app/[locale]/competitor-mappings/page.tsx", "utf8");
+const competitorMappingTable = readFileSync("src/components/competitor-mappings-table.tsx", "utf8");
+const competitorProductsTable = readFileSync("src/components/competitor-products-table.tsx", "utf8");
 const competitorsRoute = readFileSync("src/app/api/competitors/route.ts", "utf8");
 const skuMatchesRoute = readFileSync("src/app/api/sku-matches/route.ts", "utf8");
 const skuMasterBridge = readFileSync("src/lib/sku-master-bridge.ts", "utf8");
@@ -23,37 +24,34 @@ test("SKU price monitor stays a price fact view without benchmark configuration 
   assert.doesNotMatch(pricesPage, /Set as benchmark|设为市场标杆|benchmark_competitor_product_id/);
 });
 
-test("competitor mapping exposes only a lightweight set-as-benchmark shortcut", () => {
-  assert.match(competitorsPage, /CompetitorMappingTable/);
+test("competitor mapping exposes only mapping and set-as-benchmark controls", () => {
+  assert.match(competitorMappingsPage, /CompetitorMappingsTable/);
+  assert.match(competitorMappingsPage, /getMaterialMaster/);
   assert.match(competitorMappingTable, /setBenchmarkHref/);
   assert.match(competitorMappingTable, /sku_master/);
-  assert.match(competitorMappingTable, /Set benchmark|设为标杆/);
-  assert.match(competitorMappingTable, /Missing product master|缺少产品主数据/);
-  assert.match(competitorMappingTable, /Map product master|关联产品主数据/);
-  assert.match(competitorsPage, /getMaterialMaster/);
+  assert.match(competitorMappingTable, /Set benchmark|设为市场标杆/);
+  assert.match(competitorMappingTable, /Missing Makuku SKU|未关联 Makuku SKU/);
+  assert.match(competitorMappingTable, /Mapped Makuku SKU|对标 Makuku SKU/);
   assert.match(competitorMappingTable, /tenant_sku_code/);
   assert.match(competitorMappingTable, /tenant_sku_name/);
   assert.match(competitorMappingTable, /action="\/api\/sku-matches"/);
   assert.match(competitorMappingTable, /name="competitor_product_id"/);
   assert.match(competitorMappingTable, /ProductMasterSearchSelect/);
-  assert.match(competitorMappingTable, /\/api\/competitors/);
-  assert.match(competitorMappingTable, /intent: "update_segment"/);
-  assert.match(competitorMappingTable, /Competitor Grade|竞品商品等级/);
-  assert.doesNotMatch(competitorMappingTable, /Makuku Grade|Makuku商品等级/);
+  assert.doesNotMatch(competitorMappingTable, /\/api\/competitors/);
+  assert.doesNotMatch(competitorMappingTable, /intent: "update_segment"/);
+  assert.doesNotMatch(competitorMappingTable, /onBlur=\{\(\) => saveProductFields/);
+  assert.match(competitorProductsTable, /intent: "update_segment"/);
+  assert.match(competitorProductsTable, /Product Grade|商品等级/);
   assert.match(productMasterSearchSelect, /name="material_sku_code"/);
-  assert.doesNotMatch(competitorsPage, /getSkuMaster/);
+  assert.doesNotMatch(competitorMappingsPage, /getSkuMaster/);
   assert.doesNotMatch(competitorMappingTable, /name="reviewed"/);
-  assert.doesNotMatch(competitorMappingTable, /Review mapping first|先审核映射/);
-  assert.doesNotMatch(competitorMappingTable, /match\?\.reviewed && match\.sku_master/);
-  assert.doesNotMatch(competitorMappingTable, /dict\.competitors\.addTitle/);
-  assert.doesNotMatch(competitorMappingTable, /name="raw_title"/);
   assert.doesNotMatch(competitorMappingTable, /benchmark_price_per_piece/);
   assert.doesNotMatch(competitorMappingTable, /active benchmark/i);
 });
 
 test("manual competitor mapping is confirmed without a second approval step", () => {
   assert.match(skuMatchesRoute, /reviewed: true/);
-  assert.match(skuMatchesRoute, /match_id/);
+  assert.match(skuMatchesRoute, /\.delete\(\)[\s\S]*\.eq\("competitor_product_id", competitorProductId\)/);
   assert.match(skuMatchesRoute, /sku_matches/);
   assert.match(skuMatchesRoute, /material_sku_code/);
   assert.match(skuMatchesRoute, /ensureSkuMasterFromMaterial/);

@@ -10,7 +10,7 @@ const en = {
   nav: {
     dashboard: "Dashboard",
     skuMaster: "SKU Master",
-    competitors: "Competitors",
+    competitors: "Competitor Product Master",
     prices: "Prices",
     offlineUploads: "Offline Uploads",
     promoEvents: "Promo Events",
@@ -139,7 +139,7 @@ const en = {
     pack: "Pack",
   },
   competitors: {
-    title: "Competitor Products",
+    title: "Competitor Product Master",
     addTitle: "Add Competitor Product",
     rawTitle: "Raw title",
     normalizedName: "Normalized name",

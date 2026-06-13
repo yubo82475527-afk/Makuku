@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Loader2, Pencil, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -13,6 +13,15 @@ type SnapshotOwnerType = "makuku" | "competitor";
 type PriceSnapshotForStoreRegion = {
   captured_at?: string | null;
   created_at?: string | null;
+  source?: string | null;
+  offline_stores?: {
+    name?: string | null;
+    city?: string | null;
+    province?: string | null;
+    city_name?: string | null;
+    district?: string | null;
+    channel_type?: string | null;
+  } | null;
   competitor_products?: { shop_name?: string | null; normalized_name?: string | null } | null;
   ai_price_candidates?: {
     offline_store_visits?: {
@@ -320,7 +329,7 @@ function AdjustmentDialog({
           <div>
             <h3 className="font-semibold text-slate-900">{isZh ? "调整价格快照归属" : "Adjust Snapshot Owner"}</h3>
             <p className="mt-1 text-sm text-slate-500">
-              {isZh ? "一条价格快照只能归属 Makuku SKU 或竞品商品，不会修改竞品映射管理。" : "A snapshot can belong to either a Makuku SKU or a competitor product. Competitor mapping is not updated."}
+              {isZh ? "一条价格快照只能归属 Makuku SKU 或竞品商品，不会修改竞品映射。" : "A snapshot can belong to either a Makuku SKU or a competitor product. Competitor mapping is not updated."}
             </p>
           </div>
           <button
@@ -590,10 +599,14 @@ function storeVisitForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
 }
 
 function storeNameForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
-  return cleanDisplayText(storeVisitForSnapshot(snapshot)?.store_name) ?? cleanDisplayText(snapshot.competitor_products?.shop_name) ?? "-";
+  return cleanDisplayText(storeVisitForSnapshot(snapshot)?.store_name)
+    ?? cleanDisplayText(snapshot.offline_stores?.name)
+    ?? cleanDisplayText(snapshot.competitor_products?.shop_name)
+    ?? "-";
 }
 
 function uploaderNameForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
+  if (String(snapshot.source ?? "").startsWith("excel_import")) return "Excel";
   return cleanDisplayText(storeVisitForSnapshot(snapshot)?.uploader_name) ?? "-";
 }
 
@@ -611,11 +624,12 @@ function splitLegacyRegion(value: string | null | undefined) {
 
 function storeRegionForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
   const visit = storeVisitForSnapshot(snapshot);
+  const store = snapshot.offline_stores;
   const legacyRegion = splitLegacyRegion(visit?.city);
   return {
-    province: cleanDisplayText(visit?.province) ?? legacyRegion.province,
-    cityName: cleanDisplayText(visit?.city_name) ?? legacyRegion.cityName,
-    district: cleanDisplayText(visit?.district) ?? legacyRegion.district,
+    province: cleanDisplayText(visit?.province) ?? cleanDisplayText(store?.province) ?? legacyRegion.province,
+    cityName: cleanDisplayText(visit?.city_name) ?? cleanDisplayText(store?.city_name) ?? legacyRegion.cityName ?? cleanDisplayText(store?.city),
+    district: cleanDisplayText(visit?.district) ?? cleanDisplayText(store?.district) ?? legacyRegion.district,
   };
 }
 

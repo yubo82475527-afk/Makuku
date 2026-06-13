@@ -10,6 +10,9 @@ const storeVisitImagesApi = readFileSync("src/app/api/store-visit/[id]/images/ro
 const storeVisitAiDebug = readFileSync("src/lib/store-visit-ai-debug.ts", "utf8");
 const offlineStoresApi = readFileSync("src/app/api/offline-stores/route.ts", "utf8");
 const typesFile = readFileSync("src/lib/types.ts", "utf8");
+const dataFile = readFileSync("src/lib/data.ts", "utf8");
+const demoData = readFileSync("src/lib/demo-data.ts", "utf8");
+const competitorExcelMigration = readFileSync("supabase/migrations/202606130001_competitor_master_excel_import.sql", "utf8");
 
 test("new H5 store visit requires selecting store master data before capture", () => {
   assert.match(storeVisitH5, /selectedStore/);
@@ -50,11 +53,16 @@ test("new H5 store visit keeps browser location inside create-store master data"
 test("new store sheet loads offline channel master data for store type", () => {
   assert.match(storeVisitH5, /\/api\/channels/);
   assert.match(storeVisitH5, /\.filter\(\(channel\) => channel\.type === "offline"\)/);
+  assert.match(dataFile, /\.eq\("active", true\)/);
   assert.match(storeVisitH5, /setChannels/);
   assert.match(storeVisitH5, /channel_id: selectedChannel\?\.id/);
   assert.match(storeVisitH5, /channel_type: selectedChannel\?\.code/);
   assert.doesNotMatch(storeVisitH5, /<option value="modern_trade">Modern Trade<\/option>/);
   assert.doesNotMatch(storeVisitH5, /<option value="baby_store">Baby Store<\/option>/);
+  assert.match(demoData, /"BABY SHOP"/);
+  assert.match(demoData, /"MT-LKA-SUPERMARKET"/);
+  assert.match(competitorExcelMigration, /update public\.channels[\s\S]*set active = false[\s\S]*where type = 'offline'/);
+  assert.match(competitorExcelMigration, /'MT-LKA-SUPERMARKET'/);
 });
 
 test("new H5 store visit keeps visit date compact instead of a full store-info card", () => {

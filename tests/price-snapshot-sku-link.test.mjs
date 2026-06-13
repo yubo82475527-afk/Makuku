@@ -40,6 +40,9 @@ test("photo review writes only one product owner per snapshot", () => {
   assert.match(aiPriceReview, /competitor_product_id: competitorProduct!?\.(id)/);
   assert.match(aiPriceReview, /sku_master_id: null/);
   assert.match(aiPriceReview, /Unmatched candidates cannot be approved/);
+  assert.match(aiPriceReview, /createCompetitorIfUnmatched/);
+  assert.match(aiPriceReview, /matched_entity_type: "competitor_product"/);
+  assert.match(aiPriceReview, /match_score: 1/);
 });
 
 test("price snapshots PATCH switches owner without updating mapping rules", () => {

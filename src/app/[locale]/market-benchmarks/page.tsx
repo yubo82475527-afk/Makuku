@@ -1,4 +1,4 @@
-import { AppShell } from "@/components/app-shell";
+﻿import { AppShell } from "@/components/app-shell";
 import { Badge, Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
 import { getCompetitorProducts, getMarketBenchmarks, getPriceSnapshots } from "@/lib/data";
 import { formatPricePerPiece } from "@/lib/format";
@@ -62,7 +62,7 @@ export default async function MarketBenchmarksPage({
 
         {missingMapping ? (
           <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            {isZh ? "缺少映射：该竞品 SKU 尚未关联 Makuku SKU，无法自动带出产品段。请先到竞品映射管理补齐。" : "Missing mapping: this competitor SKU is not linked to a Makuku SKU, so the segment cannot be prefilled."}
+            {isZh ? "缺少映射：该竞品 SKU 尚未关联 Makuku SKU，无法自动带出产品段。请先到竞品映射补齐。" : "Missing mapping: this competitor SKU is not linked to a Makuku SKU, so the segment cannot be prefilled."}
           </div>
         ) : null}
 
@@ -95,7 +95,7 @@ export default async function MarketBenchmarksPage({
               <tr>
                 <th className="py-2 pr-3">{isZh ? "状态" : "Status"}</th>
                 <th className="py-2 pr-3">{isZh ? "区域" : "Region"}</th>
-                <th className="py-2 pr-3">{isZh ? "产品段 / 商品等级" : "Segment / Grade"}</th>
+                <th className="py-2 pr-3">{isZh ? "产品线 / 商品等级" : "Segment / Grade"}</th>
                 <th className="py-2 pr-3">{isZh ? "标杆SKU" : "Benchmark SKU"}</th>
                 <th className="py-2 pr-3">{isZh ? "标杆单片价" : "Per Piece"}</th>
                 <th className="py-2 pr-3">{isZh ? "竞品映射" : "Competitor"}</th>

@@ -43,7 +43,7 @@ const navGroups = [
   {
     label: { zh: "价格定位管理", en: "Price Positioning" },
     items: [
-      { href: "/competitors", label: { zh: "竞品映射管理", en: "Competitor Mapping" }, icon: Tags },
+      { href: "/competitor-mappings", label: { zh: "竞品映射", en: "Competitor Mapping" }, icon: Tags },
       { href: "/market-benchmarks", label: { zh: "市场标杆管理", en: "Market Benchmarks" }, icon: MapPinned },
     ],
   },
@@ -51,6 +51,7 @@ const navGroups = [
     label: { zh: "主数据", en: "Master Data" },
     items: [
       { href: "/sku-master", label: { zh: "产品主数据", en: "Product Master" }, icon: Database },
+      { href: "/competitor-products", label: { zh: "竞品主数据", en: "Competitor Product Master" }, icon: Tags },
       { href: "/offline-stores", label: { zh: "门店主数据", en: "Store Master" }, icon: Store },
       { href: "/users", label: { zh: "用户管理", en: "User Management" }, icon: Users },
     ],

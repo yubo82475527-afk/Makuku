@@ -275,7 +275,7 @@ export function AiPriceCandidatesWorkbench({
       {items.length === 0 ? <EmptyState text={copy.emptyState} /> : null}
       {items.length > 0 ? (
         <div className="overflow-x-auto rounded-lg border border-slate-200">
-          <table className="w-full min-w-[1320px] text-left text-sm">
+          <table className="w-full min-w-[1440px] text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
                 <th className="w-10 px-3 py-2">
@@ -297,6 +297,7 @@ export function AiPriceCandidatesWorkbench({
                 {showRejectedAudit ? <th className="px-3 py-2">{copy.rejectedAt}</th> : null}
                 {showRejectedAudit ? <th className="px-3 py-2">{copy.rejectionReason}</th> : null}
                 <th className="px-3 py-2">{copy.table.status}</th>
+                <th className="px-3 py-2">{createdAtLabel(locale)}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 bg-white">
@@ -402,6 +403,7 @@ export function AiPriceCandidatesWorkbench({
                     {showRejectedAudit ? <td className="px-3 py-3 text-slate-600">{candidate.reviewed_at ? formatJakartaTime(candidate.reviewed_at) : "-"}</td> : null}
                     {showRejectedAudit ? <td className="max-w-xs px-3 py-3 text-slate-600">{candidate.rejection_reason ?? "-"}</td> : null}
                     <td className="px-3 py-3"><Badge>{copy.status[candidate.status] ?? candidate.status}</Badge></td>
+                    <td className="whitespace-nowrap px-3 py-3 text-slate-600">{formatJakartaTimestamp(candidate.created_at)}</td>
                   </tr>
                 );
               })}
@@ -702,7 +704,7 @@ function MatchEditorDialog({
   const candidate = state?.candidate ?? null;
   const [matchType, setMatchType] = useState<AiPriceCandidateMatchType>(candidate?.matched_entity_type ?? "unmatched");
   const [selectedId, setSelectedId] = useState(candidate?.matched_entity_id ?? "");
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(candidate?.matched_sku_label ?? candidate?.matched_label ?? "");
   const [materials, setMaterials] = useState<MaterialMaster[]>([]);
   const [products, setProducts] = useState<CompetitorProduct[]>([]);
   const [loading, setLoading] = useState(false);
@@ -716,7 +718,7 @@ function MatchEditorDialog({
       setLoading(true);
       try {
         const [materialsRes, productsRes] = await Promise.all([
-          fetch("/api/material-master/export"),
+          fetch("/api/material-master"),
           fetch("/api/competitors"),
         ]);
         const [materialsPayload, productsPayload] = await Promise.all([
@@ -724,8 +726,9 @@ function MatchEditorDialog({
           productsRes.json().catch(() => ({})),
         ]);
         if (!active) return;
-        setMaterials((materialsPayload.items ?? materialsPayload.materials ?? []) as MaterialMaster[]);
-        setProducts((productsPayload.products ?? productsPayload.items ?? []) as CompetitorProduct[]);
+        if (!materialsRes.ok || !productsRes.ok) throw new Error(copy.loadMatchOptionsFailed);
+        setMaterials((materialsPayload.items ?? []) as MaterialMaster[]);
+        setProducts((productsPayload.products ?? []) as CompetitorProduct[]);
       } catch {
         if (active) setError(copy.loadMatchOptionsFailed);
       } finally {
@@ -741,8 +744,8 @@ function MatchEditorDialog({
   if (!candidate) return null;
   const currentCandidate = candidate;
 
-  const materialOptions = filterMaterials(materials, query).slice(0, 30);
-  const productOptions = filterCompetitorProducts(products, query).slice(0, 30);
+  const materialOptions = withSelectedMaterialOption(filterMaterials(materials, query), materials, selectedId);
+  const productOptions = withSelectedProductOption(filterCompetitorProducts(products, query), products, selectedId);
   const selectedLabel = matchType === "material_master"
     ? formatMaterialMatchLabel(materials.find((item) => item.tenant_sku_code === selectedId)) || query
     : matchType === "competitor_product"
@@ -777,6 +780,28 @@ function MatchEditorDialog({
     }
   }
 
+  async function createCompetitorMatch() {
+    setSaving(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/ai-price-candidates/${currentCandidate.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "create_competitor_match",
+          piece_count: currentCandidate.reviewed_piece_count ?? currentCandidate.piece_count,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error ?? copy.saveMatchFailed);
+      onUpdated();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : copy.saveMatchFailed);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-[55] flex items-center justify-center bg-slate-900/30 p-4">
       <div className="w-full max-w-2xl rounded-lg bg-white p-5 shadow-xl">
@@ -794,6 +819,7 @@ function MatchEditorDialog({
               key={type}
               type="button"
               onClick={() => {
+                if (type === matchType) return;
                 setMatchType(type);
                 setSelectedId("");
                 setQuery("");
@@ -821,7 +847,17 @@ function MatchEditorDialog({
             />
           </label>
         ) : (
-          <div className="mt-4 rounded-md bg-slate-50 p-3 text-sm text-slate-600">{copy.unmatchedHint}</div>
+          <div className="mt-4 rounded-md bg-slate-50 p-3 text-sm text-slate-600">
+            <div>{copy.unmatchedHint}</div>
+            <button
+              type="button"
+              disabled={saving || !currentCandidate.raw_brand || !currentCandidate.raw_product || !(currentCandidate.reviewed_piece_count ?? currentCandidate.piece_count)}
+              onClick={createCompetitorMatch}
+              className="mt-3 inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {copy.createCompetitorProduct}
+            </button>
+          </div>
         )}
 
         {loading ? <div className="mt-3 text-sm text-slate-500">{copy.loadingMatchOptions}</div> : null}
@@ -964,13 +1000,20 @@ function CandidateDetailDrawerContent({
   }, [candidate.visit_id]);
 
   async function approve() {
+    const createCompetitorIfUnmatched = confirmCreateCompetitorBeforeApprove(candidate, copy);
+    if (createCompetitorIfUnmatched === null) return;
     setBusy(true);
     setError(null);
     try {
       const response = await fetch(`/api/ai-price-candidates/${candidate.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "approve", price_idr: Number(price), piece_count: Number(pieces) }),
+        body: JSON.stringify({
+          action: "approve",
+          price_idr: Number(price),
+          piece_count: Number(pieces),
+          create_competitor_if_unmatched: createCompetitorIfUnmatched,
+        }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error ?? copy.reviewActionFailed);
@@ -1162,6 +1205,15 @@ function matchedSkuLabel(candidate: AiPriceCandidate, copy: WorkbenchCopy) {
   return candidate.matched_sku_label || candidate.matched_label || (candidate.matched_entity_type === "unmatched" ? copy.unmatched : candidate.matched_entity_type);
 }
 
+function confirmCreateCompetitorBeforeApprove(candidate: AiPriceCandidate, copy: WorkbenchCopy) {
+  if (candidate.matched_entity_type !== "unmatched") return false;
+  if (!candidate.raw_brand || !candidate.raw_product || !(candidate.reviewed_piece_count ?? candidate.piece_count)) {
+    window.alert(copy.unmatchedCannotApprove);
+    return null;
+  }
+  return window.confirm(copy.createCompetitorConfirm) ? true : null;
+}
+
 function normalizeSearchText(value: string | number | null | undefined) {
   return String(value ?? "").trim().toLowerCase();
 }
@@ -1180,6 +1232,24 @@ function formatMaterialMatchLabel(material: MaterialMaster | undefined) {
 function formatCompetitorMatchLabel(product: CompetitorProduct | undefined) {
   if (!product) return "";
   return `${product.brands?.name ?? ""} · ${product.normalized_name}`.trim();
+}
+
+function withSelectedMaterialOption(options: MaterialMaster[], materials: MaterialMaster[], selectedId: string) {
+  const selected = selectedId ? materials.find((material) => material.tenant_sku_code === selectedId) : null;
+  const visibleOptions = options.slice(0, 30);
+  if (!selected || visibleOptions.some((material) => material.tenant_sku_code === selected.tenant_sku_code)) {
+    return visibleOptions;
+  }
+  return [selected, ...visibleOptions].slice(0, 30);
+}
+
+function withSelectedProductOption(options: CompetitorProduct[], products: CompetitorProduct[], selectedId: string) {
+  const selected = selectedId ? products.find((product) => product.id === selectedId) : null;
+  const visibleOptions = options.slice(0, 30);
+  if (!selected || visibleOptions.some((product) => product.id === selected.id)) {
+    return visibleOptions;
+  }
+  return [selected, ...visibleOptions].slice(0, 30);
 }
 
 function filterMaterials(materials: MaterialMaster[], query: string) {
@@ -1208,6 +1278,9 @@ function filterCompetitorProducts(products: CompetitorProduct[], query: string) 
 function getWorkbenchCopy(locale: string) {
   if (locale === "zh") {
     return {
+      createCompetitorProduct: "作为新竞品商品",
+      createCompetitorConfirm: "该候选还未匹配商品，是否作为新竞品商品并通过？",
+      unmatchedCannotApprove: "未匹配候选需要品牌、商品名和片数，才能作为新竞品商品通过。",
       emptyState: "暂无 AI 价格候选。请先完成巡店照片解析。",
       selectCurrentPage: "选择当前页",
       selectCandidate: "选择",
@@ -1305,6 +1378,9 @@ function getWorkbenchCopy(locale: string) {
   }
 
   return {
+    createCompetitorProduct: "Create as new competitor product",
+    createCompetitorConfirm: "This candidate is not matched. Create a new competitor product and approve it?",
+    unmatchedCannotApprove: "Unmatched candidates need brand, product name, and piece count before approval.",
     emptyState: "No AI price candidates yet. Run Store Visit analysis first.",
     selectCurrentPage: "Select current page",
     selectCandidate: "Select",
@@ -1403,4 +1479,24 @@ function getWorkbenchCopy(locale: string) {
 
 function shortTime(value: string) {
   return value ? formatJakartaTime(value) : "-";
+}
+
+function createdAtLabel(locale: string) {
+  return locale === "zh" ? "创建时间" : "Created at";
+}
+
+function formatJakartaTimestamp(value: string | null | undefined) {
+  if (!value) return "-";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(value));
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second}`;
 }

@@ -126,6 +126,7 @@ export type Brand = {
 export type CompetitorProduct = {
   id: string;
   brand_id: string;
+  competitor_sku_code?: string | null;
   raw_title: string;
   normalized_name: string;
   channel: Channel;
@@ -137,6 +138,8 @@ export type CompetitorProduct = {
   size: string | null;
   piece_count: number | null;
   segment: Segment;
+  status?: "active" | "disabled" | null;
+  updated_at?: string | null;
   created_at: string;
   brands?: Pick<Brand, "id" | "name"> | null;
   sku_matches?: SkuMatch[];
@@ -275,6 +278,7 @@ export type PriceSnapshot = {
   id: string;
   competitor_product_id: string | null;
   sku_master_id: string | null;
+  offline_store_id?: string | null;
   channel: Channel;
   list_price_idr: number;
   promo_price_idr: number;
@@ -289,6 +293,7 @@ export type PriceSnapshot = {
   created_at: string;
   competitor_products?: CompetitorProduct | null;
   sku_master?: SkuMaster | null;
+  offline_stores?: Pick<OfflineStore, "id" | "name" | "city" | "province" | "city_name" | "district" | "channel_type"> | null;
   ai_price_candidates?: PriceSnapshotCandidate[];
 };
 

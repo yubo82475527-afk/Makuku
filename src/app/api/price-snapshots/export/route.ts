@@ -72,7 +72,7 @@ export async function GET(request: Request) {
 
     const { data, error } = await supabase
       .from("price_snapshots")
-      .select("*, sku_master(*), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*))), ai_price_candidates(id, offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))")
+      .select("*, sku_master(*), offline_stores(id,name,city,province,city_name,district,channel_type), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*))), ai_price_candidates(id, offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))")
       .order("captured_at", { ascending: false })
       .limit(5000);
     if (error) return Response.json({ error: error.message }, { status: 500 });
@@ -137,6 +137,15 @@ export async function GET(request: Request) {
 type PriceSnapshotForStoreRegion = {
   captured_at?: string | null;
   created_at?: string | null;
+  source?: string | null;
+  offline_stores?: {
+    name?: string | null;
+    city?: string | null;
+    province?: string | null;
+    city_name?: string | null;
+    district?: string | null;
+    channel_type?: string | null;
+  } | null;
   competitor_products?: { shop_name?: string | null; normalized_name?: string | null } | null;
   ai_price_candidates?: {
     offline_store_visits?: {
@@ -185,10 +194,14 @@ function storeVisitForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
 }
 
 function storeNameForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
-  return cleanDisplayText(storeVisitForSnapshot(snapshot)?.store_name) ?? cleanDisplayText(snapshot.competitor_products?.shop_name) ?? "-";
+  return cleanDisplayText(storeVisitForSnapshot(snapshot)?.store_name)
+    ?? cleanDisplayText(snapshot.offline_stores?.name)
+    ?? cleanDisplayText(snapshot.competitor_products?.shop_name)
+    ?? "-";
 }
 
 function uploaderNameForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
+  if (String(snapshot.source ?? "").startsWith("excel_import")) return "Excel";
   return cleanDisplayText(storeVisitForSnapshot(snapshot)?.uploader_name) ?? "-";
 }
 
@@ -212,11 +225,12 @@ function channelLabel(value: string, locale: string) {
 
 function storeRegionForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
   const visit = storeVisitForSnapshot(snapshot);
+  const store = snapshot.offline_stores;
   const legacyRegion = splitLegacyRegion(visit?.city);
   return {
-    province: cleanDisplayText(visit?.province) ?? legacyRegion.province,
-    cityName: cleanDisplayText(visit?.city_name) ?? legacyRegion.cityName,
-    district: cleanDisplayText(visit?.district) ?? legacyRegion.district,
+    province: cleanDisplayText(visit?.province) ?? cleanDisplayText(store?.province) ?? legacyRegion.province,
+    cityName: cleanDisplayText(visit?.city_name) ?? cleanDisplayText(store?.city_name) ?? legacyRegion.cityName ?? cleanDisplayText(store?.city),
+    district: cleanDisplayText(visit?.district) ?? cleanDisplayText(store?.district) ?? legacyRegion.district,
   };
 }
 

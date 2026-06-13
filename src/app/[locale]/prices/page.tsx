@@ -143,6 +143,13 @@ function snapshotMakukuMaterialCode(snapshot: PriceSnapshot) {
 
 type PriceSnapshotForStoreRegion = {
   captured_at?: string | null;
+  offline_stores?: {
+    name?: string | null;
+    city?: string | null;
+    province?: string | null;
+    city_name?: string | null;
+    district?: string | null;
+  } | null;
   competitor_products?: { shop_name?: string | null } | null;
   ai_price_candidates?: {
     offline_store_visits?: {
@@ -161,16 +168,20 @@ function storeVisitForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
 }
 
 function storeNameForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
-  return cleanDisplayText(storeVisitForSnapshot(snapshot)?.store_name) ?? cleanDisplayText(snapshot.competitor_products?.shop_name) ?? "-";
+  return cleanDisplayText(storeVisitForSnapshot(snapshot)?.store_name)
+    ?? cleanDisplayText(snapshot.offline_stores?.name)
+    ?? cleanDisplayText(snapshot.competitor_products?.shop_name)
+    ?? "-";
 }
 
 function storeRegionForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
   const visit = storeVisitForSnapshot(snapshot);
+  const store = snapshot.offline_stores;
   const legacyRegion = splitLegacyRegion(visit?.city);
   return {
-    province: cleanDisplayText(visit?.province) ?? legacyRegion.province,
-    cityName: cleanDisplayText(visit?.city_name) ?? legacyRegion.cityName,
-    district: cleanDisplayText(visit?.district) ?? legacyRegion.district,
+    province: cleanDisplayText(visit?.province) ?? cleanDisplayText(store?.province) ?? legacyRegion.province,
+    cityName: cleanDisplayText(visit?.city_name) ?? cleanDisplayText(store?.city_name) ?? legacyRegion.cityName ?? cleanDisplayText(store?.city),
+    district: cleanDisplayText(visit?.district) ?? cleanDisplayText(store?.district) ?? legacyRegion.district,
   };
 }
 

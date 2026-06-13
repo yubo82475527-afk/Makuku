@@ -15,8 +15,13 @@ test("competitor products have a separate package type field", () => {
   assert.match(typesFile, /package_type: string/);
   assert.match(competitorMappingTable, /packageType: isZh \? "包装类型" : "Package Type"/);
   assert.match(competitorMappingTable, /product\.package_type \?\? "unknown"/);
-  assert.match(competitorMappingTable, /w-52 px-3 py-2 whitespace-nowrap">\{dict\.common\.brand\}/);
-  assert.match(competitorMappingTable, /w-44 px-3 py-2 whitespace-nowrap">\{copy\.competitorGrade\}/);
+  assert.match(competitorMappingTable, /ProductDraft/);
+  assert.match(competitorMappingTable, /saveProductFields/);
+  assert.match(competitorMappingTable, /intent: "update_fields"/);
+  assert.match(competitorRoute, /body\.intent === "update_package_type"/);
+  assert.match(competitorRoute, /package_type: cleanPackageType/);
+  assert.match(competitorMappingTable, /\{dict\.common\.brand\}/);
+  assert.match(competitorMappingTable, /\{copy\.competitorGrade\}/);
 });
 
 test("competitor spec import keeps exact brand names and package tiers", () => {
@@ -43,4 +48,11 @@ test("automated competitor product creation defaults package type to unknown", (
   assert.match(aiPriceReview, /package_type: "unknown"/);
   assert.match(offlineUploadConfirm, /package_type: "unknown"/);
   assert.match(offlineVisitImageConfirm, /package_type: "unknown"/);
+});
+
+test("photo review creates new competitor products with inferred size from candidate text", () => {
+  assert.match(aiPriceReview, /function inferCompetitorSize/);
+  assert.match(aiPriceReview, /candidate\.raw_product/);
+  assert.match(aiPriceReview, /size: inferCompetitorSize\(productName\)/);
+  assert.match(aiPriceReview, /nb-s\|nb\|s\|m\|l\|xl\|xxl\|xxxl\|xxxxl/i);
 });

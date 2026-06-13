@@ -9,6 +9,8 @@ const storeVisitRoute = readFileSync("src/app/api/store-visit/[id]/route.ts", "u
 const storeVisitDetailH5 = readFileSync("src/components/store-visit-detail-h5.tsx", "utf8");
 const candidateRoute = readFileSync("src/app/api/ai-price-candidates/[id]/route.ts", "utf8");
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
+const materialMasterRoute = readFileSync("src/app/api/material-master/route.ts", "utf8");
+const competitorsRoute = readFileSync("src/app/api/competitors/route.ts", "utf8");
 
 test("photo price review keeps compact date filter and export action", () => {
   assert.doesNotMatch(candidatesPage, /SelectInput/);
@@ -68,11 +70,15 @@ test("photo price review keeps bulk toolbar hidden until pending rows are select
 test("photo price review shows approved and rejected audit columns", () => {
   assert.match(workbench, /reviewed_at/);
   assert.match(workbench, /review_method/);
+  assert.match(workbench, /created_at/);
   assert.match(workbench, /approvedAt/);
   assert.match(workbench, /reviewMethod/);
   assert.match(workbench, /rejection_reason/);
   assert.match(workbench, /rejectedAt/);
   assert.match(workbench, /rejectionReason/);
+  assert.match(workbench, /createdAtLabel\(locale\)/);
+  assert.match(workbench, /formatJakartaTimestamp\(candidate\.created_at\)/);
+  assert.match(workbench, /second: "2-digit"/);
 });
 
 test("photo price review keeps Chinese copy keys for table headers and actions", () => {
@@ -82,6 +88,7 @@ test("photo price review keeps Chinese copy keys for table headers and actions",
   assert.match(workbench, /reviewRule/);
   assert.match(workbench, /approvedAt/);
   assert.match(workbench, /reviewMethod/);
+  assert.match(workbench, /创建时间/);
 });
 
 test("pending photo price review rows allow package price and piece count correction", () => {
@@ -124,17 +131,43 @@ test("photo price review shows and edits matched SKU on pending candidates", () 
   assert.match(workbench, /MatchEditorDialog/);
   assert.match(workbench, /candidate\.status === "pending"/);
   assert.match(workbench, /action: "update_match"/);
+  assert.match(workbench, /action: "create_competitor_match"/);
+  assert.match(workbench, /createCompetitorMatch/);
+  assert.match(workbench, /createCompetitorProduct/);
+  assert.match(workbench, /candidate\?\.matched_sku_label \?\? candidate\?\.matched_label \?\? ""/);
+  assert.match(workbench, /fetch\("\/api\/material-master"\)/);
+  assert.doesNotMatch(workbench, /\/api\/material-master\/export/);
+  assert.match(workbench, /withSelectedMaterialOption/);
+  assert.match(workbench, /withSelectedProductOption/);
   assert.match(dataFile, /materialMatchesByCode/);
   assert.match(dataFile, /competitorMatchesById/);
 });
 
+test("match editor option APIs return JSON data for current matched SKU selection", () => {
+  assert.match(materialMasterRoute, /export async function GET\(request: Request\)/);
+  assert.match(materialMasterRoute, /\.from\("material_master"\)/);
+  assert.match(materialMasterRoute, /Response\.json\(\{ items: data \?\? \[\] \}\)/);
+  assert.match(competitorsRoute, /export async function GET\(request: Request\)/);
+  assert.match(competitorsRoute, /\.select\("\*, brands\(id,name\)"\)/);
+  assert.match(competitorsRoute, /Response\.json\(\{ products: data \?\? \[\] \}\)/);
+});
+
 test("photo price candidate API updates pending match without touching snapshots or sku matches", () => {
   assert.match(candidateRoute, /action === "update_match"/);
+  assert.match(candidateRoute, /action === "create_competitor_match"/);
+  assert.match(candidateRoute, /ensureCompetitorProduct/);
   assert.match(candidateRoute, /matched_entity_type/);
   assert.match(candidateRoute, /match_score: matchType === "unmatched" \? 0 : 1/);
   assert.match(candidateRoute, /\.eq\("status", "pending"\)/);
   assert.doesNotMatch(candidateRoute, /\.from\("price_snapshots"\)[\s\S]*action === "update_match"/);
   assert.doesNotMatch(candidateRoute, /\.from\("sku_matches"\)[\s\S]*action === "update_match"/);
+});
+
+test("unmatched photo price candidates can be confirmed as new competitor products when approving", () => {
+  assert.match(workbench, /create_competitor_if_unmatched/);
+  assert.match(workbench, /confirmCreateCompetitorBeforeApprove/);
+  assert.match(workbench, /copy\.createCompetitorConfirm/);
+  assert.match(candidateRoute, /createCompetitorIfUnmatched/);
 });
 
 test("photo price review uses row click drawer with compact risk indicators and image preview", () => {

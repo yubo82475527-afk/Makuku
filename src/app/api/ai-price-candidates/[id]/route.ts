@@ -1,5 +1,5 @@
-import { revalidatePath } from "next/cache";
-import { approveAiPriceCandidate, rejectAiPriceCandidate } from "@/lib/ai-price-review";
+﻿import { revalidatePath } from "next/cache";
+import { approveAiPriceCandidate, ensureCompetitorProduct, rejectAiPriceCandidate } from "@/lib/ai-price-review";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import { requireAdminSession } from "@/lib/auth-session";
 import type { AiPriceCandidateMatchType } from "@/lib/types";
@@ -17,6 +17,8 @@ function revalidateReviewPaths() {
   revalidatePath("/en/prices");
   revalidatePath("/zh/competitors");
   revalidatePath("/en/competitors");
+  revalidatePath("/zh/competitor-products");
+  revalidatePath("/en/competitor-products");
 }
 
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -72,7 +74,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
           .eq("tenant_sku_code", matchId)
           .maybeSingle();
         if (materialError || !material) return Response.json({ error: materialError?.message ?? "Makuku SKU not found" }, { status: 400 });
-        matchedLabel = matchedLabel ?? `${material.tenant_sku_code} · ${material.tenant_sku_name}`;
+        matchedLabel = matchedLabel ?? `${material.tenant_sku_code} 路 ${material.tenant_sku_name}`;
       }
 
       if (matchType === "competitor_product") {
@@ -84,7 +86,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
         if (productError || !product) return Response.json({ error: productError?.message ?? "Competitor product not found" }, { status: 400 });
         const row = product as CompetitorProductMatchRow;
         const brandName = Array.isArray(row.brands) ? row.brands[0]?.name : row.brands?.name;
-        matchedLabel = matchedLabel ?? [brandName, row.normalized_name].filter(Boolean).join(" · ");
+        matchedLabel = matchedLabel ?? [brandName, row.normalized_name].filter(Boolean).join(" 路 ");
       }
 
       const { data: candidate, error } = await supabase
@@ -104,7 +106,41 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
       return Response.json({ candidate });
     }
 
+    if (action === "create_competitor_match") {
+      const { data: sourceCandidate, error: sourceError } = await supabase
+        .from("ai_price_candidates")
+        .select("*, offline_store_visits(*)")
+        .eq("id", id)
+        .eq("status", "pending")
+        .single();
+      if (sourceError || !sourceCandidate) throw new Error(sourceError?.message ?? "Pending candidate not found");
+
+      const pieceCount = Number(body.piece_count ?? sourceCandidate.reviewed_piece_count ?? sourceCandidate.piece_count);
+      if (!Number.isFinite(pieceCount) || pieceCount <= 0) {
+        return Response.json({ error: "Valid piece count is required" }, { status: 400 });
+      }
+
+      const product = await ensureCompetitorProduct(supabase, sourceCandidate, Math.floor(pieceCount));
+      const matchedLabel = [product.brands?.name, product.normalized_name].filter(Boolean).join(" 路 ");
+      const { data: candidate, error } = await supabase
+        .from("ai_price_candidates")
+        .update({
+          matched_entity_type: "competitor_product",
+          matched_entity_id: product.id,
+          matched_label: matchedLabel,
+          match_score: 1,
+        })
+        .eq("id", id)
+        .eq("status", "pending")
+        .select("*")
+        .single();
+      if (error || !candidate) throw new Error(error?.message ?? "Pending candidate not found");
+      revalidateReviewPaths();
+      return Response.json({ candidate, product });
+    }
+
     if (action === "approve") {
+      const createCompetitorIfUnmatched = Boolean(body.create_competitor_if_unmatched);
       const result = await approveAiPriceCandidate({
         supabase,
         candidateId: id,
@@ -112,6 +148,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
         pieceCount: body.piece_count ? Number(body.piece_count) : null,
         reviewer,
         reviewMethod: "manual",
+        createCompetitorIfUnmatched,
       });
       revalidateReviewPaths();
       return Response.json(result);

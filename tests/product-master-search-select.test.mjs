@@ -2,17 +2,19 @@ import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-const competitorsPage = readFileSync("src/app/[locale]/competitors/page.tsx", "utf8");
-const competitorMappingTable = readFileSync("src/components/competitor-mapping-table.tsx", "utf8");
+const competitorsPage = readFileSync("src/app/[locale]/competitor-mappings/page.tsx", "utf8");
+const competitorProductPage = readFileSync("src/app/[locale]/competitor-products/page.tsx", "utf8");
+const competitorMappingTable = readFileSync("src/components/competitor-mappings-table.tsx", "utf8");
 const componentPath = "src/components/product-master-search-select.tsx";
 const searchSelect = existsSync(componentPath) ? readFileSync(componentPath, "utf8") : "";
 
 test("competitor mapping uses a searchable product master picker", () => {
-  assert.match(competitorsPage, /CompetitorMappingTable/);
+  assert.match(competitorsPage, /CompetitorMappingsTable/);
   assert.match(competitorsPage, /materials=\{materialResult\.data\}/);
   assert.match(competitorMappingTable, /ProductMasterSearchSelect/);
   assert.match(competitorMappingTable, /materials=\{materials\}/);
   assert.doesNotMatch(competitorsPage, /<SelectInput name="material_sku_code"/);
+  assert.doesNotMatch(competitorProductPage, /ProductMasterSearchSelect/);
 });
 
 test("product master picker fuzzy searches core material master fields and submits material_sku_code", () => {

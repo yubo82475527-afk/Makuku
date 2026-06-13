@@ -1,4 +1,4 @@
-import { revalidatePath } from "next/cache";
+﻿import { revalidatePath } from "next/cache";
 import { approveAiPriceCandidate, candidateMatchesReviewRule, rejectAiPriceCandidate } from "@/lib/ai-price-review";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
 import { requireAdminSession } from "@/lib/auth-session";
@@ -13,6 +13,8 @@ function revalidateReviewPaths() {
   revalidatePath("/en/prices");
   revalidatePath("/zh/competitors");
   revalidatePath("/en/competitors");
+  revalidatePath("/zh/competitor-products");
+  revalidatePath("/en/competitor-products");
 }
 
 function cleanJobReviewOverrides(value: unknown) {

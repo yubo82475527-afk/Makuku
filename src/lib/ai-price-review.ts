@@ -10,6 +10,10 @@ type CandidateUpdatePayload = {
   reviewed_piece_count?: number;
   reviewed_price_per_piece?: number;
   price_snapshot_id?: string | null;
+  matched_entity_type?: "material_master" | "competitor_product" | "unmatched";
+  matched_entity_id?: string | null;
+  matched_label?: string | null;
+  match_score?: number;
   rejection_reason?: string | null;
   reviewed_at: string;
   reviewed_by: string | null;
@@ -41,6 +45,7 @@ export async function approveAiPriceCandidate({
   reviewer,
   reviewJobId,
   reviewMethod = "manual",
+  createCompetitorIfUnmatched = false,
 }: {
   supabase: SupabaseServiceClient;
   candidateId: string;
@@ -49,6 +54,7 @@ export async function approveAiPriceCandidate({
   reviewer?: string | null;
   reviewJobId?: string | null;
   reviewMethod?: AiPriceCandidateReviewMethod;
+  createCompetitorIfUnmatched?: boolean;
 }) {
   const { data: candidate, error } = await supabase
     .from("ai_price_candidates")
@@ -77,10 +83,12 @@ export async function approveAiPriceCandidate({
     skuMasterId = await ensureSkuMasterFromMaterial(supabase, candidateRow.matched_entity_id);
   } else if (candidateRow.matched_entity_type === "competitor_product") {
     competitorProduct = await ensureCompetitorProduct(supabase, candidate, Math.floor(reviewedPieceCount));
+  } else if (createCompetitorIfUnmatched) {
+    competitorProduct = await ensureCompetitorProduct(supabase, candidate, Math.floor(reviewedPieceCount));
   } else {
     throw new Error("Unmatched candidates cannot be approved");
   }
-  if (candidateRow.matched_entity_type === "competitor_product" && !competitorProduct) {
+  if ((candidateRow.matched_entity_type === "competitor_product" || createCompetitorIfUnmatched) && !competitorProduct) {
     throw new Error("Matched competitor product is required");
   }
 
@@ -131,6 +139,12 @@ export async function approveAiPriceCandidate({
     reviewed_by: reviewer ?? null,
     review_job_id: reviewJobId ?? null,
     review_method: reviewMethod,
+    ...(createCompetitorIfUnmatched && competitorProduct ? {
+      matched_entity_type: "competitor_product" as const,
+      matched_entity_id: competitorProduct.id,
+      matched_label: competitorLabel(competitorProduct),
+      match_score: 1,
+    } : {}),
     rejection_reason: null,
   });
 
@@ -231,12 +245,13 @@ export async function autoApproveAiPriceCandidatesForVisit({
   return { approvedCount, failedCount, skippedCount, errors };
 }
 
-async function ensureCompetitorProduct(supabase: SupabaseServiceClient, candidate: Record<string, unknown>, pieceCount: number) {
+export async function ensureCompetitorProduct(supabase: SupabaseServiceClient, candidate: Record<string, unknown>, pieceCount: number) {
   const reusableProduct = await findReusableMatchedCompetitorProduct(supabase, candidate);
   if (reusableProduct) return reusableProduct as CompetitorProduct;
 
   const brandName = String(candidate.raw_brand ?? "").trim();
   const productName = String(candidate.raw_product ?? "").trim();
+  const size = inferCompetitorSize(productName);
   if (!brandName || !productName) {
     throw new Error("Brand and product are required to create a price monitor record");
   }
@@ -273,7 +288,19 @@ async function ensureCompetitorProduct(supabase: SupabaseServiceClient, candidat
     .limit(1)
     .maybeSingle();
   if (productLookupError) throw new Error(productLookupError.message);
-  if (existingProduct) return existingProduct as CompetitorProduct;
+  if (existingProduct) {
+    if (!existingProduct.size && size) {
+      const { data: updatedProduct, error: updateError } = await supabase
+        .from("competitor_products")
+        .update({ size })
+        .eq("id", existingProduct.id)
+        .select("*, brands(id,name), sku_matches(*, sku_master(*))")
+        .single();
+      if (updateError) throw new Error(updateError.message);
+      return updatedProduct as CompetitorProduct;
+    }
+    return existingProduct as CompetitorProduct;
+  }
 
   const visit = candidate.offline_store_visits as { store_name?: string | null } | null;
   const { data: createdProduct, error: productCreateError } = await supabase
@@ -288,7 +315,7 @@ async function ensureCompetitorProduct(supabase: SupabaseServiceClient, candidat
       image_url: null,
       pack_type: "unknown",
       package_type: "unknown",
-      size: null,
+      size: inferCompetitorSize(productName),
       piece_count: pieceCount,
       segment: "unknown",
     })
@@ -296,6 +323,15 @@ async function ensureCompetitorProduct(supabase: SupabaseServiceClient, candidat
     .single();
   if (productCreateError) throw new Error(productCreateError.message);
   return createdProduct as CompetitorProduct;
+}
+
+function competitorLabel(product: CompetitorProduct) {
+  return [product.brands?.name, product.normalized_name].filter(Boolean).join(" · ");
+}
+
+function inferCompetitorSize(productName: string) {
+  const match = productName.match(/\b(nb-s|nb|s|m|l|xl|xxl|xxxl|xxxxl)(?=\s|\d|$|-)/i);
+  return match ? match[1].toUpperCase() : null;
 }
 
 async function findReusableMatchedCompetitorProduct(supabase: SupabaseServiceClient, candidate: Record<string, unknown>) {

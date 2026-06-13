@@ -11,11 +11,13 @@ const skuMasterPage = readFileSync("src/app/[locale]/sku-master/page.tsx", "utf8
 const skuMasterTable = readFileSync("src/components/sku-master-segment-table.tsx", "utf8");
 const materialMasterTable = readFileSync("src/components/material-master-table.tsx", "utf8");
 const materialMasterExportRoute = readFileSync("src/app/api/material-master/export/route.ts", "utf8");
-const competitorsPage = readFileSync("src/app/[locale]/competitors/page.tsx", "utf8");
+const competitorProductsPage = readFileSync("src/app/[locale]/competitor-products/page.tsx", "utf8");
+const competitorMappingsPage = readFileSync("src/app/[locale]/competitor-mappings/page.tsx", "utf8");
 const pricesPage = readFileSync("src/app/[locale]/prices/page.tsx", "utf8");
 const priceSnapshotsRoute = readFileSync("src/app/api/price-snapshots/route.ts", "utf8");
-const competitorMappingTablePath = "src/components/competitor-mapping-table.tsx";
-const competitorMappingTable = existsSync(competitorMappingTablePath) ? readFileSync(competitorMappingTablePath, "utf8") : "";
+const competitorProductsTablePath = "src/components/competitor-products-table.tsx";
+const competitorProductsTable = existsSync(competitorProductsTablePath) ? readFileSync(competitorProductsTablePath, "utf8") : "";
+const competitorMappingsTable = readFileSync("src/components/competitor-mappings-table.tsx", "utf8");
 
 test("product grade vocabulary is centralized on master data values", () => {
   assert.match(typesFile, /"AD" \| "BD Eco" \| "BD MID" \| "unknown"/);
@@ -40,10 +42,11 @@ test("master data pages maintain product grade, while price snapshots stay facts
   assert.match(skuMasterPage, /<MaterialMasterTable dict=\{dict\} rows=\{result\.data\} locale=\{locale\}/);
   assert.match(skuMasterTable, /if \(rows\.length === 0\) return null/);
   assert.match(skuMasterTable, /intent" value="update_segment"/);
-  assert.match(competitorsPage, /CompetitorMappingTable/);
-  assert.match(competitorMappingTable, /竞品商品等级|Competitor Grade/);
-  assert.doesNotMatch(competitorMappingTable, /Makuku商品等级|Makuku Grade/);
-  assert.match(competitorMappingTable, /intent: "update_segment"/);
+  assert.match(competitorProductsPage, /CompetitorProductsTable/);
+  assert.match(competitorProductsTable, /商品等级|Product Grade/);
+  assert.match(competitorProductsTable, /intent: "update_segment"/);
+  assert.doesNotMatch(competitorMappingsPage, /update_segment/);
+  assert.doesNotMatch(competitorMappingsTable, /onBlur=\{\(\) => saveProductFields/);
   assert.match(pricesPage, /sku\?\.segment \?\? product\?\.segment \?\? "unknown"/);
   assert.doesNotMatch(priceSnapshotsRoute, /segment/);
 });
@@ -67,18 +70,16 @@ test("photo review creates competitor products with unknown grade and derived vi
   assert.match(dataFile, /candidate\.matched_entity_type !== "competitor_product"/);
 });
 
-test("competitor mapping supports bulk and blur-confirmed grade maintenance in a wide table", () => {
-  assert.equal(existsSync(competitorMappingTablePath), true);
-  assert.match(competitorsPage, /CompetitorMappingTable/);
-  assert.match(competitorMappingTable, /"use client"/);
-  assert.match(competitorMappingTable, /selectedIds/);
-  assert.match(competitorMappingTable, /bulkGrade/);
-  assert.match(competitorMappingTable, /applyBulkGrade/);
-  assert.match(competitorMappingTable, /maybeSaveGrade/);
-  assert.match(competitorMappingTable, /window\.confirm\(copy\.confirmSaveGrade\)/);
-  assert.match(competitorMappingTable, /onBlur=\{\(\) => maybeSaveGrade\(product\)\}/);
-  assert.match(competitorMappingTable, /min-w-\[1420px\]/);
-  assert.match(competitorMappingTable, /min-w-\[1080px\]/);
-  assert.match(competitorMappingTable, /overflow-x-auto/);
-  assert.match(competitorMappingTable, /whitespace-nowrap/);
+test("competitor product master supports bulk and blur-confirmed grade maintenance in a wide table", () => {
+  assert.equal(existsSync(competitorProductsTablePath), true);
+  assert.match(competitorProductsTable, /"use client"/);
+  assert.match(competitorProductsTable, /selectedIds/);
+  assert.match(competitorProductsTable, /bulkGrade/);
+  assert.match(competitorProductsTable, /applyBulkGrade/);
+  assert.match(competitorProductsTable, /saveProductFields/);
+  assert.match(competitorProductsTable, /copy\.confirmSaveGrade/);
+  assert.match(competitorProductsTable, /onBlur=\{\(\) => saveProductFields\(product, \{ segment: draft\.segment \}, copy\.confirmSaveGrade\)\}/);
+  assert.match(competitorProductsTable, /min-w-\[1500px\]/);
+  assert.match(competitorProductsTable, /overflow-x-auto/);
+  assert.match(competitorProductsTable, /whitespace-nowrap/);
 });

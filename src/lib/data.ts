@@ -140,6 +140,7 @@ export async function getChannels(): Promise<QueryResult<ChannelMaster[]>> {
   const { data, error } = await supabase
     .from("channels")
     .select("*")
+    .eq("active", true)
     .order("sort_order")
     .order("name");
 
@@ -690,7 +691,7 @@ export async function getPriceSnapshots(): Promise<QueryResult<PriceSnapshot[]>>
   return fromSupabase<PriceSnapshot[]>(
     supabase
       .from("price_snapshots")
-      .select("*, sku_master(*), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*))), ai_price_candidates(id, offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))")
+      .select("*, sku_master(*), offline_stores(id,name,city,province,city_name,district,channel_type), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*))), ai_price_candidates(id, offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))")
       .order("captured_at", { ascending: false })
       .limit(100),
     demoPriceSnapshots,

@@ -12,7 +12,7 @@ const zh: typeof en = {
   nav: {
     dashboard: "仪表盘",
     skuMaster: "SKU 主数据",
-    competitors: "竞品商品",
+    competitors: "竞品商品主数据",
     prices: "价格监控",
     offlineUploads: "线下上传",
     promoEvents: "促销事件",
@@ -141,7 +141,7 @@ const zh: typeof en = {
     pack: "包装",
   },
   competitors: {
-    title: "竞品商品",
+    title: "竞品商品主数据",
     addTitle: "新增竞品商品",
     rawTitle: "原始标题",
     normalizedName: "标准名称",
