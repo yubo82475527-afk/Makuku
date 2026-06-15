@@ -60,9 +60,8 @@ test("prices page and export show actual owner and filter by derived Makuku SKU 
   assert.doesNotMatch(pricesPage, /getMaterialMaster\(\)/);
   assert.match(pricesPage, /snapshotMakukuMaterialCode/);
   assert.match(pricesPage, /params\.sku/);
-  assert.match(priceSnapshotsTable, /商品类型|Product Type/);
-  assert.match(priceSnapshotsTable, /ownerType/);
-  assert.match(priceSnapshotsTable, /Makuku SKU/);
+  assert.doesNotMatch(priceSnapshotsTable, /商品类型|Product Type/);
+  assert.match(priceSnapshotsTable, /priceBrandSeriesLabel/);
   assert.match(priceExportRoute, /Product Type/);
   assert.match(priceExportRoute, /sku_master\(\*\)/);
   assert.match(priceExportRoute, /snapshotMakukuMaterialCode/);
@@ -97,7 +96,7 @@ test("price snapshots query supports owner visibility while market price page sh
 });
 
 test("real market price page removes ad hoc snapshot adjustment controls", () => {
-  assert.doesNotMatch(priceSnapshotsTable, /调整关联|Adjust/);
+  assert.doesNotMatch(priceSnapshotsTable, /璋冩暣鍏宠仈|Adjust/);
   assert.doesNotMatch(priceSnapshotsTable, /AdjustmentDialog/);
   assert.doesNotMatch(priceSnapshotsTable, /method: "PATCH"/);
   assert.doesNotMatch(priceSnapshotsTable, /owner_type/);

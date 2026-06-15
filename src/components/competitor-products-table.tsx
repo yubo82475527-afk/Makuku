@@ -66,10 +66,11 @@ export function CompetitorProductsTable({ products, locale, dict }: CompetitorPr
   return (
     <div className="space-y-3">
       <div className="overflow-x-auto rounded-lg border border-slate-200">
-        <table className="min-w-[1120px] w-full table-fixed text-left text-sm">
+        <table className="min-w-[1240px] w-full table-fixed text-left text-sm">
           <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500">
             <tr>
               <th className="w-44 px-3 py-2 whitespace-nowrap">{dict.common.brand}</th>
+              <th className="w-36 px-3 py-2 whitespace-nowrap">{copy.series}</th>
               <th className="w-72 px-3 py-2 whitespace-nowrap">{dict.common.product}</th>
               <th className="w-32 px-3 py-2 whitespace-nowrap">{copy.packageType}</th>
               <th className="w-24 px-3 py-2 whitespace-nowrap">{dict.common.size}</th>
@@ -88,6 +89,15 @@ export function CompetitorProductsTable({ products, locale, dict }: CompetitorPr
                 <tr key={product.id} className="hover:bg-slate-50">
                   <td className="overflow-hidden px-3 py-3 font-medium">
                     <div className="truncate" title={product.brands?.name ?? ""}>{product.brands?.name}</div>
+                  </td>
+                  <td className="px-3 py-3">
+                    <TextInput
+                      value={draft.product_series}
+                      onChange={(event) => setDraftField(product, "product_series", event.target.value)}
+                      onBlur={() => saveProductFields(product, { product_series: draft.product_series }, copy.confirmSaveProduct)}
+                      disabled={isSaving}
+                      className="w-32"
+                    />
                   </td>
                   <td className="overflow-hidden px-3 py-3">
                     <div className="truncate" title={product.normalized_name}>{product.normalized_name}</div>
@@ -152,6 +162,7 @@ export function CompetitorProductsTable({ products, locale, dict }: CompetitorPr
 }
 
 type ProductDraft = {
+  product_series: string;
   package_type: string;
   size: string;
   piece_count: string;
@@ -160,6 +171,7 @@ type ProductDraft = {
 
 function emptyDraft(): ProductDraft {
   return {
+    product_series: "",
     package_type: "unknown",
     size: "",
     piece_count: "",
@@ -169,6 +181,7 @@ function emptyDraft(): ProductDraft {
 
 function draftFromProduct(product: CompetitorProduct): ProductDraft {
   return {
+    product_series: product.product_series ?? "",
     package_type: product.package_type ?? "unknown",
     size: product.size ?? "",
     piece_count: product.piece_count ? String(product.piece_count) : "",
@@ -200,6 +213,7 @@ function formatDateTime(value: string | null | undefined, locale: string) {
 function getCopy(locale: string) {
   const isZh = locale === "zh";
   return {
+    series: isZh ? "系列" : "Series",
     confirmSaveProduct: isZh ? "是否保存本次竞品主数据修改？" : "Save this competitor product master change?",
     packageType: isZh ? "包装类型" : "Package Type",
     mappingStatus: isZh ? "映射状态" : "Mapping Status",

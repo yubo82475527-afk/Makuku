@@ -91,7 +91,8 @@ export async function POST(request: Request) {
         product_url: body.product_url || null,
         image_url: body.image_url || null,
         pack_type: body.pack_type,
-        competitor_sku_code: cleanNullableText(body.competitor_sku_code),
+        competitor_sku_code: normalizeOptionalText(body.competitor_sku_code),
+        product_series: normalizeOptionalText(body.product_series),
         package_type: String(body.package_type ?? "unknown"),
         size: body.size,
         piece_count: Number(body.piece_count),
@@ -157,10 +158,11 @@ function buildCompetitorProductUpdate(body: Record<string, unknown>) {
   const update: Record<string, unknown> = {};
   if ("normalized_name" in body) update.normalized_name = requiredCleanText(body.normalized_name, "normalized_name");
   if ("raw_title" in body) update.raw_title = requiredCleanText(body.raw_title, "raw_title");
-  if ("competitor_sku_code" in body) update.competitor_sku_code = cleanNullableText(body.competitor_sku_code);
+  if ("competitor_sku_code" in body) update.competitor_sku_code = normalizeOptionalText(body.competitor_sku_code);
+  if ("product_series" in body) update.product_series = normalizeOptionalText(body.product_series);
   if ("package_type" in body) update.package_type = String(body.package_type ?? "").trim() || "unknown";
   if ("pack_type" in body) update.pack_type = normalizePackType(body.pack_type);
-  if ("size" in body) update.size = cleanNullableText(body.size);
+  if ("size" in body) update.size = normalizeOptionalText(body.size);
   if ("piece_count" in body) update.piece_count = normalizePieceCount(body.piece_count);
   if ("segment" in body) update.segment = normalizeProductGrade(String(body.segment ?? ""));
   if ("status" in body) update.status = normalizeCompetitorStatus(body.status);
@@ -173,7 +175,7 @@ function requiredCleanText(value: unknown, field: string) {
   return text;
 }
 
-function cleanNullableText(value: unknown) {
+function normalizeOptionalText(value: unknown) {
   const text = String(value ?? "").trim();
   return text || null;
 }

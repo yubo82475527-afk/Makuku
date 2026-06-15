@@ -4,7 +4,8 @@ import type { ReactNode } from "react";
 import { AppShell } from "@/components/app-shell";
 import { PriceSnapshotsTable } from "@/components/price-snapshots-table";
 import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
-import { getBrands, getCompetitorProducts, getPriceSnapshots } from "@/lib/data";
+import { priceBrandSeriesLabel } from "@/lib/brand-series";
+import { getCompetitorProducts, getPriceSnapshots } from "@/lib/data";
 import { getPageI18n } from "@/lib/i18n/server";
 import { productGradeOptions } from "@/lib/segments";
 import type { PriceSnapshot } from "@/lib/types";
@@ -41,14 +42,14 @@ export default async function PricesPage({
   currentParams.set("locale", locale);
   const exportHref = `/api/price-snapshots/export?${currentParams.toString()}`;
 
-  const [pricesResult, productsResult, brandsResult] = await Promise.all([
+  const [pricesResult, productsResult] = await Promise.all([
     getPriceSnapshots(),
     getCompetitorProducts(),
-    getBrands(),
   ]);
 
   const productSegments = productsResult.data.map((product) => resolveProductSegment(product));
   const productSizes = Array.from(new Set([...productSegments.map((segment) => segment.size), params.size].filter(Boolean) as string[])).sort();
+  const brandSeriesOptions = uniqueOptions(pricesResult.data.map(priceBrandSeriesLabel));
   const prices = pricesResult.data.filter((snapshot) => snapshotMatchesFilters(snapshot, params));
   const total = prices.length;
   const pageCount = Math.max(1, Math.ceil(total / perPage));
@@ -62,13 +63,13 @@ export default async function PricesPage({
 
   return (
     <AppShell locale={locale} dict={dict} title={dict.prices.title} currentPath={currentPath} isDemo={pricesResult.isDemo}>
-      <DataNotice dict={dict} error={pricesResult.error ?? productsResult.error ?? brandsResult.error} />
+      <DataNotice dict={dict} error={pricesResult.error ?? productsResult.error} />
       <Card className="mb-4">
         <form className="grid gap-3 md:grid-cols-4 xl:grid-cols-8">
           <SelectInput name="brand" defaultValue={params.brand ?? ""}>
             <option value="">{dict.common.allBrands}</option>
-            {brandsResult.data.filter((brand) => !brand.is_own_brand).map((brand) => (
-              <option key={brand.id} value={brand.id}>{brand.name}</option>
+            {brandSeriesOptions.map((brand) => (
+              <option key={brand} value={brand}>{brand}</option>
             ))}
           </SelectInput>
           <SelectInput name="priceBand" defaultValue={params.priceBand ?? ""}>
@@ -195,7 +196,7 @@ function snapshotMatchesFilters(
   const line = sku ? productLineLabel(sku.pack_type) : productSegment.line;
   const size = sku?.size ?? productSegment.size;
   const priceBand = sku?.segment ?? product?.segment ?? "unknown";
-  if (params.brand && product?.brand_id !== params.brand) return false;
+  if (params.brand && priceBrandSeriesLabel(snapshot) !== params.brand) return false;
   if (params.sku && !matchesText(snapshotMakukuMaterialCode(snapshot), params.sku)) return false;
   if (params.line && line !== params.line) return false;
   if (params.priceBand && priceBand !== params.priceBand) return false;
@@ -277,6 +278,10 @@ function splitLegacyRegion(value: string | null | undefined) {
 
 function matchesText(value: string | null | undefined, query: string) {
   return String(value ?? "").toLowerCase().includes(query.trim().toLowerCase());
+}
+
+function uniqueOptions(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort();
 }
 
 function productLineLabel(value: string) {

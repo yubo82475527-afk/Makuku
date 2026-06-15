@@ -129,6 +129,7 @@ export type CompetitorProduct = {
   competitor_sku_code?: string | null;
   raw_title: string;
   normalized_name: string;
+  product_series?: string | null;
   channel: Channel;
   shop_name: string | null;
   product_url: string | null;

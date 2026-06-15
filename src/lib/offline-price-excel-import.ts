@@ -18,6 +18,7 @@ export type OfflinePriceExcelRow = {
   store_type: string;
   segment: Segment;
   brand: string;
+  product_series: string | null;
   package_type: string;
   product_name: string;
   size: string;
@@ -108,8 +109,8 @@ export function storeKey(row: Pick<OfflinePriceExcelRow, "area" | "city" | "stor
   return [row.area, row.city, row.store_name, row.store_type].map(normalizeKey).join("|");
 }
 
-export function productKey(row: Pick<OfflinePriceExcelRow, "brand" | "package_type" | "product_name" | "size" | "piece_count">) {
-  return [row.brand, row.package_type, row.product_name, row.size, row.piece_count ?? ""].map(normalizeKey).join("|");
+export function productKey(row: Pick<OfflinePriceExcelRow, "brand" | "product_series" | "package_type" | "product_name" | "size" | "piece_count">) {
+  return [row.brand, row.product_series ?? "", row.package_type, row.product_name, row.size, row.piece_count ?? ""].map(normalizeKey).join("|");
 }
 
 export function importSource(fileMonth: string, week: number) {
@@ -138,6 +139,7 @@ function parseRow(row: unknown[], rowNumber: number, headerIndex: Map<string, nu
     store_type: valueAt(row, headerIndex, "TYPE TOKO"),
     segment: normalizeProductGrade(valueAt(row, headerIndex, "CATEGORY")),
     brand: valueAt(row, headerIndex, "BRAND"),
+    product_series: null,
     package_type: valueAt(row, headerIndex, "GPL 2") || "unknown",
     product_name: valueAt(row, headerIndex, "NAMA PRODUCT MAKUKU"),
     size: valueAt(row, headerIndex, "SIZE").toUpperCase(),

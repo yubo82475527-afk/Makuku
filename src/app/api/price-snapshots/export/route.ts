@@ -1,4 +1,5 @@
 import { formatIdr, formatJakartaTime, formatPricePerPiece } from "@/lib/format";
+import { priceBrandSeriesLabel } from "@/lib/brand-series";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import type { PriceSnapshot } from "@/lib/types";
 
@@ -84,7 +85,7 @@ export async function GET(request: Request) {
       const productLine = skuMaster ? productLineLabel(skuMaster.pack_type) : productSegment.line;
       const productSize = skuMaster?.size ?? productSegment.size;
       const productPriceBand = skuMaster?.segment ?? product?.segment ?? "unknown";
-      if (brand && product?.brand_id !== brand) return false;
+      if (brand && priceBrandSeriesLabel(snapshot) !== brand) return false;
       if (sku && !matchesText(snapshotMakukuMaterialCode(snapshot), sku)) return false;
       if (line && productLine !== line) return false;
       if (priceBand && productPriceBand !== priceBand) return false;
@@ -185,7 +186,7 @@ function snapshotMakukuMaterialCode(snapshot: PriceSnapshot) {
 }
 
 function snapshotBrandName(snapshot: PriceSnapshot) {
-  return snapshotOwnerType(snapshot) === "makuku" ? "Makuku" : snapshot.competitor_products?.brands?.name ?? "-";
+  return priceBrandSeriesLabel(snapshot) || "-";
 }
 
 function snapshotProductName(snapshot: PriceSnapshot) {

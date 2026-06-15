@@ -2,6 +2,7 @@
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import { normalizePriceSnapshot } from "@/lib/business";
 import { requireAdminSession } from "@/lib/auth-session";
+import { splitBrandSeries } from "@/lib/brand-series";
 import { ensureSkuMasterFromMaterial } from "@/lib/sku-master-bridge";
 import {
   parseOfflinePriceExcel,
@@ -10,7 +11,7 @@ import {
   type OfflinePriceExcelPreview,
   type OfflinePriceExcelRow,
 } from "@/lib/offline-price-excel-import";
-import type { CompetitorProduct, MaterialMaster, SkuMaster } from "@/lib/types";
+import type { Brand, CompetitorProduct, MaterialMaster, SkuMaster } from "@/lib/types";
 
 const maxFileSizeBytes = 15 * 1024 * 1024;
 
@@ -57,7 +58,8 @@ function summarizePreview(preview: OfflinePriceExcelPreview) {
 
 async function importPreview(supabase: Supabase, preview: OfflinePriceExcelPreview) {
   const validRows = preview.rows.filter((row) => row.errors.length === 0);
-  const importRows = validRows.filter((row) => row.weeks.some((week) => week.package_price !== null));
+  const rawImportRows = validRows.filter((row) => row.weeks.some((week) => week.package_price !== null));
+  const importRows = normalizeBrandSeriesRows(rawImportRows, await loadExistingBrands(supabase));
   const stores = await ensureStores(supabase, importRows);
   const brands = await ensureBrands(supabase, importRows);
   const competitors = await ensureCompetitorProducts(supabase, importRows.filter((row) => !row.is_makuku), brands);
@@ -125,6 +127,25 @@ async function importPreview(supabase: Supabase, preview: OfflinePriceExcelPrevi
     skipped_snapshots: rowErrors.length,
     row_errors: rowErrors.slice(0, 100),
   };
+}
+
+async function loadExistingBrands(supabase: Supabase) {
+  const { data, error } = await supabase.from("brands").select("id,name,is_own_brand").limit(10000);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Pick<Brand, "name" | "is_own_brand">[];
+}
+
+function normalizeBrandSeriesRows(rows: OfflinePriceExcelRow[], existingBrands: Pick<Brand, "name" | "is_own_brand">[]) {
+  const competitorBrands = existingBrands.filter((brand) => !brand.is_own_brand);
+  return rows.map((row) => {
+    if (row.is_makuku) return { ...row, product_series: null };
+    const split = splitBrandSeries(row.brand, competitorBrands);
+    return {
+      ...row,
+      brand: split.brandName,
+      product_series: split.productSeries,
+    };
+  });
 }
 
 async function ensureStores(supabase: Supabase, rows: OfflinePriceExcelRow[]) {
@@ -201,6 +222,7 @@ async function ensureCompetitorProducts(supabase: Supabase, rows: OfflinePriceEx
     const brandName = product.brands?.name ?? "";
     products.set(productKey({
       brand: brandName,
+      product_series: product.product_series ?? null,
       package_type: product.package_type ?? "unknown",
       product_name: product.normalized_name,
       size: product.size ?? "",
@@ -214,6 +236,7 @@ async function ensureCompetitorProducts(supabase: Supabase, rows: OfflinePriceEx
       .from("competitor_products")
       .insert(missingRows.map((row) => ({
         brand_id: brands.get(normalizeKey(row.brand)),
+        product_series: row.product_series,
         raw_title: row.product_name,
         normalized_name: row.product_name,
         channel: "manual",
@@ -232,6 +255,7 @@ async function ensureCompetitorProducts(supabase: Supabase, rows: OfflinePriceEx
     for (const product of (inserted ?? []) as CompetitorProduct[]) {
       products.set(productKey({
         brand: product.brands?.name ?? "",
+        product_series: product.product_series ?? null,
         package_type: product.package_type ?? "unknown",
         product_name: product.normalized_name,
         size: product.size ?? "",

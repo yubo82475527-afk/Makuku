@@ -3,6 +3,7 @@
 import { Loader2, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { priceBrandSeriesLabel } from "@/lib/brand-series";
 import { formatIdr, formatJakartaTime, formatPricePerPiece } from "@/lib/format";
 import type { PriceSnapshot } from "@/lib/types";
 
@@ -256,7 +257,7 @@ function snapshotMakukuSku(snapshot: PriceSnapshot) {
 }
 
 function snapshotBrandName(snapshot: PriceSnapshot) {
-  return snapshotOwnerType(snapshot) === "makuku" ? "Makuku" : snapshot.competitor_products?.brands?.name ?? "-";
+  return priceBrandSeriesLabel(snapshot) || "-";
 }
 
 function snapshotProductName(snapshot: PriceSnapshot) {
