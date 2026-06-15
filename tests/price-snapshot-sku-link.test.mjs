@@ -8,6 +8,7 @@ const bridgeMigration = existsSync(bridgeMigrationPath) ? readFileSync(bridgeMig
 const ownershipMigration = existsSync(ownershipMigrationPath) ? readFileSync(ownershipMigrationPath, "utf8") : "";
 const typesFile = readFileSync("src/lib/types.ts", "utf8");
 const priceSnapshotsRoute = readFileSync("src/app/api/price-snapshots/route.ts", "utf8");
+const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const aiPriceReview = readFileSync("src/lib/ai-price-review.ts", "utf8");
 const pricesPage = readFileSync("src/app/[locale]/prices/page.tsx", "utf8");
 const priceSnapshotsTable = readFileSync("src/components/price-snapshots-table.tsx", "utf8");
@@ -56,7 +57,7 @@ test("price snapshots PATCH switches owner without updating mapping rules", () =
 });
 
 test("prices page and export show actual owner and filter by derived Makuku SKU code", () => {
-  assert.match(pricesPage, /getMaterialMaster\(\)/);
+  assert.doesNotMatch(pricesPage, /getMaterialMaster\(\)/);
   assert.match(pricesPage, /snapshotMakukuMaterialCode/);
   assert.match(pricesPage, /params\.sku/);
   assert.match(priceSnapshotsTable, /商品类型|Product Type/);
@@ -65,4 +66,40 @@ test("prices page and export show actual owner and filter by derived Makuku SKU 
   assert.match(priceExportRoute, /Product Type/);
   assert.match(priceExportRoute, /sku_master\(\*\)/);
   assert.match(priceExportRoute, /snapshotMakukuMaterialCode/);
+});
+
+test("price snapshots query supports owner visibility while market price page shows all facts", () => {
+  assert.match(dataFile, /export type PriceSnapshotOwnerFilter = "all" \| "makuku" \| "competitor"/);
+  assert.match(dataFile, /export type PriceSnapshotFilters/);
+  assert.match(dataFile, /filters: PriceSnapshotFilters = \{\}/);
+  assert.match(dataFile, /const owner = filters\.owner \?\? "all"/);
+  assert.match(dataFile, /filters\.limit \?\? 1000/);
+  assert.doesNotMatch(dataFile, /\.limit\(100\)/);
+  assert.match(dataFile, /\.order\("captured_at", \{ ascending: false \}\)/);
+  assert.match(dataFile, /\.order\("created_at", \{ ascending: false \}\)/);
+  assert.match(dataFile, /\.order\("id", \{ ascending: true \}\)/);
+  assert.match(dataFile, /owner === "makuku"[\s\S]*\.not\("sku_master_id", "is", null\)[\s\S]*\.is\("competitor_product_id", null\)/);
+  assert.match(dataFile, /owner === "competitor"[\s\S]*\.not\("competitor_product_id", "is", null\)/);
+
+  assert.match(pricesPage, /getPriceSnapshots\(\)/);
+  assert.match(pricesPage, /name="brand"/);
+  assert.doesNotMatch(pricesPage, /owner\?: "all" \| "makuku" \| "competitor"/);
+  assert.doesNotMatch(pricesPage, /normalizeOwner\(params\.owner\)/);
+  assert.doesNotMatch(pricesPage, /getPriceSnapshots\(\{ owner \}\)/);
+  assert.doesNotMatch(pricesPage, /name="owner"/);
+  assert.doesNotMatch(pricesPage, /value="makuku"/);
+  assert.doesNotMatch(pricesPage, /owner !== "all"/);
+
+  assert.match(priceExportRoute, /const owner = normalizeOwner\(searchParams\.get\("owner"\)\)/);
+  assert.match(priceExportRoute, /applyOwnerFilter/);
+  assert.match(priceExportRoute, /owner === "makuku"[\s\S]*snapshotOwnerType\(snapshot\) === "makuku"/);
+  assert.match(priceExportRoute, /owner === "competitor"[\s\S]*snapshotOwnerType\(snapshot\) === "competitor"/);
+});
+
+test("real market price page removes ad hoc snapshot adjustment controls", () => {
+  assert.doesNotMatch(priceSnapshotsTable, /调整关联|Adjust/);
+  assert.doesNotMatch(priceSnapshotsTable, /AdjustmentDialog/);
+  assert.doesNotMatch(priceSnapshotsTable, /method: "PATCH"/);
+  assert.doesNotMatch(priceSnapshotsTable, /owner_type/);
+  assert.doesNotMatch(priceSnapshotsTable, /Pencil/);
 });

@@ -51,10 +51,8 @@ export function CompetitorMappingsTable({ products, materials, locale, dict, map
                   <div className="mt-1 text-xs text-slate-500">{product.competitor_sku_code ?? product.raw_title}</div>
                 </td>
                 <td className="px-3 py-3 text-xs text-slate-600">
-                  <div>{copy.productType}: {product.pack_type ?? "-"}</div>
                   <div>{copy.packageType}: {product.package_type ?? "-"}</div>
                   <div>{dict.common.size}: {product.size ?? "-"} / {dict.common.pcs}: {product.piece_count ?? "-"}</div>
-                  <div>{copy.competitorGrade}: {product.segment ?? "-"}</div>
                 </td>
                 <td className="px-3 py-3">
                   <div className="flex min-w-0 items-center gap-2">
@@ -129,8 +127,6 @@ function getCopy(locale: string) {
   return {
     competitorSku: isZh ? "竞品 SKU" : "Competitor SKU",
     spec: isZh ? "规格摘要" : "Spec",
-    competitorGrade: isZh ? "商品等级" : "Product Grade",
-    productType: isZh ? "产品类型" : "Product Type",
     packageType: isZh ? "包装类型" : "Package Type",
     mapProductMaster: isZh ? "对标 Makuku SKU" : "Mapped Makuku SKU",
     mappingStatus: isZh ? "关联状态" : "Mapping Status",

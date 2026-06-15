@@ -66,6 +66,13 @@ export type AiPriceCandidateFilters = {
   perPage?: number;
 };
 
+export type PriceSnapshotOwnerFilter = "all" | "makuku" | "competitor";
+
+export type PriceSnapshotFilters = {
+  owner?: PriceSnapshotOwnerFilter;
+  limit?: number;
+};
+
 export type ProductSegmentPriceIndexFilters = {
   province?: string;
   cityName?: string;
@@ -685,17 +692,36 @@ export async function getCompetitorProducts(): Promise<QueryResult<CompetitorPro
   );
 }
 
-export async function getPriceSnapshots(): Promise<QueryResult<PriceSnapshot[]>> {
-  if (!hasSupabaseConfig()) return { data: demoPriceSnapshots, error: null, isDemo: true };
+export async function getPriceSnapshots(filters: PriceSnapshotFilters = {}): Promise<QueryResult<PriceSnapshot[]>> {
+  const owner = filters.owner ?? "all";
+  const limit = Math.min(5000, Math.max(1, Math.floor(filters.limit ?? 1000)));
+  const fallback = filterPriceSnapshotsByOwner(demoPriceSnapshots, owner).slice(0, limit);
+  if (!hasSupabaseConfig()) return { data: fallback, error: null, isDemo: true };
   const supabase = createSupabaseServiceClient();
+  let query = supabase
+    .from("price_snapshots")
+    .select("*, sku_master(*), offline_stores(id,name,city,province,city_name,district,channel_type), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*))), ai_price_candidates(id, offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))");
+
+  if (owner === "makuku") {
+    query = query.not("sku_master_id", "is", null).is("competitor_product_id", null);
+  } else if (owner === "competitor") {
+    query = query.not("competitor_product_id", "is", null);
+  }
+
   return fromSupabase<PriceSnapshot[]>(
-    supabase
-      .from("price_snapshots")
-      .select("*, sku_master(*), offline_stores(id,name,city,province,city_name,district,channel_type), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*))), ai_price_candidates(id, offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))")
+    query
       .order("captured_at", { ascending: false })
-      .limit(100),
-    demoPriceSnapshots,
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: true })
+      .limit(limit),
+    fallback,
   );
+}
+
+function filterPriceSnapshotsByOwner(snapshots: PriceSnapshot[], owner: PriceSnapshotOwnerFilter) {
+  if (owner === "makuku") return snapshots.filter((snapshot) => snapshot.sku_master_id && !snapshot.competitor_product_id);
+  if (owner === "competitor") return snapshots.filter((snapshot) => snapshot.competitor_product_id);
+  return snapshots;
 }
 
 export async function getPromoEvents(): Promise<QueryResult<PromoEvent[]>> {

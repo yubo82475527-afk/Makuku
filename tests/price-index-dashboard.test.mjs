@@ -12,16 +12,17 @@ const offlineStoresRoute = readFileSync("src/app/api/offline-stores/route.ts", "
 
 test("app shell groups the backend navigation for price positioning and master data", () => {
   assert.match(appShell, /Dashboard/);
-  assert.match(appShell, /价格监控|Price Monitoring/);
-  assert.match(appShell, /SKU价格监控|SKU Price Monitor/);
-  assert.match(appShell, /照片价格复核|Photo Price Review/);
-  assert.match(appShell, /价格定位管理|Price Positioning/);
-  assert.match(appShell, /竞品映射管理|Competitor Mapping/);
-  assert.match(appShell, /市场标杆管理|Market Benchmarks/);
-  assert.match(appShell, /主数据|Master Data/);
-  assert.match(appShell, /产品主数据|Product Master/);
-  assert.match(appShell, /门店主数据|Store Master/);
-  assert.match(appShell, /用户管理|User Management/);
+  assert.match(appShell, /Price Monitoring/);
+  assert.match(appShell, /真实市场价格|Real Market Price/);
+  assert.match(appShell, /Photo Price Review/);
+  assert.match(appShell, /Price Positioning/);
+  assert.match(appShell, /Competitor Mapping/);
+  assert.match(appShell, /Market Benchmarks/);
+  assert.match(appShell, /Master Data/);
+  assert.match(appShell, /Product Master/);
+  assert.match(appShell, /Store Master/);
+  assert.match(appShell, /User Management/);
+  assert.doesNotMatch(appShell, /SKU Price Monitor/);
   assert.doesNotMatch(appShell, /Executive Board/);
 });
 
@@ -44,7 +45,7 @@ test("location reverse and offline stores support structured province city distr
 });
 
 test("dashboard is the product segment price index board with problem stores", () => {
-  assert.match(dashboardPage, /产品段价格指数战况|Product Segment Price Index/);
+  assert.match(dashboardPage, /Product Segment Price Index/);
   assert.match(dashboardPage, /problemStoreCount/);
   assert.match(dashboardPage, /worstProblemStore/);
   assert.match(dashboardPage, /priceIndex/);
@@ -52,8 +53,8 @@ test("dashboard is the product segment price index board with problem stores", (
   assert.match(dashboardPage, /province/);
   assert.match(dashboardPage, /cityName/);
   assert.match(dashboardPage, /district/);
-  assert.doesNotMatch(dashboardPage, /首页倒推的后台能力/);
-  assert.doesNotMatch(dashboardPage, /今日最该处理/);
+  assert.doesNotMatch(dashboardPage, /PriorityActionCard/);
+  assert.doesNotMatch(dashboardPage, /Today Priority Actions/);
 });
 
 test("dashboard derived data calculates price index and supports filter and sort parameters", () => {

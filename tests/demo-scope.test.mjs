@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 const appShell = readFileSync("src/components/app-shell.tsx", "utf8");
+const rootLayout = readFileSync("src/app/layout.tsx", "utf8");
 const demoData = readFileSync("src/lib/demo-data.ts", "utf8");
 const dashboardPage = readFileSync("src/app/[locale]/dashboard/page.tsx", "utf8");
 const pricesPage = readFileSync("src/app/[locale]/prices/page.tsx", "utf8");
@@ -18,7 +19,8 @@ const priceSnapshotsExportRoute = readFileSync("src/app/api/price-snapshots/expo
 test("board navigation exposes the one-week product workflow", () => {
   assert.match(appShell, /Dashboard/);
   assert.match(appShell, /Price Monitoring/);
-  assert.match(appShell, /SKU Price Monitor/);
+  assert.match(appShell, /Real Market Price/);
+  assert.match(appShell, /真实市场价格/);
   assert.match(appShell, /Photo Price Review/);
   assert.match(appShell, /Price Positioning/);
   assert.match(appShell, /Competitor Mapping/);
@@ -31,6 +33,7 @@ test("board navigation exposes the one-week product workflow", () => {
   assert.match(appShell, /\/market-benchmarks/);
 
   assert.doesNotMatch(appShell, /Operating Queue/);
+  assert.doesNotMatch(appShell, /SKU Price Monitor/);
   assert.doesNotMatch(appShell, /AI Debug/);
   assert.doesNotMatch(appShell, /TikTok Phase 2|tiktokPhase2/);
   assert.doesNotMatch(appShell, /Channels|channels/);
@@ -54,6 +57,11 @@ test("desktop sidebar can collapse to an icon rail and persist the choice", () =
   assert.match(appShell, /w-\[64px\]/);
   assert.match(appShell, /aria-label=\{sidebarToggleLabel\}/);
   assert.match(appShell, /title=\{item\.label\[locale\]\}/);
+});
+
+test("root layout avoids build-time Google font network fetches", () => {
+  assert.doesNotMatch(rootLayout, /next\/font\/google/);
+  assert.match(rootLayout, /className="h-full antialiased"/);
 });
 
 test("visible sample data does not look like throwaway mock data", () => {
@@ -128,7 +136,12 @@ test("prices table is store-region focused without manual snapshot entry", () =>
   assert.match(pricesPage, /name="cityName"/);
   assert.match(pricesPage, /name="district"/);
   assert.match(pricesPage, /name="store"/);
+  assert.match(pricesPage, /name="brand"/);
   assert.match(pricesPage, /currentParams\.set\("locale", locale\)/);
+  assert.doesNotMatch(pricesPage, /name="owner"/);
+  assert.doesNotMatch(pricesPage, /name="channel"/);
+  assert.doesNotMatch(pricesPage, /currentParams\.set\("owner"/);
+  assert.doesNotMatch(pricesPage, /currentParams\.set\("channel"/);
   assert.doesNotMatch(pricesPage, /name="line"/);
   assert.doesNotMatch(pricesPage, /dict\.prices\.promoType/);
   assert.doesNotMatch(pricesPage, /PriceSnapshotActions/);
@@ -146,6 +159,8 @@ test("price snapshot CSV export follows the current language and table columns",
   assert.match(priceSnapshotsExportRoute, /"Create Time"/);
   assert.match(priceSnapshotsExportRoute, /formatSnapshotCreatedAt\(snapshot\)/);
   assert.match(priceSnapshotsExportRoute, /channelLabel\(snapshot\.channel, locale\)/);
+  assert.doesNotMatch(priceSnapshotsExportRoute, /searchParams\.get\("channel"\)/);
+  assert.doesNotMatch(priceSnapshotsExportRoute, /snapshot\.channel !== channel/);
   assert.doesNotMatch(priceSnapshotsExportRoute, /"snapshot_id"/);
   assert.doesNotMatch(priceSnapshotsExportRoute, /"price_per_piece"/);
 });

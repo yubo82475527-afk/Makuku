@@ -57,8 +57,8 @@ function downloadName() {
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
+    const owner = normalizeOwner(searchParams.get("owner"));
     const brand = searchParams.get("brand");
-    const channel = searchParams.get("channel");
     const sku = searchParams.get("sku");
     const line = searchParams.get("line");
     const priceBand = searchParams.get("priceBand");
@@ -77,7 +77,7 @@ export async function GET(request: Request) {
       .limit(5000);
     if (error) return Response.json({ error: error.message }, { status: 500 });
 
-    const snapshots = ((data ?? []) as PriceSnapshot[]).filter((snapshot) => {
+    const snapshots = applyOwnerFilter((data ?? []) as PriceSnapshot[], owner).filter((snapshot) => {
       const product = snapshot.competitor_products;
       const skuMaster = snapshotMakukuSku(snapshot);
       const productSegment = product ? resolveProductSegment(product) : { line: "Unknown", size: "Unknown" };
@@ -85,7 +85,6 @@ export async function GET(request: Request) {
       const productSize = skuMaster?.size ?? productSegment.size;
       const productPriceBand = skuMaster?.segment ?? product?.segment ?? "unknown";
       if (brand && product?.brand_id !== brand) return false;
-      if (channel && snapshot.channel !== channel) return false;
       if (sku && !matchesText(snapshotMakukuMaterialCode(snapshot), sku)) return false;
       if (line && productLine !== line) return false;
       if (priceBand && productPriceBand !== priceBand) return false;
@@ -132,6 +131,17 @@ export async function GET(request: Request) {
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Export failed" }, { status: 500 });
   }
+}
+
+function normalizeOwner(value: string | null) {
+  if (value === "makuku" || value === "competitor") return value;
+  return "all";
+}
+
+function applyOwnerFilter(snapshots: PriceSnapshot[], owner: string) {
+  if (owner === "makuku") return snapshots.filter((snapshot) => snapshotOwnerType(snapshot) === "makuku");
+  if (owner === "competitor") return snapshots.filter((snapshot) => snapshotOwnerType(snapshot) === "competitor");
+  return snapshots;
 }
 
 type PriceSnapshotForStoreRegion = {

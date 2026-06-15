@@ -20,11 +20,16 @@ const require = createRequire(import.meta.url);
 test("competitor product master is framed as product master data with editable master fields", () => {
   assert.match(competitorProductsPage, /竞品主数据|Competitor Product Master/);
   assert.match(competitorProductsPage, /Excel 导入|Excel Import/);
-  assert.match(competitorProductsTable, /productType/);
   assert.match(competitorProductsTable, /packageType/);
   assert.match(competitorProductsTable, /piece_count/);
   assert.match(competitorProductsTable, /status/);
   assert.match(competitorProductsTable, /intent: "update_fields"/);
+  assert.doesNotMatch(competitorProductsTable, /productType/);
+  assert.doesNotMatch(competitorProductsTable, /competitorGrade/);
+  assert.doesNotMatch(competitorProductsTable, /bulkGrade/);
+  assert.doesNotMatch(competitorProductsTable, /applyBulkGrade/);
+  assert.doesNotMatch(competitorProductsTable, /pack_type/);
+  assert.doesNotMatch(competitorProductsTable, /segment/);
   assert.doesNotMatch(competitorProductsPage, /getMaterialMaster/);
   assert.doesNotMatch(competitorProductsTable, /ProductMasterSearchSelect/);
   assert.match(competitorsRoute, /body\.intent === "update_fields"/);

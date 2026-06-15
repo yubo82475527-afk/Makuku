@@ -1,9 +1,10 @@
 import { Download } from "lucide-react";
+import Link from "next/link";
+import type { ReactNode } from "react";
 import { AppShell } from "@/components/app-shell";
 import { PriceSnapshotsTable } from "@/components/price-snapshots-table";
 import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
-import { getBrands, getCompetitorProducts, getMaterialMaster, getPriceSnapshots } from "@/lib/data";
-import { translateEnum } from "@/lib/i18n/get-dictionary";
+import { getBrands, getCompetitorProducts, getPriceSnapshots } from "@/lib/data";
 import { getPageI18n } from "@/lib/i18n/server";
 import { productGradeOptions } from "@/lib/segments";
 import type { PriceSnapshot } from "@/lib/types";
@@ -15,7 +16,6 @@ export default async function PricesPage({
   params: Promise<{ locale: string }>;
   searchParams: Promise<{
     brand?: string;
-    channel?: string;
     sku?: string;
     line?: string;
     priceBand?: string;
@@ -24,45 +24,52 @@ export default async function PricesPage({
     cityName?: string;
     district?: string;
     store?: string;
+    page?: string;
+    per_page?: string;
   }>;
 }) {
   const { locale, dict } = await getPageI18n(routeParams);
   const params = await searchParams;
+  const pageParam = Number.parseInt(params.page ?? "1", 10);
+  const perPageParam = Number.parseInt(params.per_page ?? "50", 10);
+  const requestedPage = Number.isFinite(pageParam) && pageParam > 0 ? Math.floor(pageParam) : 1;
+  const perPage = Number.isFinite(perPageParam) && perPageParam > 0 ? Math.min(200, Math.floor(perPageParam)) : 50;
   const currentParams = new URLSearchParams();
-  for (const key of ["brand", "channel", "sku", "line", "priceBand", "size", "province", "cityName", "district", "store"] as const) {
+  for (const key of ["brand", "sku", "line", "priceBand", "size", "province", "cityName", "district", "store"] as const) {
     if (params[key]) currentParams.set(key, params[key]);
   }
   currentParams.set("locale", locale);
   const exportHref = `/api/price-snapshots/export?${currentParams.toString()}`;
 
-  const [pricesResult, productsResult, brandsResult, materialsResult] = await Promise.all([
+  const [pricesResult, productsResult, brandsResult] = await Promise.all([
     getPriceSnapshots(),
     getCompetitorProducts(),
     getBrands(),
-    getMaterialMaster(),
   ]);
 
   const productSegments = productsResult.data.map((product) => resolveProductSegment(product));
   const productSizes = Array.from(new Set([...productSegments.map((segment) => segment.size), params.size].filter(Boolean) as string[])).sort();
   const prices = pricesResult.data.filter((snapshot) => snapshotMatchesFilters(snapshot, params));
+  const total = prices.length;
+  const pageCount = Math.max(1, Math.ceil(total / perPage));
+  const page = Math.min(requestedPage, pageCount);
+  const pagedPrices = prices.slice((page - 1) * perPage, page * perPage);
+  const currentPathParams = new URLSearchParams(currentParams);
+  currentPathParams.delete("locale");
+  currentPathParams.set("page", String(page));
+  currentPathParams.set("per_page", String(perPage));
+  const currentPath = `/prices?${currentPathParams.toString()}`;
 
   return (
-    <AppShell locale={locale} dict={dict} title={dict.prices.title} currentPath="/prices" isDemo={pricesResult.isDemo}>
-      <DataNotice dict={dict} error={pricesResult.error ?? productsResult.error ?? brandsResult.error ?? materialsResult.error} />
+    <AppShell locale={locale} dict={dict} title={dict.prices.title} currentPath={currentPath} isDemo={pricesResult.isDemo}>
+      <DataNotice dict={dict} error={pricesResult.error ?? productsResult.error ?? brandsResult.error} />
       <Card className="mb-4">
-        <form className="grid gap-3 md:grid-cols-5 xl:grid-cols-9">
+        <form className="grid gap-3 md:grid-cols-4 xl:grid-cols-8">
           <SelectInput name="brand" defaultValue={params.brand ?? ""}>
             <option value="">{dict.common.allBrands}</option>
             {brandsResult.data.filter((brand) => !brand.is_own_brand).map((brand) => (
               <option key={brand.id} value={brand.id}>{brand.name}</option>
             ))}
-          </SelectInput>
-          <SelectInput name="channel" defaultValue={params.channel ?? ""}>
-            <option value="">{dict.common.allChannels}</option>
-            <option value="shopee">{translateEnum(dict, "channel", "shopee")}</option>
-            <option value="offline">{translateEnum(dict, "channel", "offline")}</option>
-            <option value="tiktok">{translateEnum(dict, "channel", "tiktok")}</option>
-            <option value="manual">{translateEnum(dict, "channel", "manual")}</option>
           </SelectInput>
           <SelectInput name="priceBand" defaultValue={params.priceBand ?? ""}>
             <option value="">{locale === "zh" ? "全部商品等级" : "All grades"}</option>
@@ -94,17 +101,84 @@ export default async function PricesPage({
             {locale === "zh" ? "导出 CSV" : "Export CSV"}
           </a>
         </div>
-        <PriceSnapshotsTable snapshots={prices} products={productsResult.data} materials={materialsResult.data} locale={locale} />
+        <PriceSnapshotsTable snapshots={pagedPrices} locale={locale} />
+        <PricesPagination
+          locale={locale}
+          page={page}
+          perPage={perPage}
+          total={total}
+          baseParams={currentParams}
+        />
       </Card>
     </AppShell>
   );
+}
+
+function PricesPagination({
+  locale,
+  page,
+  perPage,
+  total,
+  baseParams,
+}: {
+  locale: string;
+  page: number;
+  perPage: number;
+  total: number;
+  baseParams: URLSearchParams;
+}) {
+  const isZh = locale === "zh";
+  const pageCount = Math.max(1, Math.ceil(total / perPage));
+  const from = total === 0 ? 0 : (page - 1) * perPage + 1;
+  const to = Math.min(total, page * perPage);
+
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
+      <div>{from}-{to} / {total}</div>
+      <div className="flex gap-2">
+        <PricePageLink locale={locale} page={Math.max(1, page - 1)} perPage={perPage} baseParams={baseParams} disabled={page <= 1}>
+          {isZh ? "上一页" : "Previous"}
+        </PricePageLink>
+        <span className="inline-flex h-9 items-center px-2">
+          {isZh ? "第" : "Page"} {page} / {pageCount}
+        </span>
+        <PricePageLink locale={locale} page={Math.min(pageCount, page + 1)} perPage={perPage} baseParams={baseParams} disabled={page >= pageCount}>
+          {isZh ? "下一页" : "Next"}
+        </PricePageLink>
+      </div>
+    </div>
+  );
+}
+
+function PricePageLink({
+  locale,
+  page,
+  perPage,
+  baseParams,
+  disabled,
+  children,
+}: {
+  locale: string;
+  page: number;
+  perPage: number;
+  baseParams: URLSearchParams;
+  disabled: boolean;
+  children: ReactNode;
+}) {
+  const params = new URLSearchParams(baseParams);
+  params.delete("locale");
+  params.set("page", String(page));
+  params.set("per_page", String(perPage));
+  const href = `/${locale}/prices?${params.toString()}`;
+  return disabled
+    ? <span className="inline-flex h-9 items-center rounded-md border border-slate-200 px-3 text-slate-400">{children}</span>
+    : <Link href={href} className="inline-flex h-9 items-center rounded-md border border-slate-300 bg-white px-3 text-slate-700 hover:bg-slate-50">{children}</Link>;
 }
 
 function snapshotMatchesFilters(
   snapshot: PriceSnapshot,
   params: {
     brand?: string;
-    channel?: string;
     sku?: string;
     line?: string;
     priceBand?: string;
@@ -122,7 +196,6 @@ function snapshotMatchesFilters(
   const size = sku?.size ?? productSegment.size;
   const priceBand = sku?.segment ?? product?.segment ?? "unknown";
   if (params.brand && product?.brand_id !== params.brand) return false;
-  if (params.channel && snapshot.channel !== params.channel) return false;
   if (params.sku && !matchesText(snapshotMakukuMaterialCode(snapshot), params.sku)) return false;
   if (params.line && line !== params.line) return false;
   if (params.priceBand && priceBand !== params.priceBand) return false;

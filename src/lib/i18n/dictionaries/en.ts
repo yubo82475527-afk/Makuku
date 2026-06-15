@@ -150,7 +150,7 @@ const en = {
     addButton: "Add Product",
   },
   prices: {
-    title: "Store Price Snapshots",
+    title: "Real Market Price",
     addTitle: "Add Price Snapshot",
     skuId: "SKU id",
     listIdr: "List IDR",

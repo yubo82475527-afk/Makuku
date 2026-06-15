@@ -40,8 +40,8 @@ test("competitor mapping exposes only mapping and set-as-benchmark controls", ()
   assert.doesNotMatch(competitorMappingTable, /\/api\/competitors/);
   assert.doesNotMatch(competitorMappingTable, /intent: "update_segment"/);
   assert.doesNotMatch(competitorMappingTable, /onBlur=\{\(\) => saveProductFields/);
-  assert.match(competitorProductsTable, /intent: "update_segment"/);
-  assert.match(competitorProductsTable, /Product Grade|商品等级/);
+  assert.doesNotMatch(competitorProductsTable, /intent: "update_segment"/);
+  assert.doesNotMatch(competitorProductsTable, /Product Grade|商品等级|Grade/);
   assert.match(productMasterSearchSelect, /name="material_sku_code"/);
   assert.doesNotMatch(competitorMappingsPage, /getSkuMaster/);
   assert.doesNotMatch(competitorMappingTable, /name="reviewed"/);
