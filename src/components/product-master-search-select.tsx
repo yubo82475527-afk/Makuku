@@ -7,13 +7,14 @@ import type { MaterialMaster } from "@/lib/types";
 type ProductMasterSearchSelectProps = {
   materials: MaterialMaster[];
   selectedCode: string;
+  selectedLabel?: string;
   locale: string;
 };
 
-export function ProductMasterSearchSelect({ materials, selectedCode: initialSelectedCode, locale }: ProductMasterSearchSelectProps) {
+export function ProductMasterSearchSelect({ materials, selectedCode: initialSelectedCode, selectedLabel, locale }: ProductMasterSearchSelectProps) {
   const initialMaterial = materials.find((material) => material.tenant_sku_code === initialSelectedCode) ?? null;
-  const [query, setQuery] = useState(initialMaterial ? formatMaterialLabel(initialMaterial) : "");
-  const [selectedCode, setSelectedCode] = useState(initialMaterial?.tenant_sku_code ?? "");
+  const [query, setQuery] = useState(initialMaterial ? formatMaterialLabel(initialMaterial) : selectedLabel ?? "");
+  const [selectedCode, setSelectedCode] = useState(initialMaterial?.tenant_sku_code ?? initialSelectedCode);
   const [open, setOpen] = useState(false);
   const labels = locale === "zh"
     ? { placeholder: "搜索产品编码 / 名称 / 系列 / 尺码", empty: "未找到产品主数据" }
@@ -83,7 +84,9 @@ export function ProductMasterSearchSelect({ materials, selectedCode: initialSele
                 {[material.sub_brand, material.sub_category, material.sub_type, material.pack_count ? `${material.pack_count} pcs` : null].filter(Boolean).join(" / ")}
               </span>
             </button>
-          )) : (
+          )) : selectedCode && selectedLabel ? (
+            <div className="px-3 py-2 text-sm text-slate-500">{selectedLabel}</div>
+          ) : (
             <div className="px-3 py-2 text-sm text-slate-500">{labels.empty}</div>
           )}
         </div>

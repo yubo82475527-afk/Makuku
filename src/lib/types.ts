@@ -2,7 +2,7 @@ export type Channel = "shopee" | "tiktok" | "offline" | "manual";
 export type ChannelType = "online" | "offline";
 export type PackType = "pants" | "tape" | "unknown";
 export type Segment = "AD" | "BD Eco" | "BD MID" | "unknown";
-export type MatchMethod = "rule" | "ai" | "manual";
+export type MatchMethod = "rule" | "ai" | "manual" | "series_rule";
 export type Severity = "low" | "medium" | "high" | "critical";
 export type PromoEventType =
   | "price_drop"
@@ -246,6 +246,39 @@ export type MarketBenchmark = {
   competitor_products?: CompetitorProduct | null;
 };
 
+export type MarketBenchmarkPeriodType = "week" | "month";
+export type MarketBenchmarkPeriodStatus = "calculated" | "carried_forward";
+
+export type MarketBenchmarkPeriodPrice = {
+  id: string;
+  benchmark_rule_id: string;
+  period_type: MarketBenchmarkPeriodType;
+  start_date: string;
+  end_date: string;
+  benchmark_price_per_piece: number;
+  sample_count: number;
+  currency: string;
+  status: MarketBenchmarkPeriodStatus;
+  created_at: string;
+  updated_at: string | null;
+};
+
+export type MarketBenchmarkRule = {
+  id: string;
+  market: string;
+  province: string;
+  city_name: string;
+  district: string | null;
+  brand_id: string;
+  product_series: string | null;
+  active: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string | null;
+  brands?: Pick<Brand, "id" | "name"> | null;
+  market_benchmark_period_prices?: MarketBenchmarkPeriodPrice[];
+};
+
 export type SkuMatch = {
   id: string;
   competitor_product_id: string;
@@ -255,6 +288,17 @@ export type SkuMatch = {
   reviewed: boolean;
   created_at: string;
   sku_master?: SkuMaster | null;
+};
+
+export type CompetitorSeriesMapping = {
+  id: string;
+  brand_id: string;
+  product_series: string | null;
+  target_makuku_series: string;
+  active: boolean;
+  created_at: string;
+  updated_at: string | null;
+  brands?: Pick<Brand, "id" | "name"> | null;
 };
 
 export type PriceSnapshotVisit = {

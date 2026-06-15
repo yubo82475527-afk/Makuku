@@ -4,7 +4,9 @@ import {
   demoBrands,
   demoChannels,
   demoCompetitors,
+  demoCompetitorSeriesMappings,
   demoMaterialMaster,
+  demoMarketBenchmarkRules,
   demoMarketBenchmarks,
   demoOfflineStores,
   demoOfflineStoreVisits,
@@ -22,11 +24,13 @@ import type {
   Brand,
   ChannelMaster,
   CompetitorProduct,
+  CompetitorSeriesMapping,
   DashboardCategoryChannelMatrix,
   DashboardCollectionEfficiency,
   DashboardInsight,
   MaterialMaster,
   MarketBenchmark,
+  MarketBenchmarkRule,
   OfflineStore,
   OfflineUpload,
   OfflineStoreVisit,
@@ -576,6 +580,23 @@ export async function getAiPriceCandidatesPage(filters: AiPriceCandidateFilters 
   return { data: candidates, total: count ?? 0, page, perPage, error: null, isDemo: false };
 }
 
+export async function getMarketBenchmarkRules(): Promise<QueryResult<MarketBenchmarkRule[]>> {
+  if (!hasSupabaseServiceConfig()) return { data: demoMarketBenchmarkRules, error: null, isDemo: true };
+
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("market_benchmark_rules")
+    .select("*, brands(id,name), market_benchmark_period_prices(*)")
+    .eq("active", true)
+    .order("created_at", { ascending: false });
+
+  if (isMissingSchemaError(error) || error?.message.includes("market_benchmark_rules")) {
+    return { data: demoMarketBenchmarkRules, error: "Run migration 202606150004_market_benchmark_rules.sql", isDemo: true };
+  }
+  if (error) return { data: demoMarketBenchmarkRules, error: error.message, isDemo: true };
+  return { data: (data ?? []) as MarketBenchmarkRule[], error: null, isDemo: false };
+}
+
 async function attachAiPriceCandidateMatchLabels(supabase: ReturnType<typeof createSupabaseServiceClient>, candidates: AiPriceCandidate[]) {
   const materialCodes = Array.from(new Set(candidates
     .filter((candidate) => candidate.matched_entity_type === "material_master" && candidate.matched_entity_id)
@@ -689,6 +710,19 @@ export async function getCompetitorProducts(): Promise<QueryResult<CompetitorPro
       .select("*, brands(id,name), sku_matches(*, sku_master(*))")
       .order("created_at", { ascending: false }),
     demoCompetitors,
+  );
+}
+
+export async function getCompetitorSeriesMappings(): Promise<QueryResult<CompetitorSeriesMapping[]>> {
+  if (!hasSupabaseConfig()) return { data: demoCompetitorSeriesMappings, error: null, isDemo: true };
+  const supabase = createSupabaseServiceClient();
+  return fromSupabase<CompetitorSeriesMapping[]>(
+    supabase
+      .from("competitor_series_mappings")
+      .select("*, brands(id,name)")
+      .eq("active", true)
+      .order("created_at", { ascending: false }),
+    demoCompetitorSeriesMappings,
   );
 }
 

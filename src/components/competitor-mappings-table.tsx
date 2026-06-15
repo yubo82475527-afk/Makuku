@@ -55,27 +55,27 @@ export function CompetitorMappingsTable({ products, materials, locale, dict, map
                   <div>{dict.common.size}: {product.size ?? "-"} / {dict.common.pcs}: {product.piece_count ?? "-"}</div>
                 </td>
                 <td className="px-3 py-3">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <form action="/api/sku-matches" method="post" className="flex min-w-0 flex-1 items-center gap-2">
-                      <input type="hidden" name="return_to" value={`/${locale}/competitor-mappings`} />
-                      <input type="hidden" name="competitor_product_id" value={product.id} />
-                      <ProductMasterSearchSelect materials={materials} selectedCode={selectedMaterialCode} locale={locale} />
-                      <Button type="submit" className="h-9 whitespace-nowrap">{copy.saveMapping}</Button>
-                    </form>
-                    {match ? (
-                      <form action="/api/sku-matches" method="post">
-                        <input type="hidden" name="return_to" value={`/${locale}/competitor-mappings`} />
-                        <input type="hidden" name="competitor_product_id" value={product.id} />
-                        <button type="submit" className="h-9 whitespace-nowrap rounded-md border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
-                          {copy.clearMapping}
-                        </button>
-                      </form>
-                    ) : null}
-                  </div>
+                  <form action="/api/sku-matches" method="post" className="flex min-w-0 items-center gap-2">
+                    <input type="hidden" name="return_to" value={`/${locale}/competitor-mappings`} />
+                    <input type="hidden" name="competitor_product_id" value={product.id} />
+                    <ProductMasterSearchSelect materials={materials} selectedCode={selectedMaterialCode} selectedLabel={formatSelectedSkuLabel(match?.sku_master)} locale={locale} />
+                    <Button type="submit" className="h-9 whitespace-nowrap">{copy.saveMapping}</Button>
+                  </form>
                 </td>
                 {showMappingSummaryColumns ? (
                   <td className="px-3 py-3 whitespace-nowrap">
-                    <Badge tone={match ? "low" : "neutral"}>{match ? copy.mapped : copy.unmapped}</Badge>
+                    <div className="flex flex-col items-start gap-1">
+                      <Badge tone={match ? "low" : "neutral"}>{match ? copy.mapped : copy.unmapped}</Badge>
+                      {match ? (
+                        <form action="/api/sku-matches" method="post">
+                          <input type="hidden" name="return_to" value={`/${locale}/competitor-mappings?mapping=all`} />
+                          <input type="hidden" name="competitor_product_id" value={product.id} />
+                          <button type="submit" className="text-xs font-medium text-slate-500 hover:text-red-700 hover:underline">
+                            {copy.clearMapping}
+                          </button>
+                        </form>
+                      ) : null}
+                    </div>
                   </td>
                 ) : null}
                 {showMappingSummaryColumns ? <td className="px-3 py-3 whitespace-nowrap">{match ? formatMatchMethod(match.match_method, locale) : "-"}</td> : null}
@@ -109,6 +109,11 @@ function findMaterialCodeForSku(sku: SkuMaster | null | undefined, materials: Ma
     return Number(material.pack_count) === Number(sku.piece_count);
   }) ?? materials.find((material) => normalizeText(material.tenant_sku_name) === normalizedSkuName);
   return matched?.tenant_sku_code ?? "";
+}
+
+function formatSelectedSkuLabel(sku: SkuMaster | null | undefined) {
+  if (!sku) return "";
+  return [sku.material_sku_code, sku.makuku_sku_name].filter(Boolean).join(" · ");
 }
 
 function normalizeText(value: string | null | undefined) {

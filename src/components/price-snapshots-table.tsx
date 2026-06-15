@@ -313,9 +313,23 @@ function storeRegionForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
 function formatSnapshotCapturedAt(snapshot: PriceSnapshotForStoreRegion) {
   const visitDate = cleanDisplayText(storeVisitForSnapshot(snapshot)?.visit_date);
   if (visitDate) return visitDate.slice(0, 10);
-  return formatJakartaTime(snapshot.captured_at);
+  return formatJakartaDate(snapshot.captured_at);
 }
 
 function formatSnapshotCreatedAt(snapshot: PriceSnapshotForStoreRegion) {
   return formatJakartaTime(snapshot.created_at);
+}
+
+function formatJakartaDate(value: string | null | undefined) {
+  if (!value) return "-";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(value));
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+  return year && month && day ? `${year}-${month}-${day}` : "-";
 }

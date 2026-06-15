@@ -11,17 +11,19 @@ const competitorsRoute = readFileSync("src/app/api/competitors/route.ts", "utf8"
 const skuMatchesRoute = readFileSync("src/app/api/sku-matches/route.ts", "utf8");
 const skuMasterBridge = readFileSync("src/lib/sku-master-bridge.ts", "utf8");
 const marketBenchmarksPage = readFileSync("src/app/[locale]/market-benchmarks/page.tsx", "utf8");
+const marketBenchmarkBackfillDialog = readFileSync("src/components/market-benchmark-backfill-dialog.tsx", "utf8");
+const marketBenchmarkRuleDialog = readFileSync("src/components/market-benchmark-rule-dialog.tsx", "utf8");
 const marketBenchmarksRoute = readFileSync("src/app/api/market-benchmarks/route.ts", "utf8");
 const dashboardPage = readFileSync("src/app/[locale]/dashboard/page.tsx", "utf8");
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const productMasterSearchSelect = readFileSync("src/components/product-master-search-select.tsx", "utf8");
 
 test("SKU price monitor stays a price fact view without benchmark configuration actions", () => {
-  assert.match(pricesPage, /Export CSV|导出 CSV/);
+  assert.match(pricesPage, /Export CSV|瀵煎嚭 CSV/);
   assert.doesNotMatch(pricesPage, /PriceSnapshotActions/);
   assert.match(priceSnapshotsTable, /price_per_piece/);
   assert.doesNotMatch(pricesPage, /market-benchmarks/);
-  assert.doesNotMatch(pricesPage, /Set as benchmark|设为市场标杆|benchmark_competitor_product_id/);
+  assert.doesNotMatch(pricesPage, /Set as benchmark|璁句负甯傚満鏍囨潌|benchmark_competitor_product_id/);
 });
 
 test("competitor mapping exposes only mapping and set-as-benchmark controls", () => {
@@ -29,9 +31,9 @@ test("competitor mapping exposes only mapping and set-as-benchmark controls", ()
   assert.match(competitorMappingsPage, /getMaterialMaster/);
   assert.match(competitorMappingTable, /setBenchmarkHref/);
   assert.match(competitorMappingTable, /sku_master/);
-  assert.match(competitorMappingTable, /Set benchmark|设为市场标杆/);
-  assert.match(competitorMappingTable, /Missing Makuku SKU|未关联 Makuku SKU/);
-  assert.match(competitorMappingTable, /Mapped Makuku SKU|对标 Makuku SKU/);
+  assert.match(competitorMappingTable, /Set benchmark|璁句负甯傚満鏍囨潌/);
+  assert.match(competitorMappingTable, /Missing Makuku SKU|鏈叧鑱?Makuku SKU/);
+  assert.match(competitorMappingTable, /Mapped Makuku SKU|瀵规爣 Makuku SKU/);
   assert.match(competitorMappingTable, /tenant_sku_code/);
   assert.match(competitorMappingTable, /tenant_sku_name/);
   assert.match(competitorMappingTable, /action="\/api\/sku-matches"/);
@@ -41,7 +43,7 @@ test("competitor mapping exposes only mapping and set-as-benchmark controls", ()
   assert.doesNotMatch(competitorMappingTable, /intent: "update_segment"/);
   assert.doesNotMatch(competitorMappingTable, /onBlur=\{\(\) => saveProductFields/);
   assert.doesNotMatch(competitorProductsTable, /intent: "update_segment"/);
-  assert.doesNotMatch(competitorProductsTable, /Product Grade|商品等级|Grade/);
+  assert.doesNotMatch(competitorProductsTable, /Product Grade|鍟嗗搧绛夌骇|Grade/);
   assert.match(productMasterSearchSelect, /name="material_sku_code"/);
   assert.doesNotMatch(competitorMappingsPage, /getSkuMaster/);
   assert.doesNotMatch(competitorMappingTable, /name="reviewed"/);
@@ -59,29 +61,42 @@ test("manual competitor mapping is confirmed without a second approval step", ()
   assert.doesNotMatch(competitorsRoute, /body\.reviewed/);
 });
 
-test("market benchmark page is the configuration center with mapped SKU prefill", () => {
+test("market benchmark page is the regional series rule configuration center", () => {
+  assert.match(marketBenchmarksPage, /getMarketBenchmarkRules/);
+  assert.match(marketBenchmarksPage, /getCompetitorProducts/);
   assert.match(marketBenchmarksPage, /searchParams/);
-  assert.match(marketBenchmarksPage, /selectedCompetitorId/);
-  assert.match(marketBenchmarksPage, /latestBenchmarkPrice/);
-  assert.match(marketBenchmarksPage, /matchedSku/);
-  assert.match(marketBenchmarksPage, /Missing mapping|缺少映射/);
-  assert.match(marketBenchmarksPage, /Owner|负责人/i);
-  assert.match(marketBenchmarksPage, /benchmark_competitor_product_id/);
-  assert.match(marketBenchmarksPage, /readonly|readOnly/);
+  assert.match(marketBenchmarksPage, /MarketBenchmarkRuleDialog/);
+  assert.match(marketBenchmarksPage, /MarketBenchmarkBackfillDialog/);
+  assert.match(marketBenchmarksPage, /name="province"/);
+  assert.match(marketBenchmarksPage, /name="cityName"/);
+  assert.match(marketBenchmarksPage, /name="district"/);
+  assert.match(marketBenchmarksPage, /name="brand"/);
+  assert.match(marketBenchmarksPage, /name="series"/);
+  assert.match(marketBenchmarksPage, /visibleRows/);
+  assert.match(marketBenchmarksPage, /market_benchmark_period_prices/);
+  assert.match(marketBenchmarkRuleDialog, /新增规则|New Rule/);
+  assert.match(marketBenchmarkRuleDialog, /name="brand_id"/);
+  assert.match(marketBenchmarkRuleDialog, /name="product_series"/);
+  assert.match(marketBenchmarkBackfillDialog, /补算历史周期价|Backfill Prices/);
+  assert.match(marketBenchmarkBackfillDialog, /backfill_period_prices/);
+  assert.doesNotMatch(marketBenchmarksPage, /competitorProductId/);
+  assert.doesNotMatch(marketBenchmarksPage, /name="benchmark_price_per_piece"/);
 });
 
-test("market benchmark API derives segment from mapped competitor and replaces active benchmark", () => {
-  assert.match(marketBenchmarksRoute, /deriveBenchmarkPayload/);
-  assert.match(marketBenchmarksRoute, /getLatestCompetitorPrice/);
-  assert.match(marketBenchmarksRoute, /disableExistingActiveBenchmark/);
-  assert.match(marketBenchmarksRoute, /sku_matches/);
-  assert.match(marketBenchmarksRoute, /benchmark_competitor_product_id/);
+test("market benchmark API saves regional series rules and period prices", () => {
+  assert.match(marketBenchmarksRoute, /getMarketBenchmarkRules/);
+  assert.match(marketBenchmarksRoute, /findActiveRule/);
+  assert.match(marketBenchmarksRoute, /backfillPeriodPrices/);
+  assert.match(marketBenchmarksRoute, /market_benchmark_rules/);
+  assert.match(marketBenchmarksRoute, /market_benchmark_period_prices/);
+  assert.match(marketBenchmarksRoute, /calculateBenchmarkAverage/);
+  assert.match(marketBenchmarksRoute, /carried_forward/);
   assert.match(marketBenchmarksRoute, /price_snapshots/);
   assert.match(marketBenchmarksRoute, /\.eq\("active", true\)/);
+  assert.doesNotMatch(marketBenchmarksRoute, /benchmark_competitor_product_id/);
 });
-
 test("dashboard missing benchmark drilldown goes to benchmark configuration", () => {
   assert.match(dataFile, /buildMarketBenchmarkHref/);
   assert.match(dataFile, /\/market-benchmarks\?/);
-  assert.match(dashboardPage, /Add benchmark|补标杆/);
+  assert.match(dashboardPage, /Add benchmark/);
 });

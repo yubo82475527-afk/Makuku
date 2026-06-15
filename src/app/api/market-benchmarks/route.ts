@@ -1,9 +1,10 @@
 import { revalidatePath } from "next/cache";
 import { formReturnRedirect, readRequestBody } from "@/lib/request";
-import { getMarketBenchmarks } from "@/lib/data";
+import { getMarketBenchmarkRules } from "@/lib/data";
+import { calculateBenchmarkAverage, currentBenchmarkPeriod } from "@/lib/market-benchmark-rules";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
 import { requireAdminSession } from "@/lib/auth-session";
-import type { CompetitorProduct, PriceSnapshot, SkuMaster } from "@/lib/types";
+import type { MarketBenchmarkPeriodPrice, MarketBenchmarkRule, PriceSnapshot } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -16,183 +17,300 @@ function cleanNullable(value: unknown) {
   return text || null;
 }
 
-function cleanPrice(value: unknown) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-}
-
-function productLineLabel(value: SkuMaster["pack_type"] | undefined) {
-  if (value === "pants") return "Pants";
-  if (value === "tape") return "Tape";
-  return "";
-}
-
 function revalidateMarketBenchmarkViews() {
-  revalidatePath("/zh/dashboard");
-  revalidatePath("/en/dashboard");
   revalidatePath("/zh/market-benchmarks");
   revalidatePath("/en/market-benchmarks");
-  revalidatePath("/zh/prices");
-  revalidatePath("/en/prices");
 }
 
 export async function GET() {
-  const result = await getMarketBenchmarks();
-  return Response.json({ benchmarks: result.data, demo: result.isDemo, error: result.error });
+  const result = await getMarketBenchmarkRules();
+  return Response.json({ rules: result.data, demo: result.isDemo, error: result.error });
 }
 
 export async function POST(request: Request) {
   const auth = await requireAdminSession(request);
   if (auth.response) return auth.response;
   const { body, isForm } = await readRequestBody(request);
-  const supabase = hasSupabaseServiceConfig() ? createSupabaseServiceClient() : null;
-  const payload = await deriveBenchmarkPayload(body, supabase);
+  if (clean(body.intent) === "backfill_period_prices") {
+    const result = validateBackfillBody(body);
+    if ("error" in result) return Response.json({ error: result.error }, { status: 400 });
+    const backfillResult = await backfillPeriodPrices(result);
+    if (isForm) return formReturnRedirect(request, body, "/market-benchmarks");
+    return Response.json(backfillResult);
+  }
 
-  if (!payload.product_line || !payload.price_band || !payload.size || !payload.benchmark_sku_name || !payload.benchmark_price_per_piece) {
-    return Response.json({ error: "Missing required benchmark fields" }, { status: 400 });
+  const payload = {
+    market: clean(body.market) || "Indonesia",
+    province: clean(body.province),
+    city_name: clean(body.city_name ?? body.cityName),
+    district: cleanNullable(body.district),
+    brand_id: clean(body.brand_id),
+    product_series: cleanNullable(body.product_series),
+    notes: cleanNullable(body.notes),
+    active: true,
+  };
+
+  if (!payload.province || !payload.city_name || !payload.brand_id) {
+    return Response.json({ error: "Missing required fields: province, city_name, brand_id" }, { status: 400 });
   }
 
   if (!hasSupabaseServiceConfig()) {
     if (isForm) return formReturnRedirect(request, body, "/market-benchmarks");
-    return Response.json({ benchmark: { id: `demo-benchmark-${Date.now()}`, ...payload, created_at: new Date().toISOString(), updated_at: null }, demo: true });
+    return Response.json({ rule: { id: `demo-market-benchmark-rule-${Date.now()}`, ...payload }, demo: true });
   }
-
-  if (!supabase) return Response.json({ error: "Missing Supabase service client" }, { status: 500 });
-  if (payload.active) await disableExistingActiveBenchmark(supabase, payload);
-  const { data, error } = await supabase
-    .from("market_benchmarks")
-    .insert(payload)
-    .select("*, competitor_products(*, brands(id,name), sku_matches(*, sku_master(*)))")
-    .single();
-
-  if (error) return Response.json({ error: error.message }, { status: 400 });
-  revalidateMarketBenchmarkViews();
-  if (isForm) return formReturnRedirect(request, body, "/market-benchmarks");
-  return Response.json({ benchmark: data });
-}
-
-export async function PATCH(request: Request) {
-  const auth = await requireAdminSession(request);
-  if (auth.response) return auth.response;
-  const { body } = await readRequestBody(request);
-  const id = clean(body.id);
-  if (!id) return Response.json({ error: "Missing benchmark id" }, { status: 400 });
-
-  const payload: Record<string, unknown> = {
-    updated_at: new Date().toISOString(),
-  };
-  for (const key of ["market", "province", "city_name", "district", "category", "product_line", "price_band", "size", "benchmark_competitor_product_id", "benchmark_sku_name", "currency", "notes"] as const) {
-    if (body[key] !== undefined) payload[key] = cleanNullable(body[key]);
-  }
-  if (body.cityName !== undefined) payload.city_name = cleanNullable(body.cityName);
-  if (body.benchmark_price_per_piece !== undefined) payload.benchmark_price_per_piece = cleanPrice(body.benchmark_price_per_piece);
-  if (body.active !== undefined) payload.active = Boolean(body.active);
-
-  if (!hasSupabaseServiceConfig()) return Response.json({ benchmark: { id, ...payload }, demo: true });
 
   const supabase = createSupabaseServiceClient();
-  if (payload.active === true) {
-    const current = await supabase
-      .from("market_benchmarks")
-      .select("market,province,city_name,district,category,product_line,price_band,size")
-      .eq("id", id)
-      .single();
-    if (current.data) await disableExistingActiveBenchmark(supabase, { ...current.data, ...payload, id });
-  }
-  const { data, error } = await supabase
-    .from("market_benchmarks")
-    .update(payload)
-    .eq("id", id)
-    .select("id,active,updated_at")
-    .single();
+  const existing = await findActiveRule(supabase, payload);
+  const rule = existing
+    ? await updateRule(supabase, existing.id, payload.notes)
+    : await insertRule(supabase, payload);
+  const price = await refreshCurrentPeriodPrice(supabase, rule);
 
-  if (error) return Response.json({ error: error.message }, { status: 400 });
   revalidateMarketBenchmarkViews();
-  return Response.json({ benchmark: data });
+  if (isForm) return formReturnRedirect(request, body, "/market-benchmarks");
+  return Response.json({ rule, period_price: price });
 }
 
-async function deriveBenchmarkPayload(body: Record<string, unknown>, supabase: ReturnType<typeof createSupabaseServiceClient> | null) {
-  const competitorProductId = cleanNullable(body.benchmark_competitor_product_id);
-  const competitor = competitorProductId && supabase ? await getBenchmarkCompetitorProduct(supabase, competitorProductId) : null;
-  const matchedSku = competitor?.sku_matches?.find((match) => match.sku_master)?.sku_master ?? null;
-  const latestPrice = competitorProductId && supabase ? await getLatestCompetitorPrice(supabase, competitorProductId) : null;
-  const benchmarkSkuName = clean(body.benchmark_sku_name)
-    || [competitor?.brands?.name, competitor?.normalized_name].filter(Boolean).join(" ")
-    || competitor?.normalized_name
-    || competitor?.raw_title
-    || "";
-
-  return {
-    market: clean(body.market) || "Indonesia",
-    province: cleanNullable(body.province),
-    city_name: cleanNullable(body.city_name ?? body.cityName),
-    district: cleanNullable(body.district),
-    category: clean(body.category) || "Diapers",
-    product_line: clean(body.product_line) || productLineLabel(matchedSku?.pack_type),
-    price_band: clean(body.price_band) || matchedSku?.segment || competitor?.segment || "",
-    size: clean(body.size) || matchedSku?.size || competitor?.size || "",
-    benchmark_competitor_product_id: competitorProductId,
-    benchmark_sku_name: benchmarkSkuName,
-    benchmark_price_per_piece: cleanPrice(body.benchmark_price_per_piece) ?? latestPrice,
-    currency: clean(body.currency) || "IDR",
-    active: body.active === undefined ? true : Boolean(body.active),
-    notes: cleanNullable(body.notes),
-  };
+function validateBackfillBody(body: Record<string, unknown>) {
+  const periodType: "week" | "month" = clean(body.period_type) === "month" ? "month" : "week";
+  const startDate = clean(body.start_date);
+  const endDate = clean(body.end_date);
+  const scope = clean(body.scope) || "all";
+  const ruleId = clean(body.rule_id);
+  const overwrite = body.overwrite === "on" || body.overwrite === true;
+  if (!startDate || !endDate || startDate > endDate) {
+    return { error: "Missing or invalid start_date/end_date" };
+  }
+  if (scope === "current" && !ruleId) {
+    return { error: "Missing rule_id for selected scope" };
+  }
+  return { periodType, startDate, endDate, scope, ruleId, overwrite };
 }
 
-async function getBenchmarkCompetitorProduct(supabase: ReturnType<typeof createSupabaseServiceClient>, id: string) {
-  const { data } = await supabase
-    .from("competitor_products")
-    .select("*, brands(id,name), sku_matches(*, sku_master(*))")
-    .eq("id", id)
-    .single();
-  return data as CompetitorProduct | null;
+async function backfillPeriodPrices(input: {
+  periodType: "week" | "month";
+  startDate: string;
+  endDate: string;
+  scope: string;
+  ruleId: string;
+  overwrite: boolean;
+}) {
+  if (!hasSupabaseServiceConfig()) {
+    return { demo: true, inserted: 0, updated: 0, skipped: 0, no_sample: 0 };
+  }
+
+  const supabase = createSupabaseServiceClient();
+  const rules = await getRulesForBackfill(supabase, input.scope === "current" ? input.ruleId : null);
+  const snapshots = await getRuleSnapshots(supabase);
+  const periods = buildPeriods(input.periodType, input.startDate, input.endDate);
+  let inserted = 0;
+  let updated = 0;
+  let skipped = 0;
+  let noSample = 0;
+
+  for (const rule of rules) {
+    for (const period of periods) {
+      const calculated = calculateBenchmarkAverage({ rule, snapshots, period });
+      if (!calculated) {
+        noSample += 1;
+        continue;
+      }
+      const existing = await getExistingPeriodPrice(supabase, rule.id, period.periodType, period.startDate, period.endDate);
+      if (existing && !input.overwrite) {
+        skipped += 1;
+        continue;
+      }
+      await upsertPeriodPrice(supabase, {
+        benchmark_rule_id: rule.id,
+        period_type: period.periodType,
+        start_date: period.startDate,
+        end_date: period.endDate,
+        benchmark_price_per_piece: calculated.benchmark_price_per_piece,
+        sample_count: calculated.sample_count,
+        currency: "IDR",
+        status: "calculated",
+      });
+      if (existing) updated += 1;
+      else inserted += 1;
+    }
+  }
+
+  revalidateMarketBenchmarkViews();
+  return { inserted, updated, skipped, no_sample: noSample, rules: rules.length, periods: periods.length };
 }
 
-async function getLatestCompetitorPrice(supabase: ReturnType<typeof createSupabaseServiceClient>, competitorProductId: string) {
-  const { data } = await supabase
-    .from("price_snapshots")
-    .select("price_per_piece,captured_at")
-    .eq("competitor_product_id", competitorProductId)
-    .order("captured_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const snapshot = data as Pick<PriceSnapshot, "price_per_piece"> | null;
-  return cleanPrice(snapshot?.price_per_piece);
-}
-
-async function disableExistingActiveBenchmark(
+async function findActiveRule(
   supabase: ReturnType<typeof createSupabaseServiceClient>,
-  payload: {
-    id?: unknown;
-    market?: unknown;
-    province?: unknown;
-    city_name?: unknown;
-    district?: unknown;
-    category?: unknown;
-    product_line?: unknown;
-    price_band?: unknown;
-    size?: unknown;
-  },
+  payload: Pick<MarketBenchmarkRule, "market" | "province" | "city_name" | "district" | "brand_id" | "product_series">,
 ) {
   let query = supabase
-    .from("market_benchmarks")
-    .update({ active: false, updated_at: new Date().toISOString() })
+    .from("market_benchmark_rules")
+    .select("*")
     .eq("active", true)
-    .eq("market", clean(payload.market) || "Indonesia")
-    .eq("category", clean(payload.category) || "Diapers")
-    .eq("product_line", clean(payload.product_line))
-    .eq("price_band", clean(payload.price_band))
-    .eq("size", clean(payload.size));
+    .eq("market", payload.market)
+    .ilike("province", payload.province)
+    .ilike("city_name", payload.city_name)
+    .eq("brand_id", payload.brand_id);
 
-  for (const [column, value] of [
-    ["province", payload.province],
-    ["city_name", payload.city_name],
-    ["district", payload.district],
-  ] as const) {
-    const text = cleanNullable(value);
-    query = text ? query.eq(column, text) : query.is(column, null);
+  query = payload.district ? query.ilike("district", payload.district) : query.is("district", null);
+  query = payload.product_series ? query.ilike("product_series", payload.product_series) : query.is("product_series", null);
+  const { data, error } = await query.maybeSingle();
+  if (error) throw new Error(error.message);
+  return data as MarketBenchmarkRule | null;
+}
+
+async function insertRule(
+  supabase: ReturnType<typeof createSupabaseServiceClient>,
+  payload: Pick<MarketBenchmarkRule, "market" | "province" | "city_name" | "district" | "brand_id" | "product_series" | "notes" | "active">,
+) {
+  const { data, error } = await supabase
+    .from("market_benchmark_rules")
+    .insert(payload)
+    .select("*, brands(id,name), market_benchmark_period_prices(*)")
+    .single();
+  if (error) throw new Error(error.message);
+  return data as MarketBenchmarkRule;
+}
+
+async function updateRule(
+  supabase: ReturnType<typeof createSupabaseServiceClient>,
+  id: string,
+  notes: string | null,
+) {
+  const { data, error } = await supabase
+    .from("market_benchmark_rules")
+    .update({ notes, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select("*, brands(id,name), market_benchmark_period_prices(*)")
+    .single();
+  if (error) throw new Error(error.message);
+  return data as MarketBenchmarkRule;
+}
+
+async function refreshCurrentPeriodPrice(
+  supabase: ReturnType<typeof createSupabaseServiceClient>,
+  rule: MarketBenchmarkRule,
+) {
+  const period = currentBenchmarkPeriod("week");
+  const snapshots = await getRuleSnapshots(supabase);
+  const calculated = calculateBenchmarkAverage({ rule, snapshots, period });
+  if (calculated) {
+    return upsertPeriodPrice(supabase, {
+      benchmark_rule_id: rule.id,
+      period_type: period.periodType,
+      start_date: period.startDate,
+      end_date: period.endDate,
+      benchmark_price_per_piece: calculated.benchmark_price_per_piece,
+      sample_count: calculated.sample_count,
+      currency: "IDR",
+      status: "calculated",
+    });
   }
-  if (payload.id) query = query.neq("id", clean(payload.id));
-  await query;
+
+  const carriedForward = await getLatestPriorPeriodPrice(supabase, rule.id, period.startDate);
+  if (!carriedForward) return null;
+  return upsertPeriodPrice(supabase, {
+    benchmark_rule_id: rule.id,
+    period_type: period.periodType,
+    start_date: period.startDate,
+    end_date: period.endDate,
+    benchmark_price_per_piece: carriedForward.benchmark_price_per_piece,
+    sample_count: 0,
+    currency: carriedForward.currency,
+    status: "carried_forward",
+  });
+}
+
+async function getRuleSnapshots(supabase: ReturnType<typeof createSupabaseServiceClient>) {
+  const { data, error } = await supabase
+    .from("price_snapshots")
+    .select("*, offline_stores(id,name,city,province,city_name,district,channel_type), competitor_products(*, brands(id,name)), ai_price_candidates(id, offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))")
+    .not("competitor_product_id", "is", null)
+    .limit(5000);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as PriceSnapshot[];
+}
+
+async function getRulesForBackfill(
+  supabase: ReturnType<typeof createSupabaseServiceClient>,
+  ruleId: string | null,
+) {
+  let query = supabase
+    .from("market_benchmark_rules")
+    .select("*, brands(id,name), market_benchmark_period_prices(*)")
+    .eq("active", true);
+  if (ruleId) query = query.eq("id", ruleId);
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return (data ?? []) as MarketBenchmarkRule[];
+}
+
+async function getExistingPeriodPrice(
+  supabase: ReturnType<typeof createSupabaseServiceClient>,
+  ruleId: string,
+  periodType: string,
+  startDate: string,
+  endDate: string,
+) {
+  const { data, error } = await supabase
+    .from("market_benchmark_period_prices")
+    .select("id")
+    .eq("benchmark_rule_id", ruleId)
+    .eq("period_type", periodType)
+    .eq("start_date", startDate)
+    .eq("end_date", endDate)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data as { id: string } | null;
+}
+
+async function getLatestPriorPeriodPrice(
+  supabase: ReturnType<typeof createSupabaseServiceClient>,
+  ruleId: string,
+  beforeStartDate: string,
+) {
+  const { data, error } = await supabase
+    .from("market_benchmark_period_prices")
+    .select("*")
+    .eq("benchmark_rule_id", ruleId)
+    .eq("period_type", "week")
+    .lt("start_date", beforeStartDate)
+    .order("start_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data as MarketBenchmarkPeriodPrice | null;
+}
+
+async function upsertPeriodPrice(
+  supabase: ReturnType<typeof createSupabaseServiceClient>,
+  payload: Omit<MarketBenchmarkPeriodPrice, "id" | "created_at" | "updated_at">,
+) {
+  const { data, error } = await supabase
+    .from("market_benchmark_period_prices")
+    .upsert({ ...payload, updated_at: new Date().toISOString() }, { onConflict: "benchmark_rule_id,period_type,start_date,end_date" })
+    .select("*")
+    .single();
+  if (error) throw new Error(error.message);
+  return data as MarketBenchmarkPeriodPrice;
+}
+
+function buildPeriods(periodType: "week" | "month", startDate: string, endDate: string) {
+  const periods = [];
+  let cursor = parseLocalDate(startDate);
+  const end = parseLocalDate(endDate);
+  while (cursor <= end) {
+    const period = currentBenchmarkPeriod(periodType, cursor);
+    const boundedStart = period.startDate < startDate ? startDate : period.startDate;
+    const boundedEnd = period.endDate > endDate ? endDate : period.endDate;
+    periods.push({ ...period, startDate: boundedStart, endDate: boundedEnd });
+    cursor = parseLocalDate(period.endDate);
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return periods;
+}
+
+function parseLocalDate(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, (month ?? 1) - 1, day ?? 1);
 }

@@ -2,6 +2,7 @@
 import { formReturnRedirect, readRequestBody } from "@/lib/request";
 import { requireAdminSession } from "@/lib/auth-session";
 import { normalizeProductGrade } from "@/lib/segments";
+import { applySeriesMappingRuleForProduct } from "@/lib/competitor-series-mapping";
 
 export async function GET(request: Request) {
   try {
@@ -112,6 +113,8 @@ export async function POST(request: Request) {
         reviewed: true,
       });
       if (matchError) return Response.json({ error: matchError.message }, { status: 400 });
+    } else {
+      await applySeriesRuleIfAvailable(supabase, product.id);
     }
 
     if (isForm) return formReturnRedirect(request, body, "/competitor-products");
@@ -198,4 +201,12 @@ function normalizeCompetitorStatus(value: unknown) {
 
 function isOwnBrandName(value: string | null | undefined) {
   return value?.trim().toLowerCase() === "makuku";
+}
+
+async function applySeriesRuleIfAvailable(supabase: ReturnType<typeof createSupabaseServiceClient>, productId: string) {
+  try {
+    await applySeriesMappingRuleForProduct(supabase, productId);
+  } catch {
+    // Product creation should not fail if the optional series mapping layer is not ready.
+  }
 }

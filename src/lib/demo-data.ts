@@ -4,7 +4,9 @@ import type {
   Brand,
   ChannelMaster,
   CompetitorProduct,
+  CompetitorSeriesMapping,
   MarketBenchmark,
+  MarketBenchmarkRule,
   MaterialMaster,
   OfflineStore,
   OfflineStoreVisit,
@@ -174,6 +176,29 @@ export const demoCompetitors: CompetitorProduct[] = [
   }],
 }) as CompetitorProduct);
 
+export const demoCompetitorSeriesMappings: CompetitorSeriesMapping[] = [
+  {
+    id: "series-map-1",
+    brand_id: "b2",
+    product_series: "Royal Soft",
+    target_makuku_series: "Slim",
+    active: true,
+    created_at: iso(80),
+    updated_at: null,
+    brands: demoBrands.find((brand) => brand.id === "b2") ?? null,
+  },
+  {
+    id: "series-map-2",
+    brand_id: "b3",
+    product_series: "Gold",
+    target_makuku_series: "Comfort",
+    active: true,
+    created_at: iso(78),
+    updated_at: null,
+    brands: demoBrands.find((brand) => brand.id === "b3") ?? null,
+  },
+];
+
 export const demoPriceSnapshots: PriceSnapshot[] = [
   ["p1", "c1", "shopee", 93400, 80600, 8000, 4800, "flash_sale voucher", 2],
   ["p2", "c2", "shopee", 78000, 73000, 4500, 1600, "voucher", 6],
@@ -204,30 +229,68 @@ export const demoPriceSnapshots: PriceSnapshot[] = [
 });
 
 export const demoMarketBenchmarks: MarketBenchmark[] = [
-  ["mb1", "Indonesia", "DKI Jakarta", "Jakarta", "Kelapa Gading", "Diapers", "Pants", "BD MID", "M", "c1", "MamyPoko Pants Royal Soft M32", 2600, "IDR"],
-  ["mb2", "Indonesia", "Jawa Timur", "Surabaya", "Pakuwon", "Diapers", "Pants", "BD MID", "L", "c2", "Sweety Gold Pants L32", 2300, "IDR"],
-  ["mb3", "Indonesia", null, null, null, "Diapers", "Tape", "BD MID", "NB", "c6", "Merries Tape NB44", 2250, "IDR"],
-  ["mb4", "Indonesia", null, null, null, "Diapers", "Pants", "BD MID", "XL", "c5", "Pampers Baby Dry Pants XL30", 2500, "IDR"],
-].map(([id, market, province, city_name, district, category, product_line, price_band, size, benchmark_competitor_product_id, benchmark_sku_name, benchmark_price_per_piece, currency]) => ({
-  id,
-  market,
-  province,
-  city_name,
-  district,
-  category,
-  product_line,
-  price_band,
-  size,
-  benchmark_competitor_product_id,
-  benchmark_sku_name,
-  benchmark_price_per_piece,
-  currency,
-  active: true,
-  notes: null,
-  created_at: iso(120),
-  updated_at: null,
-  competitor_products: demoCompetitors.find((product) => product.id === benchmark_competitor_product_id) ?? null,
-}) as MarketBenchmark);
+];
+
+export const demoMarketBenchmarkRules: MarketBenchmarkRule[] = [
+  {
+    id: "mbr1",
+    market: "Indonesia",
+    province: "DKI Jakarta",
+    city_name: "Jakarta",
+    district: "Kelapa Gading",
+    brand_id: "b2",
+    product_series: "Royal Soft",
+    active: true,
+    notes: "Demo regional benchmark",
+    created_at: iso(120),
+    updated_at: null,
+    brands: demoBrands.find((brand) => brand.id === "b2") ?? null,
+    market_benchmark_period_prices: [
+      {
+        id: "mbp1",
+        benchmark_rule_id: "mbr1",
+        period_type: "week",
+        start_date: "2026-06-01",
+        end_date: "2026-06-07",
+        benchmark_price_per_piece: 2600,
+        sample_count: 3,
+        currency: "IDR",
+        status: "calculated",
+        created_at: iso(120),
+        updated_at: null,
+      },
+    ],
+  },
+  {
+    id: "mbr2",
+    market: "Indonesia",
+    province: "Jawa Timur",
+    city_name: "Surabaya",
+    district: null,
+    brand_id: "b3",
+    product_series: "Gold",
+    active: true,
+    notes: null,
+    created_at: iso(100),
+    updated_at: null,
+    brands: demoBrands.find((brand) => brand.id === "b3") ?? null,
+    market_benchmark_period_prices: [
+      {
+        id: "mbp2",
+        benchmark_rule_id: "mbr2",
+        period_type: "week",
+        start_date: "2026-06-08",
+        end_date: "2026-06-14",
+        benchmark_price_per_piece: 2300,
+        sample_count: 0,
+        currency: "IDR",
+        status: "carried_forward",
+        created_at: iso(72),
+        updated_at: null,
+      },
+    ],
+  },
+];
 
 export const demoPromoEvents: PromoEvent[] = [
   ["e1", "c1", "s2", "shopee", "flash_sale", "MamyPoko M32 flash sale under floor", "Flash sale plus voucher pushes M32 below Makuku floor.", 2780, 2120, -16.9, "critical", null, 2],

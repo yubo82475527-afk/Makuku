@@ -35,7 +35,7 @@ export async function POST(request: Request) {
       competitor_product_id: competitorProductId,
       sku_master_id: skuMasterId,
       match_score: Number(body.match_score ?? 0.85),
-      match_method: body.match_method ?? "manual",
+      match_method: "manual",
       reviewed: true,
     };
 
