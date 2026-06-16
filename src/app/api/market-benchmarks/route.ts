@@ -17,6 +17,12 @@ function cleanNullable(value: unknown) {
   return text || null;
 }
 
+function cleanSeries(value: unknown) {
+  const text = clean(value);
+  if (!text || text === "__none__") return null;
+  return text;
+}
+
 function revalidateMarketBenchmarkViews() {
   revalidatePath("/zh/market-benchmarks");
   revalidatePath("/en/market-benchmarks");
@@ -39,18 +45,19 @@ export async function POST(request: Request) {
     return Response.json(backfillResult);
   }
 
+  const regions = parseRegions(body.regions);
   const payload = {
     market: clean(body.market) || "Indonesia",
     province: clean(body.province),
     city_name: clean(body.city_name ?? body.cityName),
     district: cleanNullable(body.district),
     brand_id: clean(body.brand_id),
-    product_series: cleanNullable(body.product_series),
+    product_series: cleanSeries(body.product_series),
     notes: cleanNullable(body.notes),
     active: true,
   };
 
-  if (!payload.province || !payload.city_name || !payload.brand_id) {
+  if ((!regions.length && (!payload.province || !payload.city_name)) || !payload.brand_id) {
     return Response.json({ error: "Missing required fields: province, city_name, brand_id" }, { status: 400 });
   }
 
@@ -60,15 +67,49 @@ export async function POST(request: Request) {
   }
 
   const supabase = createSupabaseServiceClient();
-  const existing = await findActiveRule(supabase, payload);
-  const rule = existing
-    ? await updateRule(supabase, existing.id, payload.notes)
-    : await insertRule(supabase, payload);
-  const price = await refreshCurrentPeriodPrice(supabase, rule);
+  const targetRegions = regions.length
+    ? regions
+    : [{ province: payload.province, city_name: payload.city_name, district: payload.district }];
+  const results = [];
+  for (const region of targetRegions) {
+    const regionalPayload = {
+      ...payload,
+      province: region.province,
+      city_name: region.city_name,
+      district: region.district,
+    };
+    const existing = await findActiveRule(supabase, regionalPayload);
+    const rule = existing
+      ? await updateRule(supabase, existing.id, payload.notes)
+      : await insertRule(supabase, regionalPayload);
+    const price = await refreshCurrentPeriodPrice(supabase, rule);
+    results.push({ rule, period_price: price });
+  }
 
   revalidateMarketBenchmarkViews();
   if (isForm) return formReturnRedirect(request, body, "/market-benchmarks");
-  return Response.json({ rule, period_price: price });
+  return Response.json({ results, count: results.length });
+}
+
+function parseRegions(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => {
+        if (!item || typeof item !== "object") return null;
+        const record = item as Record<string, unknown>;
+        const province = clean(record.province);
+        const cityName = clean(record.city_name ?? record.cityName);
+        const district = cleanNullable(record.district);
+        if (!province || !cityName) return null;
+        return { province, city_name: cityName, district };
+      })
+      .filter((item): item is { province: string; city_name: string; district: string | null } => Boolean(item));
+  } catch {
+    return [];
+  }
 }
 
 function validateBackfillBody(body: Record<string, unknown>) {

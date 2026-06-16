@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+﻿import { readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -27,9 +27,11 @@ test("market benchmark rule schema supports region series rules and flexible per
   assert.match(types, /MarketBenchmarkPeriodPrice/);
 });
 
-test("market benchmark API saves rules and calculates or carries forward period prices", () => {
+test("market benchmark API saves single or batch regional rules and period prices", () => {
   assert.match(apiRoute, /getMarketBenchmarkRules/);
   assert.match(apiRoute, /backfill_period_prices/);
+  assert.match(apiRoute, /parseRegions/);
+  assert.match(apiRoute, /targetRegions/);
   assert.match(apiRoute, /backfillPeriodPrices/);
   assert.match(apiRoute, /overwrite/);
   assert.match(apiRoute, /buildPeriods/);
@@ -38,6 +40,7 @@ test("market benchmark API saves rules and calculates or carries forward period 
   assert.match(apiRoute, /district/);
   assert.match(apiRoute, /brand_id/);
   assert.match(apiRoute, /product_series/);
+  assert.match(apiRoute, /cleanSeries/);
   assert.match(apiRoute, /currentBenchmarkPeriod\("week"\)/);
   assert.match(apiRoute, /calculateBenchmarkAverage/);
   assert.match(apiRoute, /carried_forward/);
@@ -45,7 +48,7 @@ test("market benchmark API saves rules and calculates or carries forward period 
   assert.doesNotMatch(apiRoute, /benchmark_sku_name/);
 });
 
-test("market benchmark page is a region series rule configuration surface", () => {
+test("market benchmark page is a batch region series rule surface", () => {
   assert.match(page, /getMarketBenchmarkRules/);
   assert.match(page, /MarketBenchmarkRuleDialog/);
   assert.match(page, /MarketBenchmarkBackfillDialog/);
@@ -54,14 +57,17 @@ test("market benchmark page is a region series rule configuration surface", () =
   assert.match(page, /name="district"/);
   assert.match(page, /name="brand"/);
   assert.match(page, /name="series"/);
-  assert.match(page, /market_benchmark_period_prices/);
-  assert.match(page, /visibleRows/);
-  assert.match(page, /沿用上一期|Carried forward/);
-  assert.match(dialog, /新增规则|New Rule/);
-  assert.match(dialog, /name="city_name"/);
+  assert.match(page, /visibleRules/);
+  assert.match(page, /latestPeriodPrice/);
+  assert.match(dialog, /New Rule/);
+  assert.match(dialog, /selectedBrandId/);
+  assert.match(dialog, /selectedSeries/);
+  assert.match(dialog, /regionRows/);
+  assert.match(dialog, /newRegionDraft/);
+  assert.match(dialog, /name="regions"/);
   assert.match(dialog, /name="brand_id"/);
   assert.match(dialog, /name="product_series"/);
-  assert.match(backfillDialog, /补算历史周期价|Backfill Prices/);
+  assert.match(backfillDialog, /Backfill Prices/);
   assert.match(backfillDialog, /name="intent" value="backfill_period_prices"/);
   assert.match(backfillDialog, /name="period_type"/);
   assert.match(backfillDialog, /name="start_date"/);

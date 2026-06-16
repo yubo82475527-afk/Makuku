@@ -1,17 +1,11 @@
-import { AppShell } from "@/components/app-shell";
+﻿import { AppShell } from "@/components/app-shell";
 import { MarketBenchmarkBackfillDialog } from "@/components/market-benchmark-backfill-dialog";
 import { MarketBenchmarkRuleDialog } from "@/components/market-benchmark-rule-dialog";
 import { Badge, Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
 import { getCompetitorProducts, getMarketBenchmarkRules } from "@/lib/data";
 import { formatPricePerPiece } from "@/lib/format";
 import { getPageI18n } from "@/lib/i18n/server";
-import { benchmarkRegionLabel, benchmarkSeriesLabel, formatBenchmarkPeriod } from "@/lib/market-benchmark-rules";
-import type { MarketBenchmarkPeriodPrice, MarketBenchmarkRule } from "@/lib/types";
-
-type BenchmarkPeriodRow = {
-  rule: MarketBenchmarkRule;
-  price: MarketBenchmarkPeriodPrice | null;
-};
+import { benchmarkRegionLabel, benchmarkSeriesLabel, formatBenchmarkPeriod, latestPeriodPrice } from "@/lib/market-benchmark-rules";
 
 export default async function MarketBenchmarksPage({
   params,
@@ -36,14 +30,8 @@ export default async function MarketBenchmarksPage({
   const seriesOptions = Array.from(new Set(competitors.map((product) => product.product_series?.trim() || "__none__")))
     .sort((left, right) => seriesLabel(left, isZh).localeCompare(seriesLabel(right, isZh)));
   const currentPath = "/market-benchmarks";
-  const rows: BenchmarkPeriodRow[] = ruleResult.data.flatMap((rule): BenchmarkPeriodRow[] => {
-    const prices = rule.market_benchmark_period_prices ?? [];
-    if (prices.length === 0) return [{ rule, price: null }];
-    return [...prices]
-      .sort((left, right) => right.start_date.localeCompare(left.start_date))
-      .map((price) => ({ rule, price }));
-  });
-  const visibleRows = rows.filter(({ rule, price }) => {
+  const visibleRules = ruleResult.data.filter((rule) => {
+    const price = latestPeriodPrice(rule);
     if (query.province && !sameText(rule.province, query.province)) return false;
     if (query.cityName && !sameText(rule.city_name, query.cityName)) return false;
     if (query.district && !sameText(rule.district, query.district)) return false;
@@ -105,7 +93,7 @@ export default async function MarketBenchmarksPage({
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
             <h2 className="font-semibold">{isZh ? "市场标杆列表" : "Market Benchmarks"}</h2>
-            <div className="mt-1 text-sm text-slate-500">{visibleRows.length} / {rows.length} {isZh ? "条周期价" : "period rows"}</div>
+            <div className="mt-1 text-sm text-slate-500">{visibleRules.length} / {ruleResult.data.length} {isZh ? "条规则" : "rules"}</div>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
             <MarketBenchmarkBackfillDialog locale={locale} isZh={isZh} rules={ruleOptions} />
@@ -113,7 +101,12 @@ export default async function MarketBenchmarksPage({
               locale={locale}
               isZh={isZh}
               brands={brands}
-              seriesOptions={seriesOptions.filter((series) => series !== "__none__")}
+              competitorProducts={competitors.map((product) => ({
+                id: product.id,
+                brand_id: product.brand_id,
+                product_series: product.product_series ?? null,
+                brands: product.brands ?? null,
+              }))}
             />
           </div>
         </div>
@@ -131,9 +124,10 @@ export default async function MarketBenchmarksPage({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {visibleRows.map(({ rule, price }) => {
+              {visibleRules.map((rule) => {
+                const price = latestPeriodPrice(rule);
                 return (
-                  <tr key={`${rule.id}-${price?.id ?? "pending"}`}>
+                  <tr key={rule.id}>
                     <td className="py-3 pr-3">
                       <Badge tone={price?.status === "carried_forward" ? "medium" : rule.active ? "low" : "neutral"}>
                         {statusLabel(rule.active, price?.status, isZh)}
@@ -183,3 +177,5 @@ function periodTypeLabel(value: string, isZh: boolean) {
   if (value === "month") return isZh ? "自然月" : "Month";
   return isZh ? "自然周" : "Week";
 }
+
+
