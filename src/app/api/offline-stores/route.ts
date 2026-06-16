@@ -2,12 +2,27 @@ import { revalidatePath } from "next/cache";
 import { formReturnRedirect, readRequestBody } from "@/lib/request";
 import { demoOfflineStores } from "@/lib/demo-data";
 import { getOfflineStores } from "@/lib/data";
+import { organizationAssignmentPatch, resolveOrganizationForRegion } from "@/lib/organizations";
+import { assignOrganizationForStore } from "@/lib/store-organization-assignment";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
 import { requireAdminSession, requireAppSession } from "@/lib/auth-session";
 import type { OfflineStore } from "@/lib/types";
 
 function isMissingSchemaError(error: { message?: string } | null) {
   return Boolean(error?.message?.includes("Could not find the table") || error?.message?.includes("schema cache"));
+}
+
+function clean(value: unknown) {
+  return String(value ?? "").trim();
+}
+
+function splitLegacyRegion(value: string) {
+  const parts = value.split("/").map((part) => part.trim()).filter(Boolean).slice(0, 3);
+  return {
+    province: parts[0] ?? null,
+    cityName: parts[1] ?? null,
+    district: parts[2] ?? null,
+  };
 }
 
 function cleanOptionalNumber(value: unknown) {
@@ -208,9 +223,10 @@ export async function POST(request: Request) {
     const { body, isForm } = await readRequestBody(request);
     const name = String(body.name ?? "").trim();
     const city = String(body.city ?? "").trim();
-    const province = String(body.province ?? "").trim() || null;
-    const cityName = String(body.city_name ?? body.cityName ?? "").trim() || null;
-    const district = String(body.district ?? "").trim() || null;
+    const legacyRegion = splitLegacyRegion(city);
+    const province = String(body.province ?? "").trim() || legacyRegion.province;
+    const cityName = String(body.city_name ?? body.cityName ?? "").trim() || legacyRegion.cityName;
+    const district = String(body.district ?? "").trim() || legacyRegion.district;
     const channelId = String(body.channel_id ?? "").trim() || null;
     const channelTypeFromBody = String(body.channel_type ?? "").trim();
     const address = String(body.address ?? "").trim();
@@ -227,6 +243,8 @@ export async function POST(request: Request) {
     }
 
     const supabase = createSupabaseServiceClient();
+    const assignment = await resolveOrganizationForRegion(supabase, { province, cityName, district });
+    const organizationPatch = organizationAssignmentPatch(assignment);
     let channelType = channelTypeFromBody;
     if (channelId) {
       const { data: channel } = await supabase
@@ -257,6 +275,7 @@ export async function POST(request: Request) {
         created_by: createdBy,
         created_by_user_id: createdByUserId,
         created_by_name: createdByName,
+        ...organizationPatch,
       })
       .select("*, channels(id,code,name,type)")
       .single();
@@ -277,6 +296,7 @@ export async function POST(request: Request) {
           longitude,
           location_accuracy_m: locationAccuracyM,
           location_captured_at: locationCapturedAt,
+          ...organizationPatch,
         })
         .select("*, channels(id,code,name,type)")
         .single();
@@ -299,6 +319,7 @@ export async function POST(request: Request) {
           created_by: createdBy,
           created_by_user_id: createdByUserId,
           created_by_name: createdByName,
+          ...organizationPatch,
         })
         .select("*, channels(id,code,name,type)")
         .single();
@@ -322,6 +343,7 @@ export async function POST(request: Request) {
           created_by: createdBy,
           created_by_user_id: createdByUserId,
           created_by_name: createdByName,
+          ...organizationPatch,
         })
         .select("*, channels(id,code,name,type)")
         .single();
@@ -332,7 +354,7 @@ export async function POST(request: Request) {
     if (error?.message.includes("channel_id") || error?.message.includes("channels")) {
       const legacy = await supabase
         .from("offline_stores")
-        .insert({ name, city, province, city_name: cityName, district, channel_type: channelType, address: address || null })
+        .insert({ name, city, province, city_name: cityName, district, channel_type: channelType, address: address || null, ...organizationPatch })
         .select("*")
         .single();
       data = legacy.data;
@@ -342,7 +364,7 @@ export async function POST(request: Request) {
     if (isStoreCreatorColumnError(error)) {
       const noCreatorLegacy = await supabase
         .from("offline_stores")
-        .insert({ name, city, province, city_name: cityName, district, channel_type: channelType, channel_id: channelId, address: address || null })
+        .insert({ name, city, province, city_name: cityName, district, channel_type: channelType, channel_id: channelId, address: address || null, ...organizationPatch })
         .select("*, channels(id,code,name,type)")
         .single();
       data = noCreatorLegacy.data;
@@ -368,6 +390,7 @@ export async function POST(request: Request) {
           created_by: createdBy,
           created_by_user_id: createdByUserId,
           created_by_name: createdByName,
+          ...organizationPatch,
         },
         demo: true,
       });
@@ -499,11 +522,58 @@ export async function PATCH(request: Request) {
     const { body } = await readRequestBody(request);
     const ids = parseStoreIds(body as { id?: unknown; ids?: unknown });
     const uuidIds = ids.filter(isUuid);
+    const action = clean(body.action);
     const status = isStoreStatus((body as { status?: unknown }).status) ? (body as { status: "enabled" | "disabled" }).status : null;
     if (uuidIds.length === 0) return Response.json({ error: "Missing store id" }, { status: 400 });
-    if (!status) return Response.json({ error: "Missing valid status" }, { status: 400 });
 
     const supabase = createSupabaseServiceClient();
+    if (action === "assign_organization") {
+      const organizationId = clean(body.organization_id) || null;
+      const { data, error } = await supabase
+        .from("offline_stores")
+        .update({
+          organization_id: organizationId,
+          organization_assignment_method: organizationId ? "manual" : null,
+          organization_assigned_at: organizationId ? new Date().toISOString() : null,
+          organization_region_rule_id: null,
+        })
+        .in("id", uuidIds)
+        .select("id,organization_id,organization_assignment_method,organization_assigned_at,organization_region_rule_id")
+        .returns<{ id: string; organization_id: string | null }[]>();
+
+      if (error) return Response.json({ error: error.message }, { status: 400 });
+      revalidateOfflineStoreViews();
+      return Response.json({ stores: data, updated_count: data?.length ?? 0 });
+    }
+
+    if (action === "auto_assign_organization") {
+      const { data: stores, error: readError } = await supabase
+        .from("offline_stores")
+        .select("id,name,province,city_name,district,address,organization_id,organization_assignment_method")
+        .in("id", uuidIds);
+      if (readError) return Response.json({ error: readError.message }, { status: 400 });
+
+      const results = [];
+      for (const store of stores ?? []) {
+        try {
+          results.push(await assignOrganizationForStore(supabase, store));
+        } catch (error) {
+          return Response.json({ error: error instanceof Error ? error.message : "Organization assignment failed" }, { status: 400 });
+        }
+      }
+
+      revalidateOfflineStoreViews();
+      return Response.json({
+        results,
+        updated_count: results.length,
+        rule_matched_count: results.filter((result) => result.status === "rule_matched").length,
+        ai_suggested_count: results.filter((result) => result.status === "ai_suggested").length,
+        unassigned_count: results.filter((result) => result.status === "unassigned").length,
+        manual_skipped_count: results.filter((result) => result.status === "manual_skipped").length,
+      });
+    }
+
+    if (!status) return Response.json({ error: "Missing valid status" }, { status: 400 });
     const disabledAt = status === "disabled" ? new Date().toISOString() : null;
     const { data, error } = await supabase
       .from("offline_stores")

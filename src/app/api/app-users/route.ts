@@ -12,6 +12,11 @@ function clean(value: unknown) {
   return String(value ?? "").trim();
 }
 
+function cleanNullable(value: unknown) {
+  const text = clean(value);
+  return text || null;
+}
+
 function normalizeUsername(value: unknown) {
   return clean(value).toLowerCase();
 }
@@ -44,6 +49,8 @@ export async function POST(request: Request) {
     const { body, isForm } = await readRequestBody(request);
     const username = normalizeUsername(body.username);
     const displayName = clean(body.display_name);
+    const email = cleanNullable(body.email)?.toLowerCase() ?? null;
+    const feishuUserId = cleanNullable(body.feishu_user_id);
     const password = clean(body.password);
     const role = normalizeRole(body.role);
 
@@ -57,12 +64,14 @@ export async function POST(request: Request) {
       .insert({
         username,
         display_name: displayName,
+        email,
+        feishu_user_id: feishuUserId,
         password_hash: hashPassword(password),
         role,
         status: "enabled",
         disabled_at: null,
       })
-      .select("id,username,display_name,role,status,disabled_at,updated_at,created_at")
+      .select("id,username,display_name,email,feishu_user_id,role,status,disabled_at,updated_at,created_at")
       .single();
 
     if (error) return Response.json({ error: error.message }, { status: 400 });
@@ -83,9 +92,13 @@ export async function PATCH(request: Request) {
     const id = clean(body.id);
     const status = normalizeStatus(body.status);
     const password = clean(body.password);
+    const hasEmail = Object.prototype.hasOwnProperty.call(body, "email");
+    const email = cleanNullable(body.email)?.toLowerCase() ?? null;
+    const hasFeishuUserId = Object.prototype.hasOwnProperty.call(body, "feishu_user_id");
+    const feishuUserId = cleanNullable(body.feishu_user_id);
 
     if (!id) return Response.json({ error: "Missing user id" }, { status: 400 });
-    if (!status && !password) return Response.json({ error: "Missing status or password" }, { status: 400 });
+    if (!status && !password && !hasEmail && !hasFeishuUserId) return Response.json({ error: "Missing status, password, email, or feishu_user_id" }, { status: 400 });
 
     const update: Record<string, string | null> = {
       updated_at: new Date().toISOString(),
@@ -95,13 +108,15 @@ export async function PATCH(request: Request) {
       update.disabled_at = status === "disabled" ? new Date().toISOString() : null;
     }
     if (password) update.password_hash = hashPassword(password);
+    if (hasEmail) update.email = email;
+    if (hasFeishuUserId) update.feishu_user_id = feishuUserId;
 
     const supabase = createSupabaseServiceClient();
     const { data, error } = await supabase
       .from("app_users")
       .update(update)
       .eq("id", id)
-      .select("id,username,display_name,role,status,disabled_at,updated_at,created_at")
+      .select("id,username,display_name,email,feishu_user_id,role,status,disabled_at,updated_at,created_at")
       .single();
 
     if (error) return Response.json({ error: error.message }, { status: 400 });

@@ -193,11 +193,51 @@ export type AppUser = {
   id: string;
   username: string;
   display_name: string;
+  email?: string | null;
+  feishu_user_id?: string | null;
   role: AppUserRole;
   status?: AppUserStatus | null;
   disabled_at?: string | null;
   updated_at?: string | null;
   created_at: string;
+};
+
+export type OrganizationStatus = "active" | "inactive";
+export type OrganizationAssignmentMethod = "auto_region_rule" | "manual" | "ai_suggested";
+
+export type Organization = {
+  id: string;
+  name: string;
+  status: OrganizationStatus;
+  notes?: string | null;
+  created_at: string;
+  updated_at?: string | null;
+  member_count?: number;
+  region_rule_count?: number;
+  organization_members?: OrganizationMember[];
+  organization_region_rules?: OrganizationRegionRule[];
+};
+
+export type OrganizationMember = {
+  id: string;
+  organization_id: string;
+  app_user_id: string;
+  active: boolean;
+  created_at: string;
+  updated_at?: string | null;
+  app_users?: Pick<AppUser, "id" | "username" | "display_name" | "email" | "feishu_user_id" | "role" | "status"> | null;
+};
+
+export type OrganizationRegionRule = {
+  id: string;
+  organization_id: string;
+  province: string;
+  city_name?: string | null;
+  district?: string | null;
+  active: boolean;
+  created_at: string;
+  updated_at?: string | null;
+  organizations?: Pick<Organization, "id" | "name" | "status"> | null;
 };
 
 export type OfflineStore = {
@@ -221,6 +261,13 @@ export type OfflineStore = {
   created_by_user_id?: string | null;
   created_by_name?: string | null;
   created_by_user?: string | null;
+  organization_id?: string | null;
+  organization_assignment_method?: OrganizationAssignmentMethod | null;
+  organization_assigned_at?: string | null;
+  organization_region_rule_id?: string | null;
+  organization_assignment_confidence?: number | null;
+  organization_assignment_reason?: string | null;
+  organizations?: Pick<Organization, "id" | "name" | "status"> | null;
   created_at: string;
   channels?: Pick<ChannelMaster, "id" | "code" | "name" | "type"> | null;
 };

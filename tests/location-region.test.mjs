@@ -2,6 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { buildLocationRegion, buildLocationRegionParts } from "../src/lib/location-region.mjs";
+import { readFileSync } from "node:fs";
+
+const offlineStoresRoute = readFileSync("src/app/api/offline-stores/route.ts", "utf8");
 
 test("China reverse geocode keeps municipality non-empty without using a business quarter as district", () => {
   const region = buildLocationRegion({
@@ -137,4 +140,12 @@ test("reverse geocode exposes structured province city district parts for dashbo
     district: "Denpasar Barat",
     region: "Bali / Denpasar / Denpasar Barat",
   });
+});
+
+test("offline store API backfills structured region from legacy city string", () => {
+  assert.match(offlineStoresRoute, /function splitLegacyRegion/);
+  assert.match(offlineStoresRoute, /splitLegacyRegion\(city\)/);
+  assert.match(offlineStoresRoute, /legacyRegion\.province/);
+  assert.match(offlineStoresRoute, /legacyRegion\.cityName/);
+  assert.match(offlineStoresRoute, /legacyRegion\.district/);
 });

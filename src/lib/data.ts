@@ -34,6 +34,7 @@ import type {
   OfflineStore,
   OfflineUpload,
   OfflineStoreVisit,
+  Organization,
   OpportunityAction,
   OpportunityActionStatus,
   OpportunityActionType,
@@ -190,10 +191,10 @@ export async function getAppUsers(): Promise<QueryResult<AppUser[]>> {
   const supabase = createSupabaseServiceClient();
   let { data, error } = await supabase
     .from("app_users")
-    .select("id,username,display_name,role,status,disabled_at,updated_at,created_at")
+    .select("id,username,display_name,email,feishu_user_id,role,status,disabled_at,updated_at,created_at")
     .order("created_at", { ascending: false });
 
-  if (error?.message.includes("status") || error?.message.includes("disabled_at") || error?.message.includes("updated_at")) {
+  if (error?.message.includes("status") || error?.message.includes("disabled_at") || error?.message.includes("updated_at") || error?.message.includes("email") || error?.message.includes("feishu_user_id")) {
     const legacy = await supabase
       .from("app_users")
       .select("id,username,display_name,role,created_at")
@@ -203,6 +204,8 @@ export async function getAppUsers(): Promise<QueryResult<AppUser[]>> {
       status: "enabled",
       disabled_at: null,
       updated_at: null,
+      email: null,
+      feishu_user_id: null,
     }));
     error = legacy.error;
   }
@@ -212,9 +215,43 @@ export async function getAppUsers(): Promise<QueryResult<AppUser[]>> {
   return { data: (data ?? []) as AppUser[], error: null, isDemo: false };
 }
 
-type OfflineStoreStatusFilter = "enabled" | "disabled" | "all";
+export async function getOrganizations(): Promise<QueryResult<Organization[]>> {
+  if (!hasSupabaseServiceConfig()) {
+    return { data: [], error: "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY", isDemo: true };
+  }
 
-export async function getOfflineStores({ status = "enabled" }: { status?: OfflineStoreStatusFilter } = {}): Promise<QueryResult<OfflineStore[]>> {
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("organizations")
+    .select("*, organization_members(*, app_users(id,username,display_name,email,feishu_user_id,role,status)), organization_region_rules(*)")
+    .order("name");
+
+  if (isMissingSchemaError(error) || error?.message.includes("organizations")) {
+    return { data: [], error: "Run migration 202606160002_organizations_store_assignment.sql", isDemo: false };
+  }
+  if (error) return { data: [], error: error.message, isDemo: false };
+
+  const organizations = ((data ?? []) as Organization[]).map((organization) => {
+    const members = organization.organization_members?.filter((member) => member.active) ?? [];
+    const rules = organization.organization_region_rules?.filter((rule) => rule.active) ?? [];
+    return {
+      ...organization,
+      member_count: members.length,
+      region_rule_count: rules.length,
+      organization_members: members,
+      organization_region_rules: rules,
+    };
+  });
+  return { data: organizations, error: null, isDemo: false };
+}
+
+type OfflineStoreStatusFilter = "enabled" | "disabled" | "all";
+type OfflineStoreOrganizationFilter = "all" | "unassigned" | string;
+
+export async function getOfflineStores({
+  status = "enabled",
+  organization = "all",
+}: { status?: OfflineStoreStatusFilter; organization?: OfflineStoreOrganizationFilter } = {}): Promise<QueryResult<OfflineStore[]>> {
   if (!hasSupabaseServiceConfig()) {
     return {
       data: filterOfflineStoresByStatus(demoOfflineStores, status),
@@ -226,7 +263,7 @@ export async function getOfflineStores({ status = "enabled" }: { status?: Offlin
   const supabase = createSupabaseServiceClient();
   let { data, error } = await supabase
     .from("offline_stores")
-    .select("*, channels(id,code,name,type)")
+    .select("*, channels(id,code,name,type), organizations(id,name,status)")
     .order("created_at", { ascending: false });
 
   if (error?.message.includes("channels") || error?.message.includes("schema cache")) {
@@ -238,6 +275,15 @@ export async function getOfflineStores({ status = "enabled" }: { status?: Offlin
     error = legacy.error;
   }
 
+  if (error?.message.includes("organizations") || error?.message.includes("organization_id")) {
+    const noOrganization = await supabase
+      .from("offline_stores")
+      .select("*, channels(id,code,name,type)")
+      .order("created_at", { ascending: false });
+    data = noOrganization.data;
+    error = noOrganization.error;
+  }
+
   const storeError = error;
   const masterStores = storeError && !isMissingSchemaError(storeError) ? [] : ((data ?? []) as OfflineStore[]);
   const disabledStoreIds = new Set(masterStores.filter(isDisabledOfflineStore).map((store) => store.id));
@@ -246,13 +292,13 @@ export async function getOfflineStores({ status = "enabled" }: { status?: Offlin
 
   const visitsResult = await readVisitStoresForStoreList(supabase);
   const uploadsResult = await readUploadStoresForStoreList(supabase);
-  const stores = mergeOfflineStores(status === "disabled"
+  const stores = filterStoresByOrganization(mergeOfflineStores(status === "disabled"
     ? masterStores.filter(isDisabledOfflineStore)
     : [
         ...(status === "all" ? masterStores : activeMasterStores),
         ...filterDisabledOfflineStores(visitsResult.stores, disabledStoreIds, disabledStoreKeys),
         ...filterDisabledOfflineStores(uploadsResult.stores, disabledStoreIds, disabledStoreKeys),
-      ]);
+      ]), organization);
 
   if (stores.length > 0) {
     return {
@@ -430,6 +476,11 @@ function mergeOfflineStores(stores: OfflineStore[]) {
       created_by: current.created_by ?? normalizedStore.created_by,
       created_by_name: current.created_by_name ?? normalizedStore.created_by_name,
       created_by_user: current.created_by_user ?? normalizedStore.created_by_user,
+      organization_id: current.organization_id ?? normalizedStore.organization_id,
+      organization_assignment_method: current.organization_assignment_method ?? normalizedStore.organization_assignment_method,
+      organization_assigned_at: current.organization_assigned_at ?? normalizedStore.organization_assigned_at,
+      organization_region_rule_id: current.organization_region_rule_id ?? normalizedStore.organization_region_rule_id,
+      organizations: current.organizations ?? normalizedStore.organizations,
       channels: current.channels ?? normalizedStore.channels,
       created_at: current.created_at ?? normalizedStore.created_at,
     });
@@ -578,6 +629,12 @@ export async function getAiPriceCandidatesPage(filters: AiPriceCandidateFilters 
   if (error) return { data: [], total: 0, page, perPage, error: error.message, isDemo: false };
   const candidates = await attachAiPriceCandidateMatchLabels(supabase, (data ?? []) as AiPriceCandidate[]);
   return { data: candidates, total: count ?? 0, page, perPage, error: null, isDemo: false };
+}
+
+function filterStoresByOrganization(stores: OfflineStore[], organization: OfflineStoreOrganizationFilter) {
+  if (organization === "all") return stores;
+  if (organization === "unassigned") return stores.filter((store) => !store.organization_id);
+  return stores.filter((store) => store.organization_id === organization);
 }
 
 export async function getMarketBenchmarkRules(): Promise<QueryResult<MarketBenchmarkRule[]>> {

@@ -4,8 +4,8 @@ import { Ban, CheckCircle2, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { Badge } from "@/components/ui";
-import type { OfflineStore } from "@/lib/types";
+import { Badge, SelectInput } from "@/components/ui";
+import type { OfflineStore, Organization } from "@/lib/types";
 
 type StoreStatusFilter = "enabled" | "disabled" | "all";
 
@@ -20,8 +20,20 @@ function isDisabledStore(store: OfflineStore) {
   return store.status === "disabled" || Boolean(store.disabled_at || store.deleted_at);
 }
 
-function statusHref(locale: string, status: StoreStatusFilter) {
-  return status === "enabled" ? `/${locale}/offline-stores` : `/${locale}/offline-stores?status=${status}`;
+function statusHref(locale: string, status: StoreStatusFilter, organizationFilter: string) {
+  const params = new URLSearchParams();
+  if (status !== "enabled") params.set("status", status);
+  if (organizationFilter !== "all") params.set("organization", organizationFilter);
+  const query = params.toString();
+  return `/${locale}/offline-stores${query ? `?${query}` : ""}`;
+}
+
+function organizationHref(locale: string, status: StoreStatusFilter, organization: string) {
+  const params = new URLSearchParams();
+  if (status !== "enabled") params.set("status", status);
+  if (organization !== "all") params.set("organization", organization);
+  const query = params.toString();
+  return `/${locale}/offline-stores${query ? `?${query}` : ""}`;
 }
 
 function formatCreatedAt(value: string, locale: string) {
@@ -42,27 +54,30 @@ function storeCreator(store: OfflineStore) {
 
 export function StoreMasterTable({
   stores,
+  organizations,
   locale,
   statusFilter,
+  organizationFilter,
 }: {
   stores: OfflineStore[];
+  organizations: Organization[];
   locale: string;
   statusFilter: StoreStatusFilter;
+  organizationFilter: string;
 }) {
   const router = useRouter();
   const isZh = locale === "zh";
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [changedIds, setChangedIds] = useState<Set<string>>(() => new Set());
   const [confirmTarget, setConfirmTarget] = useState<ConfirmDeletePanel | null>(null);
+  const [organizationDrafts, setOrganizationDrafts] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const visibleStores = useMemo(() => stores.filter((store) => !changedIds.has(store.id)), [changedIds, stores]);
-  const selectedVisibleStores = visibleStores.filter((store) => selectedIds.includes(store.id));
   const selectedVisibleIds = selectedIds.filter((id) => visibleStores.some((store) => store.id === id));
   const allSelected = visibleStores.length > 0 && selectedVisibleIds.length === visibleStores.length;
-  const disabling = statusFilter !== "disabled";
 
   function toggleStore(id: string, checked: boolean) {
     setSelectedIds((current) => checked ? Array.from(new Set([...current, id])) : current.filter((item) => item !== id));
@@ -88,20 +103,6 @@ export function StoreMasterTable({
       : `Enable store "${store.name}"? It will return to the default store list and field capture selection.`);
   }
 
-  function bulkDisable() {
-    if (selectedVisibleIds.length === 0) return;
-    const nextStatus = disabling ? "disabled" : "enabled";
-    openConfirm(selectedVisibleStores, nextStatus, disabling
-      ? (isZh ? "\u6279\u91cf\u7981\u7528\u95e8\u5e97" : "Bulk Disable")
-      : (isZh ? "\u6279\u91cf\u542f\u7528\u95e8\u5e97" : "Bulk Enable"), disabling
-      ? (isZh
-          ? `\u786e\u8ba4\u7981\u7528\u5df2\u9009 ${selectedVisibleIds.length} \u5bb6\u95e8\u5e97\uff1f\u5386\u53f2\u5de1\u5e97\u8bb0\u5f55\u4e0d\u4f1a\u53d8\u5316\u3002`
-          : `Disable ${selectedVisibleIds.length} selected stores? Existing visits will not change.`)
-      : (isZh
-          ? `\u786e\u8ba4\u542f\u7528\u5df2\u9009 ${selectedVisibleIds.length} \u5bb6\u95e8\u5e97\uff1f`
-          : `Enable ${selectedVisibleIds.length} selected stores?`));
-  }
-
   function openConfirm(targetStores: OfflineStore[], nextStatus: "enabled" | "disabled", title: string, description: string) {
     setError(null);
     setNotice(null);
@@ -121,6 +122,65 @@ export function StoreMasterTable({
         address: store.address,
       })),
     };
+  }
+
+  async function updateStoreOrganization(store: OfflineStore, action: "assign_organization" | "auto_assign_organization") {
+    setLoading(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch("/api/offline-stores", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: store.id,
+          action,
+          organization_id: action === "assign_organization" ? (organizationDrafts[store.id] ?? store.organization_id ?? "") : "",
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(payload.error ?? (isZh ? "\u7ec4\u7ec7\u66f4\u65b0\u5931\u8d25\u3002" : "Organization update failed."));
+        return;
+      }
+      setNotice(isZh ? "\u95e8\u5e97\u7ec4\u7ec7\u5df2\u66f4\u65b0\u3002" : "Store organization updated.");
+      router.refresh();
+    } catch {
+      setError(isZh ? "\u7f51\u7edc\u5f02\u5e38\uff0c\u7ec4\u7ec7\u6ca1\u6709\u63d0\u4ea4\u6210\u529f\u3002" : "Network error. Organization was not submitted.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function rematchSelectedStores() {
+    if (selectedVisibleIds.length === 0 || loading) return;
+    setLoading(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch("/api/offline-stores", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ids: selectedVisibleIds,
+          action: "auto_assign_organization",
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(payload.error ?? (isZh ? "\u6279\u91cf\u91cd\u5339\u914d\u5931\u8d25\u3002" : "Bulk rematch failed."));
+        return;
+      }
+      setSelectedIds([]);
+      setNotice(isZh
+        ? `\u5df2\u5904\u7406 ${payload.updated_count ?? selectedVisibleIds.length} \u5bb6\u95e8\u5e97\uff1a\u89c4\u5219\u547d\u4e2d ${payload.rule_matched_count ?? 0}\uff0cAI\u5efa\u8bae ${payload.ai_suggested_count ?? 0}\uff0c\u672a\u5206\u914d ${payload.unassigned_count ?? 0}\uff0c\u8df3\u8fc7\u624b\u52a8 ${payload.manual_skipped_count ?? 0}\u3002`
+        : `Processed ${payload.updated_count ?? selectedVisibleIds.length} stores: ${payload.rule_matched_count ?? 0} rule matched, ${payload.ai_suggested_count ?? 0} AI suggested, ${payload.unassigned_count ?? 0} unassigned, ${payload.manual_skipped_count ?? 0} manual skipped.`);
+      router.refresh();
+    } catch {
+      setError(isZh ? "\u7f51\u7edc\u5f02\u5e38\uff0c\u6279\u91cf\u91cd\u5339\u914d\u6ca1\u6709\u63d0\u4ea4\u6210\u529f\u3002" : "Network error. Bulk rematch was not submitted.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function confirmStatusChange() {
@@ -144,8 +204,6 @@ export function StoreMasterTable({
         confirmTarget.stores.forEach((store) => next.add(store.id));
         return next;
       });
-      const targetIds = confirmTarget.stores.map((store) => store.id);
-      setSelectedIds((current) => current.filter((id) => !targetIds.includes(id)));
       const count = payload.disabled_count ?? payload.updated_count ?? confirmTarget.stores.length;
       setNotice(confirmTarget.nextStatus === "disabled"
         ? (isZh ? `\u5df2\u7981\u7528 ${count} \u5bb6\u95e8\u5e97\u3002` : `${count} stores disabled.`)
@@ -162,15 +220,30 @@ export function StoreMasterTable({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <StatusTabs locale={locale} statusFilter={statusFilter} />
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusTabs locale={locale} statusFilter={statusFilter} organizationFilter={organizationFilter} />
+          <select
+            value={organizationFilter}
+            onChange={(event) => {
+              window.location.href = organizationHref(locale, statusFilter, event.target.value);
+            }}
+            className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-slate-500"
+          >
+            <option value="all">{isZh ? "\u5168\u90e8\u7ec4\u7ec7" : "All organizations"}</option>
+            <option value="unassigned">{isZh ? "\u672a\u5206\u914d\u7ec4\u7ec7" : "Unassigned"}</option>
+            {organizations.map((organization) => (
+              <option key={organization.id} value={organization.id}>{organization.name}</option>
+            ))}
+          </select>
+        </div>
         <button
           type="button"
-          onClick={bulkDisable}
+          onClick={rematchSelectedStores}
           disabled={selectedVisibleIds.length === 0 || loading}
-          className="inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-md bg-slate-900 px-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {disabling ? <Ban className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
-          {disabling ? (isZh ? "\u6279\u91cf\u7981\u7528" : "Bulk Disable") : (isZh ? "\u6279\u91cf\u542f\u7528" : "Bulk Enable")}
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          {isZh ? "\u6279\u91cf\u91cd\u5339\u914d\u7ec4\u7ec7" : "Bulk Rematch Organizations"}
         </button>
       </div>
 
@@ -210,11 +283,12 @@ export function StoreMasterTable({
                   className="h-4 w-4 rounded border-slate-300"
                 />
               </th>
-              <th className="py-2 pr-3">{isZh ? "\u95e8\u5e97" : "Store"}</th>
-              <th className="py-2 pr-3">{isZh ? "\u72b6\u6001" : "Status"}</th>
-              <th className="py-2 pr-3">{isZh ? "\u57ce\u5e02" : "City"}</th>
-              <th className="py-2 pr-3">{isZh ? "\u6240\u5c5e\u6e20\u9053" : "Channel"}</th>
-              <th className="py-2 pr-3">{isZh ? "\u5730\u5740" : "Address"}</th>
+              <th className="py-2 pr-3">{isZh ? "\u95e8\u5e97\u540d\u79f0" : "Store Name"}</th>
+              <th className="py-2 pr-3">{isZh ? "\u7701" : "Province"}</th>
+              <th className="py-2 pr-3">{isZh ? "\u5e02" : "City"}</th>
+              <th className="py-2 pr-3">{isZh ? "\u533a" : "District"}</th>
+              <th className="py-2 pr-3">{isZh ? "\u6e20\u9053" : "Channel"}</th>
+              <th className="py-2 pr-3">{isZh ? "\u7ec4\u7ec7" : "Organization"}</th>
               <th className="py-2 pr-3">{isZh ? "\u521b\u5efa\u65f6\u95f4" : "Created At"}</th>
               <th className="py-2 pr-3">{isZh ? "\u521b\u5efa\u4eba" : "Created By"}</th>
               <th className="py-2 pr-3">{isZh ? "\u64cd\u4f5c" : "Actions"}</th>
@@ -235,15 +309,54 @@ export function StoreMasterTable({
                     />
                   </td>
                   <td className="py-3 pr-3 font-medium">{store.name}</td>
-                  <td className="whitespace-nowrap py-3 pr-3">
-                    <Badge tone={disabled ? "medium" : "low"}>{disabled ? (isZh ? "\u7981\u7528" : "Disabled") : (isZh ? "\u542f\u7528" : "Enabled")}</Badge>
-                  </td>
-                  <td className="py-3 pr-3">{store.city}</td>
+                  <td className="py-3 pr-3">{store.province ?? "-"}</td>
+                  <td className="py-3 pr-3">{store.city_name ?? store.city ?? "-"}</td>
+                  <td className="py-3 pr-3">{store.district ?? "-"}</td>
                   <td className="py-3 pr-3"><Badge>{store.channels?.name ?? store.channel_type}</Badge></td>
-                  <td className="py-3 pr-3">{store.address ?? "-"}</td>
+                  <td className="py-3 pr-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span>{store.organizations?.name ?? "-"}</span>
+                      {store.organization_assignment_method ? (
+                        <Badge tone={store.organization_assignment_method === "manual" ? "medium" : "low"}>
+                          {store.organization_assignment_method === "manual"
+                            ? (isZh ? "\u624b\u52a8" : "Manual")
+                            : store.organization_assignment_method === "ai_suggested"
+                              ? (isZh ? "AI\u5efa\u8bae" : "AI")
+                              : (isZh ? "\u81ea\u52a8" : "Auto")}
+                        </Badge>
+                      ) : null}
+                    </div>
+                  </td>
                   <td className="whitespace-nowrap py-3 pr-3 text-slate-600">{formatCreatedAt(store.created_at, locale)}</td>
                   <td className="whitespace-nowrap py-3 pr-3 text-slate-600">{storeCreator(store)}</td>
-                  <td className="whitespace-nowrap py-3 pr-3">
+                  <td className="min-w-96 py-3 pr-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <SelectInput
+                        value={organizationDrafts[store.id] ?? store.organization_id ?? ""}
+                        onChange={(event) => setOrganizationDrafts((current) => ({ ...current, [store.id]: event.target.value }))}
+                        className="h-8 w-36 text-xs"
+                      >
+                        <option value="">{isZh ? "\u672a\u5206\u914d" : "Unassigned"}</option>
+                        {organizations.map((organization) => (
+                          <option key={organization.id} value={organization.id}>{organization.name}</option>
+                        ))}
+                      </SelectInput>
+                      <button
+                        type="button"
+                        onClick={() => updateStoreOrganization(store, "assign_organization")}
+                        disabled={loading}
+                        className="h-8 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                      >
+                        {isZh ? "\u4fdd\u5b58\u7ec4\u7ec7" : "Save Org"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateStoreOrganization(store, "auto_assign_organization")}
+                        disabled={loading}
+                        className="h-8 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                      >
+                        {isZh ? "\u91cd\u5339\u914d" : "Rematch"}
+                      </button>
                     <button
                       type="button"
                       onClick={() => disabled ? singleEnable(store) : singleDisable(store)}
@@ -253,6 +366,7 @@ export function StoreMasterTable({
                       {disabled ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Ban className="h-3.5 w-3.5" />}
                       {disabled ? (isZh ? "\u542f\u7528" : "Enable") : (isZh ? "\u7981\u7528" : "Disable")}
                     </button>
+                    </div>
                   </td>
                 </tr>
               );
@@ -264,7 +378,7 @@ export function StoreMasterTable({
   );
 }
 
-function StatusTabs({ locale, statusFilter }: { locale: string; statusFilter: StoreStatusFilter }) {
+function StatusTabs({ locale, statusFilter, organizationFilter }: { locale: string; statusFilter: StoreStatusFilter; organizationFilter: string }) {
   const isZh = locale === "zh";
   const tabs: Array<{ value: StoreStatusFilter; label: string }> = [
     { value: "enabled", label: isZh ? "\u542f\u7528" : "Enabled" },
@@ -279,7 +393,7 @@ function StatusTabs({ locale, statusFilter }: { locale: string; statusFilter: St
         return (
           <Link
             key={tab.value}
-            href={statusHref(locale, tab.value)}
+            href={statusHref(locale, tab.value, organizationFilter)}
             className={active
               ? "inline-flex h-8 items-center whitespace-nowrap rounded-md bg-white px-3 text-sm font-semibold text-slate-950 shadow-sm"
               : "inline-flex h-8 items-center whitespace-nowrap rounded-md px-3 text-sm font-medium text-slate-600 hover:bg-white"}

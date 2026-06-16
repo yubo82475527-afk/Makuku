@@ -1,7 +1,7 @@
 import { AppShell } from "@/components/app-shell";
 import { StoreMasterTable } from "@/components/store-master-table";
 import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
-import { getChannels, getOfflineStores } from "@/lib/data";
+import { getChannels, getOfflineStores, getOrganizations } from "@/lib/data";
 import { getPageI18n } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
@@ -11,21 +11,31 @@ export default async function OfflineStoresPage({
   searchParams,
 }: {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ status?: string | string[] | undefined }>;
+  searchParams: Promise<{ status?: string | string[] | undefined; organization?: string | string[] | undefined }>;
 }) {
   const { locale, dict } = await getPageI18n(params);
   const query = await searchParams;
   const rawStatus = Array.isArray(query.status) ? query.status[0] : query.status;
+  const rawOrganization = Array.isArray(query.organization) ? query.organization[0] : query.organization;
   const statusFilter = rawStatus === "disabled" || rawStatus === "all" ? rawStatus : "enabled";
-  const [storesResult, channelsResult] = await Promise.all([getOfflineStores({ status: statusFilter }), getChannels()]);
+  const organizationFilter = rawOrganization?.trim() || "all";
+  const [storesResult, channelsResult, organizationsResult] = await Promise.all([
+    getOfflineStores({ status: statusFilter, organization: organizationFilter }),
+    getChannels(),
+    getOrganizations(),
+  ]);
   const offlineChannels = channelsResult.data.filter((channel) => channel.active && channel.type === "offline");
   const useChannelTypeFallback = offlineChannels.every((channel) => channel.id.startsWith("ch-"));
   const isZh = locale === "zh";
-  const currentPath = `/offline-stores${statusFilter === "enabled" ? "" : `?status=${statusFilter}`}`;
+  const queryParts = [
+    statusFilter === "enabled" ? "" : `status=${statusFilter}`,
+    organizationFilter === "all" ? "" : `organization=${organizationFilter}`,
+  ].filter(Boolean);
+  const currentPath = `/offline-stores${queryParts.length ? `?${queryParts.join("&")}` : ""}`;
 
   return (
-    <AppShell locale={locale} dict={dict} title={isZh ? "\u95e8\u5e97\u5217\u8868" : "Store List"} currentPath={currentPath} isDemo={storesResult.isDemo || channelsResult.isDemo}>
-      <DataNotice dict={dict} error={storesResult.error ?? channelsResult.error} />
+    <AppShell locale={locale} dict={dict} title={isZh ? "\u95e8\u5e97\u5217\u8868" : "Store List"} currentPath={currentPath} isDemo={storesResult.isDemo || channelsResult.isDemo || organizationsResult.isDemo}>
+      <DataNotice dict={dict} error={storesResult.error ?? channelsResult.error ?? organizationsResult.error} />
 
       <Card className="mb-4">
         <h2 className="mb-3 font-semibold">{isZh ? "\u65b0\u589e\u95e8\u5e97" : "Add store"}</h2>
@@ -45,7 +55,13 @@ export default async function OfflineStoresPage({
       </Card>
 
       <Card>
-        <StoreMasterTable stores={storesResult.data} locale={locale} statusFilter={statusFilter} />
+        <StoreMasterTable
+          stores={storesResult.data}
+          organizations={organizationsResult.data}
+          locale={locale}
+          statusFilter={statusFilter}
+          organizationFilter={organizationFilter}
+        />
       </Card>
     </AppShell>
   );
