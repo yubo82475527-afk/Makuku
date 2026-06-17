@@ -7,6 +7,7 @@ type Warning = { type: string; message: string };
 type CandidateInput = {
   visitId: string;
   aiResult: StoreVisitAiResult;
+  sourceItems?: SourceItem[];
 };
 
 type SourceItem = {
@@ -22,10 +23,14 @@ type SourceItem = {
   tag?: string | null;
   confidence: number;
   source: "key_sku" | "raw";
+  sourceImageId?: string | null;
+  sourceImagePath?: string | null;
 };
 
 const nonPricePromotionPattern = /\b(gratis|free|gift|bonus|hadiah|cashback|voucher|plate|bowl|toy|giveaway)\b/i;
-const priceRangePattern = /\d[\d.,]*\s*[-–—]\s*\d[\d.,]*/;
+const priceRangePattern = /\d[\d.,]*\s*(?:-|–|—|~|to|sampai)\s*(?:rp\s*)?\d[\d.,]*/i;
+
+const candidateVisitSelect = "*, offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,created_at)";
 
 function normalizeText(value: string | null | undefined) {
   return String(value ?? "")
@@ -98,6 +103,40 @@ function normalizePromoType(value: string | null | undefined) {
   const text = String(value ?? "").trim();
   if (!text || /^none|no activity|no promo|normal$/i.test(text)) return null;
   return text;
+}
+
+function candidateKey(item: SourceItem) {
+  const parsedPrice = parseCandidatePrice(item.net_price) ?? parseCandidatePrice(item.price);
+  return [
+    normalizeText(item.brand),
+    candidateProductKey(item.product),
+    normalizeText(String(parsedPrice ?? item.price)),
+    normalizePieceCount(item.piece_count) ?? "",
+    item.type,
+  ].join("|");
+}
+
+function isExtendedCandidateColumnError(error: { message?: string } | null) {
+  const message = error?.message ?? "";
+  return [
+    "list_price_idr",
+    "package_price_idr",
+    "net_price_idr",
+    "promo_type",
+    "candidate_key",
+    "source_image_id",
+    "source_image_path",
+  ].some((column) => message.includes(column));
+}
+
+function isCandidateKeyColumnError(error: { message?: string } | null) {
+  return (error?.message ?? "").includes("candidate_key");
+}
+
+function isMissingCandidateTableError(error: { message?: string } | null) {
+  const message = error?.message ?? "";
+  return message.includes("ai_price_candidates")
+    && (message.includes("Could not find the table") || message.includes("does not exist"));
 }
 
 function candidateProductKey(value: string) {
@@ -212,7 +251,7 @@ function sourceItems(aiResult: StoreVisitAiResult) {
 export async function generateAiPriceCandidates(input: CandidateInput) {
   if (!hasSupabaseServiceConfig()) return [];
   const supabase = createSupabaseServiceClient();
-  const items = sourceItems(input.aiResult);
+  const items = input.sourceItems?.filter(isPriceCandidate) ?? sourceItems(input.aiResult);
   if (items.length === 0) return [];
 
   await supabase
@@ -221,12 +260,26 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
     .eq("visit_id", input.visitId)
     .neq("status", "approved");
 
+  const { data: approvedCandidateRows, error: approvedCandidateError } = await supabase
+    .from("ai_price_candidates")
+    .select("candidate_key")
+    .eq("visit_id", input.visitId)
+    .eq("status", "approved");
+  if (approvedCandidateError && !isCandidateKeyColumnError(approvedCandidateError)) {
+    throw new Error(approvedCandidateError.message);
+  }
+  const approvedCandidateKeys = (approvedCandidateRows ?? [])
+    .map((row) => (row as { candidate_key?: string | null }).candidate_key)
+    .filter(Boolean) as string[];
+  const existingApprovedKeys = new Set(approvedCandidateKeys);
+
   const [{ data: materials }, { data: products }] = await Promise.all([
     supabase.from("material_master").select("*").limit(5000),
     supabase.from("competitor_products").select("*, brands(id,name)").limit(5000),
   ]);
 
   const rows = items.map((item) => {
+    const itemCandidateKey = candidateKey(item);
     const parsedPrice = parseCandidatePrice(item.price);
     const listPrice = parseCandidatePrice(item.list_price) ?? parsedPrice;
     const packagePrice = parseCandidatePrice(item.package_price) ?? parsedPrice;
@@ -251,6 +304,9 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
 
     return {
       visit_id: input.visitId,
+      candidate_key: itemCandidateKey,
+      source_image_id: item.sourceImageId ?? null,
+      source_image_path: item.sourceImagePath ?? null,
       raw_brand: item.brand,
       raw_product: item.product,
       raw_price: item.price,
@@ -270,14 +326,36 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
       warnings,
       status: "pending",
     };
-  });
+  }).filter((row) => !existingApprovedKeys.has(row.candidate_key));
 
-  const { data, error } = await supabase
+  if (rows.length === 0) return [];
+
+  let { data, error } = await supabase
     .from("ai_price_candidates")
     .insert(rows)
-    .select("*, offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,created_at)");
+    .select(candidateVisitSelect);
 
-  if (error?.message.includes("ai_price_candidates")) {
+  if (isExtendedCandidateColumnError(error)) {
+    const legacyRows = rows.map((row) => {
+      const legacyRow = { ...row } as Record<string, unknown>;
+      delete legacyRow.list_price_idr;
+      delete legacyRow.package_price_idr;
+      delete legacyRow.net_price_idr;
+      delete legacyRow.promo_type;
+      delete legacyRow.candidate_key;
+      delete legacyRow.source_image_id;
+      delete legacyRow.source_image_path;
+      return legacyRow;
+    });
+    const legacyResult = await supabase
+      .from("ai_price_candidates")
+      .insert(legacyRows)
+      .select(candidateVisitSelect);
+    data = legacyResult.data;
+    error = legacyResult.error;
+  }
+
+  if (isMissingCandidateTableError(error)) {
     return [];
   }
   if (error) throw new Error(error.message);

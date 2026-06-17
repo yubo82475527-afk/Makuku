@@ -23,9 +23,9 @@ async function attachSignedImageUrls(visit: OfflineStoreVisit) {
   }));
   const tableSignedImages = await Promise.all((visit.offline_visit_images ?? []).map(async (image) => {
     const category = toStoreVisitImageCategory(image.image_type);
-    if (image.image_url) return { path: image.image_path, url: image.image_url, category };
+    if (image.image_url) return { id: image.id, path: image.image_path, url: image.image_url, category };
     const { data } = await supabase.storage.from("offline-visit-images").createSignedUrl(image.image_path, 60 * 60);
-    return { path: image.image_path, url: data?.signedUrl ?? null, category };
+    return { id: image.id, path: image.image_path, url: data?.signedUrl ?? null, category };
   }));
   return { ...visit, signed_images: [...tableSignedImages, ...legacySignedImages] };
 }

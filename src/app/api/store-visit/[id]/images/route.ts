@@ -85,7 +85,7 @@ export async function POST(request: Request, ctx: RouteContext) {
         content_type: file.type,
         file_size: file.size,
         analysis_status: "pending",
-        vision_result: {},
+        vision_result: { upload_category: category },
       })
       .select("*")
       .single();

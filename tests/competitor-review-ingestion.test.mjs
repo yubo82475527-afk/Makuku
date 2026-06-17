@@ -6,6 +6,14 @@ const candidateService = readFileSync("src/lib/ai-price-candidates.ts", "utf8");
 const reviewService = readFileSync("src/lib/ai-price-review.ts", "utf8");
 const bulkRunRoute = readFileSync("src/app/api/ai-price-candidates/bulk-review/[jobId]/run/route.ts", "utf8");
 
+test("AI candidate generation assigns stable candidate keys for idempotent reanalysis", () => {
+  assert.match(candidateService, /function candidateKey/);
+  assert.match(candidateService, /candidate_key/);
+  assert.match(candidateService, /approvedCandidateKeys/);
+  assert.match(candidateService, /existingApprovedKeys/);
+  assert.match(candidateService, /candidateKey\(item\)/);
+});
+
 test("AI candidate matching refuses to reuse competitor products from a different brand", () => {
   assert.match(candidateService, /function competitorBrandsMatch/);
   assert.match(candidateService, /if \(!competitorBrandsMatch\(candidate\.brand, item\.brands\?\.name\)\) continue;/);
@@ -22,4 +30,28 @@ test("price review approval validates matched competitor brand before reusing it
 test("bulk manual approval revalidates competitor mapping pages after creating competitor products", () => {
   assert.match(bulkRunRoute, /revalidatePath\("\/zh\/competitors"\)/);
   assert.match(bulkRunRoute, /revalidatePath\("\/en\/competitors"\)/);
+});
+
+test("AI candidate price range filter keeps single IDR package prices", () => {
+  const line = candidateService.split(/\r?\n/).find((item) => item.includes("const priceRangePattern ="));
+  assert.ok(line, "priceRangePattern should be defined");
+  const literal = line.match(/=\s*(\/.+\/[a-z]*)\s*;/)?.[1];
+  assert.ok(literal, "priceRangePattern should use a regex literal");
+  const priceRangePattern = Function(`return ${literal}`)();
+
+  assert.equal(priceRangePattern.test("52000"), false);
+  assert.equal(priceRangePattern.test("Rp 52.000"), false);
+  assert.equal(priceRangePattern.test("52000-53000"), true);
+  assert.equal(priceRangePattern.test("52000 sampai 53000"), true);
+});
+
+test("AI candidate generation falls back when three-price columns are not migrated", () => {
+  assert.match(candidateService, /function isExtendedCandidateColumnError/);
+  assert.match(candidateService, /list_price_idr/);
+  assert.match(candidateService, /package_price_idr/);
+  assert.match(candidateService, /net_price_idr/);
+  assert.match(candidateService, /promo_type/);
+  assert.match(candidateService, /const legacyRows = rows\.map/);
+  assert.match(candidateService, /legacyRow/);
+  assert.doesNotMatch(candidateService, /error\?\.message\.includes\("ai_price_candidates"\)\)\s*\{\s*return \[\]/);
 });

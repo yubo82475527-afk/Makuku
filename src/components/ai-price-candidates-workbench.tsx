@@ -21,6 +21,12 @@ type MatchDialogState = { candidate: AiPriceCandidate } | null;
 type ReviewInput = { price: string; pieces: string; promoType: string };
 type ReviewOverride = { price_idr: number; net_price_idr: number; piece_count: number; promo_type: string | null };
 type WorkbenchCopy = ReturnType<typeof getWorkbenchCopy>;
+type VisitEvidenceImage = {
+  id?: string;
+  path: string;
+  url: string | null;
+  category?: string;
+};
 
 function stopReviewRowClick(event: MouseEvent) {
   event.stopPropagation();
@@ -285,13 +291,14 @@ export function AiPriceCandidatesWorkbench({
       {items.length === 0 ? <EmptyState text={copy.emptyState} /> : null}
       {items.length > 0 ? (
         <div className="overflow-x-auto rounded-lg border border-slate-200">
-          <table className="w-full min-w-[1440px] text-left text-sm">
+          <table className="w-full min-w-[1520px] text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
                 <th className="w-10 px-3 py-2">
                   {filters.status === "pending" ? <input type="checkbox" checked={allPendingSelected} onChange={togglePage} aria-label={copy.selectCurrentPage} /> : null}
                 </th>
                 <th className="px-3 py-2">{copy.table.store}</th>
+                <th className="px-3 py-2">{copy.table.batch}</th>
                 <th className="px-3 py-2">{copy.table.date}</th>
                 <th className="px-3 py-2">{copy.table.brand}</th>
                 <th className="px-3 py-2">{copy.table.product}</th>
@@ -341,6 +348,7 @@ export function AiPriceCandidatesWorkbench({
                         {visit?.store_name ?? "-"}
                       </button>
                     </td>
+                    <td className="px-3 py-3 font-medium text-slate-700">{visit?.visit_code ?? "-"}</td>
                     <td className="px-3 py-3 text-slate-600">{visit?.visit_date ?? shortTime(candidate.created_at)}</td>
                     <td className="px-3 py-3 font-medium text-slate-900">{candidate.raw_brand || "-"}</td>
                     <td className="max-w-xs px-3 py-3 text-slate-700">{candidate.raw_product || "-"}</td>
@@ -988,7 +996,7 @@ function CandidateDetailDrawerContent({
   onUpdated: () => void;
   onEditMatch: (candidate: AiPriceCandidate) => void;
 }) {
-  const [visitImages, setVisitImages] = useState<{ path: string; url: string | null; category?: string }[] | null>(() => candidate.visit_id ? null : []);
+  const [visitImages, setVisitImages] = useState<VisitEvidenceImage[] | null>(() => candidate.visit_id ? null : []);
   const [price, setPrice] = useState(candidate.net_price_idr ?? candidate.parsed_price_idr ? String(Math.round(candidate.net_price_idr ?? candidate.parsed_price_idr ?? 0)) : "");
   const [pieces, setPieces] = useState(candidate.piece_count ? String(candidate.piece_count) : "");
   const [promoType, setPromoType] = useState(candidate.promo_type ?? "");
@@ -997,6 +1005,10 @@ function CandidateDetailDrawerContent({
   const [activeImage, setActiveImage] = useState<{ url: string; label: string } | null>(null);
   const reviewedPricePerPiece = calculateReviewedPricePerPiece(price, pieces);
   const canApprove = candidateCanBeApproved(candidate);
+  const sourcePhoto = useMemo(() => findCandidateSourcePhoto(candidate, visitImages ?? []), [candidate, visitImages]);
+  const orderedVisitImages = useMemo(() => orderVisitImagesBySource(visitImages ?? [], sourcePhoto), [visitImages, sourcePhoto]);
+  const sourcePhotoLabel = locale === "zh" ? "当前价格来源照片" : "Current price source photo";
+  const sourcePhotoBadge = locale === "zh" ? "来源" : "Source";
 
   useEffect(() => {
     if (!candidate.visit_id) return;
@@ -1060,6 +1072,7 @@ function CandidateDetailDrawerContent({
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <DetailMetric label={copy.table.store} value={candidate.offline_store_visits?.store_name ?? "-"} />
+          <DetailMetric label={copy.batchCode} value={candidate.offline_store_visits?.visit_code ?? "-"} />
           <DetailMetric label={copy.visitDate} value={candidate.offline_store_visits?.visit_date ?? shortTime(candidate.created_at)} />
           <DetailMetric label={copy.aiConfidence} value={`${Math.round(candidate.ai_confidence * 100)}%`} />
           <DetailMetric label={copy.matchScore} value={`${Math.round(candidate.match_score * 100)}%`} />
@@ -1087,9 +1100,16 @@ function CandidateDetailDrawerContent({
           <div className="mb-2 text-sm font-semibold text-slate-900">{copy.visitPhotos}</div>
           {visitImages === null ? <div className="text-sm text-slate-500">{copy.loadingPhotos}</div> : null}
           {visitImages !== null && visitImages.length === 0 ? <div className="text-sm text-slate-500">{copy.noPhotos}</div> : null}
+          {sourcePhoto ? (
+            <div className="mb-2 rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-800">
+              {sourcePhotoLabel}
+            </div>
+          ) : null}
           <div className="grid gap-3 sm:grid-cols-2">
-            {(visitImages ?? []).map((image) => (
-              <div key={image.path} className="rounded-md border border-slate-200 p-2">
+            {orderedVisitImages.map((image) => {
+              const isSource = sourcePhoto?.path === image.path;
+              return (
+              <div key={image.path} className={`rounded-md border p-2 ${isSource ? "border-emerald-500 bg-emerald-50/60 ring-1 ring-emerald-200" : "border-slate-200"}`}>
                 {image.url ? (
                   <button
                     type="button"
@@ -1107,9 +1127,12 @@ function CandidateDetailDrawerContent({
                     />
                   </button>
                 ) : <div className="aspect-video rounded bg-slate-100" />}
-                <div className="mt-1 text-xs text-slate-500">{image.category ?? image.path}</div>
+                <div className="mt-1 flex items-center justify-between gap-2 text-xs">
+                  <span className={isSource ? "font-medium text-emerald-800" : "text-slate-500"}>{image.category ?? image.path}</span>
+                  {isSource ? <span className="rounded bg-emerald-600 px-1.5 py-0.5 font-medium text-white">{sourcePhotoBadge}</span> : null}
+                </div>
               </div>
-            ))}
+            );})}
           </div>
         </div>
 
@@ -1230,6 +1253,23 @@ function candidateCanBeApproved(candidate: AiPriceCandidate) {
   return Boolean(candidate.matched_entity_id && candidate.matched_entity_type !== "unmatched");
 }
 
+function findCandidateSourcePhoto(candidate: AiPriceCandidate, images: VisitEvidenceImage[]) {
+  return images.find((image) => {
+    if (candidate.source_image_id && image.id === candidate.source_image_id) return true;
+    if (candidate.source_image_path && image.path === candidate.source_image_path) return true;
+    return false;
+  }) ?? null;
+}
+
+function orderVisitImagesBySource(images: VisitEvidenceImage[], sourcePhoto: VisitEvidenceImage | null) {
+  if (!sourcePhoto) return images;
+  return [...images].sort((left, right) => {
+    if (left.path === sourcePhoto.path) return -1;
+    if (right.path === sourcePhoto.path) return 1;
+    return 0;
+  });
+}
+
 function normalizeSearchText(value: string | number | null | undefined) {
   return String(value ?? "").trim().toLowerCase();
 }
@@ -1347,6 +1387,7 @@ function getWorkbenchCopy(locale: string) {
       riskIndicatorLabel: (count: number) => `${count} 条风险提示`,
       previewPhoto: "查看大图",
       close: "关闭",
+      batchCode: "拍照批次",
       visitDate: "巡店日期",
       matchedTo: "匹配对象",
       visitDetail: "巡店详情",
@@ -1364,6 +1405,7 @@ function getWorkbenchCopy(locale: string) {
       reviewMethod: "通过方法",
       table: {
         store: "门店",
+        batch: "拍照批次",
         date: "日期",
         brand: "品牌",
         product: "商品",
@@ -1448,6 +1490,7 @@ function getWorkbenchCopy(locale: string) {
     riskIndicatorLabel: (count: number) => `${count} risk warning${count === 1 ? "" : "s"}`,
     previewPhoto: "Preview photo",
     close: "Close",
+    batchCode: "Batch code",
     visitDate: "Visit date",
     matchedTo: "Matched to",
     visitDetail: "Visit detail",
@@ -1465,6 +1508,7 @@ function getWorkbenchCopy(locale: string) {
     reviewMethod: "Review method",
     table: {
       store: "Store",
+      batch: "Batch",
       date: "Date",
       brand: "Brand",
       product: "Product",

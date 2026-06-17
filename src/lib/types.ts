@@ -106,6 +106,38 @@ export type StoreVisitAiResult = {
   store_summary: string;
 };
 
+export type StoreVisitPriceImageRow = {
+  brand?: string | null;
+  sku: string;
+  list_price_idr: number | null;
+  package_price_idr: number | null;
+  net_price_idr: number | null;
+  promo_type: string | null;
+  piece_count: number | null;
+  price_per_piece_idr: number | null;
+};
+
+export type StoreVisitPriceImageAnalysis = {
+  schema_version: "store_visit_price_image_v1";
+  upload_category: StoreVisitImageCategory;
+  rows: StoreVisitPriceImageRow[];
+  summary: string;
+  warnings: {
+    type: "MISSING_DATA" | "LOW_CONFIDENCE" | "PARSE_RISK";
+    message: string;
+  }[];
+};
+
+export type StoreVisitDisplayAnalysis = {
+  schema_version: "store_visit_display_v1";
+  summary: string;
+  observations: string[];
+  warnings: {
+    type: "MISSING_DATA" | "LOW_CONFIDENCE" | "PARSE_RISK";
+    message: string;
+  }[];
+};
+
 export type StoreVisitAiConfig = {
   id?: string;
   version_name: string;
@@ -355,6 +387,7 @@ export type CompetitorSeriesMapping = {
 
 export type PriceSnapshotVisit = {
   id: string;
+  visit_code?: string | null;
   store_name: string;
   city: string;
   province?: string | null;
@@ -468,7 +501,7 @@ export type OfflineVisitImage = {
   content_type: string;
   file_size: number;
   analysis_status: OfflineImageAnalysisStatus;
-  vision_result: Partial<OfflineImageVisionResult> | null;
+  vision_result: Partial<OfflineImageVisionResult | StoreVisitPriceImageAnalysis | StoreVisitDisplayAnalysis> | null;
   error_message: string | null;
   uploaded_at: string;
   created_at: string;
@@ -476,6 +509,7 @@ export type OfflineVisitImage = {
 
 export type OfflineStoreVisit = {
   id: string;
+  visit_code?: string | null;
   store_name: string;
   region?: string | null;
   channel?: string | null;
@@ -505,6 +539,7 @@ export type OfflineStoreVisit = {
   created_at: string;
   offline_visit_images?: OfflineVisitImage[];
   signed_images?: {
+    id?: string;
     path: string;
     url: string | null;
     category?: OfflineImageType | StoreVisitImageCategory;
@@ -518,6 +553,9 @@ export type AiPriceCandidateReviewMethod = "auto_rule" | "manual" | "bulk_manual
 export type AiPriceCandidate = {
   id: string;
   visit_id: string | null;
+  candidate_key?: string | null;
+  source_image_id?: string | null;
+  source_image_path?: string | null;
   raw_brand: string;
   raw_product: string;
   raw_price: string;
@@ -546,7 +584,7 @@ export type AiPriceCandidate = {
   rejection_reason?: string | null;
   review_job_id?: string | null;
   review_method?: AiPriceCandidateReviewMethod | null;
-  offline_store_visits?: Pick<OfflineStoreVisit, "id" | "store_name" | "city" | "province" | "city_name" | "district" | "channel_type" | "visit_date" | "created_at"> | null;
+  offline_store_visits?: Pick<OfflineStoreVisit, "id" | "visit_code" | "store_name" | "city" | "province" | "city_name" | "district" | "channel_type" | "visit_date" | "created_at"> | null;
 };
 
 export type AiPriceReviewRule = {

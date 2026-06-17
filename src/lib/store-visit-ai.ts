@@ -1,5 +1,8 @@
 import type {
   CategoryCoverage,
+  StoreVisitDisplayAnalysis,
+  StoreVisitImageCategory,
+  StoreVisitPriceImageAnalysis,
   PriceInsightTag,
   PromoPressureLevel,
   PromotionType,
@@ -13,6 +16,7 @@ import type {
   ValidationWarningType,
 } from "@/lib/types";
 import { createJsonChatCompletion, imageUrlPart, textPart } from "@/lib/ai-client";
+import { calculatePricePerPiece, parseIdrPrice } from "@/lib/price-utils";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
 
 const stockRiskLevels: StockRiskLevel[] = ["Normal", "Low Stock", "Out of Stock Risk"];
@@ -58,11 +62,37 @@ export const STORE_VISIT_AI_PROMPT = [
   "Never calculate price_per_piece yourself. Return package price and piece_count only; the system calculates per-piece price.",
   PROMOTION_PROMPT_REQUIREMENT,
   PRICE_CANDIDATE_PROMPT_REQUIREMENT,
-  "Treat all images as ONE store-level observation.",
+  "Review each image independently first, then aggregate only store-level conclusions that are clearly supported by the provided images.",
   OUTPUT_LIMITS_PROMPT_REQUIREMENT,
   "Return ONLY valid compact JSON. No markdown. No explanations. No extra text.",
   "Use exactly this JSON structure and enum values:",
   '{"raw_extraction":{"detected_items":[{"brand":"string","product":"string","price":"string","type":"SKU|PROMO|SHELF_SIGNAL","confidence":0.8}]},"validation":{"is_valid":true,"warnings":[{"type":"MISSING_DATA|LOW_CONFIDENCE|PARSE_RISK","message":"string"}]},"shelf_understanding":{"brands_present":[{"brand":"string","shelf_share_estimate":0}],"category_coverage":"FULL|PARTIAL|FRAGMENTED","shelf_condition":"WELL_ORGANISED|NORMAL|MESSY","facings_estimate":[{"brand":"string","facing_count_estimate":0}]},"price_insights":{"brand_price_range":[{"brand":"string","min_price":"string","max_price":"string"}],"key_sku_prices":[{"brand":"string","product":"string","price":"string","list_price":"string","package_price":"string","net_price":"string","promo_type":"string","piece_count":44,"tag":"HERO|PROMO|ANOMALY","confidence":0.8}]},"stock_risk":{"level":"Normal|Low Stock|Out of Stock Risk","affected_brands":[{"brand":"string","risk_signal":"EMPTY_FACING|LOW_FACING|BLOCKED_SHELF"}],"reason":"string"},"promotion_insights":{"competitor_promotions":[{"brand":"string","type":"Discount|Buy 1 Get 1|Buy 2 Get 1|Promo Tag|Special Offer","visibility":"LOW|MEDIUM|HIGH","description":"string"}],"promo_pressure_level":"LOW|MEDIUM|HIGH"},"store_summary":"string"}',
+].join("\n");
+
+const STORE_VISIT_PRICE_IMAGE_PROMPT = [
+  "You are a retail price-tag extraction system.",
+  "You receive exactly ONE price-tag image from a store visit.",
+  "Extract every readable sellable SKU row in the image.",
+  "Return rows only when a product or SKU is visible together with a real selling price.",
+  "sku should be the most specific readable product label in the image.",
+  "list_price_idr is the normal shelf price when visible.",
+  "package_price_idr is the package price before voucher or cashback when visible.",
+  "net_price_idr is the final paid price when visible.",
+  "If only one price is visible, use that same value for list_price_idr, package_price_idr, and net_price_idr.",
+  "promo_type should be a short mechanic such as Discount, Buy 2 Get 1, Buy 1 Get 1, Special Offer, or null when no clear activity is visible.",
+  "piece_count is the pack piece count only when visible. Never guess.",
+  "Do not calculate per-piece price. The system will calculate it.",
+  "Return ONLY valid compact JSON. No markdown. No extra text.",
+  '{"rows":[{"brand":"string","sku":"string","list_price_idr":120000,"package_price_idr":110000,"net_price_idr":105000,"promo_type":"Discount","piece_count":44}],"summary":"string","warnings":[{"type":"MISSING_DATA|LOW_CONFIDENCE|PARSE_RISK","message":"string"}]}',
+].join("\n");
+
+const STORE_VISIT_DISPLAY_PROMPT = [
+  "You are a store display analysis system.",
+  "You receive one or more storefront or display images from the same store visit.",
+  "Summarize only display and store-level observations supported by the images.",
+  "Focus on concise business-readable output.",
+  "Return ONLY valid compact JSON. No markdown. No extra text.",
+  '{"summary":"string","observations":["string"],"warnings":[{"type":"MISSING_DATA|LOW_CONFIDENCE|PARSE_RISK","message":"string"}]}',
 ].join("\n");
 
 export const DEFAULT_STORE_VISIT_AI_CONFIG: StoreVisitAiConfig = {
@@ -143,6 +173,11 @@ function asString(value: unknown, fallback: string) {
 
 function asOptionalString(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function asNullablePriceNumber(value: unknown) {
+  const parsed = typeof value === "number" ? value : parseIdrPrice(typeof value === "string" ? value : null);
+  return typeof parsed === "number" && Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
 function oneSentenceMax30Words(value: unknown) {
@@ -382,6 +417,68 @@ export function normalizeStoreVisitAiResult(value: unknown): StoreVisitAiResult 
   };
 }
 
+function normalizePriceImageWarnings(value: unknown) {
+  return (Array.isArray(value) ? value : [])
+    .slice(0, 5)
+    .map((item) => {
+      const warning = asRecord(item);
+      return {
+        type: asEnum(warning.type, validationWarningTypes, "MISSING_DATA"),
+        message: asString(warning.message, "AI output contains missing or uncertain data."),
+      };
+    });
+}
+
+export function normalizeStoreVisitPriceImageAnalysis(
+  value: unknown,
+  category: StoreVisitImageCategory,
+): StoreVisitPriceImageAnalysis {
+  const record = asRecord(value);
+  const rows = (Array.isArray(record.rows) ? record.rows : [])
+    .slice(0, 30)
+    .map((item) => {
+      const row = asRecord(item);
+      const listPrice = asNullablePriceNumber(row.list_price_idr);
+      const packagePrice = asNullablePriceNumber(row.package_price_idr) ?? listPrice;
+      const netPrice = asNullablePriceNumber(row.net_price_idr) ?? packagePrice ?? listPrice;
+      const pieceCount = asPositiveIntegerOrNull(row.piece_count);
+      return {
+        brand: asOptionalString(row.brand),
+        sku: asString(row.sku, "Unknown SKU"),
+        list_price_idr: listPrice ?? netPrice,
+        package_price_idr: packagePrice ?? netPrice,
+        net_price_idr: netPrice,
+        promo_type: asOptionalString(row.promo_type),
+        piece_count: pieceCount,
+        price_per_piece_idr: calculatePricePerPiece(netPrice, pieceCount),
+      };
+    })
+    .filter((row) => row.net_price_idr !== null);
+
+  return {
+    schema_version: "store_visit_price_image_v1",
+    upload_category: category,
+    rows,
+    summary: asString(record.summary, rows.length > 0 ? `${rows.length} SKU rows detected.` : "No readable SKU price rows detected."),
+    warnings: normalizePriceImageWarnings(record.warnings),
+  };
+}
+
+export function normalizeStoreVisitDisplayAnalysis(value: unknown): StoreVisitDisplayAnalysis {
+  const record = asRecord(value);
+  const observations = (Array.isArray(record.observations) ? record.observations : [])
+    .map((item) => asString(item, ""))
+    .filter(Boolean)
+    .slice(0, 8);
+
+  return {
+    schema_version: "store_visit_display_v1",
+    summary: asString(record.summary, observations[0] ?? "No display summary available."),
+    observations,
+    warnings: normalizePriceImageWarnings(record.warnings),
+  };
+}
+
 export async function analyzeStoreVisitImages(input: {
   imageUrls: string[];
   imageCategories?: string[];
@@ -425,6 +522,105 @@ export async function analyzeStoreVisitImages(input: {
 
   return {
     normalized: normalizeStoreVisitAiResult(completion.parsed),
+    rawText: completion.rawText,
+    parsed: completion.parsed,
+    metadata: completion.metadata,
+    config,
+  };
+}
+
+export async function analyzeStoreVisitPriceImage(input: {
+  imageUrl: string;
+  imageCategory: StoreVisitImageCategory;
+  storeName: string;
+  region: string;
+  channel: string;
+  promoter: string;
+  visitDate: string;
+  config?: Partial<StoreVisitAiConfig>;
+}) {
+  const config = input.config ? normalizeAiConfig(input.config) : await getActiveStoreVisitAiConfig();
+  const completion = await createJsonChatCompletion({
+    messages: [
+      {
+        role: "system",
+        content: STORE_VISIT_PRICE_IMAGE_PROMPT,
+      },
+      {
+        role: "user",
+        content: [
+          textPart([
+            `Store Name: ${input.storeName}`,
+            `Region: ${input.region}`,
+            `Channel: ${input.channel}`,
+            `Promoter: ${input.promoter}`,
+            `Visit Date: ${input.visitDate}`,
+            `Image category: ${input.imageCategory}`,
+          ].join("\n")),
+          imageUrlPart(input.imageUrl),
+        ],
+      },
+    ],
+    temperature: config.temperature,
+    maxTokens: Math.min(config.max_tokens, 2500),
+  });
+
+  return {
+    normalized: normalizeStoreVisitPriceImageAnalysis(completion.parsed, input.imageCategory),
+    rawText: completion.rawText,
+    parsed: completion.parsed,
+    metadata: completion.metadata,
+    config,
+  };
+}
+
+export async function analyzeStoreVisitDisplayImages(input: {
+  imageUrls: string[];
+  storeName: string;
+  region: string;
+  channel: string;
+  promoter: string;
+  visitDate: string;
+  config?: Partial<StoreVisitAiConfig>;
+}) {
+  if (input.imageUrls.length === 0) {
+    return {
+      normalized: normalizeStoreVisitDisplayAnalysis({ summary: "No display images uploaded.", observations: [], warnings: [] }),
+      rawText: "",
+      parsed: {},
+      metadata: null,
+      config: input.config ? normalizeAiConfig(input.config) : await getActiveStoreVisitAiConfig(),
+    };
+  }
+
+  const config = input.config ? normalizeAiConfig(input.config) : await getActiveStoreVisitAiConfig();
+  const completion = await createJsonChatCompletion({
+    messages: [
+      {
+        role: "system",
+        content: STORE_VISIT_DISPLAY_PROMPT,
+      },
+      {
+        role: "user",
+        content: [
+          textPart([
+            `Store Name: ${input.storeName}`,
+            `Region: ${input.region}`,
+            `Channel: ${input.channel}`,
+            `Promoter: ${input.promoter}`,
+            `Visit Date: ${input.visitDate}`,
+            `Image count: ${input.imageUrls.length}`,
+          ].join("\n")),
+          ...input.imageUrls.map(imageUrlPart),
+        ],
+      },
+    ],
+    temperature: config.temperature,
+    maxTokens: Math.min(config.max_tokens, 1800),
+  });
+
+  return {
+    normalized: normalizeStoreVisitDisplayAnalysis(completion.parsed),
     rawText: completion.rawText,
     parsed: completion.parsed,
     metadata: completion.metadata,

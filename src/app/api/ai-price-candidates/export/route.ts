@@ -4,6 +4,7 @@ import type { AiPriceCandidate, MaterialMaster } from "@/lib/types";
 
 const csvColumns = [
   "candidate_id",
+  "visit_code",
   "visit_date",
   "store_name",
   "city",
@@ -110,6 +111,7 @@ export async function GET(request: Request) {
 
       return [
         candidate.id,
+        visit?.visit_code,
         visit?.visit_date,
         visit?.store_name,
         visit?.city,

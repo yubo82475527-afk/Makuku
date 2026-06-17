@@ -32,6 +32,11 @@ function isStoreColumnError(error: { message?: string } | null) {
   return message.includes("store_id") || message.includes("channel_id");
 }
 
+function isVisitChannelTypeCheckError(error: { message?: string } | null) {
+  const message = error?.message ?? "";
+  return message.includes("offline_store_visits_channel_type_check");
+}
+
 function cleanCategory(value: FormDataEntryValue | null) {
   const category = clean(value);
   return imageCategories.includes(category as (typeof imageCategories)[number]) ? category : null;
@@ -93,11 +98,25 @@ async function insertVisit(input: {
     ai_result: null,
   };
 
-  let { data: visit, error: visitError } = await supabase
-    .from("offline_store_visits")
-    .insert(payload)
-    .select("*")
-    .single();
+  async function insertVisitPayload(insertPayload: Record<string, unknown>) {
+    const result = await supabase
+      .from("offline_store_visits")
+      .insert(insertPayload)
+      .select("*")
+      .single();
+
+    if (isVisitChannelTypeCheckError(result.error) && insertPayload.channel_type !== "other") {
+      return supabase
+        .from("offline_store_visits")
+        .insert({ ...insertPayload, channel_type: "other" })
+        .select("*")
+        .single();
+    }
+
+    return result;
+  }
+
+  let { data: visit, error: visitError } = await insertVisitPayload(payload);
 
   if (isLocationColumnError(visitError)) {
     const noLocationPayload = {
@@ -120,11 +139,7 @@ async function insertVisit(input: {
       image_categories: payload.image_categories,
       ai_result: payload.ai_result,
     };
-    const noLocationResult = await supabase
-      .from("offline_store_visits")
-      .insert(noLocationPayload)
-      .select("*")
-      .single();
+    const noLocationResult = await insertVisitPayload(noLocationPayload);
     visit = noLocationResult.data;
     visitError = noLocationResult.error;
   }
@@ -148,11 +163,7 @@ async function insertVisit(input: {
       image_categories: payload.image_categories,
       ai_result: payload.ai_result,
     };
-    const noStoreResult = await supabase
-      .from("offline_store_visits")
-      .insert(noStorePayload)
-      .select("*")
-      .single();
+    const noStoreResult = await insertVisitPayload(noStorePayload);
     visit = noStoreResult.data;
     visitError = noStoreResult.error;
   }
@@ -181,11 +192,7 @@ async function insertVisit(input: {
       image_categories: payload.image_categories,
       ai_result: payload.ai_result,
     };
-    const fallbackResult = await supabase
-      .from("offline_store_visits")
-      .insert(uploaderOnlyPayload)
-      .select("*")
-      .single();
+    const fallbackResult = await insertVisitPayload(uploaderOnlyPayload);
     visit = fallbackResult.data;
     visitError = fallbackResult.error;
   }
@@ -328,8 +335,8 @@ export async function POST(request: Request) {
     if (categories.length !== files.length || categories.some((category) => !category)) {
       return Response.json({ error: "Image categories are invalid" }, { status: 400 });
     }
-    if (!categories.includes("makuku_shelf")) {
-      return Response.json({ error: "At least one Makuku shelf image is required" }, { status: 400 });
+    if (!categories.includes("makuku_shelf") && !categories.includes("competitor_shelf")) {
+      return Response.json({ error: "At least one price-tag image is required" }, { status: 400 });
     }
     for (const file of files) {
       if (!file.type.startsWith("image/")) return Response.json({ error: "Only image files are supported" }, { status: 400 });

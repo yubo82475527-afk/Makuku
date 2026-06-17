@@ -117,6 +117,10 @@ function isMissingSchemaError(error: { message?: string } | null) {
   return message.includes("Could not find the table") || message.includes("schema cache");
 }
 
+function isMissingVisitCodeError(error: { message?: string } | null) {
+  return (error?.message ?? "").includes("visit_code");
+}
+
 export async function getBrands(): Promise<QueryResult<Brand[]>> {
   if (!hasSupabaseConfig()) return { data: demoBrands, error: null, isDemo: true };
   const supabase = createSupabaseServiceClient();
@@ -506,7 +510,7 @@ export async function getAiPriceCandidates(filters: AiPriceCandidateFilters = {}
 
   const supabase = createSupabaseServiceClient();
   const shouldFilterVisitDate = Boolean(filters.dateFrom || filters.dateTo);
-  const visitColumns = "id,store_name,city,province,city_name,district,channel_type,visit_date,created_at";
+  const visitColumns = "id,visit_code,store_name,city,province,city_name,district,channel_type,visit_date,created_at";
   const legacyVisitColumns = "id,store_name,city,channel_type,visit_date,created_at";
   const visitSelect = shouldFilterVisitDate
     ? `offline_store_visits!inner(${visitColumns})`
@@ -531,7 +535,7 @@ export async function getAiPriceCandidates(filters: AiPriceCandidateFilters = {}
 
   let { data, error } = await query;
 
-  if (isMissingSchemaError(error)) {
+  if (isMissingSchemaError(error) || isMissingVisitCodeError(error)) {
     let legacyQuery = supabase
       .from("ai_price_candidates")
       .select(`*, ${legacyVisitSelect}`)
@@ -584,7 +588,7 @@ export async function getAiPriceCandidatesPage(filters: AiPriceCandidateFilters 
 
   const supabase = createSupabaseServiceClient();
   const shouldFilterVisitDate = Boolean(filters.dateFrom || filters.dateTo);
-  const visitColumns = "id,store_name,city,province,city_name,district,channel_type,visit_date,created_at";
+  const visitColumns = "id,visit_code,store_name,city,province,city_name,district,channel_type,visit_date,created_at";
   const legacyVisitColumns = "id,store_name,city,channel_type,visit_date,created_at";
   const visitSelect = shouldFilterVisitDate
     ? `offline_store_visits!inner(${visitColumns})`
@@ -609,7 +613,7 @@ export async function getAiPriceCandidatesPage(filters: AiPriceCandidateFilters 
 
   let { data, error, count } = await query;
 
-  if (isMissingSchemaError(error)) {
+  if (isMissingSchemaError(error) || isMissingVisitCodeError(error)) {
     let legacyQuery = supabase
       .from("ai_price_candidates")
       .select(`*, ${legacyVisitSelect}`, { count: "exact" })

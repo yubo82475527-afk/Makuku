@@ -1,4 +1,8 @@
-import { analyzeStoreVisitImages } from "@/lib/store-visit-ai";
+import {
+  analyzeStoreVisitDisplayImages,
+  analyzeStoreVisitPriceImage,
+  analyzeStoreVisitImages,
+} from "@/lib/store-visit-ai";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import type {
   OfflineImageType,
@@ -6,6 +10,7 @@ import type {
   OfflineVisitImage,
   StoreVisitAiConfig,
   StoreVisitImageCategory,
+  StoreVisitPriceImageAnalysis,
 } from "@/lib/types";
 
 const maxInlineImageBytes = 8 * 1024 * 1024;
@@ -62,28 +67,105 @@ export async function runStoreVisitAiAnalysisForVisit(input: {
     const { data } = await supabase.storage.from("store-visits").createSignedUrl(path, 60 * 10);
     return data?.signedUrl ?? null;
   }));
-  const signedUrls = [...tableSignedUrls, ...legacySignedUrls];
-  const imageUrls = signedUrls.filter((url): url is string => Boolean(url));
-  if (imageUrls.length === 0) throw new Error("Unable to create signed image URLs");
+  const signedEntries = [...tableSignedUrls, ...legacySignedUrls]
+    .map((url, index) => ({
+      url,
+      imageCategory: imageCategories[index] as StoreVisitImageCategory | undefined,
+      tableImage: index < tableImages.length ? tableImages[index] : null,
+      imagePath: imagePaths[index],
+    }))
+    .filter((entry): entry is { url: string; imageCategory: StoreVisitImageCategory | undefined; tableImage: OfflineVisitImage | null; imagePath: string } => Boolean(entry.url));
+  if (signedEntries.length === 0) throw new Error("Unable to create signed image URLs");
 
-  const inlineImageUrls = await Promise.all(imageUrls.map(imageUrlToDataUrl));
+  const inlineImageUrls = await Promise.all(signedEntries.map((entry) => imageUrlToDataUrl(entry.url)));
+  const region = typedVisit.region ?? typedVisit.city;
+  const channel = typedVisit.channel ?? typedVisit.channel_type;
+  const promoter = typedVisit.promoter ?? typedVisit.uploader_name;
+
+  const priceImageInputs = inlineImageUrls
+    .map((imageUrl, index) => ({
+      imageUrl,
+      imageCategory: signedEntries[index]?.imageCategory,
+      tableImage: signedEntries[index]?.tableImage ?? null,
+    }))
+    .filter((item) => item.imageCategory === "makuku_shelf" || item.imageCategory === "competitor_shelf");
+
+  const priceImageResults: { imageId: string; result: StoreVisitPriceImageAnalysis }[] = [];
+  for (const item of priceImageInputs) {
+    const tableImage = item.tableImage;
+    if (!tableImage || !item.imageCategory) continue;
+    const result = await analyzeStoreVisitPriceImage({
+      imageUrl: item.imageUrl,
+      imageCategory: item.imageCategory,
+      storeName: typedVisit.store_name,
+      region,
+      channel,
+      promoter,
+      visitDate: typedVisit.visit_date,
+      config: input.config,
+    });
+    priceImageResults.push({ imageId: tableImage.id, result: result.normalized });
+  }
+
+  const displayImageUrls = inlineImageUrls.filter((_, index) => signedEntries[index]?.imageCategory === "storefront");
+  const displayAnalysis = await analyzeStoreVisitDisplayImages({
+    imageUrls: displayImageUrls,
+    storeName: typedVisit.store_name,
+    region,
+    channel,
+    promoter,
+    visitDate: typedVisit.visit_date,
+    config: input.config,
+  });
+
+  if (priceImageResults.length > 0) {
+    for (const item of priceImageResults) {
+      await supabase
+        .from("offline_visit_images")
+        .update({ vision_result: item.result })
+        .eq("id", item.imageId);
+    }
+  }
+
+  const aggregatedRows = priceImageResults.flatMap((item) => item.result.rows);
   const aiAnalysis = await analyzeStoreVisitImages({
     imageUrls: inlineImageUrls,
     imageCategories,
     storeName: typedVisit.store_name,
-    region: typedVisit.region ?? typedVisit.city,
-    channel: typedVisit.channel ?? typedVisit.channel_type,
-    promoter: typedVisit.promoter ?? typedVisit.uploader_name,
+    region,
+    channel,
+    promoter,
     visitDate: typedVisit.visit_date,
     config: input.config,
   });
+
+  aiAnalysis.normalized.price_insights.key_sku_prices = aggregatedRows.map((row) => ({
+    brand: row.brand ?? "Unknown",
+    product: row.sku,
+    price: row.net_price_idr ? String(row.net_price_idr) : "",
+    list_price: row.list_price_idr ? String(row.list_price_idr) : null,
+    package_price: row.package_price_idr ? String(row.package_price_idr) : null,
+    net_price: row.net_price_idr ? String(row.net_price_idr) : null,
+    promo_type: row.promo_type,
+    piece_count: row.piece_count,
+    tag: "HERO",
+    confidence: 0.9,
+  }));
+  aiAnalysis.normalized.price_detection = aggregatedRows.map((row) => ({
+    brand: row.brand ?? "Unknown",
+    product: row.sku,
+    price: row.net_price_idr ? String(row.net_price_idr) : "",
+  }));
+  aiAnalysis.normalized.store_summary = displayAnalysis.normalized.summary;
 
   return {
     visit: typedVisit,
     image_paths: imagePaths,
     image_categories: imageCategories,
-    signed_image_count: imageUrls.length,
+    signed_image_count: signedEntries.length,
     image_input_mode: "data_url",
+    price_image_results: priceImageResults,
+    display_analysis: displayAnalysis.normalized,
     ...aiAnalysis,
   };
 }

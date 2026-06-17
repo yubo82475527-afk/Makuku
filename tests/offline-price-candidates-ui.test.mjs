@@ -12,6 +12,7 @@ const aiPriceReview = readFileSync("src/lib/ai-price-review.ts", "utf8");
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const materialMasterRoute = readFileSync("src/app/api/material-master/route.ts", "utf8");
 const competitorsRoute = readFileSync("src/app/api/competitors/route.ts", "utf8");
+const candidateExportRoute = readFileSync("src/app/api/ai-price-candidates/export/route.ts", "utf8");
 
 test("photo price review keeps compact date filter and export action", () => {
   assert.doesNotMatch(candidatesPage, /SelectInput/);
@@ -82,6 +83,15 @@ test("photo price review shows approved and rejected audit columns", () => {
   assert.match(workbench, /second: "2-digit"/);
 });
 
+test("photo price review and export expose store visit batch codes", () => {
+  assert.match(workbench, /copy\.table\.batch/);
+  assert.match(workbench, /visit\?\.visit_code/);
+  assert.match(workbench, /copy\.batchCode/);
+  assert.match(dataFile, /visit_code/);
+  assert.match(candidateExportRoute, /"visit_code"/);
+  assert.match(candidateExportRoute, /visit\?\.visit_code/);
+});
+
 test("photo price review keeps Chinese copy keys for table headers and actions", () => {
   assert.match(workbench, /locale === "zh"/);
   assert.match(workbench, /approveSelected/);
@@ -135,6 +145,17 @@ test("photo price review exposes evidence drawer and readable warning details", 
   assert.match(workbench, /setActiveCandidate\(candidate\)/);
   assert.match(workbench, /visitPhotos/);
   assert.match(workbench, /\/api\/store-visit\/\$\{candidate\.visit_id\}/);
+});
+
+test("photo price review highlights the photo that produced the candidate price", () => {
+  assert.match(workbench, /VisitEvidenceImage/);
+  assert.match(workbench, /findCandidateSourcePhoto/);
+  assert.match(workbench, /source_image_id/);
+  assert.match(workbench, /source_image_path/);
+  assert.match(workbench, /sourcePhotoBadge/);
+  assert.doesNotMatch(workbench, /candidateImageRowScore/);
+  assert.doesNotMatch(workbench, /likelySourcePhotoBadge/);
+  assert.doesNotMatch(storeVisitRoute, /vision_result: image\.vision_result/);
 });
 
 test("photo price review shows and edits matched SKU on pending candidates", () => {
@@ -211,4 +232,23 @@ test("mobile store visit detail can preview photos from the thumbnail grid", () 
   assert.match(storeVisitDetailH5, /aria-label=\{locale === "zh" \? "放大照片" : "Preview photo"\}/);
   assert.match(storeVisitDetailH5, /role="dialog"/);
   assert.match(storeVisitDetailH5, /max-h-\[82vh\]/);
+});
+
+test("mobile store visit detail shows price parsing sections and display analysis only", () => {
+  assert.doesNotMatch(storeVisitDetailH5, /StoreVisitResultCard/);
+  assert.match(storeVisitDetailH5, /priceParseSections|priceParseImages|priceParseResults/);
+  assert.match(storeVisitDetailH5, /displayAnalysis/);
+  assert.match(storeVisitDetailH5, /list_price|net_price|promo_type|piece_count/);
+  assert.doesNotMatch(storeVisitDetailH5, /validation/);
+  assert.doesNotMatch(storeVisitDetailH5, /shelf_understanding/);
+  assert.doesNotMatch(storeVisitDetailH5, /stock_risk/);
+  assert.doesNotMatch(storeVisitDetailH5, /promotion_insights/);
+});
+
+test("mobile store visit detail keeps each parsed SKU row compact", () => {
+  assert.match(storeVisitDetailH5, /function PriceMetricRow/);
+  assert.match(storeVisitDetailH5, /line-clamp-1/);
+  assert.match(storeVisitDetailH5, /grid-cols-\[minmax\(0,1fr\)_auto\]/);
+  assert.match(storeVisitDetailH5, /truncate text-\[11px\]/);
+  assert.doesNotMatch(storeVisitDetailH5, /<Metric label=\{text\.listPrice\}/);
 });

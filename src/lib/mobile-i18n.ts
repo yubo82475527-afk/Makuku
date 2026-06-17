@@ -258,16 +258,17 @@ export function mobileAnalysisStatusLabel(locale: Locale, status: StoreVisitAnal
 }
 
 export function mobileImageCategoryLabel(locale: Locale, category: OfflineImageType | StoreVisitImageCategory | "uncategorized" | null | undefined) {
-  const copy = getMobileCopy(locale);
   switch (category) {
     case "makuku_shelf":
     case "own_shelf":
-      return copy.makukuShelfPhotos;
+      return locale === "zh" ? "Makuku价格标签" : "Makuku Price Tags";
     case "competitor_shelf":
-      return copy.competitorShelfPhotos;
+      return locale === "zh" ? "竞品价格标签" : "Competitor Price Tags";
     case "storefront":
-      return copy.storefrontPhotos;
+    case "other":
+    case "promo_tag":
+      return locale === "zh" ? "门店陈列" : "Store Display";
     default:
-      return copy.uncategorizedPhotos;
+      return locale === "zh" ? "照片" : "Photos";
   }
 }

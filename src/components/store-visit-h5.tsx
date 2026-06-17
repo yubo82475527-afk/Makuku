@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { Locale } from "@/lib/i18n/config";
-import { getMobileCopy } from "@/lib/mobile-i18n";
+import { getMobileCopy, mobileImageCategoryLabel } from "@/lib/mobile-i18n";
 
 const maxImages = 20;
 const uploadConcurrency = 3;
@@ -304,6 +304,7 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
   const router = useRouter();
   const copy = getMobileCopy(locale);
   const labels = uiCopy(locale);
+  const priceTagRequiredText = locale === "zh" ? "请至少上传一张价格标签照片。" : "Please upload at least one price-tag photo.";
   const [visitDate, setVisitDate] = useState(localDateInputValue);
   const [user, setUser] = useState<AppUser | null>(null);
   const [userLoaded, setUserLoaded] = useState(false);
@@ -365,8 +366,8 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
       setError(copy.completeStoreInfo);
       return;
     }
-    if (images.makuku_shelf.length === 0) {
-      setError(copy.uploadMakukuShelfRequired);
+    if (images.makuku_shelf.length === 0 && images.competitor_shelf.length === 0) {
+      setError(priceTagRequiredText);
       return;
     }
 
@@ -514,8 +515,8 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
             {imageCategoryOrder.map((category) => (
               <ImageUploadSection
                 key={category}
-                title={category === "makuku_shelf" ? copy.makukuShelfPhotos : category === "competitor_shelf" ? copy.competitorShelfPhotos : copy.storefrontPhotos}
-                required={category === "makuku_shelf"}
+                title={mobileImageCategoryLabel(locale, category)}
+                required={false}
                 addLabel={copy.add}
                 emptyText={copy.noPhotosYet}
                 images={images[category]}

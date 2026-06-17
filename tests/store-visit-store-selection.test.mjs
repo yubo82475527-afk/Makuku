@@ -13,6 +13,7 @@ const typesFile = readFileSync("src/lib/types.ts", "utf8");
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const demoData = readFileSync("src/lib/demo-data.ts", "utf8");
 const competitorExcelMigration = readFileSync("supabase/migrations/202606130001_competitor_master_excel_import.sql", "utf8");
+const visitChannelMigration = readFileSync("supabase/migrations/202606170003_relax_store_visit_channel_type.sql", "utf8");
 
 test("new H5 store visit requires selecting store master data before capture", () => {
   assert.match(storeVisitH5, /selectedStore/);
@@ -169,6 +170,15 @@ test("store visit API accepts selected store and optional location fields", () =
   assert.match(storeVisitApi, /longitude/);
   assert.match(storeVisitApi, /location_accuracy_m/);
   assert.match(storeVisitApi, /location_captured_at/);
+});
+
+test("store visit channel type supports channel master codes instead of legacy enum only", () => {
+  assert.match(visitChannelMigration, /drop constraint if exists offline_store_visits_channel_type_check/i);
+  assert.doesNotMatch(visitChannelMigration, /add constraint offline_store_visits_channel_type_check/i);
+  assert.match(visitChannelMigration, /'MT-LKA-SUPERMARKET'/);
+  assert.match(storeVisitApi, /isVisitChannelTypeCheckError/);
+  assert.match(storeVisitApi, /insertVisitPayload/);
+  assert.match(storeVisitApi, /channel_type:\s*"other"/);
 });
 
 test("offline stores API and types preserve location-capable store master data", () => {
