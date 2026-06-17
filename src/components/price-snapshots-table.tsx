@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { priceBrandSeriesLabel } from "@/lib/brand-series";
 import { formatIdr, formatJakartaTime, formatPricePerPiece } from "@/lib/format";
+import { priceSnapshotBenchmarkMaterial, priceSnapshotBusinessSegment } from "@/lib/price-snapshot-business";
 import type { PriceSnapshot } from "@/lib/types";
 
 type SnapshotOwnerType = "makuku" | "competitor";
@@ -135,7 +136,7 @@ export function PriceSnapshotsTable({
       {notice ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{notice}</div> : null}
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1520px] text-left text-sm">
+        <table className="w-full min-w-[2160px] text-left text-sm [&_th]:whitespace-nowrap">
           <thead className="border-b border-slate-200 text-xs uppercase text-slate-500">
             <tr>
               <th className="w-10 py-2 pr-3">
@@ -150,9 +151,14 @@ export function PriceSnapshotsTable({
               <th className="py-2 pr-3">{isZh ? "采集时间" : "Captured"}</th>
               <th className="py-2 pr-3">{isZh ? "品牌" : "Brand"}</th>
               <th className="py-2 pr-3">{isZh ? "商品" : "Product"}</th>
+              <th className="py-2 pr-3">SKU</th>
+              <th className="py-2 pr-3">{isZh ? "等级" : "Grade"}</th>
+              <th className="py-2 pr-3">{isZh ? "包装" : "Package"}</th>
+              <th className="py-2 pr-3">{isZh ? "规格" : "Spec"}</th>
+              <th className="py-2 pr-3">{isZh ? "片数" : "Pcs"}</th>
+              <th className="py-2 pr-3">{isZh ? "活动类型" : "Activity Type"}</th>
               <th className="py-2 pr-3">{isZh ? "标价" : "List"}</th>
-              <th className="py-2 pr-3">{isZh ? "包装价" : "Package"}</th>
-              <th className="py-2 pr-3">{isZh ? "券" : "Voucher"}</th>
+              <th className="py-2 pr-3">{isZh ? "折扣金额" : "Discount"}</th>
               <th className="py-2 pr-3">{isZh ? "到手价" : "Net"}</th>
               <th className="py-2 pr-3">{isZh ? "单片价" : "IDR/pc"}</th>
               <th className="py-2 pr-3">{isZh ? "门店名称" : "Store"}</th>
@@ -183,9 +189,14 @@ export function PriceSnapshotsTable({
                   <td className="py-3 pr-3">{formatSnapshotCapturedAt(snapshot)}</td>
                   <td className="py-3 pr-3 font-medium">{snapshotBrandName(snapshot)}</td>
                   <td className="py-3 pr-3">{snapshotProductName(snapshot)}</td>
+                  <td className="py-3 pr-3">{snapshotSkuCode(snapshot)}</td>
+                  <td className="py-3 pr-3">{snapshotBusinessSegment(snapshot)}</td>
+                  <td className="py-3 pr-3">{snapshotPackageType(snapshot)}</td>
+                  <td className="py-3 pr-3">{snapshotSpec(snapshot)}</td>
+                  <td className="py-3 pr-3">{snapshotPieceCount(snapshot)}</td>
+                  <td className="py-3 pr-3">{snapshotPromoTypeLabel(snapshot, isZh)}</td>
                   <td className="py-3 pr-3">{formatIdr(snapshot.list_price_idr)}</td>
-                  <td className="py-3 pr-3">{formatIdr(snapshot.promo_price_idr)}</td>
-                  <td className="py-3 pr-3">{formatIdr(snapshot.voucher_value_idr)}</td>
+                  <td className="py-3 pr-3">{formatIdr(snapshotDiscountAmount(snapshot))}</td>
                   <td className="py-3 pr-3">{formatIdr(snapshot.net_price_idr)}</td>
                   <td className="py-3 pr-3 font-semibold">{formatPricePerPiece(snapshot.price_per_piece)}</td>
                   <td className="py-3 pr-3">{storeNameForSnapshot(snapshot)}</td>
@@ -249,7 +260,7 @@ function ConfirmDeletePanel({
 }
 
 function snapshotOwnerType(snapshot: PriceSnapshot): SnapshotOwnerType {
-  return snapshot.sku_master_id && !snapshot.competitor_product_id ? "makuku" : "competitor";
+  return (snapshot.sku_master_id || snapshot.material_sku_code) && !snapshot.competitor_product_id ? "makuku" : "competitor";
 }
 
 function snapshotMakukuSku(snapshot: PriceSnapshot) {
@@ -262,8 +273,66 @@ function snapshotBrandName(snapshot: PriceSnapshot) {
 
 function snapshotProductName(snapshot: PriceSnapshot) {
   return snapshotOwnerType(snapshot) === "makuku"
-    ? snapshot.sku_master?.makuku_sku_name ?? "-"
+    ? priceSnapshotBenchmarkMaterial(snapshot)?.tenant_sku_name ?? snapshot.sku_master?.makuku_sku_name ?? "-"
     : snapshot.competitor_products?.normalized_name ?? "-";
+}
+
+function snapshotSkuCode(snapshot: PriceSnapshot) {
+  if (snapshotOwnerType(snapshot) === "makuku") {
+    return cleanDisplayText(priceSnapshotBenchmarkMaterial(snapshot)?.tenant_sku_code)
+      ?? cleanDisplayText(snapshot.material_sku_code)
+      ?? cleanDisplayText(snapshot.sku_master?.material_sku_code)
+      ?? "-";
+  }
+  return cleanDisplayText(snapshot.competitor_products?.competitor_sku_code)
+    ?? cleanDisplayText(snapshot.competitor_products?.id)
+    ?? "-";
+}
+
+function snapshotBusinessSegment(snapshot: PriceSnapshot) {
+  return priceSnapshotBusinessSegment(snapshot) || "-";
+}
+
+function snapshotPackageType(snapshot: PriceSnapshot) {
+  if (snapshotOwnerType(snapshot) === "makuku") {
+    return cleanDisplayText(priceSnapshotBenchmarkMaterial(snapshot)?.type)
+      ?? cleanDisplayText(snapshot.sku_master?.pack_type)
+      ?? "-";
+  }
+  return cleanDisplayText(snapshot.competitor_products?.package_type)
+    ?? cleanDisplayText(snapshot.competitor_products?.pack_type)
+    ?? "-";
+}
+
+function snapshotSpec(snapshot: PriceSnapshot) {
+  if (snapshotOwnerType(snapshot) === "makuku") {
+    return cleanDisplayText(priceSnapshotBenchmarkMaterial(snapshot)?.sub_type)
+      ?? cleanDisplayText(snapshot.sku_master?.size)
+      ?? "-";
+  }
+  return cleanDisplayText(snapshot.competitor_products?.size) ?? "-";
+}
+
+function snapshotPieceCount(snapshot: PriceSnapshot) {
+  if (snapshotOwnerType(snapshot) === "makuku") {
+    return priceSnapshotBenchmarkMaterial(snapshot)?.pack_count
+      ?? snapshot.sku_master?.piece_count
+      ?? "-";
+  }
+  return snapshot.competitor_products?.piece_count ?? "-";
+}
+
+function snapshotDiscountAmount(snapshot: PriceSnapshot) {
+  const netPrice = Number(snapshot.net_price_idr);
+  const packagePrice = Number(snapshot.promo_price_idr);
+  if (!Number.isFinite(netPrice) || !Number.isFinite(packagePrice)) return null;
+  return netPrice - packagePrice;
+}
+
+function snapshotPromoTypeLabel(snapshot: PriceSnapshot, isZh: boolean) {
+  const text = cleanDisplayText(snapshot.promo_type);
+  if (!text || text === "offline_ai_confirmed") return isZh ? "无活动" : "No Activity";
+  return text;
 }
 
 function cleanDisplayText(value: string | null | undefined) {

@@ -16,13 +16,31 @@ function clean(value: unknown) {
   return String(value ?? "").trim();
 }
 
-function splitLegacyRegion(value: string) {
+function splitRegionText(value: string) {
+  if (!value.includes("/")) return null;
   const parts = value.split("/").map((part) => part.trim()).filter(Boolean).slice(0, 3);
+  if (parts.length < 2) return null;
   return {
     province: parts[0] ?? null,
     cityName: parts[1] ?? null,
     district: parts[2] ?? null,
   };
+}
+
+function resolveStoreRegion(body: Record<string, unknown>) {
+  const rawProvince = clean(body.province);
+  const rawCityName = clean(body.city_name ?? body.cityName);
+  const rawCity = clean(body.city);
+  const rawDistrict = clean(body.district);
+  const compoundRegion = [rawProvince, rawCityName, rawCity].map(splitRegionText).find(Boolean);
+
+  const province = (compoundRegion?.province ?? rawProvince) || null;
+  const rawResolvedCityName = compoundRegion?.cityName ?? rawCityName;
+  const cityName = (rawResolvedCityName || rawCity) || null;
+  const district = (compoundRegion?.district ?? rawDistrict) || null;
+  const city = cityName ?? rawCity ?? province ?? "";
+
+  return { city, province, cityName, district };
 }
 
 function cleanOptionalNumber(value: unknown) {
@@ -222,11 +240,7 @@ export async function POST(request: Request) {
     if (auth.response) return auth.response;
     const { body, isForm } = await readRequestBody(request);
     const name = String(body.name ?? "").trim();
-    const city = String(body.city ?? "").trim();
-    const legacyRegion = splitLegacyRegion(city);
-    const province = String(body.province ?? "").trim() || legacyRegion.province;
-    const cityName = String(body.city_name ?? body.cityName ?? "").trim() || legacyRegion.cityName;
-    const district = String(body.district ?? "").trim() || legacyRegion.district;
+    const { city, province, cityName, district } = resolveStoreRegion(body);
     const channelId = String(body.channel_id ?? "").trim() || null;
     const channelTypeFromBody = String(body.channel_type ?? "").trim();
     const address = String(body.address ?? "").trim();
@@ -237,6 +251,7 @@ export async function POST(request: Request) {
     const createdByUserId = String(body.created_by_user_id ?? body.createdByUserId ?? auth.session.id).trim() || null;
     const createdByName = String(body.created_by_name ?? body.createdByName ?? auth.session.displayName).trim() || null;
     const createdBy = String(body.created_by ?? createdByName ?? auth.session.displayName).trim() || null;
+    const organizationId = String(body.organization_id ?? "").trim() || null;
 
     if (!name || !city || (!channelId && !channelTypeFromBody)) {
       return Response.json({ error: "Missing required fields: name, city, channel_id" }, { status: 400 });
@@ -244,7 +259,14 @@ export async function POST(request: Request) {
 
     const supabase = createSupabaseServiceClient();
     const assignment = await resolveOrganizationForRegion(supabase, { province, cityName, district });
-    const organizationPatch = organizationAssignmentPatch(assignment);
+    const organizationPatch = organizationId
+      ? {
+          organization_id: organizationId,
+          organization_assignment_method: "manual",
+          organization_assigned_at: new Date().toISOString(),
+          organization_region_rule_id: null,
+        }
+      : organizationAssignmentPatch(assignment);
     let channelType = channelTypeFromBody;
     if (channelId) {
       const { data: channel } = await supabase
@@ -396,6 +418,19 @@ export async function POST(request: Request) {
       });
     }
     if (error) return Response.json({ error: error.message }, { status: 400 });
+
+    if (data?.id) {
+      await assignOrganizationForStore(supabase, {
+        id: data.id,
+        name,
+        province,
+        city_name: cityName,
+        district,
+        address: address || null,
+        organization_id: data.organization_id ?? organizationId,
+        organization_assignment_method: data.organization_assignment_method ?? (organizationId ? "manual" : null),
+      });
+    }
 
     revalidatePath("/zh/dashboard");
     revalidatePath("/en/dashboard");

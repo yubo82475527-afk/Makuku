@@ -33,6 +33,7 @@ const PROMOTION_PROMPT_REQUIREMENT = [
 
 const PRICE_CANDIDATE_PROMPT_REQUIREMENT = [
   "Price candidate quality requirement: price_insights.key_sku_prices must contain only sellable product prices that are suitable for AI Price Review. Every item must have a specific product or pack, a visible IDR package price, and visible piece_count from the pack text or shelf tag.",
+  "For each key_sku_prices item, capture list_price, package_price, net_price, and promo_type when visible. list_price is the normal shelf/list price. package_price is the package price before voucher/cashback. net_price is the final paid price after discounts. If only one price is visible, set price, list_price, package_price, and net_price to that same visible selling price. promo_type should describe the mechanic, such as Discount, Buy 2 Get 1, Buy 1 Get 1, Special Offer, or empty when no clear activity is visible.",
   "For price boards, shelf tags, promo tags, and handwritten price boards, extract EVERY visible readable SKU-price row into price_insights.key_sku_prices. Do not return only the top SKUs. If 8 SKU prices are visible, return 8 key_sku_prices.",
   "Do not summarize a multi-row price board only in promotion_insights. If promotion_insights.description mentions a SKU price, normal price, promo price, or per-piece row, the same SKU-price pair must also appear as a separate price_insights.key_sku_prices item.",
   "Before finalizing, count the readable SKU-price rows on each price board/promo tag and make sure key_sku_prices contains one item for each counted row.",
@@ -61,7 +62,7 @@ export const STORE_VISIT_AI_PROMPT = [
   OUTPUT_LIMITS_PROMPT_REQUIREMENT,
   "Return ONLY valid compact JSON. No markdown. No explanations. No extra text.",
   "Use exactly this JSON structure and enum values:",
-  '{"raw_extraction":{"detected_items":[{"brand":"string","product":"string","price":"string","type":"SKU|PROMO|SHELF_SIGNAL","confidence":0.8}]},"validation":{"is_valid":true,"warnings":[{"type":"MISSING_DATA|LOW_CONFIDENCE|PARSE_RISK","message":"string"}]},"shelf_understanding":{"brands_present":[{"brand":"string","shelf_share_estimate":0}],"category_coverage":"FULL|PARTIAL|FRAGMENTED","shelf_condition":"WELL_ORGANISED|NORMAL|MESSY","facings_estimate":[{"brand":"string","facing_count_estimate":0}]},"price_insights":{"brand_price_range":[{"brand":"string","min_price":"string","max_price":"string"}],"key_sku_prices":[{"brand":"string","product":"string","price":"string","piece_count":44,"tag":"HERO|PROMO|ANOMALY","confidence":0.8}]},"stock_risk":{"level":"Normal|Low Stock|Out of Stock Risk","affected_brands":[{"brand":"string","risk_signal":"EMPTY_FACING|LOW_FACING|BLOCKED_SHELF"}],"reason":"string"},"promotion_insights":{"competitor_promotions":[{"brand":"string","type":"Discount|Buy 1 Get 1|Buy 2 Get 1|Promo Tag|Special Offer","visibility":"LOW|MEDIUM|HIGH","description":"string"}],"promo_pressure_level":"LOW|MEDIUM|HIGH"},"store_summary":"string"}',
+  '{"raw_extraction":{"detected_items":[{"brand":"string","product":"string","price":"string","type":"SKU|PROMO|SHELF_SIGNAL","confidence":0.8}]},"validation":{"is_valid":true,"warnings":[{"type":"MISSING_DATA|LOW_CONFIDENCE|PARSE_RISK","message":"string"}]},"shelf_understanding":{"brands_present":[{"brand":"string","shelf_share_estimate":0}],"category_coverage":"FULL|PARTIAL|FRAGMENTED","shelf_condition":"WELL_ORGANISED|NORMAL|MESSY","facings_estimate":[{"brand":"string","facing_count_estimate":0}]},"price_insights":{"brand_price_range":[{"brand":"string","min_price":"string","max_price":"string"}],"key_sku_prices":[{"brand":"string","product":"string","price":"string","list_price":"string","package_price":"string","net_price":"string","promo_type":"string","piece_count":44,"tag":"HERO|PROMO|ANOMALY","confidence":0.8}]},"stock_risk":{"level":"Normal|Low Stock|Out of Stock Risk","affected_brands":[{"brand":"string","risk_signal":"EMPTY_FACING|LOW_FACING|BLOCKED_SHELF"}],"reason":"string"},"promotion_insights":{"competitor_promotions":[{"brand":"string","type":"Discount|Buy 1 Get 1|Buy 2 Get 1|Promo Tag|Special Offer","visibility":"LOW|MEDIUM|HIGH","description":"string"}],"promo_pressure_level":"LOW|MEDIUM|HIGH"},"store_summary":"string"}',
 ].join("\n");
 
 export const DEFAULT_STORE_VISIT_AI_CONFIG: StoreVisitAiConfig = {
@@ -138,6 +139,10 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function asString(value: unknown, fallback: string) {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function asOptionalString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function oneSentenceMax30Words(value: unknown) {
@@ -258,10 +263,15 @@ export function normalizeStoreVisitAiResult(value: unknown): StoreVisitAiResult 
     });
   const normalizedKeySkuPrices = keySkuPrices.map((item) => {
     const price = asRecord(item);
+    const visiblePrice = asString(price.price, "Price unclear");
     return {
       brand: asString(price.brand, "Unknown"),
       product: asString(price.product, "Unknown product"),
-      price: asString(price.price, "Price unclear"),
+      price: visiblePrice,
+      list_price: asOptionalString(price.list_price) ?? visiblePrice,
+      package_price: asOptionalString(price.package_price) ?? visiblePrice,
+      net_price: asOptionalString(price.net_price) ?? visiblePrice,
+      promo_type: asOptionalString(price.promo_type),
       piece_count: asPositiveIntegerOrNull(price.piece_count),
       tag: asEnum(price.tag, priceInsightTags, "HERO"),
       confidence: Math.min(Math.max(asNumber(price.confidence, 0.7), 0), 1),
@@ -331,7 +341,7 @@ export function normalizeStoreVisitAiResult(value: unknown): StoreVisitAiResult 
         }),
       key_sku_prices: normalizedKeySkuPrices.length > 0
         ? normalizedKeySkuPrices
-        : [{ brand: "Unknown", product: "Unknown product", price: "Price unclear", piece_count: null, tag: "HERO", confidence: 0 }],
+        : [{ brand: "Unknown", product: "Unknown product", price: "Price unclear", list_price: "Price unclear", package_price: "Price unclear", net_price: "Price unclear", promo_type: null, piece_count: null, tag: "HERO", confidence: 0 }],
     },
     price_detection: normalizedKeySkuPrices.length > 0
       ? normalizedKeySkuPrices.map((price) => {

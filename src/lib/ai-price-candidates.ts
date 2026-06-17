@@ -13,6 +13,10 @@ type SourceItem = {
   brand: string;
   product: string;
   price: string;
+  list_price?: string | null;
+  package_price?: string | null;
+  net_price?: string | null;
+  promo_type?: string | null;
   piece_count: number | null;
   type: "SKU" | "PROMO";
   tag?: string | null;
@@ -90,6 +94,12 @@ function parseCandidatePrice(value: string | number | null | undefined) {
   return hasCurrency || hasThousandsPattern || hasPlainIdrAmount ? parsed : null;
 }
 
+function normalizePromoType(value: string | null | undefined) {
+  const text = String(value ?? "").trim();
+  if (!text || /^none|no activity|no promo|normal$/i.test(text)) return null;
+  return text;
+}
+
 function candidateProductKey(value: string) {
   return normalizeText(value)
     .replace(/\bpromo\b/g, " ")
@@ -152,6 +162,10 @@ function sourceItems(aiResult: StoreVisitAiResult) {
     brand: item.brand,
     product: item.product,
     price: item.price,
+    list_price: item.list_price ?? item.price,
+    package_price: item.package_price ?? item.price,
+    net_price: item.net_price ?? item.price,
+    promo_type: item.promo_type ?? null,
     piece_count: normalizePieceCount(item.piece_count) ?? extractPieceCount(item.product),
     type: "SKU" as const,
     tag: item.tag,
@@ -165,6 +179,10 @@ function sourceItems(aiResult: StoreVisitAiResult) {
       brand: item.brand,
       product: item.product,
       price: item.price,
+      list_price: item.price,
+      package_price: item.price,
+      net_price: item.price,
+      promo_type: null,
       piece_count: extractPieceCount(item.product),
       type: item.type === "PROMO" ? "PROMO" : "SKU",
       confidence: item.confidence,
@@ -210,8 +228,11 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
 
   const rows = items.map((item) => {
     const parsedPrice = parseCandidatePrice(item.price);
+    const listPrice = parseCandidatePrice(item.list_price) ?? parsedPrice;
+    const packagePrice = parseCandidatePrice(item.package_price) ?? parsedPrice;
+    const netPrice = parseCandidatePrice(item.net_price) ?? parsedPrice;
     const pieceCount = normalizePieceCount(item.piece_count);
-    const pricePerPiece = calculatePricePerPiece(parsedPrice, pieceCount);
+    const pricePerPiece = calculatePricePerPiece(netPrice, pieceCount);
     const warnings: Warning[] = [];
     if (!item.brand) warnings.push({ type: "MISSING_DATA", message: "AI did not extract a brand." });
     if (!item.product) warnings.push({ type: "MISSING_DATA", message: "AI did not extract a product name." });
@@ -233,7 +254,11 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
       raw_brand: item.brand,
       raw_product: item.product,
       raw_price: item.price,
-      parsed_price_idr: parsedPrice,
+      parsed_price_idr: netPrice,
+      list_price_idr: listPrice,
+      package_price_idr: packagePrice,
+      net_price_idr: netPrice,
+      promo_type: normalizePromoType(item.promo_type),
       piece_count: pieceCount,
       price_per_piece: pricePerPiece,
       candidate_type: item.type,

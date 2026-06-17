@@ -8,6 +8,7 @@ const workbench = readFileSync(workbenchPath, "utf8");
 const storeVisitRoute = readFileSync("src/app/api/store-visit/[id]/route.ts", "utf8");
 const storeVisitDetailH5 = readFileSync("src/components/store-visit-detail-h5.tsx", "utf8");
 const candidateRoute = readFileSync("src/app/api/ai-price-candidates/[id]/route.ts", "utf8");
+const aiPriceReview = readFileSync("src/lib/ai-price-review.ts", "utf8");
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const materialMasterRoute = readFileSync("src/app/api/material-master/route.ts", "utf8");
 const competitorsRoute = readFileSync("src/app/api/competitors/route.ts", "utf8");
@@ -100,10 +101,21 @@ test("pending photo price review rows allow package price and piece count correc
   assert.match(workbench, /onBlur=\{\(\) => maybeSaveReviewInput\(candidate\)\}/);
   assert.match(workbench, /action: "save_review_input"/);
   assert.match(workbench, /window\.confirm/);
-  assert.match(workbench, /name="parsed_price_idr"/);
+  assert.match(workbench, /name="net_price_idr"/);
   assert.match(workbench, /name="piece_count"/);
   assert.match(workbench, /calculateReviewedPricePerPiece/);
   assert.match(workbench, /review_overrides/);
+});
+
+test("photo price review carries net price and activity type into price snapshots", () => {
+  assert.match(workbench, /net_price_idr/);
+  assert.match(workbench, /promo_type/);
+  assert.match(workbench, /copy\.netPrice/);
+  assert.match(workbench, /copy\.promoType/);
+  assert.match(candidateRoute, /net_price_idr/);
+  assert.match(candidateRoute, /promo_type/);
+  assert.match(aiPriceReview, /candidateRow\.net_price_idr/);
+  assert.match(aiPriceReview, /promo_type: normalizeCandidatePromoType/);
 });
 
 test("Chinese photo price review copy renders as readable UTF-8 text", () => {
@@ -163,11 +175,13 @@ test("photo price candidate API updates pending match without touching snapshots
   assert.doesNotMatch(candidateRoute, /\.from\("sku_matches"\)[\s\S]*action === "update_match"/);
 });
 
-test("unmatched photo price candidates can be confirmed as new competitor products when approving", () => {
-  assert.match(workbench, /create_competitor_if_unmatched/);
-  assert.match(workbench, /confirmCreateCompetitorBeforeApprove/);
-  assert.match(workbench, /copy\.createCompetitorConfirm/);
-  assert.match(candidateRoute, /createCompetitorIfUnmatched/);
+test("photo price candidates must be matched before approval", () => {
+  assert.match(workbench, /candidateCanBeApproved/);
+  assert.match(workbench, /copy\.matchRequiredBeforeApprove/);
+  assert.doesNotMatch(workbench, /create_competitor_if_unmatched/);
+  assert.doesNotMatch(workbench, /confirmCreateCompetitorBeforeApprove/);
+  assert.doesNotMatch(candidateRoute, /createCompetitorIfUnmatched/);
+  assert.match(aiPriceReview, /Please match a product before approving this candidate/);
 });
 
 test("photo price review uses row click drawer with compact risk indicators and image preview", () => {

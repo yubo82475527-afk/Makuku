@@ -159,6 +159,7 @@ function readCompetitorProductIds(body: Record<string, unknown>) {
 
 function buildCompetitorProductUpdate(body: Record<string, unknown>) {
   const update: Record<string, unknown> = {};
+  if ("brand_id" in body) update.brand_id = requiredCleanText(body.brand_id, "brand_id");
   if ("normalized_name" in body) update.normalized_name = requiredCleanText(body.normalized_name, "normalized_name");
   if ("raw_title" in body) update.raw_title = requiredCleanText(body.raw_title, "raw_title");
   if ("competitor_sku_code" in body) update.competitor_sku_code = normalizeOptionalText(body.competitor_sku_code);

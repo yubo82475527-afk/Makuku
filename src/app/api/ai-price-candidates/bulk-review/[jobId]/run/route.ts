@@ -19,20 +19,27 @@ function revalidateReviewPaths() {
 
 function cleanJobReviewOverrides(value: unknown) {
   const source = typeof value === "object" && value ? value as Record<string, unknown> : {};
-  const reviewOverrides: Record<string, { price_idr: number; piece_count: number }> = {};
+  const reviewOverrides: Record<string, { price_idr: number; net_price_idr: number; piece_count: number; promo_type: string | null }> = {};
 
   for (const [candidateId, rawOverride] of Object.entries(source)) {
     const override = typeof rawOverride === "object" && rawOverride ? rawOverride as Record<string, unknown> : {};
-    const priceIdr = Number(override.price_idr);
+    const priceIdr = Number(override.net_price_idr ?? override.price_idr);
     const pieceCount = Number(override.piece_count);
     if (!Number.isFinite(priceIdr) || priceIdr <= 0 || !Number.isFinite(pieceCount) || pieceCount <= 0) continue;
     reviewOverrides[candidateId] = {
       price_idr: Math.round(priceIdr),
+      net_price_idr: Math.round(priceIdr),
       piece_count: Math.floor(pieceCount),
+      promo_type: cleanOptionalText(override.promo_type),
     };
   }
 
   return reviewOverrides;
+}
+
+function cleanOptionalText(value: unknown) {
+  const text = String(value ?? "").trim();
+  return text ? text : null;
 }
 
 async function refreshJobCounts(supabase: ReturnType<typeof createSupabaseServiceClient>, jobId: string) {
@@ -133,8 +140,9 @@ export async function POST(request: Request, ctx: { params: Promise<{ jobId: str
       await approveAiPriceCandidate({
         supabase,
         candidateId: candidate.id,
-        priceIdr: overrideForCandidate?.price_idr ?? candidate.parsed_price_idr,
+        priceIdr: overrideForCandidate?.net_price_idr ?? candidate.net_price_idr ?? candidate.parsed_price_idr,
         pieceCount: overrideForCandidate?.piece_count ?? candidate.piece_count,
+        promoType: overrideForCandidate?.promo_type ?? candidate.promo_type,
         reviewJobId: jobId,
         reviewer: job.created_by,
         reviewMethod: "bulk_manual",

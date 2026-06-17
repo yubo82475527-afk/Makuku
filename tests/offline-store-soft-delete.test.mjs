@@ -10,6 +10,9 @@ const creatorMigration = readFileSync("supabase/migrations/202606100002_offline_
 const storeMasterTable = existsSync("src/components/store-master-table.tsx")
   ? readFileSync("src/components/store-master-table.tsx", "utf8")
   : "";
+const storeCreateDialog = existsSync("src/components/store-create-dialog.tsx")
+  ? readFileSync("src/components/store-create-dialog.tsx", "utf8")
+  : "";
 
 test("offline stores support logical delete without physical delete", () => {
   assert.equal(existsSync("supabase/migrations/202606080002_offline_store_soft_delete.sql"), true);
@@ -49,21 +52,28 @@ test("deleted stores stay out of store master selection without changing visit h
 
 test("store master page exposes delete action for stores", () => {
   assert.match(offlineStoresPage, /StoreMasterTable/);
+  assert.match(offlineStoresPage, /channels=\{offlineChannels\}/);
+  assert.match(offlineStoresPage, /useChannelTypeFallback=\{useChannelTypeFallback\}/);
   assert.match(offlineStoresPage, /storesResult\.data/);
   assert.match(offlineStoresPage, /searchParams: Promise/);
   assert.match(offlineStoresPage, /statusFilter/);
-  assert.match(offlineStoresPage, /getOfflineStores\(\{ status: statusFilter \}\)/);
+  assert.match(offlineStoresPage, /getOfflineStores\(\{ status: statusFilter, organization: organizationFilter \}\)/);
+  assert.match(offlineStoresPage, /name="status"/);
+  assert.match(offlineStoresPage, /name="organization"/);
+  assert.match(storeCreateDialog, /name="name"/);
+  assert.match(storeCreateDialog, /name="province"/);
+  assert.match(storeCreateDialog, /name="city_name"/);
+  assert.match(storeCreateDialog, /name="district"/);
+  assert.match(storeCreateDialog, /autoComplete="off"/);
+  assert.match(storeCreateDialog, /name="organization_id"/);
   assert.match(dataFile, /\.order\("created_at", \{ ascending: false \}\)/);
+  assert.match(storeMasterTable, /StoreCreateDialog/);
   assert.match(storeMasterTable, /selectedIds/);
-  assert.match(storeMasterTable, /bulkDisable/);
   assert.match(storeMasterTable, /storeStatusPayload/);
   assert.match(storeMasterTable, /JSON\.stringify\(storeStatusPayload/);
   assert.match(storeMasterTable, /ConfirmDeletePanel/);
   assert.match(storeMasterTable, /Disable Store/);
-  assert.match(storeMasterTable, /Bulk Disable/);
-  assert.match(storeMasterTable, /statusFilter/);
-  assert.match(storeMasterTable, /function StatusTabs/);
-  assert.match(storeMasterTable, /inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1/);
+  assert.match(storeMasterTable, /rematchSelectedStores/);
   assert.match(storeMasterTable, /formatCreatedAt/);
   assert.match(storeMasterTable, /storeCreator/);
   assert.match(storeMasterTable, /\u521b\u5efa\u65f6\u95f4|Created At/);

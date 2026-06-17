@@ -94,9 +94,12 @@ test("bulk review API carries row correction overrides into approve processing",
   assert.match(bulkRoute, /review_overrides/);
   assert.match(bulkRoute, /cleanReviewOverrides/);
   assert.match(bulkRoute, /price_idr/);
+  assert.match(bulkRoute, /net_price_idr/);
+  assert.match(bulkRoute, /promo_type/);
   assert.match(bulkRoute, /piece_count/);
   assert.match(runRoute, /reviewOverrides/);
   assert.match(runRoute, /overrideForCandidate/);
-  assert.match(runRoute, /priceIdr:\s*overrideForCandidate\?\.price_idr\s*\?\?/);
+  assert.match(runRoute, /priceIdr:\s*overrideForCandidate\?\.net_price_idr\s*\?\?/);
   assert.match(runRoute, /pieceCount:\s*overrideForCandidate\?\.piece_count\s*\?\?/);
+  assert.match(runRoute, /promoType:\s*overrideForCandidate\?\.promo_type\s*\?\?/);
 });

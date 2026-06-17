@@ -5,8 +5,14 @@ import { AppShell } from "@/components/app-shell";
 import { PriceSnapshotsTable } from "@/components/price-snapshots-table";
 import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
 import { priceBrandSeriesLabel } from "@/lib/brand-series";
-import { getCompetitorProducts, getPriceSnapshots } from "@/lib/data";
+import { getPriceSnapshots } from "@/lib/data";
 import { getPageI18n } from "@/lib/i18n/server";
+import {
+  priceSnapshotBusinessLine,
+  priceSnapshotBusinessSegment,
+  priceSnapshotBusinessSize,
+  priceSnapshotMakukuMaterialCode,
+} from "@/lib/price-snapshot-business";
 import { productGradeOptions } from "@/lib/segments";
 import type { PriceSnapshot } from "@/lib/types";
 
@@ -42,13 +48,9 @@ export default async function PricesPage({
   currentParams.set("locale", locale);
   const exportHref = `/api/price-snapshots/export?${currentParams.toString()}`;
 
-  const [pricesResult, productsResult] = await Promise.all([
-    getPriceSnapshots(),
-    getCompetitorProducts(),
-  ]);
+  const pricesResult = await getPriceSnapshots();
 
-  const productSegments = productsResult.data.map((product) => resolveProductSegment(product));
-  const productSizes = Array.from(new Set([...productSegments.map((segment) => segment.size), params.size].filter(Boolean) as string[])).sort();
+  const productSizes = Array.from(new Set([...pricesResult.data.map(priceSnapshotBusinessSize), params.size].filter(Boolean) as string[])).sort();
   const brandSeriesOptions = uniqueOptions(pricesResult.data.map(priceBrandSeriesLabel));
   const prices = pricesResult.data.filter((snapshot) => snapshotMatchesFilters(snapshot, params));
   const total = prices.length;
@@ -63,7 +65,7 @@ export default async function PricesPage({
 
   return (
     <AppShell locale={locale} dict={dict} title={dict.prices.title} currentPath={currentPath} isDemo={pricesResult.isDemo}>
-      <DataNotice dict={dict} error={pricesResult.error ?? productsResult.error} />
+      <DataNotice dict={dict} error={pricesResult.error} />
       <Card className="mb-4">
         <form className="grid gap-3 md:grid-cols-4 xl:grid-cols-8">
           <SelectInput name="brand" defaultValue={params.brand ?? ""}>
@@ -190,14 +192,11 @@ function snapshotMatchesFilters(
     store?: string;
   },
 ) {
-  const product = snapshot.competitor_products;
-  const sku = snapshot.sku_master ?? product?.sku_matches?.[0]?.sku_master;
-  const productSegment = product ? resolveProductSegment(product) : { line: "Unknown", size: "Unknown" };
-  const line = sku ? productLineLabel(sku.pack_type) : productSegment.line;
-  const size = sku?.size ?? productSegment.size;
-  const priceBand = sku?.segment ?? product?.segment ?? "unknown";
+  const line = priceSnapshotBusinessLine(snapshot);
+  const size = priceSnapshotBusinessSize(snapshot);
+  const priceBand = priceSnapshotBusinessSegment(snapshot);
   if (params.brand && priceBrandSeriesLabel(snapshot) !== params.brand) return false;
-  if (params.sku && !matchesText(snapshotMakukuMaterialCode(snapshot), params.sku)) return false;
+  if (params.sku && !matchesText(priceSnapshotMakukuMaterialCode(snapshot), params.sku)) return false;
   if (params.line && line !== params.line) return false;
   if (params.priceBand && priceBand !== params.priceBand) return false;
   if (params.size && size !== params.size) return false;
@@ -207,12 +206,6 @@ function snapshotMatchesFilters(
   if (params.district && !matchesText(region.district, params.district)) return false;
   if (params.store && !matchesText(storeNameForSnapshot(snapshot), params.store)) return false;
   return true;
-}
-
-function snapshotMakukuMaterialCode(snapshot: PriceSnapshot) {
-  return cleanDisplayText(snapshot.sku_master?.material_sku_code)
-    ?? cleanDisplayText(snapshot.competitor_products?.sku_matches?.[0]?.sku_master?.material_sku_code)
-    ?? "-";
 }
 
 type PriceSnapshotForStoreRegion = {
@@ -284,29 +277,3 @@ function uniqueOptions(values: string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort();
 }
 
-function productLineLabel(value: string) {
-  if (value === "pants") return "Pants";
-  if (value === "tape") return "Tape";
-  return "Unknown";
-}
-
-function resolveProductSegment(product: { pack_type: string; size: string | null; raw_title: string; normalized_name: string }) {
-  const title = product.normalized_name || product.raw_title;
-  return {
-    line: product.pack_type === "unknown" ? inferProductLine(title) : productLineLabel(product.pack_type),
-    size: product.size || inferProductSize(title),
-  };
-}
-
-function inferProductLine(value: string | null | undefined) {
-  const text = (value ?? "").toLowerCase();
-  if (text.includes("tape")) return "Tape";
-  if (text.includes("pants") || text.includes("pant")) return "Pants";
-  return "Pants";
-}
-
-function inferProductSize(value: string | null | undefined) {
-  const text = (value ?? "").toUpperCase();
-  const match = text.match(/\b(NB\/NB-S|XXXXL|XXXL|XXL|XL|NB|L|M|S)\b/);
-  return match?.[1] ?? "Unknown";
-}

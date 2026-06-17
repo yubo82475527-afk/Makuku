@@ -42,8 +42,12 @@ export function brandSeriesLabel(brandName: string | null | undefined, productSe
 }
 
 export function priceBrandSeriesLabel(snapshot: PriceSnapshot) {
-  if (snapshot.sku_master_id && !snapshot.competitor_product_id) {
-    return brandSeriesLabel("Makuku", makukuSeriesName(snapshot.sku_master?.makuku_sku_name));
+  if ((snapshot.material_sku_code || snapshot.sku_master_id) && !snapshot.competitor_product_id) {
+    const material = snapshot.material_master ?? snapshot.sku_master?.material_master;
+    return brandSeriesLabel(
+      material?.brand ?? "Makuku",
+      material?.sub_brand ?? makukuSeriesName(snapshot.sku_master?.makuku_sku_name),
+    );
   }
   return brandSeriesLabel(snapshot.competitor_products?.brands?.name, snapshot.competitor_products?.product_series);
 }

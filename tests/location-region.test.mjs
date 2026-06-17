@@ -143,9 +143,9 @@ test("reverse geocode exposes structured province city district parts for dashbo
 });
 
 test("offline store API backfills structured region from legacy city string", () => {
-  assert.match(offlineStoresRoute, /function splitLegacyRegion/);
-  assert.match(offlineStoresRoute, /splitLegacyRegion\(city\)/);
-  assert.match(offlineStoresRoute, /legacyRegion\.province/);
-  assert.match(offlineStoresRoute, /legacyRegion\.cityName/);
-  assert.match(offlineStoresRoute, /legacyRegion\.district/);
+  assert.match(offlineStoresRoute, /function resolveStoreRegion/);
+  assert.match(offlineStoresRoute, /\[rawProvince, rawCityName, rawCity\]\.map\(splitRegionText\)\.find\(Boolean\)/);
+  assert.match(offlineStoresRoute, /compoundRegion\?\.province/);
+  assert.match(offlineStoresRoute, /compoundRegion\?\.cityName/);
+  assert.match(offlineStoresRoute, /compoundRegion\?\.district/);
 });

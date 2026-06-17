@@ -67,6 +67,10 @@ export type StoreVisitAiResult = {
       brand: string;
       product: string;
       price: string;
+      list_price?: string | null;
+      package_price?: string | null;
+      net_price?: string | null;
+      promo_type?: string | null;
       piece_count: number | null;
       tag: PriceInsightTag;
       confidence: number;
@@ -159,6 +163,7 @@ export type SkuMaster = {
   gross_margin_rate: number;
   active: boolean;
   created_at: string;
+  material_master?: MaterialMaster | null;
 };
 
 export type MaterialMaster = {
@@ -370,6 +375,7 @@ export type PriceSnapshot = {
   id: string;
   competitor_product_id: string | null;
   sku_master_id: string | null;
+  material_sku_code?: string | null;
   offline_store_id?: string | null;
   channel: Channel;
   list_price_idr: number;
@@ -385,6 +391,7 @@ export type PriceSnapshot = {
   created_at: string;
   competitor_products?: CompetitorProduct | null;
   sku_master?: SkuMaster | null;
+  material_master?: MaterialMaster | null;
   offline_stores?: Pick<OfflineStore, "id" | "name" | "city" | "province" | "city_name" | "district" | "channel_type"> | null;
   ai_price_candidates?: PriceSnapshotCandidate[];
 };
@@ -515,6 +522,10 @@ export type AiPriceCandidate = {
   raw_product: string;
   raw_price: string;
   parsed_price_idr: number | null;
+  list_price_idr?: number | null;
+  package_price_idr?: number | null;
+  net_price_idr?: number | null;
+  promo_type?: string | null;
   piece_count: number | null;
   price_per_piece: number | null;
   candidate_type: RawExtractionType;

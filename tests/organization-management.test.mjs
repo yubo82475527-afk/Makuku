@@ -21,6 +21,7 @@ const organizationRulesApi = readIfExists("src/app/api/organizations/region-rule
 const offlineStoresApi = readIfExists("src/app/api/offline-stores/route.ts");
 const offlineStoresPage = readIfExists("src/app/[locale]/offline-stores/page.tsx");
 const storeTable = readIfExists("src/components/store-master-table.tsx");
+const storeCreateDialog = readIfExists("src/components/store-create-dialog.tsx");
 
 test("organization migration creates master data, members, region rules, and store assignment fields", () => {
   assert.match(migration, /create table if not exists public\.organizations/);
@@ -85,7 +86,11 @@ test("organization management UI and APIs are wired", () => {
 test("store creation and store management use organization assignment", () => {
   assert.match(offlineStoresApi, /resolveOrganizationForRegion/);
   assert.match(offlineStoresApi, /organizationAssignmentPatch/);
+  assert.match(offlineStoresApi, /organizationId/);
+  assert.match(offlineStoresApi, /organization_assignment_method: "manual"/);
   assert.match(offlineStoresApi, /assignOrganizationForStore/);
+  assert.match(offlineStoresApi, /if \(data\?\.id\)/);
+  assert.match(offlineStoresApi, /organization_assignment_method: data\.organization_assignment_method/);
   assert.match(offlineStoresApi, /assign_organization/);
   assert.match(offlineStoresApi, /auto_assign_organization/);
   assert.match(offlineStoresApi, /rule_matched_count/);
@@ -93,8 +98,16 @@ test("store creation and store management use organization assignment", () => {
   assert.match(offlineStoresApi, /manual_skipped_count/);
   assert.match(offlineStoresPage, /getOrganizations/);
   assert.match(offlineStoresPage, /organizationFilter/);
-  assert.match(storeTable, /All organizations/);
-  assert.match(storeTable, /Unassigned/);
+  assert.match(offlineStoresPage, /channels=\{offlineChannels\}/);
+  assert.match(offlineStoresPage, /useChannelTypeFallback=\{useChannelTypeFallback\}/);
+  assert.match(offlineStoresPage, /name="status"/);
+  assert.match(offlineStoresPage, /name="organization"/);
+  assert.match(storeTable, /StoreCreateDialog/);
+  assert.match(storeCreateDialog, /name="province"/);
+  assert.match(storeCreateDialog, /name="city_name"/);
+  assert.match(storeCreateDialog, /name="district"/);
+  assert.match(storeCreateDialog, /autoComplete="off"/);
+  assert.match(storeCreateDialog, /name="organization_id"/);
   assert.match(storeTable, /selectedIds/);
   assert.match(storeTable, /rematchSelectedStores/);
   assert.match(storeTable, /Bulk Rematch Organizations/);

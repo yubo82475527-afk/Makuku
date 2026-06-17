@@ -13,6 +13,7 @@ const aiPriceReview = readFileSync("src/lib/ai-price-review.ts", "utf8");
 const pricesPage = readFileSync("src/app/[locale]/prices/page.tsx", "utf8");
 const priceSnapshotsTable = readFileSync("src/components/price-snapshots-table.tsx", "utf8");
 const priceExportRoute = readFileSync("src/app/api/price-snapshots/export/route.ts", "utf8");
+const priceSnapshotBusiness = readFileSync("src/lib/price-snapshot-business.ts", "utf8");
 const skuBridge = existsSync("src/lib/sku-master-bridge.ts") ? readFileSync("src/lib/sku-master-bridge.ts", "utf8") : "";
 
 test("migration preserves material SKU code and enforces single snapshot product owner", () => {
@@ -40,10 +41,8 @@ test("photo review writes only one product owner per snapshot", () => {
   assert.match(aiPriceReview, /candidateRow\.matched_entity_type === "competitor_product"/);
   assert.match(aiPriceReview, /competitor_product_id: competitorProduct!?\.(id)/);
   assert.match(aiPriceReview, /sku_master_id: null/);
-  assert.match(aiPriceReview, /Unmatched candidates cannot be approved/);
-  assert.match(aiPriceReview, /createCompetitorIfUnmatched/);
-  assert.match(aiPriceReview, /matched_entity_type: "competitor_product"/);
-  assert.match(aiPriceReview, /match_score: 1/);
+  assert.match(aiPriceReview, /Please match a product before approving this candidate/);
+  assert.doesNotMatch(aiPriceReview, /createCompetitorIfUnmatched/);
 });
 
 test("price snapshots PATCH switches owner without updating mapping rules", () => {
@@ -58,13 +57,56 @@ test("price snapshots PATCH switches owner without updating mapping rules", () =
 
 test("prices page and export show actual owner and filter by derived Makuku SKU code", () => {
   assert.doesNotMatch(pricesPage, /getMaterialMaster\(\)/);
-  assert.match(pricesPage, /snapshotMakukuMaterialCode/);
+  assert.match(pricesPage, /priceSnapshotMakukuMaterialCode/);
   assert.match(pricesPage, /params\.sku/);
   assert.doesNotMatch(priceSnapshotsTable, /商品类型|Product Type/);
   assert.match(priceSnapshotsTable, /priceBrandSeriesLabel/);
-  assert.match(priceExportRoute, /Product Type/);
-  assert.match(priceExportRoute, /sku_master\(\*\)/);
-  assert.match(priceExportRoute, /snapshotMakukuMaterialCode/);
+  assert.doesNotMatch(priceExportRoute, /Product Type/);
+  assert.doesNotMatch(priceExportRoute, /Channel/);
+  assert.match(priceExportRoute, /snapshotSkuCode\(snapshot\)/);
+  assert.match(priceExportRoute, /priceSnapshotBusinessSegment\(snapshot\)/);
+  assert.match(priceExportRoute, /sku_master\(\*, material_master\(\*\)\)/);
+  assert.match(priceExportRoute, /priceSnapshotMakukuMaterialCode/);
+});
+
+test("real market price page shows activity type and three business prices", () => {
+  assert.match(priceSnapshotsTable, /Activity Type/);
+  assert.match(priceSnapshotsTable, /Discount/);
+  assert.match(priceSnapshotsTable, /\[\&_th\]:whitespace-nowrap/);
+  assert.match(priceSnapshotsTable, /snapshotDiscountAmount\(snapshot\)/);
+  assert.match(priceSnapshotsTable, /snapshotPromoTypeLabel\(snapshot, isZh\)/);
+  assert.doesNotMatch(priceSnapshotsTable, />\{isZh \? "券" : "Voucher"\}</);
+  assert.doesNotMatch(priceSnapshotsTable, /formatIdr\(snapshot\.voucher_value_idr\)/);
+
+  assert.match(priceExportRoute, /Activity Type/);
+  assert.match(priceExportRoute, /Discount/);
+  assert.match(priceExportRoute, /snapshotDiscountAmount\(snapshot\)/);
+  assert.match(priceExportRoute, /snapshotPromoTypeLabel\(snapshot, locale === "zh"\)/);
+  assert.doesNotMatch(priceExportRoute, /"Voucher"/);
+});
+
+test("own price snapshots display brand and product from material master", () => {
+  assert.match(typesFile, /material_master\?: MaterialMaster \| null/);
+  assert.match(typesFile, /sku_master\?: SkuMaster \| null/);
+  assert.match(dataFile, /material_master\(\*\)/);
+  assert.match(priceExportRoute, /material_master\(\*\)/);
+  assert.match(priceSnapshotsTable, /priceSnapshotBenchmarkMaterial\(snapshot\)\?\.tenant_sku_name/);
+  assert.match(priceSnapshotBusiness, /priceSnapshotBenchmarkMaterial/);
+  assert.match(priceSnapshotBusiness, /snapshot\.material_master[\s\S]*snapshot\.sku_master\?\.material_master/);
+});
+
+test("prices page and export use Makuku benchmark SKU business segment filters", () => {
+  assert.match(priceSnapshotBusiness, /export function priceSnapshotBenchmarkSku/);
+  assert.match(priceSnapshotBusiness, /export function priceSnapshotBusinessSegment/);
+  assert.match(priceSnapshotBusiness, /export function priceSnapshotBusinessSize/);
+  assert.match(priceSnapshotBusiness, /snapshot\.sku_master \?\? snapshot\.competitor_products\?\.sku_matches\?\.\[0\]\?\.sku_master/);
+  assert.match(priceSnapshotBusiness, /priceSnapshotBenchmarkSku\(snapshot\)\?\.segment[\s\S]*snapshot\.competitor_products\?\.segment[\s\S]*"unknown"/);
+  assert.match(pricesPage, /priceSnapshotBusinessSegment\(snapshot\)/);
+  assert.match(pricesPage, /priceSnapshotBusinessSize\(snapshot\)/);
+  assert.match(priceExportRoute, /priceSnapshotBusinessSegment\(snapshot\)/);
+  assert.match(priceExportRoute, /priceSnapshotBusinessSize\(snapshot\)/);
+  assert.doesNotMatch(pricesPage, /sku\?\.segment\s*\?\?\s*product\?\.segment/);
+  assert.doesNotMatch(priceExportRoute, /skuMaster\?\.segment\s*\?\?\s*product\?\.segment/);
 });
 
 test("price snapshots query supports owner visibility while market price page shows all facts", () => {
@@ -77,7 +119,7 @@ test("price snapshots query supports owner visibility while market price page sh
   assert.match(dataFile, /\.order\("captured_at", \{ ascending: false \}\)/);
   assert.match(dataFile, /\.order\("created_at", \{ ascending: false \}\)/);
   assert.match(dataFile, /\.order\("id", \{ ascending: true \}\)/);
-  assert.match(dataFile, /owner === "makuku"[\s\S]*\.not\("sku_master_id", "is", null\)[\s\S]*\.is\("competitor_product_id", null\)/);
+  assert.match(dataFile, /owner === "makuku"[\s\S]*sku_master_id\.not\.is\.null,material_sku_code\.not\.is\.null[\s\S]*\.is\("competitor_product_id", null\)/);
   assert.match(dataFile, /owner === "competitor"[\s\S]*\.not\("competitor_product_id", "is", null\)/);
 
   assert.match(pricesPage, /getPriceSnapshots\(\)/);

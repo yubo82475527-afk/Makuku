@@ -13,21 +13,28 @@ function cleanIds(value: unknown) {
 function cleanReviewOverrides(value: unknown, allowedIds: string[]) {
   const source = typeof value === "object" && value ? value as Record<string, unknown> : {};
   const allowed = new Set(allowedIds);
-  const reviewOverrides: Record<string, { price_idr: number; piece_count: number }> = {};
+  const reviewOverrides: Record<string, { price_idr: number; net_price_idr: number; piece_count: number; promo_type: string | null }> = {};
 
   for (const [candidateId, rawOverride] of Object.entries(source)) {
     if (!allowed.has(candidateId)) continue;
     const override = typeof rawOverride === "object" && rawOverride ? rawOverride as Record<string, unknown> : {};
-    const priceIdr = Number(override.price_idr);
+    const priceIdr = Number(override.net_price_idr ?? override.price_idr);
     const pieceCount = Number(override.piece_count);
     if (!Number.isFinite(priceIdr) || priceIdr <= 0 || !Number.isFinite(pieceCount) || pieceCount <= 0) continue;
     reviewOverrides[candidateId] = {
       price_idr: Math.round(priceIdr),
+      net_price_idr: Math.round(priceIdr),
       piece_count: Math.floor(pieceCount),
+      promo_type: cleanOptionalText(override.promo_type),
     };
   }
 
   return reviewOverrides;
+}
+
+function cleanOptionalText(value: unknown) {
+  const text = String(value ?? "").trim();
+  return text ? text : null;
 }
 
 function cleanFilters(value: unknown) {

@@ -1,86 +1,59 @@
 "use client";
 
-import { useState } from "react";
 import { Download, Upload } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui";
 
 type Preview = {
-  file_month: string;
   total_rows: number;
-  store_count: number;
-  product_spec_count: number;
-  snapshot_count: number;
-  skipped_no_price_rows: number;
-  error_count: number;
+  product_count: number;
+  brand_count: number;
   rows: Array<{
     row_number: number;
-    area: string;
-    city: string;
-    store_name: string;
-    store_type: string;
+    competitor_sku_code: string | null;
     brand: string;
-    package_type: string;
+    product_series: string | null;
     product_name: string;
+    package_type: string;
     size: string;
-    piece_count: number | null;
+    piece_count: number;
+    target_material_sku_code: string | null;
     errors: string[];
   }>;
   errors: Array<{ row_number: number; errors: string[] }>;
 };
 
 type ImportResult = {
-  stores: number;
+  brands: number;
   competitor_products: number;
-  makuku_skus: number;
-  inserted_snapshots: number;
-  updated_snapshots: number;
-  skipped_snapshots: number;
+  mapped_count: number;
+  skipped_manual_mappings: number;
   row_errors: Array<{ row_number: number; errors: string[] }>;
 };
 
 const templateColumns = [
-  "AREA",
-  "KOTA",
-  "NAMA TOKO",
-  "TYPE TOKO",
-  "CATEGORY",
-  "BRAND",
-  "GPL 2",
-  "NAMA PRODUCT MAKUKU",
-  "SIZE",
-  "PACK",
-  "PRICE/ PACK W1",
-  "PRICE/PCS W1",
-  "PRICE/ PACK W2",
-  "PRICE/PCS W2",
-  "PRICE/ PACK W3",
-  "PRICE/PCS W3",
-  "PRICE/ PACK W4",
-  "PRICE/PCS W4",
+  "competitor_sku_code",
+  "brand",
+  "product_series",
+  "product_name",
+  "package_type",
+  "size",
+  "piece_count",
+  "target_material_sku_code",
 ];
 
 const templateExample = [
-  "BALI",
-  "BALI",
-  "TOKO CONTOH",
-  "BABY SHOP",
-  "BD Eco",
-  "SWEETY BRONZE",
-  "JUMBO",
+  "",
+  "SWEETY",
+  "BRONZE",
   "SWEETY BRONZE PANTS M34",
+  "JUMBO",
   "M",
   "34",
-  "53000",
-  "1558.82",
-  "",
-  "",
-  "",
-  "",
-  "",
-  "",
+  "14022043650",
 ];
 
-export function ExcelPriceImportWorkbench({ locale }: { locale: string }) {
+export function CompetitorProductImportWorkbench({ locale }: { locale: string }) {
   const copy = getCopy(locale);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -89,7 +62,7 @@ export function ExcelPriceImportWorkbench({ locale }: { locale: string }) {
   const [error, setError] = useState<string | null>(null);
 
   function downloadTemplate() {
-    downloadCsv("offline-price-import-template.csv", [templateColumns, templateExample]);
+    downloadCsv("competitor-product-master-template.csv", [templateColumns, templateExample]);
   }
 
   async function submit(intent: "preview" | "import") {
@@ -104,10 +77,7 @@ export function ExcelPriceImportWorkbench({ locale }: { locale: string }) {
       const formData = new FormData();
       formData.set("intent", intent);
       formData.set("file", file);
-      const response = await fetch("/api/internal/excel-price-import", {
-        method: "POST",
-        body: formData,
-      });
+      const response = await fetch("/api/competitor-products/import", { method: "POST", body: formData });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error ?? copy.failed);
       setPreview(payload.preview);
@@ -148,31 +118,28 @@ export function ExcelPriceImportWorkbench({ locale }: { locale: string }) {
             <Button type="button" onClick={() => submit("preview")} disabled={!file || loading !== null}>
               {loading === "preview" ? copy.previewing : copy.preview}
             </Button>
-            <Button type="button" onClick={() => submit("import")} disabled={!preview || !file || loading !== null || preview.error_count > 0}>
+            <Button type="button" onClick={() => submit("import")} disabled={!preview || !file || loading !== null || preview.errors.length > 0}>
               {loading === "import" ? copy.importing : copy.import}
             </Button>
           </div>
         </div>
+        <div className="mt-3 text-xs text-slate-500">{copy.templateHint}</div>
         {error ? <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
       </section>
 
       {preview ? (
         <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="grid gap-3 md:grid-cols-6">
+          <div className="grid gap-3 md:grid-cols-4">
             <Metric label={copy.totalRows} value={preview.total_rows} />
-            <Metric label={copy.stores} value={preview.store_count} />
-            <Metric label={copy.products} value={preview.product_spec_count} />
-            <Metric label={copy.snapshots} value={preview.snapshot_count} />
-            <Metric label={copy.skippedNoPrice} value={preview.skipped_no_price_rows} />
-            <Metric label={copy.errors} value={preview.error_count} />
+            <Metric label={copy.products} value={preview.product_count} />
+            <Metric label={copy.brands} value={preview.brand_count} />
+            <Metric label={copy.errors} value={preview.errors.length} />
           </div>
-          {preview.error_count > 0 ? (
+          {preview.errors.length > 0 ? (
             <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
               <div className="font-medium">{copy.fixErrors}</div>
               <ul className="mt-2 space-y-1">
-                {preview.errors.slice(0, 10).map((item) => (
-                  <li key={item.row_number}>Row {item.row_number}: {item.errors.join(", ")}</li>
-                ))}
+                {preview.errors.slice(0, 10).map((item) => <li key={item.row_number}>Row {item.row_number}: {item.errors.join(", ")}</li>)}
               </ul>
             </div>
           ) : null}
@@ -192,31 +159,33 @@ export function ExcelPriceImportWorkbench({ locale }: { locale: string }) {
 
       {preview ? (
         <section className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-          <table className="min-w-[1120px] w-full text-left text-sm">
+          <table className="min-w-[1160px] w-full text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500">
               <tr>
                 <th className="px-3 py-2">Row</th>
-                <th className="px-3 py-2">{copy.store}</th>
-                <th className="px-3 py-2">{copy.type}</th>
+                <th className="px-3 py-2">{copy.code}</th>
                 <th className="px-3 py-2">{copy.brand}</th>
-                <th className="px-3 py-2">{copy.packageType}</th>
+                <th className="px-3 py-2">{copy.series}</th>
                 <th className="px-3 py-2">{copy.product}</th>
+                <th className="px-3 py-2">{copy.packageType}</th>
                 <th className="px-3 py-2">{copy.size}</th>
                 <th className="px-3 py-2">{copy.pcs}</th>
+                <th className="px-3 py-2">{copy.targetSku}</th>
                 <th className="px-3 py-2">{copy.errorColumn}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {preview.rows.slice(0, 30).map((row) => (
+              {preview.rows.map((row) => (
                 <tr key={row.row_number}>
                   <td className="px-3 py-2">{row.row_number}</td>
-                  <td className="px-3 py-2">{row.store_name}</td>
-                  <td className="px-3 py-2">{row.store_type}</td>
+                  <td className="px-3 py-2">{row.competitor_sku_code ?? "-"}</td>
                   <td className="px-3 py-2">{row.brand}</td>
-                  <td className="px-3 py-2">{row.package_type}</td>
+                  <td className="px-3 py-2">{row.product_series ?? "-"}</td>
                   <td className="px-3 py-2">{row.product_name}</td>
+                  <td className="px-3 py-2">{row.package_type}</td>
                   <td className="px-3 py-2">{row.size}</td>
-                  <td className="px-3 py-2">{row.piece_count ?? "-"}</td>
+                  <td className="px-3 py-2">{row.piece_count || "-"}</td>
+                  <td className="px-3 py-2">{row.target_material_sku_code ?? "-"}</td>
                   <td className="px-3 py-2 text-amber-700">{row.errors.join(", ") || "-"}</td>
                 </tr>
               ))}
@@ -256,7 +225,7 @@ function csvEscape(value: string) {
 function getCopy(locale: string) {
   const isZh = locale === "zh";
   return {
-    chooseFile: isZh ? "选择 5 月线下价格 Excel" : "Choose offline price Excel",
+    chooseFile: isZh ? "选择竞品主数据 Excel" : "Choose competitor master Excel",
     missingFile: isZh ? "请先选择 Excel 文件" : "Choose a file first",
     failed: isZh ? "Excel 处理失败" : "Excel processing failed",
     preview: isZh ? "预览" : "Preview",
@@ -264,23 +233,23 @@ function getCopy(locale: string) {
     import: isZh ? "确认导入" : "Import",
     importing: isZh ? "导入中..." : "Importing...",
     downloadTemplate: isZh ? "下载导入模板" : "Download template",
+    templateHint: "competitor_sku_code, brand, product_series, product_name, package_type, size, piece_count, target_material_sku_code",
     totalRows: isZh ? "总行数" : "Rows",
-    stores: isZh ? "门店数" : "Stores",
-    products: isZh ? "商品规格数" : "Product specs",
-    snapshots: isZh ? "可生成快照" : "Snapshots",
-    skippedNoPrice: isZh ? "无价格跳过" : "No-price rows",
+    products: isZh ? "竞品数" : "Products",
+    brands: isZh ? "品牌数" : "Brands",
     errors: isZh ? "异常行" : "Errors",
     fixErrors: isZh ? "存在异常行，修正后才能导入。" : "Fix error rows before importing.",
-    store: isZh ? "门店" : "Store",
-    type: isZh ? "门店类型" : "Store type",
+    code: isZh ? "竞品编码" : "Competitor Code",
     brand: isZh ? "品牌" : "Brand",
-    packageType: isZh ? "包装类型" : "Package type",
+    series: isZh ? "系列" : "Series",
     product: isZh ? "商品" : "Product",
+    packageType: isZh ? "包装类型" : "Package Type",
     size: isZh ? "尺码" : "Size",
     pcs: isZh ? "片数" : "Pcs",
+    targetSku: isZh ? "映射物料编码" : "Target Material SKU",
     errorColumn: isZh ? "异常" : "Error",
     imported: (result: ImportResult) => isZh
-      ? `导入完成：写入 ${result.inserted_snapshots} 条价格快照，更新 ${result.updated_snapshots} 条，跳过 ${result.skipped_snapshots} 条异常快照，涉及 ${result.stores} 个门店、${result.competitor_products} 个竞品商品。`
-      : `Import complete: inserted ${result.inserted_snapshots} snapshots, updated ${result.updated_snapshots}, skipped ${result.skipped_snapshots}, covering ${result.stores} stores and ${result.competitor_products} competitor products.`,
+      ? `导入完成：新增品牌 ${result.brands} 个，处理竞品 ${result.competitor_products} 个，映射 ${result.mapped_count} 个，跳过人工映射 ${result.skipped_manual_mappings} 个。`
+      : `Import complete: ${result.brands} brands, ${result.competitor_products} products, ${result.mapped_count} mappings, ${result.skipped_manual_mappings} manual mappings skipped.`,
   };
 }

@@ -75,9 +75,9 @@ async function importPreview(supabase: Supabase, preview: OfflinePriceExcelPrevi
     }
 
     const owner = row.is_makuku
-      ? { sku_master_id: makukuSkuResolution.skuMasters.get(productKey(row)) ?? null, competitor_product_id: null }
-      : { sku_master_id: null, competitor_product_id: competitors.get(productKey(row)) ?? null };
-    if (!owner.sku_master_id && !owner.competitor_product_id) {
+      ? { ...(makukuSkuResolution.skuMasters.get(productKey(row)) ?? { sku_master_id: null, material_sku_code: null }), competitor_product_id: null }
+      : { sku_master_id: null, material_sku_code: null, competitor_product_id: competitors.get(productKey(row)) ?? null };
+    if ((!owner.sku_master_id && !owner.material_sku_code) && !owner.competitor_product_id) {
       const makukuError = makukuSkuResolution.ambiguousKeys.has(productKey(row)) ? "Makuku SKU ambiguous" : "Makuku SKU not matched";
       rowErrors.push({ row_number: row.row_number, errors: [row.is_makuku ? makukuError : "Competitor product was not created"] });
       continue;
@@ -93,6 +93,7 @@ async function importPreview(supabase: Supabase, preview: OfflinePriceExcelPrevi
         offline_store_id: offlineStoreId,
         competitor_product_id: owner.competitor_product_id,
         sku_master_id: owner.sku_master_id,
+        material_sku_code: owner.material_sku_code,
         channel: "offline",
         list_price_idr: week.package_price,
         promo_price_idr: week.package_price,
@@ -273,7 +274,7 @@ async function resolveMakukuSkuMasters(supabase: Supabase, rows: OfflinePriceExc
   const { data: skuMasters, error: skuError } = await supabase.from("sku_master").select("*").limit(10000);
   if (skuError) throw new Error(skuError.message);
 
-  const resolved = new Map<string, string>();
+  const resolved = new Map<string, { sku_master_id: string | null; material_sku_code: string | null }>();
   const ambiguousKeys = new Set<string>();
   for (const row of uniqueBy(rows, productKey)) {
     const materialMatch = findMatchingMaterial(row, (materials ?? []) as MaterialMaster[]);
@@ -282,11 +283,19 @@ async function resolveMakukuSkuMasters(supabase: Supabase, rows: OfflinePriceExc
       continue;
     }
     if (materialMatch.material?.tenant_sku_code) {
-      resolved.set(productKey(row), await ensureSkuMasterFromMaterial(supabase, materialMatch.material.tenant_sku_code));
+      resolved.set(productKey(row), {
+        sku_master_id: await ensureSkuMasterFromMaterial(supabase, materialMatch.material.tenant_sku_code),
+        material_sku_code: materialMatch.material.tenant_sku_code,
+      });
       continue;
     }
     const sku = findMatchingSku(row, (skuMasters ?? []) as SkuMaster[]);
-    if (sku?.id) resolved.set(productKey(row), sku.id);
+    if (sku?.id) {
+      resolved.set(productKey(row), {
+        sku_master_id: sku.id,
+        material_sku_code: sku.material_sku_code ?? null,
+      });
+    }
   }
   return { skuMasters: resolved, ambiguousKeys };
 }

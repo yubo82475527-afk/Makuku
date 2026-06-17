@@ -32,8 +32,9 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     const supabase = createSupabaseServiceClient();
 
     if (action === "save_review_input") {
-      const price = Number(body.price_idr);
+      const price = Number(body.net_price_idr ?? body.price_idr);
       const pieceCount = Number(body.piece_count);
+      const promoType = cleanOptionalText(body.promo_type);
       if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(pieceCount) || pieceCount <= 0) {
         return Response.json({ error: "Valid package price and piece count are required" }, { status: 400 });
       }
@@ -43,6 +44,10 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
         .from("ai_price_candidates")
         .update({
           parsed_price_idr: Math.round(price),
+          list_price_idr: Math.round(price),
+          package_price_idr: Math.round(price),
+          net_price_idr: Math.round(price),
+          promo_type: promoType,
           piece_count: Math.floor(pieceCount),
           price_per_piece: pricePerPiece,
         })
@@ -140,15 +145,14 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     }
 
     if (action === "approve") {
-      const createCompetitorIfUnmatched = Boolean(body.create_competitor_if_unmatched);
       const result = await approveAiPriceCandidate({
         supabase,
         candidateId: id,
-        priceIdr: body.price_idr ? Number(body.price_idr) : null,
+        priceIdr: body.net_price_idr ?? body.price_idr ? Number(body.net_price_idr ?? body.price_idr) : null,
         pieceCount: body.piece_count ? Number(body.piece_count) : null,
+        promoType: cleanOptionalText(body.promo_type),
         reviewer,
         reviewMethod: "manual",
-        createCompetitorIfUnmatched,
       });
       revalidateReviewPaths();
       return Response.json(result);
@@ -170,6 +174,11 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
   }
+}
+
+function cleanOptionalText(value: unknown) {
+  const text = String(value ?? "").trim();
+  return text ? text : null;
 }
 
 export async function DELETE(request: Request) {

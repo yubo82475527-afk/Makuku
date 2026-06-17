@@ -48,12 +48,16 @@ test("competitor mapping uses status and method instead of match score as a visi
 
 test("competitor product master owns only 1.0 required product field maintenance", () => {
   assert.match(competitorProductsPage, /CompetitorProductsTable/);
-  assert.match(competitorProductsTable, /intent: "update_fields"/);
+  assert.match(competitorProductsTable, /openProduct/);
+  assert.match(competitorProductsTable, /drawerTitle/);
+  assert.match(competitorProductsTable, /competitorCode/);
+  assert.match(competitorProductsTable, /method: "PATCH"/);
+  assert.match(competitorProductsTable, /brand_id/);
   assert.match(competitorProductsTable, /package_type/);
+  assert.match(competitorProductsTable, /pack_type/);
   assert.match(competitorProductsTable, /piece_count/);
+  assert.match(competitorProductsTable, /segment/);
   assert.match(competitorProductsTable, /status/);
-  assert.doesNotMatch(competitorProductsTable, /pack_type/);
-  assert.doesNotMatch(competitorProductsTable, /segment/);
   assert.doesNotMatch(competitorProductsTable, /intent: "update_segment"/);
   assert.doesNotMatch(competitorProductsTable, /ProductMasterSearchSelect/);
 });

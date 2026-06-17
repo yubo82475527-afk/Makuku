@@ -18,8 +18,8 @@ type WorkbenchFilters = {
 type StatusTabValue = "pending" | "approved" | "rejected" | "all";
 type RejectDialogState = { mode: "bulk" } | { mode: "single"; candidateId: string } | null;
 type MatchDialogState = { candidate: AiPriceCandidate } | null;
-type ReviewInput = { price: string; pieces: string };
-type ReviewOverride = { price_idr: number; piece_count: number };
+type ReviewInput = { price: string; pieces: string; promoType: string };
+type ReviewOverride = { price_idr: number; net_price_idr: number; piece_count: number; promo_type: string | null };
 type WorkbenchCopy = ReturnType<typeof getWorkbenchCopy>;
 
 function stopReviewRowClick(event: MouseEvent) {
@@ -120,6 +120,8 @@ export function AiPriceCandidatesWorkbench({
         body: JSON.stringify({
           action: "save_review_input",
           price_idr: Math.round(price),
+          net_price_idr: Math.round(price),
+          promo_type: input.promoType.trim() || null,
           piece_count: Math.floor(pieces),
         }),
       });
@@ -128,6 +130,7 @@ export function AiPriceCandidatesWorkbench({
       const saved = {
         price: String(Math.round(price)),
         pieces: String(Math.floor(pieces)),
+        promoType: input.promoType.trim(),
       };
       setSavedReviewInputs((current) => ({ ...current, [candidate.id]: saved }));
       setReviewInputs((current) => ({ ...current, [candidate.id]: saved }));
@@ -152,7 +155,9 @@ export function AiPriceCandidatesWorkbench({
       }
       overrides[candidate.id] = {
         price_idr: Math.round(price),
+        net_price_idr: Math.round(price),
         piece_count: Math.floor(pieces),
+        promo_type: input.promoType.trim() || null,
       };
     }
     return overrides;
@@ -206,6 +211,10 @@ export function AiPriceCandidatesWorkbench({
   }
 
   async function approveSelected() {
+    if (items.some((candidate) => selectedSet.has(candidate.id) && !candidateCanBeApproved(candidate))) {
+      window.alert(copy.matchRequiredBeforeApprove);
+      return;
+    }
     await createJob("approve", {});
   }
 
@@ -267,6 +276,7 @@ export function AiPriceCandidatesWorkbench({
           selectedCount={selectedCount}
           activeJob={activeJob}
           jobItems={jobItems}
+          canApproveSelected={!items.some((candidate) => selectedSet.has(candidate.id) && !candidateCanBeApproved(candidate))}
           onApproveSelected={approveSelected}
           onRejectSelected={() => setRejectDialog({ mode: "bulk" })}
         />
@@ -337,7 +347,7 @@ export function AiPriceCandidatesWorkbench({
                     <td className="px-3 py-3" onClick={stopReviewRowClick}>
                       {isEditable ? (
                         <input
-                          name="parsed_price_idr"
+                          name="net_price_idr"
                           type="number"
                           min="0"
                           step="1"
@@ -345,10 +355,10 @@ export function AiPriceCandidatesWorkbench({
                           onChange={(event) => updateReviewInput(candidate, "price", event.target.value)}
                           onBlur={() => maybeSaveReviewInput(candidate)}
                           disabled={savingReviewInputId === candidate.id}
-                          aria-label={`${copy.packagePrice} ${candidate.raw_brand} ${candidate.raw_product}`}
+                          aria-label={`${copy.netPrice} ${candidate.raw_brand} ${candidate.raw_product}`}
                           className="h-8 w-28 rounded-md border border-slate-300 px-2 text-sm outline-none focus:border-slate-500"
                         />
-                      ) : candidate.parsed_price_idr ? formatIdr(candidate.parsed_price_idr) : "-"}
+                      ) : candidate.net_price_idr ?? candidate.parsed_price_idr ? formatIdr(candidate.net_price_idr ?? candidate.parsed_price_idr) : "-"}
                     </td>
                     <td className="px-3 py-3" onClick={stopReviewRowClick}>
                       {isEditable ? (
@@ -488,6 +498,7 @@ function BulkReviewToolbar({
   selectedCount,
   activeJob,
   jobItems,
+  canApproveSelected,
   onApproveSelected,
   onRejectSelected,
 }: {
@@ -495,6 +506,7 @@ function BulkReviewToolbar({
   selectedCount: number;
   activeJob: AiPriceReviewJob | null;
   jobItems: AiPriceReviewJobItem[];
+  canApproveSelected: boolean;
   onApproveSelected: () => Promise<void>;
   onRejectSelected: () => void;
 }) {
@@ -520,9 +532,10 @@ function BulkReviewToolbar({
     <div className="rounded-lg border border-slate-200 bg-white p-3">
       <div className="flex flex-wrap items-center gap-2">
         <div className="mr-auto text-sm text-slate-600">{copy.selectedCount(selectedCount)}</div>
-        <Button type="button" disabled={busy || selectedCount === 0} onClick={() => submit(onApproveSelected)}>{copy.approveSelected}</Button>
+        <Button type="button" disabled={busy || selectedCount === 0 || !canApproveSelected} onClick={() => submit(onApproveSelected)} title={!canApproveSelected ? copy.matchRequiredBeforeApprove : undefined}>{copy.approveSelected}</Button>
         <Button type="button" disabled={busy || selectedCount === 0} onClick={onRejectSelected} className="bg-rose-700 hover:bg-rose-600">{copy.rejectSelected}</Button>
       </div>
+      {!canApproveSelected ? <div className="mt-2 text-sm text-amber-700">{copy.matchRequiredBeforeApprove}</div> : null}
       {activeJob ? (
         <div className="mt-3 rounded-md bg-slate-50 p-3 text-sm text-slate-600">
           <div className="flex items-center justify-between gap-3">
@@ -976,12 +989,14 @@ function CandidateDetailDrawerContent({
   onEditMatch: (candidate: AiPriceCandidate) => void;
 }) {
   const [visitImages, setVisitImages] = useState<{ path: string; url: string | null; category?: string }[] | null>(() => candidate.visit_id ? null : []);
-  const [price, setPrice] = useState(candidate.parsed_price_idr ? String(Math.round(candidate.parsed_price_idr)) : "");
+  const [price, setPrice] = useState(candidate.net_price_idr ?? candidate.parsed_price_idr ? String(Math.round(candidate.net_price_idr ?? candidate.parsed_price_idr ?? 0)) : "");
   const [pieces, setPieces] = useState(candidate.piece_count ? String(candidate.piece_count) : "");
+  const [promoType, setPromoType] = useState(candidate.promo_type ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeImage, setActiveImage] = useState<{ url: string; label: string } | null>(null);
   const reviewedPricePerPiece = calculateReviewedPricePerPiece(price, pieces);
+  const canApprove = candidateCanBeApproved(candidate);
 
   useEffect(() => {
     if (!candidate.visit_id) return;
@@ -1000,8 +1015,10 @@ function CandidateDetailDrawerContent({
   }, [candidate.visit_id]);
 
   async function approve() {
-    const createCompetitorIfUnmatched = confirmCreateCompetitorBeforeApprove(candidate, copy);
-    if (createCompetitorIfUnmatched === null) return;
+    if (!canApprove) {
+      setError(copy.matchRequiredBeforeApprove);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -1011,8 +1028,9 @@ function CandidateDetailDrawerContent({
         body: JSON.stringify({
           action: "approve",
           price_idr: Number(price),
+          net_price_idr: Number(price),
+          promo_type: promoType.trim() || null,
           piece_count: Number(pieces),
-          create_competitor_if_unmatched: createCompetitorIfUnmatched,
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -1110,13 +1128,15 @@ function CandidateDetailDrawerContent({
         {candidate.status === "pending" ? (
           <div className="mt-5 space-y-3 rounded-lg border border-slate-200 p-3">
             <div className="font-semibold text-slate-900">{copy.reviewInput}</div>
+            {!canApprove ? <div className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">{copy.matchRequiredBeforeApprove}</div> : null}
             <div className="grid gap-3 sm:grid-cols-2">
-              <label className="text-xs font-medium text-slate-500">{copy.packagePrice}<input value={price} onChange={(event) => setPrice(event.target.value)} type="number" className="mt-1 h-9 w-full rounded-md border border-slate-300 px-2 text-sm" /></label>
+              <label className="text-xs font-medium text-slate-500">{copy.netPrice}<input name="net_price_idr" value={price} onChange={(event) => setPrice(event.target.value)} type="number" className="mt-1 h-9 w-full rounded-md border border-slate-300 px-2 text-sm" /></label>
               <label className="text-xs font-medium text-slate-500">{copy.table.pcs}<input value={pieces} onChange={(event) => setPieces(event.target.value)} type="number" className="mt-1 h-9 w-full rounded-md border border-slate-300 px-2 text-sm" /></label>
+              <label className="text-xs font-medium text-slate-500">{copy.promoType}<input name="promo_type" value={promoType} onChange={(event) => setPromoType(event.target.value)} className="mt-1 h-9 w-full rounded-md border border-slate-300 px-2 text-sm" /></label>
             </div>
             <div className="text-sm text-slate-600">{copy.table.perPiece}: <span className="font-semibold text-slate-900">{reviewedPricePerPiece ? formatIdr(reviewedPricePerPiece) : "-"}</span></div>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" disabled={busy || !price || !pieces} onClick={approve}>{copy.approve}</Button>
+              <Button type="button" disabled={busy || !price || !pieces || !canApprove} onClick={approve} title={!canApprove ? copy.matchRequiredBeforeApprove : undefined}>{copy.approve}</Button>
               <Button type="button" disabled={busy} onClick={() => onReject(candidate.id)} className="bg-rose-700 hover:bg-rose-600">{copy.reject}</Button>
             </div>
             {error ? <div className="text-sm text-red-600">{error}</div> : null}
@@ -1154,8 +1174,9 @@ function DetailMetric({ label, value }: { label: string; value: string }) {
 function defaultReviewInput(candidate: AiPriceCandidate): ReviewInput {
   const pieceCount = candidate.reviewed_piece_count ?? candidate.piece_count;
   return {
-    price: candidate.parsed_price_idr ? String(Math.round(candidate.parsed_price_idr)) : "",
+    price: candidate.net_price_idr ?? candidate.parsed_price_idr ? String(Math.round(candidate.net_price_idr ?? candidate.parsed_price_idr ?? 0)) : "",
     pieces: pieceCount ? String(pieceCount) : "",
+    promoType: candidate.promo_type ?? "",
   };
 }
 
@@ -1205,13 +1226,8 @@ function matchedSkuLabel(candidate: AiPriceCandidate, copy: WorkbenchCopy) {
   return candidate.matched_sku_label || candidate.matched_label || (candidate.matched_entity_type === "unmatched" ? copy.unmatched : candidate.matched_entity_type);
 }
 
-function confirmCreateCompetitorBeforeApprove(candidate: AiPriceCandidate, copy: WorkbenchCopy) {
-  if (candidate.matched_entity_type !== "unmatched") return false;
-  if (!candidate.raw_brand || !candidate.raw_product || !(candidate.reviewed_piece_count ?? candidate.piece_count)) {
-    window.alert(copy.unmatchedCannotApprove);
-    return null;
-  }
-  return window.confirm(copy.createCompetitorConfirm) ? true : null;
+function candidateCanBeApproved(candidate: AiPriceCandidate) {
+  return Boolean(candidate.matched_entity_id && candidate.matched_entity_type !== "unmatched");
 }
 
 function normalizeSearchText(value: string | number | null | undefined) {
@@ -1279,8 +1295,7 @@ function getWorkbenchCopy(locale: string) {
   if (locale === "zh") {
     return {
       createCompetitorProduct: "作为新竞品商品",
-      createCompetitorConfirm: "该候选还未匹配商品，是否作为新竞品商品并通过？",
-      unmatchedCannotApprove: "未匹配候选需要品牌、商品名和片数，才能作为新竞品商品通过。",
+      matchRequiredBeforeApprove: "请先匹配商品后再通过审核。",
       emptyState: "暂无 AI 价格候选。请先完成巡店照片解析。",
       selectCurrentPage: "选择当前页",
       selectCandidate: "选择",
@@ -1342,6 +1357,8 @@ function getWorkbenchCopy(locale: string) {
       riskWarnings: "风险提示",
       reviewInput: "复核输入",
       packagePrice: "包装价",
+      netPrice: "到手价",
+      promoType: "活动类型",
       approvedAt: "通过时间",
       rejectedAt: "驳回时间",
       reviewMethod: "通过方法",
@@ -1350,7 +1367,7 @@ function getWorkbenchCopy(locale: string) {
         date: "日期",
         brand: "品牌",
         product: "商品",
-        aiPackage: "AI 包装价",
+        aiPackage: "AI 到手价",
         pcs: "片数",
         perPiece: "单片价",
         match: "商品命中度",
@@ -1379,8 +1396,7 @@ function getWorkbenchCopy(locale: string) {
 
   return {
     createCompetitorProduct: "Create as new competitor product",
-    createCompetitorConfirm: "This candidate is not matched. Create a new competitor product and approve it?",
-    unmatchedCannotApprove: "Unmatched candidates need brand, product name, and piece count before approval.",
+    matchRequiredBeforeApprove: "Please match a product before approving this candidate.",
     emptyState: "No AI price candidates yet. Run Store Visit analysis first.",
     selectCurrentPage: "Select current page",
     selectCandidate: "Select",
@@ -1442,6 +1458,8 @@ function getWorkbenchCopy(locale: string) {
     riskWarnings: "Risk warnings",
     reviewInput: "Review input",
     packagePrice: "Package price",
+    netPrice: "Net price",
+    promoType: "Activity type",
     approvedAt: "Approved at",
     rejectedAt: "Rejected at",
     reviewMethod: "Review method",
@@ -1450,7 +1468,7 @@ function getWorkbenchCopy(locale: string) {
       date: "Date",
       brand: "Brand",
       product: "Product",
-      aiPackage: "AI package",
+      aiPackage: "AI net",
       pcs: "Pcs",
       perPiece: "Per piece",
       match: "Match",

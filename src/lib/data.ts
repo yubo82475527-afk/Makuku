@@ -78,6 +78,9 @@ export type PriceSnapshotFilters = {
   limit?: number;
 };
 
+const priceSnapshotSelectWithMaterial = "*, sku_master(*, material_master(*)), material_master(*), offline_stores(id,name,city,province,city_name,district,channel_type), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*, material_master(*)))), ai_price_candidates(id, offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))";
+const legacyPriceSnapshotSelect = "*, sku_master(*), offline_stores(id,name,city,province,city_name,district,channel_type), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*))), ai_price_candidates(id, offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))";
+
 export type ProductSegmentPriceIndexFilters = {
   province?: string;
   cityName?: string;
@@ -789,28 +792,32 @@ export async function getPriceSnapshots(filters: PriceSnapshotFilters = {}): Pro
   const fallback = filterPriceSnapshotsByOwner(demoPriceSnapshots, owner).slice(0, limit);
   if (!hasSupabaseConfig()) return { data: fallback, error: null, isDemo: true };
   const supabase = createSupabaseServiceClient();
-  let query = supabase
-    .from("price_snapshots")
-    .select("*, sku_master(*), offline_stores(id,name,city,province,city_name,district,channel_type), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*))), ai_price_candidates(id, offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))");
+  const buildQuery = (select: string) => {
+    let query = supabase.from("price_snapshots").select(select);
 
-  if (owner === "makuku") {
-    query = query.not("sku_master_id", "is", null).is("competitor_product_id", null);
-  } else if (owner === "competitor") {
-    query = query.not("competitor_product_id", "is", null);
-  }
+    if (owner === "makuku") {
+      query = query.or("sku_master_id.not.is.null,material_sku_code.not.is.null").is("competitor_product_id", null);
+    } else if (owner === "competitor") {
+      query = query.not("competitor_product_id", "is", null);
+    }
 
-  return fromSupabase<PriceSnapshot[]>(
-    query
+    return query
       .order("captured_at", { ascending: false })
       .order("created_at", { ascending: false })
       .order("id", { ascending: true })
-      .limit(limit),
-    fallback,
-  );
+      .limit(limit);
+  };
+
+  const result = await buildQuery(priceSnapshotSelectWithMaterial);
+  if (result.error?.message.includes("material_sku_code") || result.error?.message.includes("material_master") || result.error?.message.includes("relationship")) {
+    return fromSupabase<PriceSnapshot[]>(buildQuery(legacyPriceSnapshotSelect), fallback);
+  }
+  if (result.error) return { data: fallback, error: result.error.message, isDemo: true };
+  return { data: (result.data ?? []) as unknown as PriceSnapshot[], error: null, isDemo: false };
 }
 
 function filterPriceSnapshotsByOwner(snapshots: PriceSnapshot[], owner: PriceSnapshotOwnerFilter) {
-  if (owner === "makuku") return snapshots.filter((snapshot) => snapshot.sku_master_id && !snapshot.competitor_product_id);
+  if (owner === "makuku") return snapshots.filter((snapshot) => (snapshot.sku_master_id || snapshot.material_sku_code) && !snapshot.competitor_product_id);
   if (owner === "competitor") return snapshots.filter((snapshot) => snapshot.competitor_product_id);
   return snapshots;
 }

@@ -45,7 +45,7 @@ export async function approveAiPriceCandidate({
   reviewer,
   reviewJobId,
   reviewMethod = "manual",
-  createCompetitorIfUnmatched = false,
+  promoType,
 }: {
   supabase: SupabaseServiceClient;
   candidateId: string;
@@ -54,7 +54,7 @@ export async function approveAiPriceCandidate({
   reviewer?: string | null;
   reviewJobId?: string | null;
   reviewMethod?: AiPriceCandidateReviewMethod;
-  createCompetitorIfUnmatched?: boolean;
+  promoType?: string | null;
 }) {
   const { data: candidate, error } = await supabase
     .from("ai_price_candidates")
@@ -67,35 +67,39 @@ export async function approveAiPriceCandidate({
     throw new Error("Only pending candidates can be approved");
   }
 
-  const price = Number(priceIdr ?? candidate.parsed_price_idr);
+  const candidateRow = candidate as AiPriceCandidate;
+  const price = Number(priceIdr ?? candidate.net_price_idr ?? candidate.parsed_price_idr);
   if (!Number.isFinite(price) || price <= 0) {
     throw new Error("Valid price is required");
   }
+  const listPrice = positiveNumberOrFallback(candidate.list_price_idr, price);
+  const packagePrice = positiveNumberOrFallback(candidate.package_price_idr, price);
+  const netPrice = positiveNumberOrFallback(candidateRow.net_price_idr, price);
   const reviewedPieceCount = Number(pieceCount ?? candidate.reviewed_piece_count ?? candidate.piece_count);
   if (!Number.isFinite(reviewedPieceCount) || reviewedPieceCount <= 0) {
     throw new Error("Valid piece count is required");
   }
 
-  const candidateRow = candidate as AiPriceCandidate;
   let competitorProduct: CompetitorProduct | null = null;
   let skuMasterId: string | null = null;
+  let materialSkuCode: string | null = null;
   if (candidateRow.matched_entity_type === "material_master" && candidateRow.matched_entity_id) {
-    skuMasterId = await ensureSkuMasterFromMaterial(supabase, candidateRow.matched_entity_id);
+    materialSkuCode = candidateRow.matched_entity_id;
+    skuMasterId = await ensureSkuMasterFromMaterial(supabase, materialSkuCode);
   } else if (candidateRow.matched_entity_type === "competitor_product") {
     competitorProduct = await ensureCompetitorProduct(supabase, candidate, Math.floor(reviewedPieceCount));
-  } else if (createCompetitorIfUnmatched) {
-    competitorProduct = await ensureCompetitorProduct(supabase, candidate, Math.floor(reviewedPieceCount));
   } else {
-    throw new Error("Unmatched candidates cannot be approved");
+    throw new Error("Please match a product before approving this candidate");
   }
-  if ((candidateRow.matched_entity_type === "competitor_product" || createCompetitorIfUnmatched) && !competitorProduct) {
+  if (candidateRow.matched_entity_type === "competitor_product" && !competitorProduct) {
     throw new Error("Matched competitor product is required");
   }
 
   const normalized = normalizePriceSnapshot({
-    promo_price_idr: price,
+    promo_price_idr: packagePrice,
     voucher_value_idr: 0,
     shipping_subsidy_idr: 0,
+    net_price_idr: netPrice,
     piece_count: Math.floor(reviewedPieceCount),
   });
 
@@ -104,23 +108,25 @@ export async function approveAiPriceCandidate({
     ? {
         competitor_product_id: null,
         sku_master_id: skuMasterId,
+        material_sku_code: materialSkuCode,
       }
     : {
         competitor_product_id: competitorProduct!.id,
         sku_master_id: null,
+        material_sku_code: null,
       };
   const { data: snapshot, error: snapshotError } = await supabase
     .from("price_snapshots")
     .insert({
       ...snapshotPayload,
       channel: "offline",
-      list_price_idr: price,
-      promo_price_idr: price,
+      list_price_idr: listPrice,
+      promo_price_idr: packagePrice,
       voucher_value_idr: 0,
       shipping_subsidy_idr: 0,
       net_price_idr: normalized.net_price_idr,
       price_per_piece: normalized.price_per_piece,
-      promo_type: "offline_ai_confirmed",
+      promo_type: normalizeCandidatePromoType(promoType ?? candidateRow.promo_type),
       captured_at: visit?.visit_date ? new Date(`${visit.visit_date}T00:00:00`).toISOString() : new Date().toISOString(),
       source: "offline_ai_confirmed",
       evidence_url: null,
@@ -131,7 +137,7 @@ export async function approveAiPriceCandidate({
 
   const updated = await updateAiPriceCandidateWithReviewMethodFallback(supabase, candidateId, {
     status: "approved",
-    parsed_price_idr: price,
+    parsed_price_idr: netPrice,
     reviewed_piece_count: Math.floor(reviewedPieceCount),
     reviewed_price_per_piece: normalized.price_per_piece,
     price_snapshot_id: snapshot.id,
@@ -139,12 +145,6 @@ export async function approveAiPriceCandidate({
     reviewed_by: reviewer ?? null,
     review_job_id: reviewJobId ?? null,
     review_method: reviewMethod,
-    ...(createCompetitorIfUnmatched && competitorProduct ? {
-      matched_entity_type: "competitor_product" as const,
-      matched_entity_id: competitorProduct.id,
-      matched_label: competitorLabel(competitorProduct),
-      match_score: 1,
-    } : {}),
     rejection_reason: null,
   });
 
@@ -325,13 +325,24 @@ export async function ensureCompetitorProduct(supabase: SupabaseServiceClient, c
   return createdProduct as CompetitorProduct;
 }
 
-function competitorLabel(product: CompetitorProduct) {
+export function competitorLabel(product: CompetitorProduct) {
   return [product.brands?.name, product.normalized_name].filter(Boolean).join(" · ");
 }
 
 function inferCompetitorSize(productName: string) {
   const match = productName.match(/\b(nb-s|nb|s|m|l|xl|xxl|xxxl|xxxxl)(?=\s|\d|$|-)/i);
   return match ? match[1].toUpperCase() : null;
+}
+
+function positiveNumberOrFallback(value: unknown, fallback: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function normalizeCandidatePromoType(value: string | null | undefined) {
+  const text = String(value ?? "").trim();
+  if (!text || /^none|no activity|no promo|normal$/i.test(text)) return "offline_ai_confirmed";
+  return text;
 }
 
 async function findReusableMatchedCompetitorProduct(supabase: SupabaseServiceClient, candidate: Record<string, unknown>) {

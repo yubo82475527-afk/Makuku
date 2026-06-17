@@ -1,21 +1,31 @@
-import { formatIdr, formatJakartaTime, formatPricePerPiece } from "@/lib/format";
 import { priceBrandSeriesLabel } from "@/lib/brand-series";
+import { formatIdr, formatJakartaTime, formatPricePerPiece } from "@/lib/format";
+import {
+  priceSnapshotBenchmarkMaterial,
+  priceSnapshotBenchmarkSku,
+  priceSnapshotBusinessLine,
+  priceSnapshotBusinessSegment,
+  priceSnapshotBusinessSize,
+  priceSnapshotMakukuMaterialCode,
+} from "@/lib/price-snapshot-business";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import type { PriceSnapshot } from "@/lib/types";
 
 const csvColumns = {
   zh: [
     "采集时间",
-    "商品类型",
     "品牌",
     "商品",
-    "渠道",
+    "SKU",
+    "等级",
+    "包装",
+    "规格",
+    "片数",
+    "活动类型",
     "标价",
-    "包装价",
-    "券",
+    "折扣金额",
     "到手价",
     "单片价",
-    "SKU ID",
     "门店名称",
     "省",
     "市",
@@ -25,16 +35,18 @@ const csvColumns = {
   ],
   en: [
     "Captured",
-    "Product Type",
     "Brand",
     "Product",
-    "Channel",
-    "List",
+    "SKU",
+    "Grade",
     "Package",
-    "Voucher",
+    "Spec",
+    "Pcs",
+    "Activity Type",
+    "List",
+    "Discount",
     "Net",
     "IDR/pc",
-    "SKU ID",
     "Store",
     "Province",
     "City",
@@ -73,20 +85,17 @@ export async function GET(request: Request) {
 
     const { data, error } = await supabase
       .from("price_snapshots")
-      .select("*, sku_master(*), offline_stores(id,name,city,province,city_name,district,channel_type), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*))), ai_price_candidates(id, offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))")
+      .select("*, sku_master(*, material_master(*)), material_master(*), offline_stores(id,name,city,province,city_name,district,channel_type), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*, material_master(*)))), ai_price_candidates(id, offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))")
       .order("captured_at", { ascending: false })
       .limit(5000);
     if (error) return Response.json({ error: error.message }, { status: 500 });
 
     const snapshots = applyOwnerFilter((data ?? []) as PriceSnapshot[], owner).filter((snapshot) => {
-      const product = snapshot.competitor_products;
-      const skuMaster = snapshotMakukuSku(snapshot);
-      const productSegment = product ? resolveProductSegment(product) : { line: "Unknown", size: "Unknown" };
-      const productLine = skuMaster ? productLineLabel(skuMaster.pack_type) : productSegment.line;
-      const productSize = skuMaster?.size ?? productSegment.size;
-      const productPriceBand = skuMaster?.segment ?? product?.segment ?? "unknown";
+      const productLine = priceSnapshotBusinessLine(snapshot);
+      const productSize = priceSnapshotBusinessSize(snapshot);
+      const productPriceBand = priceSnapshotBusinessSegment(snapshot);
       if (brand && priceBrandSeriesLabel(snapshot) !== brand) return false;
-      if (sku && !matchesText(snapshotMakukuMaterialCode(snapshot), sku)) return false;
+      if (sku && !matchesText(priceSnapshotMakukuMaterialCode(snapshot), sku)) return false;
       if (line && productLine !== line) return false;
       if (priceBand && productPriceBand !== priceBand) return false;
       if (size && productSize !== size) return false;
@@ -102,16 +111,18 @@ export async function GET(request: Request) {
       const region = storeRegionForSnapshot(snapshot);
       return [
         formatSnapshotCapturedAt(snapshot),
-        ownerTypeLabel(snapshotOwnerType(snapshot), locale),
         snapshotBrandName(snapshot),
         snapshotProductName(snapshot),
-        channelLabel(snapshot.channel, locale),
+        snapshotSkuCode(snapshot),
+        snapshotBusinessSegment(snapshot),
+        snapshotPackageType(snapshot),
+        snapshotSpec(snapshot),
+        snapshotPieceCount(snapshot),
+        snapshotPromoTypeLabel(snapshot, locale === "zh"),
         formatIdr(snapshot.list_price_idr),
-        formatIdr(snapshot.promo_price_idr),
-        formatIdr(snapshot.voucher_value_idr),
+        formatIdr(snapshotDiscountAmount(snapshot)),
         formatIdr(snapshot.net_price_idr),
         formatPricePerPiece(snapshot.price_per_piece),
-        snapshotMakukuMaterialCode(snapshot),
         storeNameForSnapshot(snapshot),
         region.province ?? "-",
         region.cityName ?? "-",
@@ -172,17 +183,7 @@ type PriceSnapshotForStoreRegion = {
 };
 
 function snapshotOwnerType(snapshot: PriceSnapshot) {
-  return snapshot.sku_master_id && !snapshot.competitor_product_id ? "makuku" : "competitor";
-}
-
-function snapshotMakukuSku(snapshot: PriceSnapshot) {
-  return snapshot.sku_master ?? snapshot.competitor_products?.sku_matches?.[0]?.sku_master ?? null;
-}
-
-function snapshotMakukuMaterialCode(snapshot: PriceSnapshot) {
-  return cleanDisplayText(snapshot.sku_master?.material_sku_code)
-    ?? cleanDisplayText(snapshot.competitor_products?.sku_matches?.[0]?.sku_master?.material_sku_code)
-    ?? "-";
+  return (snapshot.sku_master_id || snapshot.material_sku_code) && !snapshot.competitor_product_id ? "makuku" : "competitor";
 }
 
 function snapshotBrandName(snapshot: PriceSnapshot) {
@@ -191,13 +192,53 @@ function snapshotBrandName(snapshot: PriceSnapshot) {
 
 function snapshotProductName(snapshot: PriceSnapshot) {
   return snapshotOwnerType(snapshot) === "makuku"
-    ? snapshot.sku_master?.makuku_sku_name ?? "-"
+    ? priceSnapshotBenchmarkMaterial(snapshot)?.tenant_sku_name ?? priceSnapshotBenchmarkSku(snapshot)?.makuku_sku_name ?? "-"
     : snapshot.competitor_products?.normalized_name ?? "-";
 }
 
-function ownerTypeLabel(ownerType: string, locale: string) {
-  if (ownerType === "makuku") return "Makuku SKU";
-  return locale === "zh" ? "竞品商品" : "Competitor SKU";
+function snapshotSkuCode(snapshot: PriceSnapshot) {
+  if (snapshotOwnerType(snapshot) === "makuku") {
+    return cleanDisplayText(priceSnapshotMakukuMaterialCode(snapshot)) ?? "-";
+  }
+  return cleanDisplayText(snapshot.competitor_products?.competitor_sku_code) ?? cleanDisplayText(snapshot.competitor_products?.id) ?? "-";
+}
+
+function snapshotBusinessSegment(snapshot: PriceSnapshot) {
+  return priceSnapshotBusinessSegment(snapshot) || "-";
+}
+
+function snapshotPackageType(snapshot: PriceSnapshot) {
+  if (snapshotOwnerType(snapshot) === "makuku") {
+    return cleanDisplayText(priceSnapshotBenchmarkMaterial(snapshot)?.type) ?? cleanDisplayText(snapshot.sku_master?.pack_type) ?? "-";
+  }
+  return cleanDisplayText(snapshot.competitor_products?.package_type) ?? cleanDisplayText(snapshot.competitor_products?.pack_type) ?? "-";
+}
+
+function snapshotSpec(snapshot: PriceSnapshot) {
+  if (snapshotOwnerType(snapshot) === "makuku") {
+    return cleanDisplayText(priceSnapshotBenchmarkMaterial(snapshot)?.sub_type) ?? cleanDisplayText(snapshot.sku_master?.size) ?? "-";
+  }
+  return cleanDisplayText(snapshot.competitor_products?.size) ?? "-";
+}
+
+function snapshotPieceCount(snapshot: PriceSnapshot) {
+  if (snapshotOwnerType(snapshot) === "makuku") {
+    return priceSnapshotBenchmarkMaterial(snapshot)?.pack_count ?? snapshot.sku_master?.piece_count ?? "-";
+  }
+  return snapshot.competitor_products?.piece_count ?? "-";
+}
+
+function snapshotDiscountAmount(snapshot: PriceSnapshot) {
+  const netPrice = Number(snapshot.net_price_idr);
+  const packagePrice = Number(snapshot.promo_price_idr);
+  if (!Number.isFinite(netPrice) || !Number.isFinite(packagePrice)) return null;
+  return netPrice - packagePrice;
+}
+
+function snapshotPromoTypeLabel(snapshot: PriceSnapshot, isZh: boolean) {
+  const text = cleanDisplayText(snapshot.promo_type);
+  if (!text || text === "offline_ai_confirmed") return isZh ? "无活动" : "No Activity";
+  return text;
 }
 
 function storeVisitForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
@@ -224,14 +265,6 @@ function formatSnapshotCapturedAt(snapshot: PriceSnapshotForStoreRegion) {
 
 function formatSnapshotCreatedAt(snapshot: PriceSnapshotForStoreRegion) {
   return formatJakartaTime(snapshot.created_at);
-}
-
-function channelLabel(value: string, locale: string) {
-  if (value === "offline") return locale === "zh" ? "线下" : "Offline";
-  if (value === "manual") return locale === "zh" ? "手工" : "Manual";
-  if (value === "shopee") return "Shopee";
-  if (value === "tiktok") return "TikTok";
-  return value;
 }
 
 function storeRegionForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
@@ -264,31 +297,4 @@ function splitLegacyRegion(value: string | null | undefined) {
 
 function matchesText(value: string | null | undefined, query: string) {
   return String(value ?? "").toLowerCase().includes(query.trim().toLowerCase());
-}
-
-function productLineLabel(value: string) {
-  if (value === "pants") return "Pants";
-  if (value === "tape") return "Tape";
-  return "Unknown";
-}
-
-function resolveProductSegment(product: { pack_type: string; size: string | null; raw_title: string; normalized_name: string }) {
-  const title = product.normalized_name || product.raw_title;
-  return {
-    line: product.pack_type === "unknown" ? inferProductLine(title) : productLineLabel(product.pack_type),
-    size: product.size || inferProductSize(title),
-  };
-}
-
-function inferProductLine(value: string | null | undefined) {
-  const text = (value ?? "").toLowerCase();
-  if (text.includes("tape")) return "Tape";
-  if (text.includes("pants") || text.includes("pant")) return "Pants";
-  return "Pants";
-}
-
-function inferProductSize(value: string | null | undefined) {
-  const text = (value ?? "").toUpperCase();
-  const match = text.match(/\b(NB\/NB-S|XXXXL|XXXL|XXL|XL|NB|L|M|S)\b/);
-  return match?.[1] ?? "Unknown";
 }

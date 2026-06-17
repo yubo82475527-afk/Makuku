@@ -1,13 +1,11 @@
 "use client";
 
 import { Ban, CheckCircle2, Loader2 } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { StoreCreateDialog } from "@/components/store-create-dialog";
 import { Badge, SelectInput } from "@/components/ui";
-import type { OfflineStore, Organization } from "@/lib/types";
-
-type StoreStatusFilter = "enabled" | "disabled" | "all";
+import type { ChannelMaster, OfflineStore, Organization } from "@/lib/types";
 
 type ConfirmDeletePanel = {
   stores: OfflineStore[];
@@ -18,22 +16,6 @@ type ConfirmDeletePanel = {
 
 function isDisabledStore(store: OfflineStore) {
   return store.status === "disabled" || Boolean(store.disabled_at || store.deleted_at);
-}
-
-function statusHref(locale: string, status: StoreStatusFilter, organizationFilter: string) {
-  const params = new URLSearchParams();
-  if (status !== "enabled") params.set("status", status);
-  if (organizationFilter !== "all") params.set("organization", organizationFilter);
-  const query = params.toString();
-  return `/${locale}/offline-stores${query ? `?${query}` : ""}`;
-}
-
-function organizationHref(locale: string, status: StoreStatusFilter, organization: string) {
-  const params = new URLSearchParams();
-  if (status !== "enabled") params.set("status", status);
-  if (organization !== "all") params.set("organization", organization);
-  const query = params.toString();
-  return `/${locale}/offline-stores${query ? `?${query}` : ""}`;
 }
 
 function formatCreatedAt(value: string, locale: string) {
@@ -55,15 +37,15 @@ function storeCreator(store: OfflineStore) {
 export function StoreMasterTable({
   stores,
   organizations,
+  channels,
+  useChannelTypeFallback,
   locale,
-  statusFilter,
-  organizationFilter,
 }: {
   stores: OfflineStore[];
   organizations: Organization[];
+  channels: ChannelMaster[];
+  useChannelTypeFallback: boolean;
   locale: string;
-  statusFilter: StoreStatusFilter;
-  organizationFilter: string;
 }) {
   const router = useRouter();
   const isZh = locale === "zh";
@@ -220,31 +202,19 @@ export function StoreMasterTable({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="text-sm font-medium text-slate-700">{isZh ? "\u95e8\u5e97\u4e3b\u6570\u636e" : "Store master data"}</div>
         <div className="flex flex-wrap items-center gap-2">
-          <StatusTabs locale={locale} statusFilter={statusFilter} organizationFilter={organizationFilter} />
-          <select
-            value={organizationFilter}
-            onChange={(event) => {
-              window.location.href = organizationHref(locale, statusFilter, event.target.value);
-            }}
-            className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-slate-500"
+          <button
+            type="button"
+            onClick={rematchSelectedStores}
+            disabled={selectedVisibleIds.length === 0 || loading}
+            className="inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-md bg-slate-900 px-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <option value="all">{isZh ? "\u5168\u90e8\u7ec4\u7ec7" : "All organizations"}</option>
-            <option value="unassigned">{isZh ? "\u672a\u5206\u914d\u7ec4\u7ec7" : "Unassigned"}</option>
-            {organizations.map((organization) => (
-              <option key={organization.id} value={organization.id}>{organization.name}</option>
-            ))}
-          </select>
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {isZh ? "\u6279\u91cf\u91cd\u5339\u914d\u7ec4\u7ec7" : "Bulk Rematch Organizations"}
+          </button>
+          <StoreCreateDialog channels={channels} organizations={organizations} useChannelTypeFallback={useChannelTypeFallback} locale={locale} />
         </div>
-        <button
-          type="button"
-          onClick={rematchSelectedStores}
-          disabled={selectedVisibleIds.length === 0 || loading}
-          className="inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-md bg-slate-900 px-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          {isZh ? "\u6279\u91cf\u91cd\u5339\u914d\u7ec4\u7ec7" : "Bulk Rematch Organizations"}
-        </button>
       </div>
 
       <div className="text-sm text-slate-600">
@@ -374,34 +344,6 @@ export function StoreMasterTable({
           </tbody>
         </table>
       </div>
-    </div>
-  );
-}
-
-function StatusTabs({ locale, statusFilter, organizationFilter }: { locale: string; statusFilter: StoreStatusFilter; organizationFilter: string }) {
-  const isZh = locale === "zh";
-  const tabs: Array<{ value: StoreStatusFilter; label: string }> = [
-    { value: "enabled", label: isZh ? "\u542f\u7528" : "Enabled" },
-    { value: "disabled", label: isZh ? "\u7981\u7528" : "Disabled" },
-    { value: "all", label: isZh ? "\u5168\u90e8" : "All" },
-  ];
-
-  return (
-    <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
-      {tabs.map((tab) => {
-        const active = statusFilter === tab.value;
-        return (
-          <Link
-            key={tab.value}
-            href={statusHref(locale, tab.value, organizationFilter)}
-            className={active
-              ? "inline-flex h-8 items-center whitespace-nowrap rounded-md bg-white px-3 text-sm font-semibold text-slate-950 shadow-sm"
-              : "inline-flex h-8 items-center whitespace-nowrap rounded-md px-3 text-sm font-medium text-slate-600 hover:bg-white"}
-          >
-            {tab.label}
-          </Link>
-        );
-      })}
     </div>
   );
 }

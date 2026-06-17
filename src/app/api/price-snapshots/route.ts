@@ -170,11 +170,12 @@ export async function PATCH(request: Request) {
       .update({
         competitor_product_id: ownerType === "competitor" ? competitorProduct!.id : null,
         sku_master_id: ownerType === "makuku" ? skuMasterId : null,
+        material_sku_code: ownerType === "makuku" ? materialSkuCode : null,
         net_price_idr: normalized.net_price_idr,
         price_per_piece: normalized.price_per_piece,
       })
       .eq("id", snapshotId)
-      .select("*, sku_master(*), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*)))")
+      .select("*, sku_master(*, material_master(*)), material_master(*), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*, material_master(*))))")
       .single();
     if (updateError) return Response.json({ error: updateError.message }, { status: 400 });
 

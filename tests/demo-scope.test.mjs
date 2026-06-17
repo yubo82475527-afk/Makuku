@@ -15,12 +15,13 @@ const priceSnapshotsTable = existsSync("src/components/price-snapshots-table.tsx
   : "";
 const priceSnapshotsRoute = readFileSync("src/app/api/price-snapshots/route.ts", "utf8");
 const priceSnapshotsExportRoute = readFileSync("src/app/api/price-snapshots/export/route.ts", "utf8");
+const priceSnapshotBusiness = readFileSync("src/lib/price-snapshot-business.ts", "utf8");
 
 test("board navigation exposes the one-week product workflow", () => {
   assert.match(appShell, /Dashboard/);
   assert.match(appShell, /Price Monitoring/);
   assert.match(appShell, /Real Market Price/);
-  assert.match(appShell, /真实市场价格/);
+  assert.match(appShell, /真实市场价格|\\u771f\\u5b9e\\u5e02\\u573a\\u4ef7\\u683c/);
   assert.match(appShell, /Photo Price Review/);
   assert.match(appShell, /Price Positioning/);
   assert.match(appShell, /Competitor Mapping/);
@@ -110,8 +111,11 @@ test("prices table is store-region focused without manual snapshot entry", () =>
   assert.match(pricesPage, /store\?: string/);
   assert.match(pricesPage, /params\.line/);
   assert.match(pricesPage, /params\.size/);
-  assert.match(pricesPage, /resolveProductSegment/);
-  assert.match(pricesPage, /inferProductSize/);
+  assert.match(pricesPage, /priceSnapshotBusinessSegment/);
+  assert.match(pricesPage, /priceSnapshotBusinessSize/);
+  assert.match(priceSnapshotBusiness, /priceSnapshotBenchmarkSku/);
+  assert.match(priceSnapshotBusiness, /priceSnapshotBusinessSegment/);
+  assert.match(priceSnapshotBusiness, /priceSnapshotBusinessSize/);
   assert.match(pricesPage, /storeRegionForSnapshot/);
   assert.match(pricesPage, /storeNameForSnapshot/);
   assert.match(priceSnapshotsTable, /formatSnapshotCapturedAt/);
@@ -157,8 +161,12 @@ test("price snapshot CSV export follows the current language and table columns",
   assert.match(priceSnapshotsExportRoute, /"Captured"/);
   assert.match(priceSnapshotsExportRoute, /"Collector"/);
   assert.match(priceSnapshotsExportRoute, /"Create Time"/);
+  assert.match(priceSnapshotsExportRoute, /"SKU"/);
+  assert.match(priceSnapshotsExportRoute, /"Grade"/);
+  assert.match(priceSnapshotsExportRoute, /"Spec"/);
   assert.match(priceSnapshotsExportRoute, /formatSnapshotCreatedAt\(snapshot\)/);
-  assert.match(priceSnapshotsExportRoute, /channelLabel\(snapshot\.channel, locale\)/);
+  assert.doesNotMatch(priceSnapshotsExportRoute, /channelLabel\(snapshot\.channel, locale\)/);
+  assert.doesNotMatch(priceSnapshotsExportRoute, /"Channel"/);
   assert.doesNotMatch(priceSnapshotsExportRoute, /searchParams\.get\("channel"\)/);
   assert.doesNotMatch(priceSnapshotsExportRoute, /snapshot\.channel !== channel/);
   assert.doesNotMatch(priceSnapshotsExportRoute, /"snapshot_id"/);

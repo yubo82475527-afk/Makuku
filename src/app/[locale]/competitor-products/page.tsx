@@ -16,6 +16,10 @@ export default async function CompetitorProductsPage({
   const params = await searchParams;
   const [productsResult, brandsResult] = await Promise.all([getCompetitorProducts(), getBrands()]);
   const ownBrandIds = new Set(brandsResult.data.filter((brand) => brand.is_own_brand || isOwnBrandName(brand.name)).map((brand) => brand.id));
+  const productBrandIds = new Set(productsResult.data
+    .filter((product) => !ownBrandIds.has(product.brand_id) && !isOwnBrandName(product.brands?.name) && !looksLikeBrandSeries(product.brands?.name, product.product_series))
+    .map((product) => product.brand_id));
+  const brandOptions = brandsResult.data.filter((brand) => productBrandIds.has(brand.id));
   const products = productsResult.data.filter((product) => {
     if (ownBrandIds.has(product.brand_id)) return false;
     if (isOwnBrandName(product.brands?.name)) return false;
@@ -35,7 +39,7 @@ export default async function CompetitorProductsPage({
         <form className="grid gap-3 md:grid-cols-5">
           <SelectInput name="brand" defaultValue={params.brand ?? ""}>
             <option value="">{dict.common.allBrands}</option>
-            {brandsResult.data.filter((brand) => !brand.is_own_brand && !isOwnBrandName(brand.name)).map((brand) => <option key={brand.id} value={brand.id}>{brand.name}</option>)}
+            {brandOptions.map((brand) => <option key={brand.id} value={brand.id}>{brand.name}</option>)}
           </SelectInput>
           <TextInput name="product" placeholder={dict.common.product} defaultValue={params.product ?? ""} />
           <TextInput name="size" placeholder={dict.common.size} defaultValue={params.size ?? ""} />
@@ -55,13 +59,13 @@ export default async function CompetitorProductsPage({
             <div className="text-xs text-slate-500">{copy.hint}</div>
           </div>
           <Link
-            href={`/${locale}/internal/excel-price-import`}
+            href={`/${locale}/competitor-products/import`}
             className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
             {copy.excelImport}
           </Link>
         </div>
-        <CompetitorProductsTable products={products} locale={locale} dict={dict} />
+        <CompetitorProductsTable products={products} brands={brandOptions} locale={locale} dict={dict} />
       </Card>
     </AppShell>
   );
@@ -69,6 +73,12 @@ export default async function CompetitorProductsPage({
 
 function isOwnBrandName(value: string | null | undefined) {
   return value?.trim().toLowerCase() === "makuku";
+}
+
+function looksLikeBrandSeries(brandName: string | null | undefined, productSeries: string | null | undefined) {
+  const brand = brandName?.trim().toLowerCase();
+  const series = productSeries?.trim().toLowerCase();
+  return Boolean(brand && series && brand.endsWith(` ${series}`));
 }
 
 function productNameMatches(product: { raw_title: string; normalized_name: string }, keyword: string) {

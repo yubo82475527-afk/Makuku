@@ -14,13 +14,17 @@ export type NormalizePriceSnapshotInput = {
   promo_price_idr: number;
   voucher_value_idr?: number;
   shipping_subsidy_idr?: number;
+  net_price_idr?: number | null;
   piece_count: number;
 };
 
 export function normalizePriceSnapshot(input: NormalizePriceSnapshotInput) {
   const voucher = input.voucher_value_idr ?? 0;
   const shipping = input.shipping_subsidy_idr ?? 0;
-  const net_price_idr = Math.max(input.promo_price_idr - voucher - shipping, 0);
+  const explicitNetPrice = Number(input.net_price_idr);
+  const net_price_idr = Number.isFinite(explicitNetPrice) && explicitNetPrice >= 0
+    ? explicitNetPrice
+    : Math.max(input.promo_price_idr - voucher - shipping, 0);
   const price_per_piece =
     input.piece_count > 0 ? Number((net_price_idr / input.piece_count).toFixed(2)) : 0;
 

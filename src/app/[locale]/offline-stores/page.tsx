@@ -1,6 +1,6 @@
 import { AppShell } from "@/components/app-shell";
 import { StoreMasterTable } from "@/components/store-master-table";
-import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
+import { Button, Card, DataNotice, SelectInput } from "@/components/ui";
 import { getChannels, getOfflineStores, getOrganizations } from "@/lib/data";
 import { getPageI18n } from "@/lib/i18n/server";
 
@@ -38,29 +38,32 @@ export default async function OfflineStoresPage({
       <DataNotice dict={dict} error={storesResult.error ?? channelsResult.error ?? organizationsResult.error} />
 
       <Card className="mb-4">
-        <h2 className="mb-3 font-semibold">{isZh ? "\u65b0\u589e\u95e8\u5e97" : "Add store"}</h2>
-        <form action="/api/offline-stores" method="post" className="grid gap-3 md:grid-cols-5">
-          <input type="hidden" name="return_to" value={`/${locale}/offline-stores`} />
-          <TextInput name="name" placeholder={isZh ? "\u95e8\u5e97\u540d\u79f0" : "Store name"} required />
-          <TextInput name="city" placeholder={isZh ? "\u57ce\u5e02" : "City"} required />
-          <SelectInput name={useChannelTypeFallback ? "channel_type" : "channel_id"} required>
-            <option value="">{isZh ? "\u9009\u62e9\u6e20\u9053" : "Select channel"}</option>
-            {offlineChannels.map((channel) => (
-              <option key={channel.id} value={useChannelTypeFallback ? channel.code : channel.id}>{channel.name}</option>
-            ))}
-          </SelectInput>
-          <TextInput name="address" placeholder={isZh ? "\u5730\u5740" : "Address"} />
-          <Button type="submit">{isZh ? "\u65b0\u589e" : "Add"}</Button>
-        </form>
+        <div className="flex flex-wrap items-center gap-3">
+          <form className="grid flex-1 gap-3 md:grid-cols-[160px_240px_120px]">
+            <SelectInput name="status" defaultValue={statusFilter}>
+              <option value="enabled">{isZh ? "\u542f\u7528" : "Enabled"}</option>
+              <option value="disabled">{isZh ? "\u7981\u7528" : "Disabled"}</option>
+              <option value="all">{isZh ? "\u5168\u90e8" : "All"}</option>
+            </SelectInput>
+            <SelectInput name="organization" defaultValue={organizationFilter}>
+              <option value="all">{isZh ? "\u5168\u90e8\u7ec4\u7ec7" : "All organizations"}</option>
+              <option value="unassigned">{isZh ? "\u672a\u5206\u914d\u7ec4\u7ec7" : "Unassigned"}</option>
+              {organizationsResult.data.map((organization) => (
+                <option key={organization.id} value={organization.id}>{organization.name}</option>
+              ))}
+            </SelectInput>
+            <Button type="submit">{isZh ? "\u7b5b\u9009" : "Filter"}</Button>
+          </form>
+        </div>
       </Card>
 
       <Card>
         <StoreMasterTable
           stores={storesResult.data}
           organizations={organizationsResult.data}
+          channels={offlineChannels}
+          useChannelTypeFallback={useChannelTypeFallback}
           locale={locale}
-          statusFilter={statusFilter}
-          organizationFilter={organizationFilter}
         />
       </Card>
     </AppShell>
