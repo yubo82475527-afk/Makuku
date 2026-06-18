@@ -31,6 +31,13 @@ export default async function CompetitorProductsPage({
     return true;
   });
   const copy = getCopy(locale);
+  const exportParams = new URLSearchParams();
+  if (params.brand) exportParams.set("brand", params.brand);
+  if (params.product) exportParams.set("product", params.product);
+  if (params.size) exportParams.set("size", params.size);
+  if (params.status) exportParams.set("status", params.status);
+  exportParams.set("locale", locale);
+  const exportHref = `/api/competitor-products/export?${exportParams.toString()}`;
 
   return (
     <AppShell locale={locale} dict={dict} title={copy.title} currentPath="/competitor-products" isDemo={productsResult.isDemo}>
@@ -58,12 +65,20 @@ export default async function CompetitorProductsPage({
             <div className="text-sm font-semibold text-slate-900">{copy.productCount(products.length)}</div>
             <div className="text-xs text-slate-500">{copy.hint}</div>
           </div>
-          <Link
-            href={`/${locale}/competitor-products/import`}
-            className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            {copy.excelImport}
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <a
+              href={exportHref}
+              className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              {copy.export}
+            </a>
+            <Link
+              href={`/${locale}/competitor-products/import`}
+              className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              {copy.excelImport}
+            </Link>
+          </div>
         </div>
         <CompetitorProductsTable products={products} brands={brandOptions} locale={locale} dict={dict} />
       </Card>
@@ -92,6 +107,7 @@ function getCopy(locale: string) {
   return {
     title: isZh ? "竞品主数据" : "Competitor Product Master",
     hint: isZh ? "维护竞品商品规格字段；Makuku 对标关系请到竞品映射维护。" : "Maintain competitor product fields here. Manage Makuku links in Competitor Mapping.",
+    export: isZh ? "导出" : "Export",
     excelImport: isZh ? "Excel 导入" : "Excel Import",
     allStatus: isZh ? "全部状态" : "All Status",
     active: isZh ? "启用" : "Active",

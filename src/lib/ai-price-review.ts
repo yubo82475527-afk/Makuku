@@ -121,6 +121,7 @@ export async function approveAiPriceCandidate({
       ...snapshotPayload,
       channel: "offline",
       list_price_idr: listPrice,
+      package_price_idr: packagePrice,
       promo_price_idr: packagePrice,
       voucher_value_idr: 0,
       shipping_subsidy_idr: 0,

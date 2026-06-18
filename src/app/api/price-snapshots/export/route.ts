@@ -119,7 +119,7 @@ export async function GET(request: Request) {
         snapshotSpec(snapshot),
         snapshotPieceCount(snapshot),
         snapshotPromoTypeLabel(snapshot, locale === "zh"),
-        formatIdr(snapshot.list_price_idr),
+        formatIdr(snapshotPackagePrice(snapshot)),
         formatIdr(snapshotDiscountAmount(snapshot)),
         formatIdr(snapshot.net_price_idr),
         formatPricePerPiece(snapshot.price_per_piece),
@@ -228,11 +228,15 @@ function snapshotPieceCount(snapshot: PriceSnapshot) {
   return snapshot.competitor_products?.piece_count ?? "-";
 }
 
+function snapshotPackagePrice(snapshot: PriceSnapshot) {
+  return snapshot.package_price_idr ?? null;
+}
+
 function snapshotDiscountAmount(snapshot: PriceSnapshot) {
   const netPrice = Number(snapshot.net_price_idr);
-  const packagePrice = Number(snapshot.promo_price_idr);
+  const packagePrice = Number(snapshotPackagePrice(snapshot));
   if (!Number.isFinite(netPrice) || !Number.isFinite(packagePrice)) return null;
-  return netPrice - packagePrice;
+  return packagePrice - netPrice;
 }
 
 function snapshotPromoTypeLabel(snapshot: PriceSnapshot, isZh: boolean) {

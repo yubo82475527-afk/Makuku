@@ -412,6 +412,7 @@ export type PriceSnapshot = {
   offline_store_id?: string | null;
   channel: Channel;
   list_price_idr: number;
+  package_price_idr?: number | null;
   promo_price_idr: number;
   voucher_value_idr: number;
   shipping_subsidy_idr: number;

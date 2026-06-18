@@ -96,6 +96,7 @@ async function importPreview(supabase: Supabase, preview: OfflinePriceExcelPrevi
         material_sku_code: owner.material_sku_code,
         channel: "offline",
         list_price_idr: week.package_price,
+        package_price_idr: week.package_price,
         promo_price_idr: week.package_price,
         voucher_value_idr: 0,
         shipping_subsidy_idr: 0,

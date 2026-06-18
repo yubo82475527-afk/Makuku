@@ -195,7 +195,7 @@ export function PriceSnapshotsTable({
                   <td className="py-3 pr-3">{snapshotSpec(snapshot)}</td>
                   <td className="py-3 pr-3">{snapshotPieceCount(snapshot)}</td>
                   <td className="py-3 pr-3">{snapshotPromoTypeLabel(snapshot, isZh)}</td>
-                  <td className="py-3 pr-3">{formatIdr(snapshot.list_price_idr)}</td>
+                  <td className="py-3 pr-3">{formatIdr(snapshotPackagePrice(snapshot))}</td>
                   <td className="py-3 pr-3">{formatIdr(snapshotDiscountAmount(snapshot))}</td>
                   <td className="py-3 pr-3">{formatIdr(snapshot.net_price_idr)}</td>
                   <td className="py-3 pr-3 font-semibold">{formatPricePerPiece(snapshot.price_per_piece)}</td>
@@ -322,11 +322,15 @@ function snapshotPieceCount(snapshot: PriceSnapshot) {
   return snapshot.competitor_products?.piece_count ?? "-";
 }
 
+function snapshotPackagePrice(snapshot: PriceSnapshot) {
+  return snapshot.package_price_idr ?? null;
+}
+
 function snapshotDiscountAmount(snapshot: PriceSnapshot) {
   const netPrice = Number(snapshot.net_price_idr);
-  const packagePrice = Number(snapshot.promo_price_idr);
+  const packagePrice = Number(snapshotPackagePrice(snapshot));
   if (!Number.isFinite(netPrice) || !Number.isFinite(packagePrice)) return null;
-  return netPrice - packagePrice;
+  return packagePrice - netPrice;
 }
 
 function snapshotPromoTypeLabel(snapshot: PriceSnapshot, isZh: boolean) {

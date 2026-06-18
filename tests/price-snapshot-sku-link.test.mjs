@@ -85,6 +85,20 @@ test("real market price page shows activity type and three business prices", () 
   assert.doesNotMatch(priceExportRoute, /"Voucher"/);
 });
 
+test("real market price page treats package price as list price and calculates positive discount", () => {
+  assert.match(typesFile, /package_price_idr\?: number \| null/);
+  assert.match(priceSnapshotsTable, /snapshotPackagePrice\(snapshot\)/);
+  assert.match(priceSnapshotsTable, /return snapshot\.package_price_idr \?\? null/);
+  assert.doesNotMatch(priceSnapshotsTable, /snapshot\.package_price_idr \?\? snapshot\.promo_price_idr/);
+  assert.match(priceSnapshotsTable, /return packagePrice - netPrice/);
+  assert.doesNotMatch(priceSnapshotsTable, /return netPrice - packagePrice/);
+  assert.match(priceExportRoute, /snapshotPackagePrice\(snapshot\)/);
+  assert.match(priceExportRoute, /return snapshot\.package_price_idr \?\? null/);
+  assert.doesNotMatch(priceExportRoute, /snapshot\.package_price_idr \?\? snapshot\.promo_price_idr/);
+  assert.match(priceExportRoute, /return packagePrice - netPrice/);
+  assert.doesNotMatch(priceExportRoute, /return netPrice - packagePrice/);
+});
+
 test("own price snapshots display brand and product from material master", () => {
   assert.match(typesFile, /material_master\?: MaterialMaster \| null/);
   assert.match(typesFile, /sku_master\?: SkuMaster \| null/);

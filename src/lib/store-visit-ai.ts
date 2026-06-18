@@ -78,7 +78,7 @@ const STORE_VISIT_PRICE_IMAGE_PROMPT = [
   "Return rows only when a product or SKU is visible together with a real selling price.",
   "sku should be the most specific readable product label in the image.",
   "list_price_idr is the normal shelf price when visible.",
-  "package_price_idr is the package price before voucher or cashback when visible.",
+  "package_price_idr is the visible package shelf price and the business display price called list price.",
   "net_price_idr is the final paid price when visible.",
   "If only one price is visible, use that same value for list_price_idr, package_price_idr, and net_price_idr.",
   "promo_type should be a short mechanic such as Discount, Buy 2 Get 1, Buy 1 Get 1, Special Offer, or null when no clear activity is visible.",

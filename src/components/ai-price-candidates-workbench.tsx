@@ -310,8 +310,8 @@ export function AiPriceCandidatesWorkbench({
       {items.length === 0 ? <EmptyState text={copy.emptyState} /> : null}
       {items.length > 0 ? (
         <div className="overflow-x-auto rounded-lg border border-slate-200">
-          <table className="w-full min-w-[1520px] text-left text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
+          <table className="w-full min-w-[2240px] text-left text-sm">
+            <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500 [&_th]:whitespace-nowrap">
               <tr>
                 <th className="w-10 px-3 py-2">
                   {filters.status === "pending" ? <input type="checkbox" checked={allPendingSelected} onChange={togglePage} aria-label={copy.selectCurrentPage} /> : null}
@@ -321,7 +321,10 @@ export function AiPriceCandidatesWorkbench({
                 <th className="px-3 py-2">{copy.table.date}</th>
                 <th className="px-3 py-2">{copy.table.brand}</th>
                 <th className="px-3 py-2">{copy.table.product}</th>
-                <th className="px-3 py-2">{copy.table.aiPackage}</th>
+                <th className="px-3 py-2">{copy.table.packagePrice}</th>
+                <th className="px-3 py-2">{copy.table.promoType}</th>
+                <th className="px-3 py-2">{copy.table.discountAmount}</th>
+                <th className="px-3 py-2">{copy.table.netPrice}</th>
                 <th className="px-3 py-2">{copy.table.pcs}</th>
                 <th className="px-3 py-2">{copy.table.perPiece}</th>
                 <th className="px-3 py-2">
@@ -345,6 +348,9 @@ export function AiPriceCandidatesWorkbench({
                 const visit = candidate.offline_store_visits;
                 const isEditable = filters.status === "pending" && candidate.status === "pending";
                 const reviewInput = reviewInputs[candidate.id] ?? defaultReviewInput(candidate);
+                const rowNetPrice = isEditable ? numberFromInput(reviewInput.price) : candidate.net_price_idr ?? candidate.parsed_price_idr ?? null;
+                const rowPackagePrice = candidatePackagePrice(candidate);
+                const rowDiscountAmount = calculateDiscountAmount(rowPackagePrice, rowNetPrice);
                 const reviewedPricePerPiece = isEditable
                   ? calculateReviewedPricePerPiece(reviewInput.price, reviewInput.pieces)
                   : candidate.reviewed_price_per_piece ?? candidate.price_per_piece;
@@ -375,6 +381,9 @@ export function AiPriceCandidatesWorkbench({
                     <td className="px-3 py-3 text-slate-600">{visit?.visit_date ?? shortTime(candidate.created_at)}</td>
                     <td className="px-3 py-3 font-medium text-slate-900">{candidate.raw_brand || "-"}</td>
                     <td className="max-w-xs px-3 py-3 text-slate-700">{candidate.raw_product || "-"}</td>
+                    <td className="px-3 py-3">{rowPackagePrice ? formatIdr(rowPackagePrice) : "-"}</td>
+                    <td className="px-3 py-3">{promoTypeLabel(candidate.promo_type, locale)}</td>
+                    <td className="px-3 py-3">{rowDiscountAmount !== null ? formatIdr(rowDiscountAmount) : "-"}</td>
                     <td className="px-3 py-3" onClick={stopReviewRowClick}>
                       {isEditable ? (
                         <input
@@ -386,10 +395,10 @@ export function AiPriceCandidatesWorkbench({
                           onChange={(event) => updateReviewInput(candidate, "price", event.target.value)}
                           onBlur={() => maybeSaveReviewInput(candidate)}
                           disabled={savingReviewInputId === candidate.id}
-                          aria-label={`${copy.netPrice} ${candidate.raw_brand} ${candidate.raw_product}`}
+                          aria-label={`${copy.table.netPrice} ${candidate.raw_brand} ${candidate.raw_product}`}
                           className="h-8 w-28 rounded-md border border-slate-300 px-2 text-sm outline-none focus:border-slate-500"
                         />
-                      ) : candidate.net_price_idr ?? candidate.parsed_price_idr ? formatIdr(candidate.net_price_idr ?? candidate.parsed_price_idr) : "-"}
+                      ) : rowNetPrice ? formatIdr(rowNetPrice) : "-"}
                     </td>
                     <td className="px-3 py-3" onClick={stopReviewRowClick}>
                       {isEditable ? (
@@ -1226,11 +1235,31 @@ function defaultReviewInput(candidate: AiPriceCandidate): ReviewInput {
   };
 }
 
+function numberFromInput(value: string) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function candidatePackagePrice(candidate: AiPriceCandidate) {
+  return candidate.package_price_idr ?? null;
+}
+
+function calculateDiscountAmount(packagePrice: number | null, netPrice: number | null) {
+  if (!packagePrice || !netPrice) return null;
+  return packagePrice - netPrice;
+}
+
 function calculateReviewedPricePerPiece(priceValue: string, pieceValue: string) {
   const price = Number(priceValue);
   const pieces = Number(pieceValue);
   if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(pieces) || pieces <= 0) return null;
   return Math.round(price / pieces * 100) / 100;
+}
+
+function promoTypeLabel(value: string | null | undefined, locale: string) {
+  const text = String(value ?? "").trim();
+  if (!text || text === "offline_ai_confirmed") return locale === "zh" ? "无活动" : "No Activity";
+  return text;
 }
 
 function PageLink({ locale, page, perPage, filters, disabled, children }: { locale: string; page: number; perPage: number; filters: WorkbenchFilters; disabled: boolean; children: ReactNode }) {
@@ -1434,7 +1463,10 @@ function getWorkbenchCopy(locale: string) {
         date: "日期",
         brand: "品牌",
         product: "商品",
-        aiPackage: "AI 到手价",
+        packagePrice: "标价",
+        promoType: "活动类型",
+        discountAmount: "折扣金额",
+        netPrice: "到手价",
         pcs: "片数",
         perPiece: "单片价",
         match: "商品命中度",
@@ -1537,7 +1569,10 @@ function getWorkbenchCopy(locale: string) {
       date: "Date",
       brand: "Brand",
       product: "Product",
-      aiPackage: "AI net",
+      packagePrice: "List",
+      promoType: "Activity Type",
+      discountAmount: "Discount",
+      netPrice: "Net",
       pcs: "Pcs",
       perPiece: "Per piece",
       match: "Match",

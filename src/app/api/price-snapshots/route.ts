@@ -29,8 +29,9 @@ export async function POST(request: Request) {
 
     const competitorProduct = product as CompetitorProduct;
     const pieceCount = competitorProduct.piece_count ?? Number(body.piece_count ?? 0);
+    const packagePrice = Number(body.package_price_idr);
     const normalized = normalizePriceSnapshot({
-      promo_price_idr: Number(body.promo_price_idr),
+      promo_price_idr: packagePrice,
       voucher_value_idr: Number(body.voucher_value_idr ?? 0),
       shipping_subsidy_idr: Number(body.shipping_subsidy_idr ?? 0),
       piece_count: pieceCount,
@@ -43,7 +44,8 @@ export async function POST(request: Request) {
         sku_master_id: null,
         channel: body.channel ?? competitorProduct.channel,
         list_price_idr: Number(body.list_price_idr),
-        promo_price_idr: Number(body.promo_price_idr),
+        package_price_idr: packagePrice,
+        promo_price_idr: packagePrice,
         voucher_value_idr: Number(body.voucher_value_idr ?? 0),
         shipping_subsidy_idr: Number(body.shipping_subsidy_idr ?? 0),
         net_price_idr: normalized.net_price_idr,
@@ -159,7 +161,7 @@ export async function PATCH(request: Request) {
       return Response.json({ error: "Product not found" }, { status: 404 });
     }
     const normalized = normalizePriceSnapshot({
-      promo_price_idr: Number(snapshot.promo_price_idr ?? 0),
+      promo_price_idr: Number(snapshot.package_price_idr ?? 0),
       voucher_value_idr: Number(snapshot.voucher_value_idr ?? 0),
       shipping_subsidy_idr: Number(snapshot.shipping_subsidy_idr ?? 0),
       piece_count: pieceCount,

@@ -5,9 +5,11 @@ import assert from "node:assert/strict";
 const page = readFileSync("src/app/[locale]/competitor-products/page.tsx", "utf8");
 const table = readFileSync("src/components/competitor-products-table.tsx", "utf8");
 const routePath = "src/app/api/competitor-products/import/route.ts";
+const exportRoutePath = "src/app/api/competitor-products/export/route.ts";
 const parserPath = "src/lib/competitor-product-excel-import.ts";
 const migrationPath = "supabase/migrations/202606170001_competitor_product_code_import.sql";
 const route = existsSync(routePath) ? readFileSync(routePath, "utf8") : "";
+const exportRoute = existsSync(exportRoutePath) ? readFileSync(exportRoutePath, "utf8") : "";
 const parser = existsSync(parserPath) ? readFileSync(parserPath, "utf8") : "";
 const migration = existsSync(migrationPath) ? readFileSync(migrationPath, "utf8") : "";
 
@@ -17,6 +19,27 @@ test("competitor product master lists competitor SKU code and uses dedicated imp
   assert.match(table, /selectedProduct\.competitor_sku_code/);
   assert.match(page, /competitor-products\/import/);
   assert.doesNotMatch(page, /internal\/excel-price-import/);
+});
+
+test("competitor product master exports the import template columns next to Excel import", () => {
+  assert.match(page, /\/api\/competitor-products\/export/);
+  assert.match(page, /copy\.export/);
+  assert.match(page, /copy\.excelImport/);
+  for (const column of [
+    "competitor_sku_code",
+    "brand",
+    "product_series",
+    "product_name",
+    "package_type",
+    "size",
+    "piece_count",
+    "target_material_sku_code",
+  ]) {
+    assert.match(exportRoute, new RegExp(column));
+  }
+  assert.match(exportRoute, /sku_master\(material_sku_code\)/);
+  assert.match(exportRoute, /Content-Disposition/);
+  assert.match(exportRoute, /competitor-products-\$\{date\}\.csv/);
 });
 
 test("competitor product import parser supports code-based upsert template", () => {

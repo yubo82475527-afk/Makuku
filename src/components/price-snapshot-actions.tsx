@@ -64,7 +64,7 @@ export function PriceSnapshotActions({
                 <option value="manual">{locale === "zh" ? "手工" : "Manual"}</option>
               </SelectInput>
               <TextInput name="list_price_idr" type="number" min="0" placeholder="标价 IDR" required />
-              <TextInput name="promo_price_idr" type="number" min="0" placeholder="促销价 IDR" required />
+              <TextInput name="package_price_idr" type="number" min="0" placeholder="标价 IDR" required />
               <TextInput name="voucher_value_idr" type="number" min="0" placeholder="优惠券" />
               <TextInput name="shipping_subsidy_idr" type="number" min="0" placeholder="运费补贴" />
               <TextInput name="promo_type" placeholder="促销类型" />

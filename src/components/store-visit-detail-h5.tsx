@@ -266,7 +266,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   <div className="mt-3 space-y-2">
                     {section.result?.rows.length ? section.result.rows.map((row, rowIndex) => {
                       const {
-                        list_price_idr: list_price,
+                        package_price_idr: package_price,
                         net_price_idr: net_price,
                         promo_type,
                         piece_count,
@@ -279,7 +279,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                             {piece_count ? <div className="shrink-0 whitespace-nowrap text-[11px] font-medium leading-5 text-slate-500">pcs: {piece_count}</div> : null}
                           </div>
                           <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1">
-                            <PriceMetricRow label={text.listPrice} value={formatMoney(list_price)} />
+                            <PriceMetricRow label={text.listPrice} value={formatMoney(package_price)} />
                             <PriceMetricRow label={text.promoType} value={promo_type || "-"} />
                             <PriceMetricRow label={text.netPrice} value={formatMoney(net_price)} />
                             <PriceMetricRow label={text.pricePerPiece} value={formatMoney(price_per_piece_idr)} />

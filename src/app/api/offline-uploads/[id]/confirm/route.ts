@@ -90,6 +90,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/offline-upl
         competitor_product_id: competitorProduct.id,
         channel: "offline",
         list_price_idr: price,
+        package_price_idr: price,
         promo_price_idr: price,
         voucher_value_idr: 0,
         shipping_subsidy_idr: 0,

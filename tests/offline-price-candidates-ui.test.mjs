@@ -139,6 +139,17 @@ test("pending photo price review rows allow package price and piece count correc
   assert.match(workbench, /review_overrides/);
 });
 
+test("photo price review table uses package price and net price business labels", () => {
+  assert.match(workbench, /packagePrice: "标价"/);
+  assert.match(workbench, /promoType: "活动类型"/);
+  assert.match(workbench, /discountAmount: "折扣金额"/);
+  assert.match(workbench, /netPrice: "到手价"/);
+  assert.match(workbench, /candidatePackagePrice\(candidate\)/);
+  assert.match(workbench, /calculateDiscountAmount\(rowPackagePrice, rowNetPrice\)/);
+  assert.match(workbench, /return packagePrice - netPrice/);
+  assert.doesNotMatch(workbench, /aiPackage: "AI 到手价"/);
+});
+
 test("photo price review carries net price and activity type into price snapshots", () => {
   assert.match(workbench, /net_price_idr/);
   assert.match(workbench, /promo_type/);
