@@ -13,6 +13,7 @@ type WorkbenchFilters = {
   status?: "pending" | "approved" | "rejected";
   date_from?: string;
   date_to?: string;
+  visit_code?: string;
 };
 
 type StatusTabValue = "pending" | "approved" | "rejected" | "all";
@@ -36,6 +37,18 @@ function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+function HeaderHelp({ title }: { title: string }) {
+  return (
+    <span
+      title={title}
+      className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[10px] font-semibold text-slate-500"
+      aria-label={title}
+    >
+      ?
+    </span>
+  );
+}
+
 export function AiPriceCandidatesWorkbench({
   items,
   total,
@@ -55,6 +68,12 @@ export function AiPriceCandidatesWorkbench({
 }) {
   const router = useRouter();
   const copy = getWorkbenchCopy(locale);
+  const aiConfidenceHelp = locale === "zh"
+    ? "AI 置信度 = AI 对品牌、商品、价格识别结果的整体把握，当前按识别模型输出的 confidence 展示。"
+    : "AI confidence is the model confidence for the extracted brand, product, and price.";
+  const matchScoreHelp = locale === "zh"
+    ? "商品命中度 = 自动匹配商品的算法分数。Makuku: 片数35% + 尺码30% + 品牌/系列15% + 商品名15% + 价格接近度5%。竞品: 片数40% + 尺码30% + 品牌15% + 商品名15%。"
+    : "Match score is the auto-match score. Makuku: 35% piece count + 30% size + 15% brand/series + 15% product text + 5% price proximity. Competitors: 40% piece count + 30% size + 15% brand + 15% product text.";
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [activeCandidate, setActiveCandidate] = useState<AiPriceCandidate | null>(null);
   const [activeJob, setActiveJob] = useState<AiPriceReviewJob | null>(null);
@@ -305,8 +324,12 @@ export function AiPriceCandidatesWorkbench({
                 <th className="px-3 py-2">{copy.table.aiPackage}</th>
                 <th className="px-3 py-2">{copy.table.pcs}</th>
                 <th className="px-3 py-2">{copy.table.perPiece}</th>
-                <th className="px-3 py-2">AI</th>
-                <th className="px-3 py-2">{copy.table.match}</th>
+                <th className="px-3 py-2">
+                  <span className="inline-flex items-center">AI<HeaderHelp title={aiConfidenceHelp} /></span>
+                </th>
+                <th className="px-3 py-2">
+                  <span className="inline-flex items-center">{copy.table.match}<HeaderHelp title={matchScoreHelp} /></span>
+                </th>
                 <th className="px-3 py-2">{copy.table.warnings}</th>
                 <th className="px-3 py-2">{copy.table.evidence}</th>
                 {showApprovedAudit ? <th className="px-3 py-2">{copy.approvedAt}</th> : null}
@@ -1217,6 +1240,7 @@ function PageLink({ locale, page, perPage, filters, disabled, children }: { loca
   if (filters.status) params.set("status", filters.status);
   if (filters.date_from) params.set("date_from", filters.date_from);
   if (filters.date_to) params.set("date_to", filters.date_to);
+  if (filters.visit_code) params.set("visit_code", filters.visit_code);
   const href = `/${locale}/offline-price-candidates?${params.toString()}`;
   return disabled
     ? <span className="inline-flex h-9 items-center rounded-md border border-slate-200 px-3 text-slate-400">{children}</span>
@@ -1230,6 +1254,7 @@ function statusTabHref(locale: string, filters: WorkbenchFilters, status: Status
   if (status !== "all") params.set("status", status);
   if (filters.date_from) params.set("date_from", filters.date_from);
   if (filters.date_to) params.set("date_to", filters.date_to);
+  if (filters.visit_code) params.set("visit_code", filters.visit_code);
   return `/${locale}/offline-price-candidates?${params.toString()}`;
 }
 

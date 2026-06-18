@@ -8,6 +8,7 @@ const workbench = readFileSync(workbenchPath, "utf8");
 const storeVisitRoute = readFileSync("src/app/api/store-visit/[id]/route.ts", "utf8");
 const storeVisitDetailH5 = readFileSync("src/components/store-visit-detail-h5.tsx", "utf8");
 const candidateRoute = readFileSync("src/app/api/ai-price-candidates/[id]/route.ts", "utf8");
+const candidateListRoute = readFileSync("src/app/api/ai-price-candidates/route.ts", "utf8");
 const aiPriceReview = readFileSync("src/lib/ai-price-review.ts", "utf8");
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const materialMasterRoute = readFileSync("src/app/api/material-master/route.ts", "utf8");
@@ -83,6 +84,14 @@ test("photo price review shows approved and rejected audit columns", () => {
   assert.match(workbench, /second: "2-digit"/);
 });
 
+test("photo price review table headers expose help tooltips for AI and match score", () => {
+  assert.match(workbench, /function HeaderHelp/);
+  assert.match(workbench, /AI<HeaderHelp title=\{aiConfidenceHelp\} \/>/);
+  assert.match(workbench, /\{copy\.table\.match\}<HeaderHelp title=\{matchScoreHelp\} \/>/);
+  assert.match(workbench, /AI 置信度 = AI 对品牌、商品、价格识别结果的整体把握/);
+  assert.match(workbench, /商品命中度 = 自动匹配商品的算法分数/);
+});
+
 test("photo price review and export expose store visit batch codes", () => {
   assert.match(workbench, /copy\.table\.batch/);
   assert.match(workbench, /visit\?\.visit_code/);
@@ -90,6 +99,19 @@ test("photo price review and export expose store visit batch codes", () => {
   assert.match(dataFile, /visit_code/);
   assert.match(candidateExportRoute, /"visit_code"/);
   assert.match(candidateExportRoute, /visit\?\.visit_code/);
+});
+
+test("photo price review filters by fuzzy store visit batch code", () => {
+  assert.match(candidatesPage, /const visitCode = getFilter\("visit_code"\)/);
+  assert.match(candidatesPage, /name="visit_code"/);
+  assert.match(candidatesPage, /defaultValue=\{visitCode\}/);
+  assert.match(candidatesPage, /exportParams\.set\("visit_code", visitCode\)/);
+  assert.match(candidatesPage, /visitCode: visitCode \|\| undefined/);
+  assert.match(candidateListRoute, /visitCode: searchParams\.get\("visit_code"\)\?\.trim\(\) \|\| undefined/);
+  assert.match(candidateExportRoute, /const visitCode = searchParams\.get\("visit_code"\)\?\.trim\(\)/);
+  assert.match(candidateExportRoute, /visitCode: visitCode \|\| undefined/);
+  assert.match(dataFile, /visitCode\?: string/);
+  assert.match(dataFile, /\.ilike\("offline_store_visits\.visit_code", `%\$\{escapeIlikePattern\(filters\.visitCode\)\}%`\)/);
 });
 
 test("photo price review keeps Chinese copy keys for table headers and actions", () => {

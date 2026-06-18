@@ -16,8 +16,31 @@ test("AI candidate generation assigns stable candidate keys for idempotent reana
 
 test("AI candidate matching refuses to reuse competitor products from a different brand", () => {
   assert.match(candidateService, /function competitorBrandsMatch/);
-  assert.match(candidateService, /if \(!competitorBrandsMatch\(candidate\.brand, item\.brands\?\.name\)\) continue;/);
+  assert.match(candidateService, /const brandMatchedProducts = products\.filter\(\(item\) => competitorBrandsMatch\(candidate\.brand, item\.brands\?\.name\)\)/);
   assert.match(candidateService, /const brandScore = tokenScore\(candidate\.brand, item\.brands\?\.name \?\? ""\);/);
+});
+
+test("AI candidate competitor matching prioritizes exact size and piece count without price", () => {
+  assert.match(candidateService, /export function pickBestCompetitorForCandidate/);
+  assert.match(candidateService, /competitorSizePieceExactMatches/);
+  assert.match(candidateService, /normalizedCompetitorSize/);
+  assert.match(candidateService, /competitorCandidateRank/);
+  assert.match(candidateService, /pieceScore \* 0\.4 \+ sizeScore \* 0\.3 \+ brandScore \* 0\.15 \+ productScore \* 0\.15/);
+  assert.doesNotMatch(candidateService, /competitorCandidateRank[\s\S]*priceScore/);
+  assert.match(candidateService, /pickBestCompetitor\(\{ brand: item\.brand, product: item\.product, pieceCount \}/);
+});
+
+test("AI candidate material matching prioritizes exact size and piece count", () => {
+  assert.match(candidateService, /export function pickBestMaterialForCandidate/);
+  assert.match(candidateService, /extractCandidateSize/);
+  assert.match(candidateService, /pack_count/);
+  assert.match(candidateService, /sub_type/);
+  assert.match(candidateService, /sizePieceExactMatches/);
+  assert.match(candidateService, /pieceScore/);
+  assert.match(candidateService, /sizeScore/);
+  assert.match(candidateService, /pickBestMaterial\(\{ brand: item\.brand, product: item\.product, parsedPrice, pieceCount \}/);
+  assert.match(candidateService, /const isOwnBrandCandidate = isMakukuBrand\(item\.brand\)/);
+  assert.match(candidateService, /!materialMatch && !isOwnBrandCandidate/);
 });
 
 test("price review approval validates matched competitor brand before reusing it", () => {

@@ -24,6 +24,7 @@ export default async function OfflinePriceCandidatesPage({
 
   const dateFrom = getFilter("date_from");
   const dateTo = getFilter("date_to");
+  const visitCode = getFilter("visit_code").trim();
   const rawStatus = getFilter("status");
   const currentStatus = rawStatus === "approved" || rawStatus === "rejected" || rawStatus === "all" ? rawStatus : "pending";
   const statusFilter = currentStatus === "all" ? undefined : currentStatus as AiPriceCandidateStatus;
@@ -35,6 +36,7 @@ export default async function OfflinePriceCandidatesPage({
   const exportParams = new URLSearchParams();
   if (dateFrom) exportParams.set("date_from", dateFrom);
   if (dateTo) exportParams.set("date_to", dateTo);
+  if (visitCode) exportParams.set("visit_code", visitCode);
   if (statusFilter) exportParams.set("status", statusFilter);
   const exportHref = `/api/ai-price-candidates/export${exportParams.size > 0 ? `?${exportParams.toString()}` : ""}`;
 
@@ -42,6 +44,7 @@ export default async function OfflinePriceCandidatesPage({
     getAiPriceCandidatesPage({
       dateFrom: dateFrom || undefined,
       dateTo: dateTo || undefined,
+      visitCode: visitCode || undefined,
       status: statusFilter,
       page,
       perPage,
@@ -56,8 +59,9 @@ export default async function OfflinePriceCandidatesPage({
       <DataNotice error={candidatesResult.error ?? ruleResult.error} dict={dict} />
 
       <Card className="mb-4">
-        <form className="grid gap-3 md:grid-cols-[minmax(280px,1fr)_minmax(120px,180px)]">
+        <form className="grid gap-3 md:grid-cols-[minmax(280px,1fr)_minmax(180px,240px)_minmax(120px,180px)]">
           <DateRangeFilter locale={locale} dateFrom={dateFrom} dateTo={dateTo} />
+          <BatchCodeFilter locale={locale} visitCode={visitCode} />
           <Button type="submit">{dict.common.filter}</Button>
         </form>
       </Card>
@@ -82,11 +86,29 @@ export default async function OfflinePriceCandidatesPage({
             status: statusFilter,
             date_from: dateFrom || undefined,
             date_to: dateTo || undefined,
+            visit_code: visitCode || undefined,
           }}
           rule={ruleResult.data}
         />
       </Card>
     </AppShell>
+  );
+}
+
+function BatchCodeFilter({ locale, visitCode }: { locale: string; visitCode: string }) {
+  const label = locale === "zh" ? "拍照批次" : "Batch code";
+  const placeholder = locale === "zh" ? "输入批次号" : "Search batch";
+
+  return (
+    <label className="flex min-h-10 items-center rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus-within:border-slate-500 focus-within:ring-2 focus-within:ring-slate-200">
+      <span className="mr-2 shrink-0 text-xs font-medium text-slate-500">{label}</span>
+      <input
+        name="visit_code"
+        defaultValue={visitCode}
+        placeholder={placeholder}
+        className="min-w-0 flex-1 bg-transparent py-2 outline-none"
+      />
+    </label>
   );
 }
 

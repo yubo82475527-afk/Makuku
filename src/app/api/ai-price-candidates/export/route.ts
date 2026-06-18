@@ -83,6 +83,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const dateFrom = searchParams.get("date_from");
     const dateTo = searchParams.get("date_to");
+    const visitCode = searchParams.get("visit_code")?.trim();
     const status = searchParams.get("status");
 
     if ((dateFrom && !isDateInput(dateFrom)) || (dateTo && !isDateInput(dateTo))) {
@@ -95,6 +96,7 @@ export async function GET(request: Request) {
     const result = await getAiPriceCandidates({
       dateFrom: dateFrom || undefined,
       dateTo: dateTo || undefined,
+      visitCode: visitCode || undefined,
       status: status ? status as "pending" | "approved" | "rejected" : undefined,
       limit: 5000,
     });

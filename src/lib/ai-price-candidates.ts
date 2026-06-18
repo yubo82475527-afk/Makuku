@@ -1,5 +1,6 @@
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
 import { calculatePricePerPiece, parseIdrPrice } from "@/lib/price-utils";
+import { normalizePieceCount, normalizePieceCountFromCandidates, parsePieceCountText } from "@/lib/piece-count";
 import type { AiPriceCandidate, CompetitorProduct, MaterialMaster, StoreVisitAiResult } from "@/lib/types";
 
 type Warning = { type: string; message: string };
@@ -25,6 +26,7 @@ type SourceItem = {
   source: "key_sku" | "raw";
   sourceImageId?: string | null;
   sourceImagePath?: string | null;
+  sourceRowIndex?: number | null;
 };
 
 const nonPricePromotionPattern = /\b(gratis|free|gift|bonus|hadiah|cashback|voucher|plate|bowl|toy|giveaway)\b/i;
@@ -62,24 +64,14 @@ function competitorBrandsMatch(candidateBrand: string | null | undefined, produc
   return candidate === product;
 }
 
-function normalizePieceCount(value: number | null | undefined) {
-  const parsed = Number(value ?? 0);
-  if (!Number.isFinite(parsed) || parsed <= 0) return null;
-  return Math.floor(parsed);
+function extractPieceCount(value: string | null | undefined) {
+  return parsePieceCountText(value);
 }
 
-function extractPieceCount(value: string | null | undefined) {
+function extractCandidateSize(value: string | null | undefined) {
   const text = String(value ?? "");
-  const pcsMatch = text.match(/\b(\d{1,3})\s*(?:pcs?|pieces?)\b/i);
-  if (pcsMatch) return normalizePieceCount(Number(pcsMatch[1]));
-
-  const trailingPackMatch = text.match(/\b(?:nb|s|m|l|xl|xxl|xxxl|xxxxl|nb-s)\s*(\d{1,3})(?:\+\d{1,3})?\b/i);
-  if (trailingPackMatch) return normalizePieceCount(Number(trailingPackMatch[1]));
-
-  const finalNumberMatch = text.match(/\b(\d{1,3})(?:\+\d{1,3})?\s*$/);
-  if (finalNumberMatch) return normalizePieceCount(Number(finalNumberMatch[1]));
-
-  return null;
+  const match = text.match(/\b(nb|xxxxl|xxxl|xxl|xl|l|m|s)\s*(?:\d{1,3})?\b/i);
+  return match ? match[1].toUpperCase() : null;
 }
 
 function hasNonPricePromotionText(item: { brand: string; product: string; price: string }) {
@@ -107,6 +99,9 @@ function normalizePromoType(value: string | null | undefined) {
 
 function candidateKey(item: SourceItem) {
   const parsedPrice = parseCandidatePrice(item.net_price) ?? parseCandidatePrice(item.price);
+  if (item.sourceImageId && item.sourceRowIndex !== null && item.sourceRowIndex !== undefined) {
+    return ["image_row", item.sourceImageId, item.sourceRowIndex].join("|");
+  }
   return [
     normalizeText(item.brand),
     candidateProductKey(item.product),
@@ -161,29 +156,112 @@ function competitorLabel(item: CompetitorProduct) {
   return `${item.brands?.name ?? ""} ${item.normalized_name}`.trim();
 }
 
-function pickBestMaterial(candidate: { brand: string; product: string; parsedPrice: number | null }, materials: MaterialMaster[]) {
+function normalizedMaterialSize(value: string | null | undefined) {
+  const text = String(value ?? "").trim().toUpperCase();
+  return text || null;
+}
+
+function normalizedCompetitorSize(value: string | null | undefined) {
+  const directSize = String(value ?? "").trim().toUpperCase();
+  if (directSize) return directSize;
+  return null;
+}
+
+function materialCandidateRank(candidate: { brand: string; product: string; parsedPrice: number | null; pieceCount: number | null; size: string | null }, item: MaterialMaster) {
+  const materialSize = normalizedMaterialSize(item.sub_type);
+  const materialPieceCount = normalizePieceCount(item.pack_count);
+  const sizeScore = candidate.size && materialSize === candidate.size ? 1 : 0;
+  const pieceScore = candidate.pieceCount && materialPieceCount === candidate.pieceCount ? 1 : 0;
+  const brandScore = tokenScore(candidate.brand, [item.brand, item.sub_brand].filter(Boolean).join(" "));
+  const productScore = tokenScore(candidate.product, [item.tenant_sku_name, item.type, item.sub_type, item.pack_count].filter(Boolean).join(" "));
+  const priceScore = candidate.parsedPrice && item.pcs_price
+    ? Math.max(0, 1 - Math.min(Math.abs(candidate.parsedPrice - item.pcs_price) / Math.max(item.pcs_price, 1), 1))
+    : 0;
+  return {
+    sizeScore,
+    pieceScore,
+    brandScore,
+    productScore,
+    priceScore,
+    score: Math.min(1, pieceScore * 0.35 + sizeScore * 0.3 + brandScore * 0.15 + productScore * 0.15 + priceScore * 0.05),
+  };
+}
+
+export function pickBestMaterialForCandidate(candidate: { brand: string; product: string; parsedPrice: number | null; pieceCount: number | null }, materials: MaterialMaster[]) {
+  const size = extractCandidateSize(candidate.product);
+  const pieceCount = normalizePieceCount(candidate.pieceCount);
+  const enrichedCandidate = { ...candidate, pieceCount, size };
+  const sizePieceExactMatches = size && pieceCount
+    ? materials.filter((item) => normalizedMaterialSize(item.sub_type) === size && normalizePieceCount(item.pack_count) === pieceCount)
+    : [];
+  const candidateMaterials = sizePieceExactMatches.length > 0 ? sizePieceExactMatches : materials;
   let best: { item: MaterialMaster; score: number } | null = null;
-  for (const item of materials) {
-    const brandScore = tokenScore(candidate.brand, [item.brand, item.sub_brand].filter(Boolean).join(" "));
-    const productScore = tokenScore(candidate.product, [item.tenant_sku_name, item.type, item.sub_type, item.pack_count].filter(Boolean).join(" "));
-    const priceScore = candidate.parsedPrice && item.pcs_price
-      ? Math.max(0, 1 - Math.min(Math.abs(candidate.parsedPrice - item.pcs_price) / Math.max(item.pcs_price, 1), 1))
-      : 0;
-    const score = Math.min(1, brandScore * 0.35 + productScore * 0.5 + priceScore * 0.15);
-    if (!best || score > best.score) best = { item, score };
+  for (const item of candidateMaterials) {
+    const rank = materialCandidateRank(enrichedCandidate, item);
+    const score = sizePieceExactMatches.length > 0 ? rank.score : Math.min(rank.score, 0.64);
+    const exactTieBreak = rank.pieceScore + rank.sizeScore;
+    const bestRank = best ? materialCandidateRank(enrichedCandidate, best.item) : null;
+    const bestTieBreak = bestRank ? bestRank.pieceScore + bestRank.sizeScore : -1;
+    if (!best || score > best.score || score === best.score && exactTieBreak > bestTieBreak) {
+      best = { item, score };
+    }
   }
   return best;
 }
 
-function pickBestCompetitor(candidate: { brand: string; product: string }, products: CompetitorProduct[]) {
+function pickBestMaterial(candidate: { brand: string; product: string; parsedPrice: number | null; pieceCount: number | null }, materials: MaterialMaster[]) {
+  const best = pickBestMaterialForCandidate(candidate, materials);
+  if (!best) return null;
+  if (best.score < 0.65) return null;
+  return best;
+}
+
+function competitorCandidateRank(candidate: { brand: string; product: string; pieceCount: number | null; size: string | null }, item: CompetitorProduct) {
+  const competitorSize = normalizedCompetitorSize(item.size) ?? extractCandidateSize(item.normalized_name) ?? extractCandidateSize(item.raw_title);
+  const competitorPieceCount = normalizePieceCount(item.piece_count);
+  const sizeScore = candidate.size && competitorSize === candidate.size ? 1 : 0;
+  const pieceScore = candidate.pieceCount && competitorPieceCount === candidate.pieceCount ? 1 : 0;
+  const brandScore = tokenScore(candidate.brand, item.brands?.name ?? "");
+  const productScore = tokenScore(candidate.product, [item.normalized_name, item.raw_title, item.size, item.piece_count].filter(Boolean).join(" "));
+  return {
+    sizeScore,
+    pieceScore,
+    brandScore,
+    productScore,
+    score: Math.min(1, pieceScore * 0.4 + sizeScore * 0.3 + brandScore * 0.15 + productScore * 0.15),
+  };
+}
+
+export function pickBestCompetitorForCandidate(candidate: { brand: string; product: string; pieceCount: number | null }, products: CompetitorProduct[]) {
+  const size = extractCandidateSize(candidate.product);
+  const pieceCount = normalizePieceCount(candidate.pieceCount);
+  const brandMatchedProducts = products.filter((item) => competitorBrandsMatch(candidate.brand, item.brands?.name));
+  const competitorSizePieceExactMatches = size && pieceCount
+    ? brandMatchedProducts.filter((item) => {
+      const itemSize = normalizedCompetitorSize(item.size) ?? extractCandidateSize(item.normalized_name) ?? extractCandidateSize(item.raw_title);
+      return itemSize === size && normalizePieceCount(item.piece_count) === pieceCount;
+    })
+    : [];
+  const candidateProducts = competitorSizePieceExactMatches.length > 0 ? competitorSizePieceExactMatches : brandMatchedProducts;
   let best: { item: CompetitorProduct; score: number } | null = null;
-  for (const item of products) {
-    if (!competitorBrandsMatch(candidate.brand, item.brands?.name)) continue;
-    const brandScore = tokenScore(candidate.brand, item.brands?.name ?? "");
-    const productScore = tokenScore(candidate.product, [item.normalized_name, item.raw_title, item.size, item.piece_count].filter(Boolean).join(" "));
-    const score = Math.min(1, brandScore * 0.45 + productScore * 0.55);
-    if (!best || score > best.score) best = { item, score };
+  const enrichedCandidate = { ...candidate, pieceCount, size };
+  for (const item of candidateProducts) {
+    const rank = competitorCandidateRank(enrichedCandidate, item);
+    const score = competitorSizePieceExactMatches.length > 0 ? rank.score : Math.min(rank.score, 0.64);
+    const exactTieBreak = rank.pieceScore + rank.sizeScore;
+    const bestRank = best ? competitorCandidateRank(enrichedCandidate, best.item) : null;
+    const bestTieBreak = bestRank ? bestRank.pieceScore + bestRank.sizeScore : -1;
+    if (!best || score > best.score || score === best.score && exactTieBreak > bestTieBreak) {
+      best = { item, score };
+    }
   }
+  return best;
+}
+
+function pickBestCompetitor(candidate: { brand: string; product: string; pieceCount: number | null }, products: CompetitorProduct[]) {
+  const best = pickBestCompetitorForCandidate(candidate, products);
+  if (!best) return null;
+  if (best.score < 0.65) return null;
   return best;
 }
 
@@ -191,7 +269,6 @@ function isPriceCandidate(item: SourceItem) {
   if (!item.brand || !item.product) return false;
   if (item.confidence < 0.4) return false;
   if (item.tag === "ANOMALY") return false;
-  if (!item.piece_count) return false;
   if (hasNonPricePromotionText(item)) return false;
   return parseCandidatePrice(item.price) !== null;
 }
@@ -205,7 +282,7 @@ function sourceItems(aiResult: StoreVisitAiResult) {
     package_price: item.package_price ?? item.price,
     net_price: item.net_price ?? item.price,
     promo_type: item.promo_type ?? null,
-    piece_count: normalizePieceCount(item.piece_count) ?? extractPieceCount(item.product),
+    piece_count: normalizePieceCountFromCandidates(item.piece_count, item.product),
     type: "SKU" as const,
     tag: item.tag,
     confidence: item.confidence,
@@ -229,29 +306,16 @@ function sourceItems(aiResult: StoreVisitAiResult) {
     }))
     .filter(isPriceCandidate);
 
-  const keySkuPricePieceKeys = new Set(keySkuItems.map((item) => {
-    const parsedPrice = parseCandidatePrice(item.price);
-    return normalizeText(`${item.brand} ${parsedPrice ?? item.price} ${item.piece_count ?? ""}`);
-  }));
-  const byKey = new Map<string, SourceItem>();
-  for (const item of [...keySkuItems, ...rawItems]) {
-    const parsedPrice = parseCandidatePrice(item.price);
-    const pricePieceKey = normalizeText(`${item.brand} ${parsedPrice ?? item.price} ${item.piece_count ?? ""}`);
-    if (item.source === "raw" && keySkuPricePieceKeys.has(pricePieceKey)) continue;
-    const key = normalizeText(`${item.brand} ${candidateProductKey(item.product)} ${parsedPrice ?? item.price}`);
-    if (!key || !Boolean(item.brand || item.product || item.price)) continue;
-    const existing = byKey.get(key);
-    if (!existing || existing.source === "raw" && item.source === "key_sku" || (!existing.piece_count && item.piece_count)) {
-      byKey.set(key, item);
-    }
-  }
-  return [...byKey.values()];
+  return [...keySkuItems, ...rawItems];
 }
 
 export async function generateAiPriceCandidates(input: CandidateInput) {
   if (!hasSupabaseServiceConfig()) return [];
   const supabase = createSupabaseServiceClient();
-  const items = input.sourceItems?.filter(isPriceCandidate) ?? sourceItems(input.aiResult);
+  const items = (input.sourceItems?.map((item) => ({
+    ...item,
+    piece_count: normalizePieceCountFromCandidates(item.piece_count, item.product),
+  })).filter(isPriceCandidate)) ?? sourceItems(input.aiResult);
   if (items.length === 0) return [];
 
   await supabase
@@ -293,11 +357,12 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
     if (!pieceCount) warnings.push({ type: "MISSING_DATA", message: "Missing piece count; per-piece price cannot be calculated." });
     if (item.confidence < 0.5) warnings.push({ type: "LOW_CONFIDENCE", message: "AI extraction confidence is below 50%." });
 
-    const materialMatch = isMakukuBrand(item.brand)
-      ? pickBestMaterial({ brand: item.brand, product: item.product, parsedPrice }, (materials ?? []) as MaterialMaster[])
+    const isOwnBrandCandidate = isMakukuBrand(item.brand);
+    const materialMatch = isOwnBrandCandidate
+      ? pickBestMaterial({ brand: item.brand, product: item.product, parsedPrice, pieceCount }, (materials ?? []) as MaterialMaster[])
       : null;
-    const competitorMatch = !materialMatch
-      ? pickBestCompetitor({ brand: item.brand, product: item.product }, (products ?? []) as CompetitorProduct[])
+    const competitorMatch = !materialMatch && !isOwnBrandCandidate
+      ? pickBestCompetitor({ brand: item.brand, product: item.product, pieceCount }, (products ?? []) as CompetitorProduct[])
       : null;
     const matchScore = materialMatch?.score ?? competitorMatch?.score ?? 0;
     if (matchScore < 0.65) warnings.push({ type: "LOW_CONFIDENCE", message: "No reliable product/master-data match found." });

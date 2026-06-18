@@ -65,6 +65,7 @@ export type OfflineStoreVisitFilters = {
 export type AiPriceCandidateFilters = {
   dateFrom?: string;
   dateTo?: string;
+  visitCode?: string;
   status?: "pending" | "approved" | "rejected";
   limit?: number;
   page?: number;
@@ -119,6 +120,10 @@ function isMissingSchemaError(error: { message?: string } | null) {
 
 function isMissingVisitCodeError(error: { message?: string } | null) {
   return (error?.message ?? "").includes("visit_code");
+}
+
+function escapeIlikePattern(value: string) {
+  return value.replace(/[\\%_]/g, (match) => `\\${match}`);
 }
 
 export async function getBrands(): Promise<QueryResult<Brand[]>> {
@@ -509,13 +514,13 @@ export async function getAiPriceCandidates(filters: AiPriceCandidateFilters = {}
   }
 
   const supabase = createSupabaseServiceClient();
-  const shouldFilterVisitDate = Boolean(filters.dateFrom || filters.dateTo);
+  const shouldFilterVisit = Boolean(filters.dateFrom || filters.dateTo || filters.visitCode);
   const visitColumns = "id,visit_code,store_name,city,province,city_name,district,channel_type,visit_date,created_at";
   const legacyVisitColumns = "id,store_name,city,channel_type,visit_date,created_at";
-  const visitSelect = shouldFilterVisitDate
+  const visitSelect = shouldFilterVisit
     ? `offline_store_visits!inner(${visitColumns})`
     : `offline_store_visits(${visitColumns})`;
-  const legacyVisitSelect = shouldFilterVisitDate
+  const legacyVisitSelect = shouldFilterVisit
     ? `offline_store_visits!inner(${legacyVisitColumns})`
     : `offline_store_visits(${legacyVisitColumns})`;
   let query = supabase
@@ -525,6 +530,7 @@ export async function getAiPriceCandidates(filters: AiPriceCandidateFilters = {}
 
   if (filters.dateFrom) query = query.gte("offline_store_visits.visit_date", filters.dateFrom);
   if (filters.dateTo) query = query.lte("offline_store_visits.visit_date", filters.dateTo);
+  if (filters.visitCode) query = query.ilike("offline_store_visits.visit_code", `%${escapeIlikePattern(filters.visitCode)}%`);
   if (filters.status) query = query.eq("status", filters.status);
 
   if (filters.status === "approved") {
@@ -587,13 +593,13 @@ export async function getAiPriceCandidatesPage(filters: AiPriceCandidateFilters 
   }
 
   const supabase = createSupabaseServiceClient();
-  const shouldFilterVisitDate = Boolean(filters.dateFrom || filters.dateTo);
+  const shouldFilterVisit = Boolean(filters.dateFrom || filters.dateTo || filters.visitCode);
   const visitColumns = "id,visit_code,store_name,city,province,city_name,district,channel_type,visit_date,created_at";
   const legacyVisitColumns = "id,store_name,city,channel_type,visit_date,created_at";
-  const visitSelect = shouldFilterVisitDate
+  const visitSelect = shouldFilterVisit
     ? `offline_store_visits!inner(${visitColumns})`
     : `offline_store_visits(${visitColumns})`;
-  const legacyVisitSelect = shouldFilterVisitDate
+  const legacyVisitSelect = shouldFilterVisit
     ? `offline_store_visits!inner(${legacyVisitColumns})`
     : `offline_store_visits(${legacyVisitColumns})`;
 
@@ -606,6 +612,7 @@ export async function getAiPriceCandidatesPage(filters: AiPriceCandidateFilters 
 
   if (filters.dateFrom) query = query.gte("offline_store_visits.visit_date", filters.dateFrom);
   if (filters.dateTo) query = query.lte("offline_store_visits.visit_date", filters.dateTo);
+  if (filters.visitCode) query = query.ilike("offline_store_visits.visit_code", `%${escapeIlikePattern(filters.visitCode)}%`);
   if (filters.status) query = query.eq("status", filters.status);
   query = filters.status === "approved"
     ? query.order("reviewed_at", { ascending: false }).order("created_at", { ascending: false })

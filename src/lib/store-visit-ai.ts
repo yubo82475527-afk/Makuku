@@ -17,6 +17,7 @@ import type {
 } from "@/lib/types";
 import { createJsonChatCompletion, imageUrlPart, textPart } from "@/lib/ai-client";
 import { calculatePricePerPiece, parseIdrPrice } from "@/lib/price-utils";
+import { normalizePieceCountFromCandidates } from "@/lib/piece-count";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
 
 const stockRiskLevels: StockRiskLevel[] = ["Normal", "Low Stock", "Out of Stock Risk"];
@@ -38,6 +39,7 @@ const PROMOTION_PROMPT_REQUIREMENT = [
 const PRICE_CANDIDATE_PROMPT_REQUIREMENT = [
   "Price candidate quality requirement: price_insights.key_sku_prices must contain only sellable product prices that are suitable for AI Price Review. Every item must have a specific product or pack, a visible IDR package price, and visible piece_count from the pack text or shelf tag.",
   "For each key_sku_prices item, capture list_price, package_price, net_price, and promo_type when visible. list_price is the normal shelf/list price. package_price is the package price before voucher/cashback. net_price is the final paid price after discounts. If only one price is visible, set price, list_price, package_price, and net_price to that same visible selling price. promo_type should describe the mechanic, such as Discount, Buy 2 Get 1, Buy 1 Get 1, Special Offer, or empty when no clear activity is visible.",
+  "For bonus-pack piece counts such as 28+6 pcs or 44+10 pcs, return the total piece_count. For open-ended text such as 30+ pcs where the extra quantity is not shown, return 30.",
   "For price boards, shelf tags, promo tags, and handwritten price boards, extract EVERY visible readable SKU-price row into price_insights.key_sku_prices. Do not return only the top SKUs. If 8 SKU prices are visible, return 8 key_sku_prices.",
   "Do not summarize a multi-row price board only in promotion_insights. If promotion_insights.description mentions a SKU price, normal price, promo price, or per-piece row, the same SKU-price pair must also appear as a separate price_insights.key_sku_prices item.",
   "Before finalizing, count the readable SKU-price rows on each price board/promo tag and make sure key_sku_prices contains one item for each counted row.",
@@ -80,7 +82,7 @@ const STORE_VISIT_PRICE_IMAGE_PROMPT = [
   "net_price_idr is the final paid price when visible.",
   "If only one price is visible, use that same value for list_price_idr, package_price_idr, and net_price_idr.",
   "promo_type should be a short mechanic such as Discount, Buy 2 Get 1, Buy 1 Get 1, Special Offer, or null when no clear activity is visible.",
-  "piece_count is the pack piece count only when visible. Never guess.",
+  "piece_count is the total pack piece count. When you see bonus notation, calculate the total: '28+6' means 28 base + 6 bonus = 34 total; '30+' without a number after + means 30 base pieces; '48+10' means 58 total. Examples: 28+6 -> 34, 30+ -> 30, 44+10 -> 54, 36+6 -> 42, 34+6 -> 40. Return the calculated total as piece_count. Never guess when no pack count is visible.",
   "Do not calculate per-piece price. The system will calculate it.",
   "Return ONLY valid compact JSON. No markdown. No extra text.",
   '{"rows":[{"brand":"string","sku":"string","list_price_idr":120000,"package_price_idr":110000,"net_price_idr":105000,"promo_type":"Discount","piece_count":44}],"summary":"string","warnings":[{"type":"MISSING_DATA|LOW_CONFIDENCE|PARSE_RISK","message":"string"}]}',
@@ -192,12 +194,6 @@ function asNumber(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function asPositiveIntegerOrNull(value: unknown) {
-  const parsed = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) return null;
-  return Math.floor(parsed);
-}
-
 function asEnum<T extends string>(value: unknown, options: readonly T[], fallback: T) {
   return options.includes(value as T) ? value as T : fallback;
 }
@@ -307,7 +303,7 @@ export function normalizeStoreVisitAiResult(value: unknown): StoreVisitAiResult 
       package_price: asOptionalString(price.package_price) ?? visiblePrice,
       net_price: asOptionalString(price.net_price) ?? visiblePrice,
       promo_type: asOptionalString(price.promo_type),
-      piece_count: asPositiveIntegerOrNull(price.piece_count),
+      piece_count: normalizePieceCountFromCandidates(price.piece_count, asOptionalString(price.product)),
       tag: asEnum(price.tag, priceInsightTags, "HERO"),
       confidence: Math.min(Math.max(asNumber(price.confidence, 0.7), 0), 1),
     };
@@ -441,10 +437,11 @@ export function normalizeStoreVisitPriceImageAnalysis(
       const listPrice = asNullablePriceNumber(row.list_price_idr);
       const packagePrice = asNullablePriceNumber(row.package_price_idr) ?? listPrice;
       const netPrice = asNullablePriceNumber(row.net_price_idr) ?? packagePrice ?? listPrice;
-      const pieceCount = asPositiveIntegerOrNull(row.piece_count);
+      const sku = asString(row.sku, "Unknown SKU");
+      const pieceCount = normalizePieceCountFromCandidates(row.piece_count, sku);
       return {
         brand: asOptionalString(row.brand),
-        sku: asString(row.sku, "Unknown SKU"),
+        sku,
         list_price_idr: listPrice ?? netPrice,
         package_price_idr: packagePrice ?? netPrice,
         net_price_idr: netPrice,

@@ -22,6 +22,7 @@ export async function GET(request: Request) {
     status: parseStatus(searchParams.get("status")),
     dateFrom: searchParams.get("date_from") || undefined,
     dateTo: searchParams.get("date_to") || undefined,
+    visitCode: searchParams.get("visit_code")?.trim() || undefined,
   });
 
   return Response.json({

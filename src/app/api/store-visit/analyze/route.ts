@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     const aiAnalysis = await runStoreVisitAiAnalysisForVisit({ visitId });
     const aiResult = aiAnalysis.normalized;
     const sourceItems = (aiAnalysis.price_image_results ?? []).flatMap((imageResult) => (
-      imageResult.result.rows.map((row) => ({
+      imageResult.result.rows.map((row, rowIndex) => ({
         brand: row.brand ?? "Unknown",
         product: row.sku,
         price: row.net_price_idr ? String(row.net_price_idr) : "",
@@ -75,6 +75,7 @@ export async function POST(request: Request) {
         confidence: 0.9,
         source: "key_sku" as const,
         sourceImageId: imageResult.imageId,
+        sourceRowIndex: rowIndex,
       }))
     ));
     const candidates = await generateAiPriceCandidates({ visitId, aiResult, sourceItems });
