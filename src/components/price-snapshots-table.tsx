@@ -171,12 +171,9 @@ export function PriceSnapshotsTable({
           </thead>
           <tbody className="divide-y divide-slate-200">
             {visibleSnapshots.map((snapshot) => {
-              const sku = snapshotMakukuSku(snapshot);
-              const underFloor = sku && snapshot.price_per_piece < sku.floor_price_per_piece;
-              const underTarget = sku && snapshot.price_per_piece < sku.target_price_per_piece * 0.92;
               const region = storeRegionForSnapshot(snapshot);
               return (
-                <tr key={snapshot.id} className={underFloor ? "bg-red-50" : underTarget ? "bg-yellow-50" : undefined}>
+                <tr key={snapshot.id}>
                   <td className="py-3 pr-3">
                     <input
                       type="checkbox"
@@ -261,10 +258,6 @@ function ConfirmDeletePanel({
 
 function snapshotOwnerType(snapshot: PriceSnapshot): SnapshotOwnerType {
   return (snapshot.sku_master_id || snapshot.material_sku_code) && !snapshot.competitor_product_id ? "makuku" : "competitor";
-}
-
-function snapshotMakukuSku(snapshot: PriceSnapshot) {
-  return snapshot.sku_master ?? snapshot.competitor_products?.sku_matches?.[0]?.sku_master ?? null;
 }
 
 function snapshotBrandName(snapshot: PriceSnapshot) {

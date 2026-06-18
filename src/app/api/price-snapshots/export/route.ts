@@ -80,6 +80,8 @@ export async function GET(request: Request) {
     const cityName = searchParams.get("cityName");
     const district = searchParams.get("district");
     const store = searchParams.get("store");
+    const createdFrom = searchParams.get("createdFrom");
+    const createdTo = searchParams.get("createdTo");
     const locale = searchParams.get("locale") === "zh" ? "zh" : "en";
     const supabase = createSupabaseServiceClient();
 
@@ -104,6 +106,8 @@ export async function GET(request: Request) {
       if (cityName && !matchesText(region.cityName, cityName)) return false;
       if (district && !matchesText(region.district, district)) return false;
       if (store && !matchesText(storeNameForSnapshot(snapshot), store)) return false;
+      if (createdFrom && !matchesCreatedFrom(snapshot.created_at, createdFrom)) return false;
+      if (createdTo && !matchesCreatedTo(snapshot.created_at, createdTo)) return false;
       return true;
     });
 
@@ -301,4 +305,18 @@ function splitLegacyRegion(value: string | null | undefined) {
 
 function matchesText(value: string | null | undefined, query: string) {
   return String(value ?? "").toLowerCase().includes(query.trim().toLowerCase());
+}
+
+function matchesCreatedFrom(value: string | null | undefined, dateText: string) {
+  const createdAt = Date.parse(String(value ?? ""));
+  const from = Date.parse(`${dateText}T00:00:00.000Z`);
+  if (!Number.isFinite(createdAt) || !Number.isFinite(from)) return true;
+  return createdAt >= from;
+}
+
+function matchesCreatedTo(value: string | null | undefined, dateText: string) {
+  const createdAt = Date.parse(String(value ?? ""));
+  const to = Date.parse(`${dateText}T23:59:59.999Z`);
+  if (!Number.isFinite(createdAt) || !Number.isFinite(to)) return true;
+  return createdAt <= to;
 }

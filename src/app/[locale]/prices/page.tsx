@@ -31,6 +31,8 @@ export default async function PricesPage({
     cityName?: string;
     district?: string;
     store?: string;
+    createdFrom?: string;
+    createdTo?: string;
     page?: string;
     per_page?: string;
   }>;
@@ -42,7 +44,7 @@ export default async function PricesPage({
   const requestedPage = Number.isFinite(pageParam) && pageParam > 0 ? Math.floor(pageParam) : 1;
   const perPage = Number.isFinite(perPageParam) && perPageParam > 0 ? Math.min(200, Math.floor(perPageParam)) : 50;
   const currentParams = new URLSearchParams();
-  for (const key of ["brand", "sku", "line", "priceBand", "size", "province", "cityName", "district", "store"] as const) {
+  for (const key of ["brand", "sku", "line", "priceBand", "size", "province", "cityName", "district", "store", "createdFrom", "createdTo"] as const) {
     if (params[key]) currentParams.set(key, params[key]);
   }
   currentParams.set("locale", locale);
@@ -67,7 +69,7 @@ export default async function PricesPage({
     <AppShell locale={locale} dict={dict} title={dict.prices.title} currentPath={currentPath} isDemo={pricesResult.isDemo}>
       <DataNotice dict={dict} error={pricesResult.error} />
       <Card className="mb-4">
-        <form className="grid gap-3 md:grid-cols-4 xl:grid-cols-8">
+        <form className="grid gap-3 md:grid-cols-4 xl:grid-cols-10">
           <SelectInput name="brand" defaultValue={params.brand ?? ""}>
             <option value="">{dict.common.allBrands}</option>
             {brandSeriesOptions.map((brand) => (
@@ -89,6 +91,8 @@ export default async function PricesPage({
           <TextInput name="district" placeholder={locale === "zh" ? "区/县" : "District"} defaultValue={params.district ?? ""} />
           <TextInput name="store" placeholder={locale === "zh" ? "门店" : "Store"} defaultValue={params.store ?? ""} />
           <TextInput name="sku" placeholder={dict.prices.skuId} defaultValue={params.sku ?? ""} />
+          <TextInput name="createdFrom" type="date" defaultValue={params.createdFrom ?? ""} />
+          <TextInput name="createdTo" type="date" defaultValue={params.createdTo ?? ""} />
           <Button type="submit">{dict.common.filter}</Button>
         </form>
       </Card>
@@ -190,6 +194,8 @@ function snapshotMatchesFilters(
     cityName?: string;
     district?: string;
     store?: string;
+    createdFrom?: string;
+    createdTo?: string;
   },
 ) {
   const line = priceSnapshotBusinessLine(snapshot);
@@ -205,6 +211,8 @@ function snapshotMatchesFilters(
   if (params.cityName && !matchesText(region.cityName, params.cityName)) return false;
   if (params.district && !matchesText(region.district, params.district)) return false;
   if (params.store && !matchesText(storeNameForSnapshot(snapshot), params.store)) return false;
+  if (params.createdFrom && !matchesCreatedFrom(snapshot.created_at, params.createdFrom)) return false;
+  if (params.createdTo && !matchesCreatedTo(snapshot.created_at, params.createdTo)) return false;
   return true;
 }
 
@@ -271,6 +279,20 @@ function splitLegacyRegion(value: string | null | undefined) {
 
 function matchesText(value: string | null | undefined, query: string) {
   return String(value ?? "").toLowerCase().includes(query.trim().toLowerCase());
+}
+
+function matchesCreatedFrom(value: string | null | undefined, dateText: string) {
+  const createdAt = Date.parse(String(value ?? ""));
+  const from = Date.parse(`${dateText}T00:00:00.000Z`);
+  if (!Number.isFinite(createdAt) || !Number.isFinite(from)) return true;
+  return createdAt >= from;
+}
+
+function matchesCreatedTo(value: string | null | undefined, dateText: string) {
+  const createdAt = Date.parse(String(value ?? ""));
+  const to = Date.parse(`${dateText}T23:59:59.999Z`);
+  if (!Number.isFinite(createdAt) || !Number.isFinite(to)) return true;
+  return createdAt <= to;
 }
 
 function uniqueOptions(values: string[]) {

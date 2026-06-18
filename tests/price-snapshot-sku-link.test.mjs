@@ -69,6 +69,20 @@ test("prices page and export show actual owner and filter by derived Makuku SKU 
   assert.match(priceExportRoute, /priceSnapshotMakukuMaterialCode/);
 });
 
+test("real market price page supports created_at date range filters in page and export", () => {
+  assert.match(pricesPage, /name="createdFrom"/);
+  assert.match(pricesPage, /name="createdTo"/);
+  assert.match(pricesPage, /currentParams\.set\(key, params\[key\]\)/);
+  assert.match(pricesPage, /params\.createdFrom/);
+  assert.match(pricesPage, /params\.createdTo/);
+  assert.match(pricesPage, /matchesCreatedFrom\(snapshot\.created_at, params\.createdFrom\)/);
+  assert.match(pricesPage, /matchesCreatedTo\(snapshot\.created_at, params\.createdTo\)/);
+  assert.match(priceExportRoute, /const createdFrom = searchParams\.get\("createdFrom"\)/);
+  assert.match(priceExportRoute, /const createdTo = searchParams\.get\("createdTo"\)/);
+  assert.match(priceExportRoute, /matchesCreatedFrom\(snapshot\.created_at, createdFrom\)/);
+  assert.match(priceExportRoute, /matchesCreatedTo\(snapshot\.created_at, createdTo\)/);
+});
+
 test("real market price page shows activity type and three business prices", () => {
   assert.match(priceSnapshotsTable, /Activity Type/);
   assert.match(priceSnapshotsTable, /Discount/);
