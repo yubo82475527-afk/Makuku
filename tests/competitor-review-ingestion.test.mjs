@@ -5,13 +5,39 @@ import assert from "node:assert/strict";
 const candidateService = readFileSync("src/lib/ai-price-candidates.ts", "utf8");
 const reviewService = readFileSync("src/lib/ai-price-review.ts", "utf8");
 const bulkRunRoute = readFileSync("src/app/api/ai-price-candidates/bulk-review/[jobId]/run/route.ts", "utf8");
+const idempotencyMigration = readFileSync("supabase/migrations/202606220001_offline_ai_price_snapshot_idempotency.sql", "utf8");
 
 test("AI candidate generation assigns stable candidate keys for idempotent reanalysis", () => {
   assert.match(candidateService, /function candidateKey/);
   assert.match(candidateService, /candidate_key/);
   assert.match(candidateService, /approvedCandidateKeys/);
   assert.match(candidateService, /existingApprovedKeys/);
-  assert.match(candidateService, /candidateKey\(item\)/);
+  assert.match(candidateService, /candidateKey\(\{[\s\S]*matchedEntityType/);
+  assert.match(candidateService, /sourceImageId/);
+  assert.match(candidateService, /matchedEntityId/);
+  assert.match(candidateService, /netPrice/);
+  assert.doesNotMatch(candidateService, /return \["image_row", item\.sourceImageId, item\.sourceRowIndex\]\.join\("\|"\)/);
+});
+
+test("AI price approval reuses existing offline AI snapshots for the same image product and net price", () => {
+  assert.match(reviewService, /findExistingOfflineAiSnapshot/);
+  assert.match(reviewService, /source_visit_id/);
+  assert.match(reviewService, /source_image_id/);
+  assert.match(reviewService, /source_matched_entity_type/);
+  assert.match(reviewService, /source_matched_entity_id/);
+  assert.match(reviewService, /\.eq\("net_price_idr", netPrice\)/);
+  assert.match(reviewService, /if \(existingSnapshot\)/);
+  assert.match(reviewService, /price_snapshot_id: existingSnapshot\.id/);
+});
+
+test("offline AI price idempotency migration constrains candidates and snapshots by image product and net price", () => {
+  assert.match(idempotencyMigration, /source_visit_id/);
+  assert.match(idempotencyMigration, /source_image_id/);
+  assert.match(idempotencyMigration, /source_matched_entity_type/);
+  assert.match(idempotencyMigration, /source_matched_entity_id/);
+  assert.match(idempotencyMigration, /idx_ai_price_candidates_visit_image_entity_price_active/);
+  assert.match(idempotencyMigration, /idx_price_snapshots_offline_ai_source_unique/);
+  assert.match(idempotencyMigration, /where source = 'offline_ai_confirmed'/);
 });
 
 test("AI candidate matching refuses to reuse competitor products from a different brand", () => {

@@ -421,6 +421,10 @@ export type PriceSnapshot = {
   promo_type: string | null;
   captured_at: string;
   source: string | null;
+  source_visit_id?: string | null;
+  source_image_id?: string | null;
+  source_matched_entity_type?: AiPriceCandidateMatchType | null;
+  source_matched_entity_id?: string | null;
   evidence_url: string | null;
   created_at: string;
   competitor_products?: CompetitorProduct | null;

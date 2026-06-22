@@ -1,7 +1,7 @@
 const en = {
   app: {
-    name: "Makuku CI",
-    subtitle: "Competitor dynamics MVP",
+    name: "MAKUKU SA",
+    subtitle: "MAKUKU Store Audit",
     timezonePricing: "Asia/Jakarta timezone / IDR pricing",
     demoData: "Demo data",
     language: "Language",

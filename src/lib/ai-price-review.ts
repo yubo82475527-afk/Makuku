@@ -104,6 +104,12 @@ export async function approveAiPriceCandidate({
   });
 
   const visit = candidate.offline_store_visits as { store_name?: string | null; visit_date?: string | null } | null;
+  const sourceVisitId = candidateRow.visit_id;
+  const sourceImageId = candidateRow.source_image_id ?? null;
+  const sourceMatchedEntityType = candidateRow.matched_entity_type;
+  const sourceMatchedEntityId = candidateRow.matched_entity_type === "material_master"
+    ? materialSkuCode
+    : competitorProduct?.id ?? candidateRow.matched_entity_id;
   const snapshotPayload = candidateRow.matched_entity_type === "material_master"
     ? {
         competitor_product_id: null,
@@ -115,6 +121,31 @@ export async function approveAiPriceCandidate({
         sku_master_id: null,
         material_sku_code: null,
       };
+  const existingSnapshot = await findExistingOfflineAiSnapshot({
+    supabase,
+    visitId: sourceVisitId,
+    sourceImageId,
+    matchedEntityType: sourceMatchedEntityType,
+    matchedEntityId: sourceMatchedEntityId,
+    netPrice,
+  });
+  if (existingSnapshot) {
+    const updated = await updateAiPriceCandidateWithReviewMethodFallback(supabase, candidateId, {
+      status: "approved",
+      parsed_price_idr: netPrice,
+      reviewed_piece_count: Math.floor(reviewedPieceCount),
+      reviewed_price_per_piece: normalized.price_per_piece,
+      price_snapshot_id: existingSnapshot.id,
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: reviewer ?? null,
+      review_job_id: reviewJobId ?? null,
+      review_method: reviewMethod,
+      rejection_reason: null,
+    });
+
+    return { candidate: updated as AiPriceCandidate, snapshot: existingSnapshot };
+  }
+
   const { data: snapshot, error: snapshotError } = await supabase
     .from("price_snapshots")
     .insert({
@@ -130,6 +161,10 @@ export async function approveAiPriceCandidate({
       promo_type: normalizeCandidatePromoType(promoType ?? candidateRow.promo_type),
       captured_at: visit?.visit_date ? new Date(`${visit.visit_date}T00:00:00`).toISOString() : new Date().toISOString(),
       source: "offline_ai_confirmed",
+      source_visit_id: sourceVisitId,
+      source_image_id: sourceImageId,
+      source_matched_entity_type: sourceMatchedEntityType,
+      source_matched_entity_id: sourceMatchedEntityId,
       evidence_url: null,
     })
     .select("*")
@@ -340,10 +375,55 @@ function positiveNumberOrFallback(value: unknown, fallback: number) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+async function findExistingOfflineAiSnapshot({
+  supabase,
+  visitId,
+  sourceImageId,
+  matchedEntityType,
+  matchedEntityId,
+  netPrice,
+}: {
+  supabase: SupabaseServiceClient;
+  visitId: string | null;
+  sourceImageId: string | null;
+  matchedEntityType: "material_master" | "competitor_product" | "unmatched";
+  matchedEntityId: string | null | undefined;
+  netPrice: number;
+}) {
+  if (!visitId || !sourceImageId || !matchedEntityId || matchedEntityType === "unmatched") return null;
+
+  const { data, error } = await supabase
+    .from("price_snapshots")
+    .select("*")
+    .eq("source", "offline_ai_confirmed")
+    .eq("source_visit_id", visitId)
+    .eq("source_image_id", sourceImageId)
+    .eq("source_matched_entity_type", matchedEntityType)
+    .eq("source_matched_entity_id", matchedEntityId)
+    .eq("net_price_idr", netPrice)
+    .limit(1)
+    .maybeSingle();
+  if (error && !isMissingSourceTrackingColumnError(error)) {
+    throw new Error(error.message);
+  }
+  return data ?? null;
+}
+
 function normalizeCandidatePromoType(value: string | null | undefined) {
   const text = String(value ?? "").trim();
   if (!text || /^none|no activity|no promo|normal$/i.test(text)) return "offline_ai_confirmed";
   return text;
+}
+
+function isMissingSourceTrackingColumnError(error: { message?: string | null } | null) {
+  const message = error?.message ?? "";
+  return [
+    "source_visit_id",
+    "source_image_id",
+    "source_matched_entity_type",
+    "source_matched_entity_id",
+    "schema cache",
+  ].some((column) => message.includes(column));
 }
 
 async function findReusableMatchedCompetitorProduct(supabase: SupabaseServiceClient, candidate: Record<string, unknown>) {

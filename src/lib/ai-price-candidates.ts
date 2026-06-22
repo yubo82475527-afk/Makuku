@@ -97,11 +97,27 @@ function normalizePromoType(value: string | null | undefined) {
   return text;
 }
 
-function candidateKey(item: SourceItem) {
-  const parsedPrice = parseCandidatePrice(item.net_price) ?? parseCandidatePrice(item.price);
-  if (item.sourceImageId && item.sourceRowIndex !== null && item.sourceRowIndex !== undefined) {
-    return ["image_row", item.sourceImageId, item.sourceRowIndex].join("|");
+function candidateKey({
+  item,
+  matchedEntityType,
+  matchedEntityId,
+  netPrice,
+}: {
+  item: SourceItem;
+  matchedEntityType: "material_master" | "competitor_product" | "unmatched";
+  matchedEntityId: string | null;
+  netPrice: number | null;
+}) {
+  if (item.sourceImageId && matchedEntityId && netPrice) {
+    return [
+      "image_entity_price",
+      item.sourceImageId,
+      matchedEntityType,
+      matchedEntityId,
+      String(netPrice),
+    ].join("|");
   }
+  const parsedPrice = netPrice ?? parseCandidatePrice(item.price);
   return [
     normalizeText(item.brand),
     candidateProductKey(item.product),
@@ -343,7 +359,6 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
   ]);
 
   const rows = items.map((item) => {
-    const itemCandidateKey = candidateKey(item);
     const parsedPrice = parseCandidatePrice(item.price);
     const listPrice = parseCandidatePrice(item.list_price) ?? parsedPrice;
     const packagePrice = parseCandidatePrice(item.package_price) ?? parsedPrice;
@@ -365,6 +380,14 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
       ? pickBestCompetitor({ brand: item.brand, product: item.product, pieceCount }, (products ?? []) as CompetitorProduct[])
       : null;
     const matchScore = materialMatch?.score ?? competitorMatch?.score ?? 0;
+    const matchedEntityType = materialMatch ? "material_master" : competitorMatch ? "competitor_product" : "unmatched";
+    const matchedEntityId = materialMatch?.item.tenant_sku_code ?? competitorMatch?.item.id ?? null;
+    const itemCandidateKey = candidateKey({
+      item,
+      matchedEntityType,
+      matchedEntityId,
+      netPrice,
+    });
     if (matchScore < 0.65) warnings.push({ type: "LOW_CONFIDENCE", message: "No reliable product/master-data match found." });
 
     return {
@@ -384,8 +407,8 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
       price_per_piece: pricePerPiece,
       candidate_type: item.type,
       ai_confidence: item.confidence,
-      matched_entity_type: materialMatch ? "material_master" : competitorMatch ? "competitor_product" : "unmatched",
-      matched_entity_id: materialMatch?.item.tenant_sku_code ?? competitorMatch?.item.id ?? null,
+      matched_entity_type: matchedEntityType,
+      matched_entity_id: matchedEntityId,
       matched_label: materialMatch ? materialLabel(materialMatch.item) : competitorMatch ? competitorLabel(competitorMatch.item) : null,
       match_score: matchScore,
       warnings,

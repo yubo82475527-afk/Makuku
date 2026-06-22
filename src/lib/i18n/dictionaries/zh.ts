@@ -2,8 +2,8 @@ import type en from "./en";
 
 const zh: typeof en = {
   app: {
-    name: "Makuku CI",
-    subtitle: "竞品动态 MVP",
+    name: "MAKUKU SA",
+    subtitle: "MAKUKU Store Audit",
     timezonePricing: "Asia/Jakarta 时区 / IDR 价格",
     demoData: "演示数据",
     language: "语言",

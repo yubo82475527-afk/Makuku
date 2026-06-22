@@ -7,6 +7,7 @@ const authSession = existsSync("src/lib/auth-session.ts") ? readFileSync("src/li
 const loginPage = existsSync("src/app/[locale]/login/page.tsx") ? readFileSync("src/app/[locale]/login/page.tsx", "utf8") : "";
 const loginClient = existsSync("src/components/pc-login-form.tsx") ? readFileSync("src/components/pc-login-form.tsx", "utf8") : "";
 const loginRoute = readFileSync("src/app/api/auth/login/route.ts", "utf8");
+const feishuLoginRoute = existsSync("src/app/api/auth/feishu-login/route.ts") ? readFileSync("src/app/api/auth/feishu-login/route.ts", "utf8") : "";
 const logoutRoute = existsSync("src/app/api/auth/logout/route.ts") ? readFileSync("src/app/api/auth/logout/route.ts", "utf8") : "";
 const appShell = readFileSync("src/components/app-shell.tsx", "utf8");
 
@@ -45,6 +46,28 @@ test("PC login page and auth APIs establish and clear server sessions", () => {
   assert.match(logoutRoute, /clearSessionCookie/);
   assert.match(appShell, /\/api\/auth\/session/);
   assert.match(appShell, /\/api\/auth\/logout/);
+});
+
+test("PC login page supports Feishu in-app passwordless login", () => {
+  assert.match(loginClient, /NEXT_PUBLIC_FEISHU_APP_ID/);
+  assert.match(loginClient, /requestAccess/);
+  assert.match(loginClient, /scopeList:\s*\[\]/);
+  assert.match(loginClient, /appID:\s*feishuAppId/);
+  assert.match(loginClient, /\/api\/auth\/feishu-login/);
+  assert.match(loginClient, /startFeishuLogin/);
+});
+
+test("Feishu login API exchanges auth code for user info and creates app session", () => {
+  assert.match(feishuLoginRoute, /authen\/v2\/oauth\/token/);
+  assert.match(feishuLoginRoute, /authen\/v1\/user_info/);
+  assert.match(feishuLoginRoute, /FEISHU_APP_ID/);
+  assert.match(feishuLoginRoute, /FEISHU_APP_SECRET/);
+  assert.match(feishuLoginRoute, /feishu_user_id/);
+  assert.match(feishuLoginRoute, /open_id/);
+  assert.match(feishuLoginRoute, /status.*disabled|disabled.*status/s);
+  assert.match(feishuLoginRoute, /createSessionCookie/);
+  assert.match(feishuLoginRoute, /Set-Cookie/);
+  assert.doesNotMatch(feishuLoginRoute, /password_hash/);
 });
 
 test("proxy protects PC backend pages but leaves H5 capture public", () => {
