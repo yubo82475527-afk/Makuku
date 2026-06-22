@@ -19,6 +19,7 @@ import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { localeLabels, replacePathLocale, type Locale } from "@/lib/i18n/config";
 import type { Dictionary } from "@/lib/i18n/get-dictionary";
+import { writeLocalePreferenceCookie } from "@/lib/locale-preference";
 
 const sidebarStorageKey = "makuku_sidebar_collapsed";
 
@@ -229,6 +230,9 @@ export function AppShell({
             ) : null}
             <Link
               href={replacePathLocale(`/${locale}${currentPath}`, otherLocale)}
+              onClick={() => {
+                document.cookie = writeLocalePreferenceCookie(otherLocale);
+              }}
               className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
               title={languageLabel}
             >

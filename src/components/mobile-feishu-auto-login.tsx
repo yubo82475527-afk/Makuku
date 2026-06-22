@@ -2,9 +2,10 @@
 
 import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
-import type { Locale } from "@/lib/i18n/config";
+import { replacePathLocale, type Locale } from "@/lib/i18n/config";
 import { withMinimumDelay } from "@/lib/async-ui";
 import { LoadingOverlay } from "@/components/loading-overlay";
+import { readLocalePreferenceFromCookieHeader } from "@/lib/locale-preference";
 
 declare global {
   interface Window {
@@ -69,12 +70,14 @@ export function MobileFeishuAutoLogin({ locale }: { locale: Locale }) {
 
           try {
             setStatus("signing_in");
+            const preferredLocale = readLocalePreferenceFromCookieHeader(document.cookie);
+            const resolvedNextPath = replacePathLocale(`/${locale}/mobile/offline-capture`, preferredLocale ?? locale);
             const response = await withMinimumDelay(fetch("/api/auth/feishu-login", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 code,
-                next: `/${locale}/mobile/offline-capture`,
+                next: resolvedNextPath,
                 purpose: "mobile_h5",
               }),
             }));

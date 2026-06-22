@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { LoadingOverlay } from "@/components/loading-overlay";
 import { withMinimumDelay } from "@/lib/async-ui";
 import { localeLabels, replacePathLocale, type Locale } from "@/lib/i18n/config";
+import { writeLocalePreferenceCookie } from "@/lib/locale-preference";
 import { getMobileCopy, mobileAnalysisStatusLabel } from "@/lib/mobile-i18n";
 import type { StockRiskLevel, StoreVisitAnalysisStatus, StoreVisitAiResult } from "@/lib/types";
 import { MobileLanguageSwitch } from "@/components/mobile-language-switch";
@@ -137,6 +138,9 @@ function MobileCaptureSettingsMenu({
         <div className="px-2 py-1 text-xs font-semibold uppercase tracking-normal text-slate-500">{labels.language}</div>
         <Link
           href={`/${locale}/mobile/offline-capture`}
+          onClick={() => {
+            document.cookie = writeLocalePreferenceCookie(locale);
+          }}
           className="flex items-center justify-between rounded-lg px-2 py-2 font-medium text-slate-700 hover:bg-slate-50"
         >
           <span>{localeLabels[locale]}</span>
@@ -144,6 +148,9 @@ function MobileCaptureSettingsMenu({
         </Link>
         <Link
           href={replacePathLocale(`/${locale}/mobile/offline-capture`, otherLocale)}
+          onClick={() => {
+            document.cookie = writeLocalePreferenceCookie(otherLocale);
+          }}
           className="flex items-center justify-between rounded-lg px-2 py-2 font-medium text-slate-700 hover:bg-slate-50"
         >
           <span>{localeLabels[otherLocale]}</span>

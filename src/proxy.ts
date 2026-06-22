@@ -1,7 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { detectLocaleFromAcceptLanguage, isLocale } from "@/lib/i18n/config";
+import { defaultLocale, isLocale, replacePathLocale } from "@/lib/i18n/config";
+import { readLocalePreferenceFromRequest } from "@/lib/locale-preference";
 
 const publicFilePattern = /\.[^/]+$/;
+const h5CaptureRoot = "/mobile/offline-capture";
+
+function isExternalH5EntryPath(pathname: string) {
+  const parts = pathname.split("/").filter(Boolean);
+  const locale = parts[0];
+  if (!isLocale(locale)) return false;
+  return pathname === `/${locale}${h5CaptureRoot}` || pathname === `/${locale}${h5CaptureRoot}/new`;
+}
 
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
@@ -16,13 +25,20 @@ export function proxy(request: NextRequest) {
   }
 
   const firstSegment = pathname.split("/")[1];
+  const preferredLocale = readLocalePreferenceFromRequest(request) ?? defaultLocale;
+
   if (isLocale(firstSegment)) {
+    if (isExternalH5EntryPath(pathname) && firstSegment !== preferredLocale) {
+      const target = request.nextUrl.clone();
+      target.pathname = replacePathLocale(pathname, preferredLocale);
+      target.search = search;
+      return NextResponse.redirect(target);
+    }
     return NextResponse.next();
   }
 
-  const locale = detectLocaleFromAcceptLanguage(request.headers.get("accept-language"));
   const target = request.nextUrl.clone();
-  target.pathname = pathname === "/" ? `/${locale}/dashboard` : `/${locale}${pathname}`;
+  target.pathname = pathname === "/" ? `/${preferredLocale}/dashboard` : `/${preferredLocale}${pathname}`;
   target.search = search;
   return NextResponse.redirect(target);
 }
