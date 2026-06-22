@@ -419,19 +419,6 @@ export async function POST(request: Request) {
     }
     if (error) return Response.json({ error: error.message }, { status: 400 });
 
-    if (data?.id) {
-      await assignOrganizationForStore(supabase, {
-        id: data.id,
-        name,
-        province,
-        city_name: cityName,
-        district,
-        address: address || null,
-        organization_id: data.organization_id ?? organizationId,
-        organization_assignment_method: data.organization_assignment_method ?? (organizationId ? "manual" : null),
-      });
-    }
-
     revalidatePath("/zh/dashboard");
     revalidatePath("/en/dashboard");
     revalidatePath("/zh/offline-stores");

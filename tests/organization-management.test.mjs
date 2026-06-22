@@ -89,8 +89,6 @@ test("store creation and store management use organization assignment", () => {
   assert.match(offlineStoresApi, /organizationId/);
   assert.match(offlineStoresApi, /organization_assignment_method: "manual"/);
   assert.match(offlineStoresApi, /assignOrganizationForStore/);
-  assert.match(offlineStoresApi, /if \(data\?\.id\)/);
-  assert.match(offlineStoresApi, /organization_assignment_method: data\.organization_assignment_method/);
   assert.match(offlineStoresApi, /assign_organization/);
   assert.match(offlineStoresApi, /auto_assign_organization/);
   assert.match(offlineStoresApi, /rule_matched_count/);
