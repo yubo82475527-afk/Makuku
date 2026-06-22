@@ -44,43 +44,51 @@ test("location reverse and offline stores support structured province city distr
   assert.match(offlineStoresRoute, /district/);
 });
 
-test("dashboard is the product segment price index board with problem stores", () => {
-  assert.match(dashboardPage, /Product Segment Price Index/);
-  assert.match(dashboardPage, /problemStoreCount/);
-  assert.match(dashboardPage, /worstProblemStore/);
-  assert.match(dashboardPage, /priceIndex/);
-  assert.match(dashboardPage, /benchmarkPricePerPiece/);
-  assert.match(dashboardPage, /province/);
-  assert.match(dashboardPage, /cityName/);
-  assert.match(dashboardPage, /district/);
+test("dashboard is the weekly price coefficient board with month and region filters", () => {
+  assert.match(dashboardPage, /Weekly Price Coefficient/);
+  assert.match(dashboardPage, /WeeklyPriceCoefficientTable/);
+  assert.match(dashboardPage, /month/);
+  assert.match(dashboardPage, /ownSeries/);
+  assert.match(dashboardPage, /sku/);
+  assert.match(dashboardPage, /benchmarkRuleId/);
+  assert.match(dashboardPage, /region/);
+  assert.match(dataFile, /region: "NASIONAL"/);
+  assert.match(dashboardPage, /PRICE\/PCS \{week\.label\}/);
+  assert.match(dashboardPage, /COEFFICIENT/);
   assert.doesNotMatch(dashboardPage, /PriorityActionCard/);
   assert.doesNotMatch(dashboardPage, /Today Priority Actions/);
 });
 
-test("dashboard derived data calculates price index and supports filter and sort parameters", () => {
-  assert.match(typesFile, /priceIndex/);
-  assert.match(typesFile, /problemStoreCount/);
-  assert.match(typesFile, /worstProblemStore/);
-  assert.match(dataFile, /getProductSegmentPriceIndexBattles/);
-  assert.match(dataFile, /priceIndexSort/);
-  assert.match(dataFile, /problemStoreSort/);
-  assert.match(dataFile, /benchmark_price_per_piece/);
-  assert.match(dataFile, /offline_store_visits/);
-  assert.match(dataFile, /offline_stores/);
+test("dashboard derived data calculates weekly coefficients from own and benchmark averages", () => {
+  assert.match(typesFile, /WeeklyPriceCoefficientBoard/);
+  assert.match(typesFile, /WeeklyPriceCoefficientCell/);
+  assert.match(dataFile, /getWeeklyPriceCoefficientBoard/);
+  assert.match(dataFile, /buildWeeklyPriceCoefficientBoard/);
+  assert.match(dataFile, /monthWeeks/);
+  assert.match(dataFile, /averageOrNull/);
+  assert.match(dataFile, /benchmarkRuleLabel/);
+  assert.match(dataFile, /snapshotMatchesBenchmarkRegion/);
+  assert.match(dataFile, /ownAvgPrice \/ benchmarkAvgPrice/);
+  assert.match(dataFile, /material_master/);
+  assert.match(dataFile, /market_benchmark_rules/);
 });
 
 test("dashboard region filters use structured store regions and ignore numeric legacy city values", () => {
-  assert.match(typesFile, /"id" \| "store_name" \| "city" \| "province" \| "city_name" \| "district"/);
-  assert.match(dataFile, /province,city_name,district/);
-  assert.match(dataFile, /function cleanRegionText/);
-  assert.match(dataFile, /function cleanStoreName/);
-  assert.match(dataFile, /\^\\d\+\$/);
+  assert.match(dataFile, /offline_store_visits\(id,store_name,city,province,city_name,district/);
+  assert.match(dataFile, /snapshotProvince/);
+  assert.match(dataFile, /snapshotMatchesBenchmarkRegion/);
   assert.match(dataFile, /cleanRegionText\(visit\?\.province\)/);
-  assert.match(dataFile, /cleanStoreName\(visit\?\.store_name\)/);
+  assert.match(dataFile, /sameLoose\(province, rule\.province\)/);
+  assert.match(dataFile, /sameLoose\(cityName, rule\.city_name\)/);
+  assert.match(dataFile, /sameLoose\(district, rule\.district\)/);
   assert.doesNotMatch(dataFile, /byName\.size === 0 && shouldFlagSegment/);
 });
 
 test("prices accepts dashboard drilldown filters", () => {
+  assert.match(dataFile, /params\.set\("brand", input\.brand\)/);
+  assert.match(dataFile, /params\.set\("sku", input\.sku\)/);
+  assert.match(pricesPage, /createdFrom\?: string/);
+  assert.match(pricesPage, /createdTo\?: string/);
   assert.match(pricesPage, /province\?: string/);
   assert.match(pricesPage, /cityName\?: string/);
   assert.match(pricesPage, /district\?: string/);

@@ -15,7 +15,7 @@ export type PromoEventType =
 export type OfflineVisitStatus = "draft" | "uploaded" | "analyzing" | "analyzed" | "reviewed" | "failed";
 export type OfflineImageType = "own_shelf" | "competitor_shelf" | "promo_tag" | "other";
 export type OfflineImageAnalysisStatus = "pending" | "analyzing" | "analyzed" | "failed" | "reviewed";
-export type StoreVisitAnalysisStatus = "pending" | "analyzing" | "completed" | "failed";
+export type StoreVisitAnalysisStatus = "pending" | "analyzing" | "completed" | "partial" | "failed";
 export type StoreVisitImageCategory = "makuku_shelf" | "competitor_shelf" | "storefront";
 export type StockRiskLevel = "Normal" | "Low Stock" | "Out of Stock Risk";
 export type PromotionType = "Discount" | "Buy 1 Get 1" | "Buy 2 Get 1" | "Promo Tag" | "Special Offer";
@@ -503,6 +503,7 @@ export type OfflineVisitImage = {
   file_size: number;
   analysis_status: OfflineImageAnalysisStatus;
   vision_result: Partial<OfflineImageVisionResult | StoreVisitPriceImageAnalysis | StoreVisitDisplayAnalysis> | null;
+  analysis_error?: string | null;
   error_message: string | null;
   uploaded_at: string;
   created_at: string;
@@ -839,6 +840,42 @@ export type ProductSegmentBattleSummary = {
   nearIndexSegmentCount: number;
   missingBenchmarkSegmentCount: number;
   problemStoreCount: number;
+};
+
+export type WeeklyPriceCoefficientCell = {
+  week: string;
+  startDate: string;
+  endDate: string;
+  ownAvgPrice: number | null;
+  ownSampleCount: number;
+  benchmarkAvgPrice: number | null;
+  benchmarkSampleCount: number;
+  coefficient: number | null;
+  ownHref: string;
+  benchmarkHref: string;
+};
+
+export type WeeklyPriceCoefficientRow = {
+  region: string;
+  province: string | null;
+  isNational: boolean;
+  cells: WeeklyPriceCoefficientCell[];
+};
+
+export type WeeklyPriceCoefficientBoard = {
+  month: string;
+  title: string;
+  ownSeriesOptions: string[];
+  selectedOwnSeries: string | null;
+  skuOptions: Array<{ code: string; name: string }>;
+  selectedSku: string | null;
+  benchmarkOptions: Array<{ id: string; label: string }>;
+  selectedBenchmarkRuleId: string | null;
+  regionOptions: string[];
+  selectedRegion: string | null;
+  weeks: Array<{ key: string; label: string; startDate: string; endDate: string }>;
+  benchmarkLabel: string | null;
+  rows: WeeklyPriceCoefficientRow[];
 };
 
 export type OpportunityActionType =

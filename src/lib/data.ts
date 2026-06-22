@@ -46,6 +46,8 @@ import type {
   Severity,
   SkuMaster,
   VisionDetectedProduct,
+  WeeklyPriceCoefficientBoard,
+  WeeklyPriceCoefficientCell,
 } from "@/lib/types";
 
 type QueryResult<T> = { data: T; error: string | null; isDemo: boolean };
@@ -1060,6 +1062,37 @@ export async function getProductSegmentBattles(locale = "zh"): Promise<QueryResu
   return getProductSegmentPriceIndexBattles(locale);
 }
 
+export type WeeklyPriceCoefficientFilters = {
+  month?: string;
+  ownSeries?: string;
+  sku?: string;
+  benchmarkRuleId?: string;
+  region?: string;
+};
+
+export async function getWeeklyPriceCoefficientBoard(
+  locale = "zh",
+  filters: WeeklyPriceCoefficientFilters = {},
+): Promise<QueryResult<WeeklyPriceCoefficientBoard>> {
+  const [materialResult, snapshotsResult, rulesResult] = await Promise.all([
+    getMaterialMaster(),
+    getPriceSnapshots({ limit: 5000 }),
+    getMarketBenchmarkRules(),
+  ]);
+  const data = buildWeeklyPriceCoefficientBoard({
+    locale,
+    materialMaster: materialResult.data,
+    snapshots: snapshotsResult.data,
+    rules: rulesResult.data,
+    filters,
+  });
+  return {
+    data,
+    error: materialResult.error ?? snapshotsResult.error ?? rulesResult.error,
+    isDemo: materialResult.isDemo || snapshotsResult.isDemo || rulesResult.isDemo,
+  };
+}
+
 export async function getProductSegmentPriceIndexBattles(
   locale = "zh",
   filters: ProductSegmentPriceIndexFilters = {},
@@ -1176,6 +1209,242 @@ function startOfLocalDay(value: Date) {
 function candidatePriceAccuracy(candidate: AiPriceCandidate) {
   if (!candidate.price_per_piece || !candidate.reviewed_price_per_piece || candidate.reviewed_price_per_piece <= 0) return null;
   return Math.max(0, 1 - Math.abs(candidate.price_per_piece - candidate.reviewed_price_per_piece) / candidate.reviewed_price_per_piece);
+}
+
+function buildWeeklyPriceCoefficientBoard(input: {
+  locale: string;
+  materialMaster: MaterialMaster[];
+  snapshots: PriceSnapshot[];
+  rules: MarketBenchmarkRule[];
+  filters: WeeklyPriceCoefficientFilters;
+}): WeeklyPriceCoefficientBoard {
+  const month = normalizeDashboardMonth(input.filters.month);
+  const weeks = monthWeeks(month);
+  const ownSeriesOptions = uniqueStrings(input.materialMaster.map((item) => cleanText(item.sub_brand)));
+  const selectedOwnSeries = input.filters.ownSeries && ownSeriesOptions.includes(input.filters.ownSeries)
+    ? input.filters.ownSeries
+    : ownSeriesOptions[0] ?? null;
+  const ownMaterials = input.materialMaster.filter((item) => cleanText(item.sub_brand) === selectedOwnSeries);
+  const skuOptions = ownMaterials.map((item) => ({ code: item.tenant_sku_code, name: item.tenant_sku_name }));
+  const selectedSku = input.filters.sku && skuOptions.some((item) => item.code === input.filters.sku)
+    ? input.filters.sku
+    : null;
+  const scopedMaterials = selectedSku ? ownMaterials.filter((item) => item.tenant_sku_code === selectedSku) : ownMaterials;
+  const scopedMaterialCodes = new Set(scopedMaterials.map((item) => item.tenant_sku_code));
+  const benchmarkOptions = input.rules
+    .filter((rule) => rule.active)
+    .map((rule) => ({ id: rule.id, label: benchmarkRuleLabel(rule) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const selectedBenchmarkRuleId = input.filters.benchmarkRuleId && benchmarkOptions.some((item) => item.id === input.filters.benchmarkRuleId)
+    ? input.filters.benchmarkRuleId
+    : benchmarkOptions[0]?.id ?? null;
+  const selectedRule = input.rules.find((rule) => rule.id === selectedBenchmarkRuleId) ?? null;
+  const ownSnapshots = input.snapshots.filter((snapshot) => {
+    if (snapshot.competitor_product_id) return false;
+    const code = snapshotMaterialCode(snapshot);
+    return Boolean(code && scopedMaterialCodes.has(code));
+  });
+  const benchmarkSnapshots = input.snapshots.filter((snapshot) => {
+    if (!selectedRule || !snapshot.competitor_products) return false;
+    if (snapshot.competitor_products.brand_id !== selectedRule.brand_id) return false;
+    if (normalizeDashboardText(snapshot.competitor_products.product_series) !== normalizeDashboardText(selectedRule.product_series)) return false;
+    const benchmarkMaterialCode = snapshot.competitor_products.sku_matches
+      ?.map((match) => match.sku_master?.material_sku_code)
+      .find((code) => code && scopedMaterialCodes.has(code));
+    return Boolean(benchmarkMaterialCode);
+  });
+  const regionOptions = uniqueStrings([
+    ...ownSnapshots.map((snapshot) => snapshotProvince(snapshot)),
+    ...benchmarkSnapshots.map((snapshot) => snapshotProvince(snapshot)),
+    ...input.rules.map((rule) => cleanRegionText(rule.province)),
+  ]);
+  const selectedRegion = input.filters.region && regionOptions.includes(input.filters.region) ? input.filters.region : null;
+  const visibleRegions = (selectedRegion ? [selectedRegion] : regionOptions).filter(Boolean);
+  const rows = [
+    ...visibleRegions.map((region) => buildWeeklyCoefficientRow({
+      locale: input.locale,
+      region,
+      province: region,
+      isNational: false,
+      weeks,
+      ownSnapshots,
+      benchmarkSnapshots,
+      selectedRule,
+      selectedOwnSeries,
+      selectedSku,
+    })),
+    buildWeeklyCoefficientRow({
+      locale: input.locale,
+      region: "NASIONAL",
+      province: null,
+      isNational: true,
+      weeks,
+      ownSnapshots,
+      benchmarkSnapshots,
+      selectedRule,
+      selectedOwnSeries,
+      selectedSku,
+    }),
+  ];
+
+  return {
+    month,
+    title: "BABY DIAPERS MID",
+    ownSeriesOptions,
+    selectedOwnSeries,
+    skuOptions,
+    selectedSku,
+    benchmarkOptions,
+    selectedBenchmarkRuleId,
+    regionOptions,
+    selectedRegion,
+    weeks,
+    benchmarkLabel: selectedRule ? benchmarkRuleLabel(selectedRule) : null,
+    rows,
+  };
+}
+
+function buildWeeklyCoefficientRow(input: {
+  locale: string;
+  region: string;
+  province: string | null;
+  isNational: boolean;
+  weeks: WeeklyPriceCoefficientBoard["weeks"];
+  ownSnapshots: PriceSnapshot[];
+  benchmarkSnapshots: PriceSnapshot[];
+  selectedRule: MarketBenchmarkRule | null;
+  selectedOwnSeries: string | null;
+  selectedSku: string | null;
+}) {
+  return {
+    region: input.region,
+    province: input.province,
+    isNational: input.isNational,
+    cells: input.weeks.map((week) => {
+      const ownPrices = input.ownSnapshots
+        .filter((snapshot) => input.isNational || sameLoose(snapshotProvince(snapshot), input.province))
+        .filter((snapshot) => snapshotInPeriod(snapshot, week.startDate, week.endDate))
+        .map((snapshot) => Number(snapshot.price_per_piece))
+        .filter(isPositiveNumber);
+      const benchmarkPrices = input.benchmarkSnapshots
+        .filter((snapshot) => input.isNational || sameLoose(snapshotProvince(snapshot), input.province))
+        .filter((snapshot) => input.selectedRule ? snapshotMatchesBenchmarkRegion(snapshot, input.selectedRule, input.isNational) : true)
+        .filter((snapshot) => snapshotInPeriod(snapshot, week.startDate, week.endDate))
+        .map((snapshot) => Number(snapshot.price_per_piece))
+        .filter(isPositiveNumber);
+      const ownAvgPrice = averageOrNull(ownPrices);
+      const benchmarkAvgPrice = averageOrNull(benchmarkPrices);
+      return {
+        week: week.key,
+        startDate: week.startDate,
+        endDate: week.endDate,
+        ownAvgPrice,
+        ownSampleCount: ownPrices.length,
+        benchmarkAvgPrice,
+        benchmarkSampleCount: benchmarkPrices.length,
+        coefficient: ownAvgPrice && benchmarkAvgPrice ? Math.round((ownAvgPrice / benchmarkAvgPrice) * 100) / 100 : null,
+        ownHref: buildWeeklyPriceHref(input.locale, {
+          startDate: week.startDate,
+          endDate: week.endDate,
+          province: input.province,
+          brand: input.selectedOwnSeries ? `MAKUKU ${input.selectedOwnSeries}` : undefined,
+          sku: input.selectedSku ?? undefined,
+        }),
+        benchmarkHref: buildWeeklyPriceHref(input.locale, {
+          startDate: week.startDate,
+          endDate: week.endDate,
+          province: input.province,
+          brand: input.selectedRule ? benchmarkRuleLabel(input.selectedRule) : undefined,
+        }),
+      } satisfies WeeklyPriceCoefficientCell;
+    }),
+  };
+}
+
+function normalizeDashboardMonth(value: string | null | undefined) {
+  const text = String(value ?? "").trim();
+  return /^\d{4}-\d{2}$/.test(text) ? text : dateKey(new Date()).slice(0, 7);
+}
+
+function monthWeeks(month: string) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const first = new Date(year, (monthNumber ?? 1) - 1, 1);
+  const last = new Date(year, monthNumber ?? 1, 0);
+  const weeks: Array<{ key: string; label: string; startDate: string; endDate: string }> = [];
+  let cursor = new Date(first);
+  for (let index = 1; index <= 4 && cursor <= last; index += 1) {
+    const start = new Date(cursor);
+    const end = new Date(cursor);
+    end.setDate(end.getDate() + 6);
+    if (end > last) end.setTime(last.getTime());
+    weeks.push({ key: `W${index}`, label: `W${index}`, startDate: dateKey(start), endDate: dateKey(end) });
+    cursor = new Date(end);
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  while (weeks.length < 4) {
+    const index = weeks.length + 1;
+    weeks.push({ key: `W${index}`, label: `W${index}`, startDate: month, endDate: month });
+  }
+  return weeks;
+}
+
+function snapshotMaterialCode(snapshot: PriceSnapshot) {
+  return cleanText(snapshot.material_sku_code)
+    ?? cleanText(snapshot.sku_master?.material_sku_code)
+    ?? cleanText(snapshot.material_master?.tenant_sku_code)
+    ?? null;
+}
+
+function snapshotProvince(snapshot: PriceSnapshot) {
+  const visit = snapshot.ai_price_candidates?.[0]?.offline_store_visits;
+  const store = snapshot.offline_stores;
+  const fallback = splitRegion(visit?.city ?? store?.city);
+  return cleanRegionText(visit?.province) ?? cleanRegionText(store?.province) ?? fallback.province ?? "UNKNOWN";
+}
+
+function snapshotMatchesBenchmarkRegion(snapshot: PriceSnapshot, rule: MarketBenchmarkRule, isNational: boolean) {
+  if (isNational) return true;
+  const visit = snapshot.ai_price_candidates?.[0]?.offline_store_visits;
+  const store = snapshot.offline_stores;
+  const fallback = splitRegion(visit?.city ?? store?.city);
+  const province = cleanRegionText(visit?.province) ?? cleanRegionText(store?.province) ?? fallback.province;
+  const cityName = cleanRegionText(visit?.city_name) ?? cleanRegionText(store?.city_name) ?? fallback.cityName;
+  const district = cleanRegionText(visit?.district) ?? cleanRegionText(store?.district) ?? fallback.district;
+  if (!sameLoose(province, rule.province)) return false;
+  if (!sameLoose(cityName, rule.city_name)) return false;
+  if (cleanText(rule.district) && !sameLoose(district, rule.district)) return false;
+  return true;
+}
+
+function snapshotInPeriod(snapshot: PriceSnapshot, startDate: string, endDate: string) {
+  const capturedDate = dateKey(new Date(snapshot.captured_at));
+  return capturedDate >= startDate && capturedDate <= endDate;
+}
+
+function buildWeeklyPriceHref(locale: string, input: { startDate: string; endDate: string; province: string | null; brand?: string; sku?: string }) {
+  const params = new URLSearchParams();
+  params.set("createdFrom", input.startDate);
+  params.set("createdTo", input.endDate);
+  if (input.province) params.set("province", input.province);
+  if (input.brand) params.set("brand", input.brand);
+  if (input.sku) params.set("sku", input.sku);
+  return `/${locale}/prices?${params.toString()}`;
+}
+
+function averageOrNull(values: number[]) {
+  return values.length ? Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 100) / 100 : null;
+}
+
+function benchmarkRuleLabel(rule: MarketBenchmarkRule) {
+  return [rule.brands?.name, rule.product_series].map(cleanText).filter(Boolean).join(" ") || "Benchmark";
+}
+
+function normalizeDashboardText(value: string | null | undefined) {
+  return cleanText(value)?.toLowerCase() ?? "";
+}
+
+function uniqueStrings(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.map(cleanText).filter(Boolean) as string[])).sort();
 }
 
 function buildProductSegmentBattles(input: {
@@ -2223,6 +2492,13 @@ function cleanStoreName(value: unknown) {
   if (!text) return null;
   if (/^\d+$/.test(text)) return null;
   return text;
+}
+
+function dateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function isPositiveNumber(value: unknown): value is number {

@@ -8,14 +8,16 @@ import type {
   OfflineImageType,
   OfflineStoreVisit,
   OfflineVisitImage,
+  StoreVisitAiResult,
   StoreVisitAiConfig,
+  StoreVisitDisplayAnalysis,
   StoreVisitImageCategory,
   StoreVisitPriceImageAnalysis,
 } from "@/lib/types";
 
 const maxInlineImageBytes = 8 * 1024 * 1024;
 
-async function imageUrlToDataUrl(url: string) {
+async function fallbackImageUrlToDataUrl(url: string) {
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`Unable to fetch signed image URL: ${response.status}`);
@@ -32,6 +34,82 @@ function fromOfflineImageType(imageType: OfflineImageType): StoreVisitImageCateg
   if (imageType === "own_shelf") return "makuku_shelf";
   if (imageType === "competitor_shelf") return "competitor_shelf";
   return "storefront";
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Unknown AI analysis error";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isPriceImageResult(value: unknown): value is StoreVisitPriceImageAnalysis {
+  return isRecord(value)
+    && value.schema_version === "store_visit_price_image_v1"
+    && Array.isArray(value.rows)
+    && value.rows.length > 0;
+}
+
+function isDisplayImageResult(value: unknown): value is StoreVisitDisplayAnalysis {
+  return isRecord(value)
+    && value.schema_version === "store_visit_display_v1"
+    && typeof value.summary === "string";
+}
+
+function createFallbackAiResult(rows: StoreVisitPriceImageAnalysis["rows"], displayAnalysis: StoreVisitDisplayAnalysis | null): StoreVisitAiResult {
+  return {
+    raw_extraction: {
+      detected_items: rows.map((row) => ({
+        brand: row.brand ?? "Unknown",
+        product: row.sku,
+        price: row.net_price_idr ? String(row.net_price_idr) : "",
+        type: "SKU",
+        confidence: 0.9,
+      })),
+    },
+    validation: {
+      is_valid: rows.length > 0,
+      warnings: rows.length > 0 ? [] : [{ type: "MISSING_DATA", message: "No readable price rows detected." }],
+    },
+    shelf_understanding: {
+      brands_present: [],
+      category_coverage: "PARTIAL",
+      shelf_condition: "NORMAL",
+      facings_estimate: [],
+    },
+    price_insights: {
+      brand_price_range: [],
+      key_sku_prices: rows.map((row) => ({
+        brand: row.brand ?? "Unknown",
+        product: row.sku,
+        price: row.net_price_idr ? String(row.net_price_idr) : "",
+        list_price: row.list_price_idr ? String(row.list_price_idr) : null,
+        package_price: row.package_price_idr ? String(row.package_price_idr) : null,
+        net_price: row.net_price_idr ? String(row.net_price_idr) : null,
+        promo_type: row.promo_type,
+        piece_count: row.piece_count,
+        tag: "HERO",
+        confidence: 0.9,
+      })),
+    },
+    price_detection: rows.map((row) => ({
+      brand: row.brand ?? "Unknown",
+      product: row.sku,
+      price: row.net_price_idr ? String(row.net_price_idr) : "",
+    })),
+    stock_risk: {
+      level: "Normal",
+      affected_brands: [],
+      reason: "Display-level stock risk is not available for this analysis.",
+    },
+    promotion_insights: {
+      competitor_promotions: [],
+      promo_pressure_level: "LOW",
+    },
+    competitor_promotion: [],
+    store_summary: displayAnalysis?.summary ?? `${rows.length} price row(s) parsed from visit photos.`,
+  };
 }
 
 export async function runStoreVisitAiAnalysisForVisit(input: {
@@ -77,12 +155,12 @@ export async function runStoreVisitAiAnalysisForVisit(input: {
     .filter((entry): entry is { url: string; imageCategory: StoreVisitImageCategory | undefined; tableImage: OfflineVisitImage | null; imagePath: string } => Boolean(entry.url));
   if (signedEntries.length === 0) throw new Error("Unable to create signed image URLs");
 
-  const inlineImageUrls = await Promise.all(signedEntries.map((entry) => imageUrlToDataUrl(entry.url)));
+  const signedImageUrls = signedEntries.map((entry) => entry.url);
   const region = typedVisit.region ?? typedVisit.city;
   const channel = typedVisit.channel ?? typedVisit.channel_type;
   const promoter = typedVisit.promoter ?? typedVisit.uploader_name;
 
-  const priceImageInputs = inlineImageUrls
+  const priceImageInputs = signedImageUrls
     .map((imageUrl, index) => ({
       imageUrl,
       imageCategory: signedEntries[index]?.imageCategory,
@@ -91,12 +169,134 @@ export async function runStoreVisitAiAnalysisForVisit(input: {
     .filter((item) => item.imageCategory === "makuku_shelf" || item.imageCategory === "competitor_shelf");
 
   const priceImageResults: { imageId: string; result: StoreVisitPriceImageAnalysis }[] = [];
+  const priceImageFailures: { imageId: string; imagePath: string; systemErrorMessage: string }[] = [];
   for (const item of priceImageInputs) {
     const tableImage = item.tableImage;
     if (!tableImage || !item.imageCategory) continue;
-    const result = await analyzeStoreVisitPriceImage({
-      imageUrl: item.imageUrl,
-      imageCategory: item.imageCategory,
+    if (tableImage.analysis_status === "analyzed" && isPriceImageResult(tableImage.vision_result)) {
+      priceImageResults.push({ imageId: tableImage.id, result: tableImage.vision_result });
+      continue;
+    }
+
+    try {
+      const result = await analyzeStoreVisitPriceImage({
+        imageUrl: item.imageUrl,
+        imageCategory: item.imageCategory,
+        storeName: typedVisit.store_name,
+        region,
+        channel,
+        promoter,
+        visitDate: typedVisit.visit_date,
+        config: input.config,
+      });
+      priceImageResults.push({ imageId: tableImage.id, result: result.normalized });
+      await supabase
+        .from("offline_visit_images")
+        .update({
+          analysis_status: "analyzed",
+          vision_result: result.normalized,
+          analysis_error: null,
+          error_message: null,
+        })
+        .eq("id", tableImage.id);
+    } catch (error) {
+      const systemErrorMessage = errorMessage(error);
+      priceImageFailures.push({ imageId: tableImage.id, imagePath: tableImage.image_path, systemErrorMessage });
+      await supabase
+        .from("offline_visit_images")
+        .update({
+          analysis_status: "failed",
+          analysis_error: systemErrorMessage,
+          error_message: systemErrorMessage,
+        })
+        .eq("id", tableImage.id);
+    }
+  }
+
+  const displayImageEntries = signedEntries
+    .map((entry, index) => ({
+      imageUrl: signedImageUrls[index],
+      tableImage: entry.tableImage,
+      imagePath: entry.imagePath,
+      imageCategory: entry.imageCategory,
+    }))
+    .filter((item) => item.imageCategory === "storefront");
+  const displayImageUrls = displayImageEntries.map((item) => item.imageUrl);
+  let displayAnalysis: Awaited<ReturnType<typeof analyzeStoreVisitDisplayImages>> | null = null;
+  let displayAnalysisError: string | null = null;
+  const displayImageFailures: { imageId: string; imagePath: string; systemErrorMessage: string }[] = [];
+  const reusableDisplayImages = displayImageEntries.filter((item) => (
+    item.tableImage
+    && item.tableImage.analysis_status === "analyzed"
+    && isDisplayImageResult(item.tableImage.vision_result)
+  ));
+  const pendingDisplayImages = displayImageEntries.filter((item) => (
+    item.tableImage
+    && !(item.tableImage.analysis_status === "analyzed" && isDisplayImageResult(item.tableImage.vision_result))
+  ));
+  try {
+    if (reusableDisplayImages.length > 0 && pendingDisplayImages.length === 0) {
+      displayAnalysis = {
+        normalized: reusableDisplayImages[0].tableImage?.vision_result as StoreVisitDisplayAnalysis,
+        rawText: "",
+        parsed: {},
+        metadata: {
+          model: "cached",
+          base_url: "",
+          parse_repaired: false,
+          response_format: "json_object",
+        },
+        config: input.config as StoreVisitAiConfig,
+      };
+    } else {
+      displayAnalysis = await analyzeStoreVisitDisplayImages({
+        imageUrls: displayImageUrls,
+        storeName: typedVisit.store_name,
+        region,
+        channel,
+        promoter,
+        visitDate: typedVisit.visit_date,
+        config: input.config,
+      });
+      for (const item of pendingDisplayImages) {
+        if (!item.tableImage) continue;
+        await supabase
+          .from("offline_visit_images")
+          .update({
+            analysis_status: "analyzed",
+            vision_result: displayAnalysis.normalized,
+            analysis_error: null,
+            error_message: null,
+          })
+          .eq("id", item.tableImage.id);
+      }
+    }
+  } catch (error) {
+    displayAnalysisError = errorMessage(error);
+    for (const item of pendingDisplayImages) {
+      if (!item.tableImage) continue;
+      displayImageFailures.push({
+        imageId: item.tableImage.id,
+        imagePath: item.imagePath,
+        systemErrorMessage: displayAnalysisError,
+      });
+      await supabase
+        .from("offline_visit_images")
+        .update({
+          analysis_status: "failed",
+          analysis_error: displayAnalysisError,
+          error_message: displayAnalysisError,
+        })
+        .eq("id", item.tableImage.id);
+    }
+  }
+
+  const aggregatedRows = priceImageResults.flatMap((item) => item.result.rows);
+  let aiAnalysis: Awaited<ReturnType<typeof analyzeStoreVisitImages>>;
+  try {
+    aiAnalysis = await analyzeStoreVisitImages({
+      imageUrls: signedImageUrls,
+      imageCategories,
       storeName: typedVisit.store_name,
       region,
       channel,
@@ -104,40 +304,21 @@ export async function runStoreVisitAiAnalysisForVisit(input: {
       visitDate: typedVisit.visit_date,
       config: input.config,
     });
-    priceImageResults.push({ imageId: tableImage.id, result: result.normalized });
+  } catch {
+    const config = displayAnalysis?.config ?? {};
+    aiAnalysis = {
+      normalized: createFallbackAiResult(aggregatedRows, displayAnalysis?.normalized ?? null),
+      rawText: "",
+      parsed: {},
+      metadata: {
+        model: "fallback",
+        base_url: "",
+        parse_repaired: false,
+        response_format: "none",
+      },
+      config: config as StoreVisitAiConfig,
+    };
   }
-
-  const displayImageUrls = inlineImageUrls.filter((_, index) => signedEntries[index]?.imageCategory === "storefront");
-  const displayAnalysis = await analyzeStoreVisitDisplayImages({
-    imageUrls: displayImageUrls,
-    storeName: typedVisit.store_name,
-    region,
-    channel,
-    promoter,
-    visitDate: typedVisit.visit_date,
-    config: input.config,
-  });
-
-  if (priceImageResults.length > 0) {
-    for (const item of priceImageResults) {
-      await supabase
-        .from("offline_visit_images")
-        .update({ vision_result: item.result })
-        .eq("id", item.imageId);
-    }
-  }
-
-  const aggregatedRows = priceImageResults.flatMap((item) => item.result.rows);
-  const aiAnalysis = await analyzeStoreVisitImages({
-    imageUrls: inlineImageUrls,
-    imageCategories,
-    storeName: typedVisit.store_name,
-    region,
-    channel,
-    promoter,
-    visitDate: typedVisit.visit_date,
-    config: input.config,
-  });
 
   aiAnalysis.normalized.price_insights.key_sku_prices = aggregatedRows.map((row) => ({
     brand: row.brand ?? "Unknown",
@@ -156,16 +337,22 @@ export async function runStoreVisitAiAnalysisForVisit(input: {
     product: row.sku,
     price: row.net_price_idr ? String(row.net_price_idr) : "",
   }));
-  aiAnalysis.normalized.store_summary = displayAnalysis.normalized.summary;
+  aiAnalysis.normalized.store_summary = displayAnalysis?.normalized.summary ?? aiAnalysis.normalized.store_summary;
 
   return {
     visit: typedVisit,
     image_paths: imagePaths,
     image_categories: imageCategories,
     signed_image_count: signedEntries.length,
-    image_input_mode: "data_url",
+    image_input_mode: "signed_url",
     price_image_results: priceImageResults,
-    display_analysis: displayAnalysis.normalized,
+    price_image_failures: priceImageFailures,
+    partialFailure: priceImageFailures.length > 0 && priceImageResults.length > 0,
+    allPriceImagesFailed: priceImageFailures.length > 0 && priceImageResults.length === 0,
+    display_analysis: displayAnalysis?.normalized ?? null,
+    display_analysis_error: displayAnalysisError,
+    display_image_failures: displayImageFailures,
+    fallbackImageUrlToDataUrl,
     ...aiAnalysis,
   };
 }

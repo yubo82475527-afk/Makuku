@@ -78,6 +78,7 @@ export type MobileCopy = Record<
   | "statusPending"
   | "statusAnalyzing"
   | "statusCompleted"
+  | "statusPartial"
   | "statusFailed",
   string
 > & { result: ResultCopy };
@@ -131,6 +132,7 @@ export const mobileCopy: Record<Locale, MobileCopy> = {
     statusPending: "Pending",
     statusAnalyzing: "Analyzing",
     statusCompleted: "Completed",
+    statusPartial: "Partial success",
     statusFailed: "Failed",
     result: {
       validation: "Validation",
@@ -208,6 +210,7 @@ export const mobileCopy: Record<Locale, MobileCopy> = {
     statusPending: "待分析",
     statusAnalyzing: "分析中",
     statusCompleted: "已完成",
+    statusPartial: "部分成功",
     statusFailed: "失败",
     result: {
       validation: "校验",
@@ -250,6 +253,8 @@ export function mobileAnalysisStatusLabel(locale: Locale, status: StoreVisitAnal
       return copy.statusAnalyzing;
     case "completed":
       return copy.statusCompleted;
+    case "partial":
+      return copy.statusPartial;
     case "failed":
       return copy.statusFailed;
     default:

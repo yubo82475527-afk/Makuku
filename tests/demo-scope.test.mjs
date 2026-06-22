@@ -72,29 +72,32 @@ test("visible sample data does not look like throwaway mock data", () => {
   assert.match(demoData, /source: "pilot-sample"/);
 });
 
-test("dashboard states the product segment price index objective", () => {
-  assert.match(dashboardPage, /Product Segment Price Index/);
-  assert.match(dashboardPage, /problem stores|Problem Stores|problemStoreCount/i);
+test("dashboard states the weekly price coefficient objective", () => {
+  assert.match(dashboardPage, /Weekly Price Coefficient/);
+  assert.match(dashboardPage, /own SKU average price per piece/);
+  assert.match(dashboardPage, /benchmark series by region/);
 });
 
-test("dashboard is shaped around product segment price pressure", () => {
-  assert.match(typesFile, /export type ProductSegmentBattle/);
-  assert.match(dataFile, /export async function getProductSegmentBattles/);
-  assert.match(dashboardPage, /ProductSegmentPriceIndexBoard/);
-  assert.match(dashboardPage, /Product Segment Price Index/);
-  assert.match(dashboardPage, /Makuku Per Piece/);
-  assert.match(dashboardPage, /Price Index/);
-  assert.match(dashboardPage, /Problem Stores/);
-  assert.match(dashboardPage, /Competitor Low/);
-  assert.match(dashboardPage, /priceIndex/);
-  assert.match(dashboardPage, /problemStoreCount/);
+test("dashboard is shaped around weekly own and benchmark price coefficients", () => {
+  assert.match(typesFile, /export type WeeklyPriceCoefficientBoard/);
+  assert.match(typesFile, /export type WeeklyPriceCoefficientCell/);
+  assert.match(dataFile, /export async function getWeeklyPriceCoefficientBoard/);
+  assert.match(dataFile, /getMarketBenchmarkRules/);
+  assert.match(dataFile, /materialMaster\.map\(\(item\) => cleanText\(item\.sub_brand\)\)/);
+  assert.match(dataFile, /ownAvgPrice \/ benchmarkAvgPrice/);
+  assert.match(dashboardPage, /WeeklyPriceCoefficientTable/);
+  assert.match(dashboardPage, /PRICE\/PCS \{week\.label\}/);
+  assert.match(dashboardPage, /COEFFICIENT/);
+  assert.match(dataFile, /region: "NASIONAL"/);
+  assert.match(dashboardPage, /name="month"/);
+  assert.match(dashboardPage, /name="ownSeries"/);
+  assert.match(dashboardPage, /name="sku"/);
+  assert.match(dashboardPage, /name="benchmarkRuleId"/);
+  assert.match(dashboardPage, /name="region"/);
   assert.doesNotMatch(dashboardPage, /PriorityActionCard/);
   assert.doesNotMatch(dashboardPage, /Today Priority Actions/);
-
-  const battleIndex = dashboardPage.search(/ProductSegmentPriceIndexBoard|Product Segment Price Index/);
-  const matrixIndex = dashboardPage.search(/Category x Offline Channel Promo Matrix/);
-  assert.ok(battleIndex >= 0, "product battle section should exist");
-  assert.ok(matrixIndex < 0 || battleIndex < matrixIndex, "product battle should appear before matrix diagnostics");
+  assert.doesNotMatch(dashboardPage, /ProductSegmentPriceIndexBoard/);
+  assert.doesNotMatch(dashboardPage, /Product Segment Price Index/);
 });
 
 test("dashboard serves the product board directly instead of a loading shell", () => {

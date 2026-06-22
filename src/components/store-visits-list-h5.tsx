@@ -60,6 +60,8 @@ function statusClass(status: StoreVisitAnalysisStatus | null | undefined) {
       return "bg-blue-50 text-blue-700 ring-blue-200";
     case "completed":
       return "bg-emerald-50 text-emerald-700 ring-emerald-200";
+    case "partial":
+      return "bg-amber-50 text-amber-700 ring-amber-200";
     case "failed":
       return "bg-red-50 text-red-700 ring-red-200";
     default:
@@ -68,7 +70,7 @@ function statusClass(status: StoreVisitAnalysisStatus | null | undefined) {
 }
 
 function canRetryAnalysis(status: StoreVisitAnalysisStatus | null | undefined, visitStatus: string | null | undefined) {
-  return status === "failed" || (visitStatus === "uploaded" && (!status || status === "pending"));
+  return status === "failed" || status === "partial" || (visitStatus === "uploaded" && (!status || status === "pending"));
 }
 
 function riskClass(level: StockRiskLevel) {

@@ -27,6 +27,13 @@ test("mobile visit list auto-starts uploaded pending visits once per page sessio
   assert.match(storeVisitsListH5, /fetch\("\/api\/store-visit\/analyze"/);
 });
 
+test("store visit analysis sends signed URLs to AI before falling back to inline images", () => {
+  assert.match(storeVisitAiDebug, /signedImageUrls/);
+  assert.match(storeVisitAiDebug, /image_input_mode: "signed_url"/);
+  assert.match(storeVisitAiDebug, /fallbackImageUrlToDataUrl/);
+  assert.doesNotMatch(storeVisitAiDebug, /const inlineImageUrls = await Promise\.all\(signedEntries\.map\(\(entry\) => imageUrlToDataUrl\(entry\.url\)\)\)/);
+});
+
 test("image upload API only stores photos and never waits for AI analysis", () => {
   assert.doesNotMatch(storeVisitImagesRoute, /analyzeStoreVisitPriceImage/);
   assert.doesNotMatch(storeVisitImagesRoute, /createSignedUrl\(path, 60 \* 10\)/);
@@ -61,6 +68,22 @@ test("store visit analysis failures keep retryable status and error details", ()
   assert.match(analyzeRoute, /analysis_status: "failed"/);
   assert.match(analyzeRoute, /visit_status: "uploaded"/);
   assert.match(analyzeRoute, /analysis_error: message/);
+});
+
+test("store visit analysis supports partial success and image-level failure records", () => {
+  assert.match(storeVisitAiDebug, /priceImageFailures/);
+  assert.match(storeVisitAiDebug, /analysis_status: "failed"/);
+  assert.match(storeVisitAiDebug, /analysis_error: systemErrorMessage/);
+  assert.match(analyzeRoute, /analysisStatus = aiAnalysis\.partialFailure \? "partial" : "completed"/);
+  assert.match(analyzeRoute, /visit_status: "analyzed"/);
+  assert.match(analyzeRoute, /analysis_partial_failures/);
+});
+
+test("store visit analysis also resolves storefront image status after display AI returns", () => {
+  assert.match(storeVisitAiDebug, /displayImageEntries/);
+  assert.match(storeVisitAiDebug, /display_image_failures/);
+  assert.match(storeVisitAiDebug, /analysis_status: "analyzed"/);
+  assert.match(storeVisitAiDebug, /displayAnalysisError = errorMessage\(error\)/);
 });
 
 test("new H5 store visit requires at least one price-tag image, not only Makuku photos", () => {

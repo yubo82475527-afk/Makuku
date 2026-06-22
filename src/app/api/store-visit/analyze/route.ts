@@ -59,6 +59,9 @@ export async function POST(request: Request) {
       .eq("id", visitId);
 
     const aiAnalysis = await runStoreVisitAiAnalysisForVisit({ visitId });
+    if (aiAnalysis.allPriceImagesFailed) {
+      throw new Error("AI 暂时没有返回可用的价格解析结果，请稍后重试失败照片。");
+    }
     const aiResult = aiAnalysis.normalized;
     const sourceItems = (aiAnalysis.price_image_results ?? []).flatMap((imageResult) => (
       imageResult.result.rows.map((row, rowIndex) => ({
@@ -81,6 +84,10 @@ export async function POST(request: Request) {
     const candidates = await generateAiPriceCandidates({ visitId, aiResult, sourceItems });
     const autoReview = await autoApproveAiPriceCandidatesForVisit({ supabase, visitId, candidates });
     const autoReviewedCount = autoReview.approvedCount;
+    const analysisStatus = aiAnalysis.partialFailure ? "partial" : "completed";
+    const partialAnalysisError = aiAnalysis.partialFailure
+      ? "部分照片解析失败，已成功解析的价格可以先复核；失败照片可稍后重试。"
+      : null;
 
     const { data: updated, error: updateError } = await supabase
       .from("offline_store_visits")
@@ -91,7 +98,9 @@ export async function POST(request: Request) {
           raw_ai_text: aiAnalysis.rawText,
           raw_ai_parsed: aiAnalysis.parsed,
           price_image_results: aiAnalysis.price_image_results ?? [],
+          analysis_partial_failures: aiAnalysis.price_image_failures ?? [],
           display_analysis: aiAnalysis.display_analysis ?? null,
+          display_analysis_error: aiAnalysis.display_analysis_error ?? null,
           ai_provider_metadata: aiAnalysis.metadata,
           ai_config: {
             id: aiAnalysis.config.id,
@@ -108,9 +117,9 @@ export async function POST(request: Request) {
           auto_review_method: "auto_rule",
           auto_review_failed_count: autoReview.failedCount,
         },
-        analysis_status: "completed",
+        analysis_status: analysisStatus,
         visit_status: "analyzed",
-        analysis_error: null,
+        analysis_error: partialAnalysisError,
       })
       .eq("id", visitId)
       .select("*")

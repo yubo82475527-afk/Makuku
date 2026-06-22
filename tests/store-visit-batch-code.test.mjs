@@ -38,6 +38,16 @@ test("store visit APIs and H5 detail expose visit_code", () => {
   assert.match(typesFile, /visit_code\?: string \| null/);
 });
 
+test("H5 visit detail supports partial success with copyable system errors", () => {
+  assert.match(typesFile, /StoreVisitAnalysisStatus = "pending" \| "analyzing" \| "completed" \| "partial" \| "failed"/);
+  assert.match(detailH5, /partialSuccess/);
+  assert.match(detailH5, /businessAnalysisError/);
+  assert.match(detailH5, /systemError/);
+  assert.match(detailH5, /copySystemError/);
+  assert.match(detailH5, /navigator\.clipboard\.writeText/);
+  assert.match(detailH5, /status === "partial"/);
+});
+
 test("AI price candidates can reference the source visit image", () => {
   assert.ok(existsSync(sourceImageMigrationPath), "source image migration should exist");
   assert.match(sourceImageMigration, /add column if not exists source_image_id uuid/i);

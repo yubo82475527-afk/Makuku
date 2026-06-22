@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Loader2, RefreshCw } from "lucide-react";
+import { ArrowLeft, Check, Copy, Loader2, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { formatIdr } from "@/lib/format";
@@ -29,7 +29,7 @@ type StoreVisitDetail = {
   promoter?: string | null;
   visit_date: string;
   visit_status?: string | null;
-  analysis_status?: "pending" | "analyzing" | "completed" | "failed" | null;
+  analysis_status?: "pending" | "analyzing" | "completed" | "partial" | "failed" | null;
   analysis_error?: string | null;
   summary_result?: Record<string, unknown> | null;
   offline_visit_images?: OfflineVisitImage[];
@@ -44,7 +44,7 @@ type PriceParseSection = {
 };
 
 function canRetryAnalysis(status: StoreVisitDetail["analysis_status"], visitStatus: StoreVisitDetail["visit_status"]) {
-  return status === "failed" || (visitStatus === "uploaded" && (!status || status === "pending"));
+  return status === "failed" || status === "partial" || (visitStatus === "uploaded" && (!status || status === "pending"));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -97,6 +97,11 @@ function detailText(locale: Locale) {
         noPriceResult: "还没有价格解析结果。",
         noDisplayResult: "还没有陈列解析结果。",
         noDisplayImages: "未上传门店陈列图片。",
+        partialSuccess: "部分照片解析成功",
+        businessAnalysisError: "部分照片没有解析成功，已成功解析的价格可以先复核；失败照片可稍后重试。",
+        systemError: "系统报错",
+        copySystemError: "复制报错",
+        copiedSystemError: "已复制",
         photoPrefix: "照片",
         close: "关闭",
       }
@@ -114,6 +119,11 @@ function detailText(locale: Locale) {
         noPriceResult: "No price parsing result yet.",
         noDisplayResult: "No display analysis result yet.",
         noDisplayImages: "No display images uploaded.",
+        partialSuccess: "Partial success",
+        businessAnalysisError: "Some photos were not parsed. Parsed prices can be reviewed first; failed photos can be retried later.",
+        systemError: "System error",
+        copySystemError: "Copy error",
+        copiedSystemError: "Copied",
         photoPrefix: "Photo",
         close: "Close",
       };
@@ -127,6 +137,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeImage, setActiveImage] = useState<{ url: string; label: string } | null>(null);
+  const [copiedErrorId, setCopiedErrorId] = useState<string | null>(null);
 
   const loadVisit = useCallback(async () => {
     setLoading(true);
@@ -198,6 +209,13 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
     }))
     .filter((item) => uploadCategoryForImage(item.image, item.signedImage) === "storefront");
   const displayAnalysis = asDisplayAnalysis(visit?.summary_result && isRecord(visit.summary_result) ? visit.summary_result.display_analysis : null);
+  const failedImages = (visit?.offline_visit_images ?? []).filter((image) => image.analysis_status === "failed" && (image.analysis_error || image.error_message));
+
+  async function copySystemError(id: string, value: string) {
+    await navigator.clipboard.writeText(value);
+    setCopiedErrorId(id);
+    window.setTimeout(() => setCopiedErrorId((current) => (current === id ? null : current)), 1600);
+  }
 
   return (
     <main className="mx-auto min-h-screen max-w-md bg-slate-50 px-4 py-5 text-slate-950">
@@ -237,7 +255,34 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                 </button>
               ) : null}
             </div>
-            {visit.analysis_error ? <p className="mt-3 text-sm text-red-600">{copy.aiAnalysisFailed}: {visit.analysis_error}</p> : null}
+            {status === "partial" ? (
+              <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                <div className="font-semibold">{text.partialSuccess}</div>
+                <div className="mt-1">{text.businessAnalysisError}</div>
+              </div>
+            ) : null}
+            {visit.analysis_error && status !== "partial" ? <p className="mt-3 text-sm text-red-600">{copy.aiAnalysisFailed}: {visit.analysis_error}</p> : null}
+            {failedImages.length > 0 ? (
+              <div className="mt-3 space-y-2">
+                {failedImages.map((image, index) => {
+                  const systemError = image.analysis_error ?? image.error_message ?? "";
+                  return (
+                    <details key={image.id} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                      <summary className="cursor-pointer font-semibold">{text.systemError} {index + 1}</summary>
+                      <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-white p-2 text-[11px] text-slate-700">{systemError}</pre>
+                      <button
+                        type="button"
+                        onClick={() => copySystemError(image.id, systemError)}
+                        className="mt-2 inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-700"
+                      >
+                        {copiedErrorId === image.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                        {copiedErrorId === image.id ? text.copiedSystemError : text.copySystemError}
+                      </button>
+                    </details>
+                  );
+                })}
+              </div>
+            ) : null}
           </section>
 
           <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
