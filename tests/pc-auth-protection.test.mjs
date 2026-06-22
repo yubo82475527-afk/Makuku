@@ -6,6 +6,10 @@ const proxyFile = existsSync("proxy.ts") ? readFileSync("proxy.ts", "utf8") : ""
 const authSession = existsSync("src/lib/auth-session.ts") ? readFileSync("src/lib/auth-session.ts", "utf8") : "";
 const loginPage = existsSync("src/app/[locale]/login/page.tsx") ? readFileSync("src/app/[locale]/login/page.tsx", "utf8") : "";
 const loginClient = existsSync("src/components/pc-login-form.tsx") ? readFileSync("src/components/pc-login-form.tsx", "utf8") : "";
+const mobileFeishuAutoLogin = existsSync("src/components/mobile-feishu-auto-login.tsx") ? readFileSync("src/components/mobile-feishu-auto-login.tsx", "utf8") : "";
+const mobileCapturePage = existsSync("src/app/[locale]/mobile/offline-capture/page.tsx") ? readFileSync("src/app/[locale]/mobile/offline-capture/page.tsx", "utf8") : "";
+const mobileCaptureListPage = existsSync("src/app/[locale]/mobile/offline-capture/list/page.tsx") ? readFileSync("src/app/[locale]/mobile/offline-capture/list/page.tsx", "utf8") : "";
+const mobileCaptureNewPage = existsSync("src/app/[locale]/mobile/offline-capture/new/page.tsx") ? readFileSync("src/app/[locale]/mobile/offline-capture/new/page.tsx", "utf8") : "";
 const loginRoute = readFileSync("src/app/api/auth/login/route.ts", "utf8");
 const feishuLoginRoute = existsSync("src/app/api/auth/feishu-login/route.ts") ? readFileSync("src/app/api/auth/feishu-login/route.ts", "utf8") : "";
 const logoutRoute = existsSync("src/app/api/auth/logout/route.ts") ? readFileSync("src/app/api/auth/logout/route.ts", "utf8") : "";
@@ -55,6 +59,18 @@ test("PC login page supports Feishu in-app passwordless login", () => {
   assert.match(loginClient, /appID:\s*feishuAppId/);
   assert.match(loginClient, /\/api\/auth\/feishu-login/);
   assert.match(loginClient, /startFeishuLogin/);
+});
+
+test("H5 capture entry auto-attempts Feishu login and still uses the shared session API", () => {
+  assert.match(mobileFeishuAutoLogin, /NEXT_PUBLIC_FEISHU_APP_ID/);
+  assert.match(mobileFeishuAutoLogin, /requestAccess/);
+  assert.match(mobileFeishuAutoLogin, /scopeList:\s*\[\]/);
+  assert.match(mobileFeishuAutoLogin, /\/api\/auth\/feishu-login/);
+  assert.match(mobileFeishuAutoLogin, /mobile_h5/);
+  assert.match(mobileFeishuAutoLogin, /makuku_app_user/);
+  assert.match(mobileCapturePage, /MobileFeishuAutoLogin/);
+  assert.match(mobileCaptureListPage, /MobileFeishuAutoLogin/);
+  assert.match(mobileCaptureNewPage, /MobileFeishuAutoLogin/);
 });
 
 test("Feishu login API exchanges auth code for user info and creates app session", () => {
