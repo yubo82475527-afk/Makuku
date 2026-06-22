@@ -13,3 +13,9 @@ test("mobile visit list uses top settings menu for language and logout", () => {
   assert.match(storeVisitsListH5, /LogOut/);
   assert.doesNotMatch(storeVisitsListH5, /\{copy\.new\}/);
 });
+
+test("mobile settings menu uses explicit button-driven locale switching for webviews", () => {
+  assert.match(storeVisitsListH5, /const \[menuOpen, setMenuOpen\] = useState\(false\)/);
+  assert.match(storeVisitsListH5, /onSwitchLocale/);
+  assert.doesNotMatch(storeVisitsListH5, /<details className="relative">/);
+});

@@ -21,8 +21,9 @@ function todayRange() {
 }
 
 function photoCount(visit: OfflineStoreVisit) {
-  if (Array.isArray(visit.image_urls)) return visit.image_urls.length;
-  return visit.offline_visit_images?.length ?? 0;
+  const legacyCount = Array.isArray(visit.image_urls) ? visit.image_urls.length : 0;
+  const rowCount = visit.offline_visit_images?.length ?? 0;
+  return Math.max(legacyCount, rowCount);
 }
 
 function serializeVisit(visit: OfflineStoreVisit) {

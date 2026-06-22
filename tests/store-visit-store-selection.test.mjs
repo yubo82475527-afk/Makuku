@@ -6,6 +6,7 @@ const storeVisitH5 = readFileSync("src/components/store-visit-h5.tsx", "utf8");
 const storeVisitsListH5 = readFileSync("src/components/store-visits-list-h5.tsx", "utf8");
 const storeVisitDetailH5 = readFileSync("src/components/store-visit-detail-h5.tsx", "utf8");
 const storeVisitApi = readFileSync("src/app/api/store-visit/route.ts", "utf8");
+const storeVisitsApi = readFileSync("src/app/api/store-visits/route.ts", "utf8");
 const storeVisitImagesApi = readFileSync("src/app/api/store-visit/[id]/images/route.ts", "utf8");
 const storeVisitAiDebug = readFileSync("src/lib/store-visit-ai-debug.ts", "utf8");
 const offlineStoresApi = readFileSync("src/app/api/offline-stores/route.ts", "utf8");
@@ -161,6 +162,8 @@ test("mobile visit list uses top settings menu for language and logout", () => {
   assert.match(storeVisitsListH5, /replacePathLocale/);
   assert.match(storeVisitsListH5, /Settings/);
   assert.match(storeVisitsListH5, /LogOut/);
+  assert.doesNotMatch(storeVisitsListH5, /riskClass/);
+  assert.doesNotMatch(storeVisitsListH5, /stock_risk/);
   assert.doesNotMatch(storeVisitsListH5, /\{copy\.new\}/);
 });
 
@@ -208,4 +211,25 @@ test("offline stores API and types preserve location-capable store master data",
   assert.match(offlineStoresApi, /\.limit\(limit\)/);
   assert.match(typesFile, /latitude\?: number \| null/);
   assert.match(typesFile, /location_accuracy_m\?: number \| null/);
+});
+
+test("mobile store visit detail header does not render a language switch", () => {
+  assert.doesNotMatch(storeVisitDetailH5, /MobileLanguageSwitch/);
+});
+
+test("store visits list API counts photo rows even when legacy image_urls is empty", () => {
+  assert.match(storeVisitsApi, /function photoCount/);
+  assert.match(storeVisitsApi, /offline_visit_images\?\.length/);
+  assert.match(storeVisitsApi, /Math\.max\(/);
+  assert.doesNotMatch(storeVisitsApi, /if \(Array\.isArray\(visit\.image_urls\)\) return visit\.image_urls\.length;/);
+});
+
+test("mobile visit list summarizes parsed brands by sku count", () => {
+  assert.match(storeVisitsListH5, /function summarizeVisitBrandCounts/);
+  assert.match(storeVisitsListH5, /price_insights\?\.key_sku_prices/);
+  assert.match(storeVisitsListH5, /new Map<string, \{ label: string; skus: Set<string> \}>/);
+  assert.match(storeVisitsListH5, /skus\.size/);
+  assert.match(storeVisitsListH5, /toLowerCase\(\)/);
+  assert.match(storeVisitsListH5, /isAllUpperCase/);
+  assert.match(storeVisitsListH5, /const summary = summarizeVisitBrandCounts\(visit\.ai_result, locale\)/);
 });

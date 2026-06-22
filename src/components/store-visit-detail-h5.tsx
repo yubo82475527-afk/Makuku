@@ -14,7 +14,6 @@ import type {
   StoreVisitPriceImageAnalysis,
 } from "@/lib/types";
 import { LoadingOverlay } from "@/components/loading-overlay";
-import { MobileLanguageSwitch } from "@/components/mobile-language-switch";
 
 type SignedVisitImage = {
   path: string;
@@ -244,7 +243,6 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
           <p className="text-xs text-slate-500">{visit?.visit_code ?? "-"} / {visit?.region ?? "-"} / {visit?.channel ?? "-"} / {visit?.visit_date ?? "-"}</p>
           <p className="mt-1 text-[11px] text-slate-400">{text.batchCode}: {visit?.visit_code ?? "-"}</p>
         </div>
-        <MobileLanguageSwitch locale={locale} currentPath={`/mobile/offline-capture/${id}`} />
       </header>
 
       {error ? <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}

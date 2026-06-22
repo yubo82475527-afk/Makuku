@@ -10,7 +10,7 @@ import { withMinimumDelay } from "@/lib/async-ui";
 import { localeLabels, replacePathLocale, type Locale } from "@/lib/i18n/config";
 import { writeLocalePreferenceCookie } from "@/lib/locale-preference";
 import { getMobileCopy, mobileAnalysisStatusLabel } from "@/lib/mobile-i18n";
-import type { StockRiskLevel, StoreVisitAnalysisStatus, StoreVisitAiResult } from "@/lib/types";
+import type { StoreVisitAnalysisStatus, StoreVisitAiResult } from "@/lib/types";
 import { MobileLanguageSwitch } from "@/components/mobile-language-switch";
 
 const storageKey = "makuku_app_user";
@@ -77,17 +77,6 @@ function canRetryAnalysis(status: StoreVisitAnalysisStatus | null | undefined, v
   return status === "failed" || status === "partial" || (visitStatus === "uploaded" && (!status || status === "pending"));
 }
 
-function riskClass(level: StockRiskLevel) {
-  switch (level) {
-    case "Low Stock":
-      return "bg-amber-50 text-amber-700 ring-amber-200";
-    case "Out of Stock Risk":
-      return "bg-red-50 text-red-700 ring-red-200";
-    default:
-      return "bg-emerald-50 text-emerald-700 ring-emerald-200";
-  }
-}
-
 function formatVisitDate(value: string, locale: Locale) {
   if (!value) return "-";
   return new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-GB", {
@@ -95,6 +84,42 @@ function formatVisitDate(value: string, locale: Locale) {
     month: "short",
     year: "numeric",
   }).format(new Date(`${value}T00:00:00`));
+}
+
+function isAllUpperCase(value: string) {
+  return value === value.toUpperCase() && value !== value.toLowerCase();
+}
+
+function shouldReplaceBrandLabel(current: string, next: string) {
+  return isAllUpperCase(current) && !isAllUpperCase(next);
+}
+
+function summarizeVisitBrandCounts(aiResult: StoreVisitAiResult | null | undefined, locale: Locale) {
+  const priceRows = aiResult?.price_insights?.key_sku_prices ?? [];
+  if (!priceRows.length) return aiResult?.store_summary ?? null;
+
+  const brandSkuMap = new Map<string, { label: string; skus: Set<string> }>();
+  for (const row of priceRows) {
+    const brand = String(row.brand ?? "").trim();
+    const sku = String(row.product ?? "").trim();
+    if (!brand || !sku) continue;
+    const brandKey = brand.toLowerCase();
+    if (!brandSkuMap.has(brandKey)) {
+      brandSkuMap.set(brandKey, { label: brand, skus: new Set<string>() });
+    }
+    const entry = brandSkuMap.get(brandKey);
+    if (!entry) continue;
+    if (shouldReplaceBrandLabel(entry.label, brand)) {
+      entry.label = brand;
+    }
+    entry.skus.add(sku);
+  }
+
+  if (brandSkuMap.size === 0) return aiResult?.store_summary ?? null;
+
+  return Array.from(brandSkuMap.entries())
+    .map(([, entry]) => (locale === "zh" ? `${entry.label} ${entry.skus.size}个SKU` : `${entry.label} ${entry.skus.size} SKU`))
+    .join(locale === "zh" ? "，" : ", ");
 }
 
 function Badge({ children, className }: { children: ReactNode; className: string }) {
@@ -107,12 +132,16 @@ function Badge({ children, className }: { children: ReactNode; className: string
 
 function MobileCaptureSettingsMenu({
   locale,
+  onSwitchLocale,
   onLogout,
 }: {
   locale: Locale;
+  onSwitchLocale: (nextLocale: Locale) => void;
   onLogout: () => void;
 }) {
   const otherLocale: Locale = locale === "en" ? "zh" : "en";
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const labels = locale === "zh"
     ? {
         settings: "\u8bbe\u7f6e",
@@ -125,47 +154,71 @@ function MobileCaptureSettingsMenu({
         logout: "Sign Out",
       };
 
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    function handlePointerDown(event: PointerEvent) {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [menuOpen]);
+
+  function handleLocaleSwitch(nextLocale: Locale) {
+    setMenuOpen(false);
+    onSwitchLocale(nextLocale);
+  }
+
+  function handleLogoutClick() {
+    setMenuOpen(false);
+    onLogout();
+  }
+
   return (
-    <details className="relative">
-      <summary
+    <div ref={menuRef} className="relative">
+      <button
+        type="button"
         aria-label={labels.settings}
         title={labels.settings}
+        aria-expanded={menuOpen}
         className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 [&::-webkit-details-marker]:hidden"
+        onClick={() => setMenuOpen((current) => !current)}
       >
         <Settings className="h-4 w-4" />
-      </summary>
-      <div className="absolute right-0 top-11 z-20 w-44 rounded-xl border border-slate-200 bg-white p-2 text-sm shadow-lg">
-        <div className="px-2 py-1 text-xs font-semibold uppercase tracking-normal text-slate-500">{labels.language}</div>
-        <Link
-          href={`/${locale}/mobile/offline-capture`}
-          onClick={() => {
-            document.cookie = writeLocalePreferenceCookie(locale);
-          }}
-          className="flex items-center justify-between rounded-lg px-2 py-2 font-medium text-slate-700 hover:bg-slate-50"
-        >
-          <span>{localeLabels[locale]}</span>
-          <Languages className="h-4 w-4 text-slate-400" />
-        </Link>
-        <Link
-          href={replacePathLocale(`/${locale}/mobile/offline-capture`, otherLocale)}
-          onClick={() => {
-            document.cookie = writeLocalePreferenceCookie(otherLocale);
-          }}
-          className="flex items-center justify-between rounded-lg px-2 py-2 font-medium text-slate-700 hover:bg-slate-50"
-        >
-          <span>{localeLabels[otherLocale]}</span>
-          <Languages className="h-4 w-4 text-slate-400" />
-        </Link>
-        <button
-          type="button"
-          onClick={onLogout}
-          className="mt-1 flex w-full items-center justify-between rounded-lg border-t border-slate-100 px-2 py-2 text-left font-semibold text-red-700 hover:bg-red-50"
-        >
-          <span>{labels.logout}</span>
-          <LogOut className="h-4 w-4" />
-        </button>
-      </div>
-    </details>
+      </button>
+      {menuOpen ? (
+        <div className="absolute right-0 top-11 z-20 w-44 rounded-xl border border-slate-200 bg-white p-2 text-sm shadow-lg">
+          <div className="px-2 py-1 text-xs font-semibold uppercase tracking-normal text-slate-500">{labels.language}</div>
+          <button
+            type="button"
+            onClick={() => handleLocaleSwitch(locale)}
+            className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left font-medium text-slate-700 hover:bg-slate-50"
+          >
+            <span>{localeLabels[locale]}</span>
+            <Languages className="h-4 w-4 text-slate-400" />
+          </button>
+          <button
+            type="button"
+            onClick={() => handleLocaleSwitch(otherLocale)}
+            className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left font-medium text-slate-700 hover:bg-slate-50"
+          >
+            <span>{localeLabels[otherLocale]}</span>
+            <Languages className="h-4 w-4 text-slate-400" />
+          </button>
+          <button
+            type="button"
+            onClick={handleLogoutClick}
+            className="mt-1 flex w-full items-center justify-between rounded-lg border-t border-slate-100 px-2 py-2 text-left font-semibold text-red-700 hover:bg-red-50"
+          >
+            <span>{labels.logout}</span>
+            <LogOut className="h-4 w-4" />
+          </button>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -312,6 +365,12 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
     if (startingVisit) return;
     setStartingVisit(true);
     router.push(newVisitHref);
+  }
+
+  function switchLocale(nextLocale: Locale) {
+    document.cookie = writeLocalePreferenceCookie(nextLocale);
+    if (nextLocale === locale) return;
+    router.push(replacePathLocale(`/${locale}/mobile/offline-capture`, nextLocale));
   }
 
   async function reanalyzeVisit(visitId: string) {
@@ -466,7 +525,7 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
               <button type="button" onClick={() => loadVisits(1, false, user)} className="rounded-full border border-slate-200 bg-white p-2 text-slate-700 shadow-sm" aria-label={copy.refreshVisits}>
                 <RefreshCw className="h-4 w-4" />
               </button>
-              <MobileCaptureSettingsMenu locale={locale} onLogout={handleLogout} />
+              <MobileCaptureSettingsMenu locale={locale} onSwitchLocale={switchLocale} onLogout={handleLogout} />
             </div>
           </div>
           <div className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
@@ -510,8 +569,7 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
         {visits.map((visit) => {
           const status = visit.analysis_status ?? "pending";
           const retryable = canRetryAnalysis(status, visit.visit_status);
-          const risk = visit.ai_result?.stock_risk?.level;
-          const summary = visit.ai_result?.store_summary;
+          const summary = summarizeVisitBrandCounts(visit.ai_result, locale);
           return (
             <article key={visit.id} className="rounded-xl border border-slate-200 bg-white shadow-sm">
               <Link
@@ -528,7 +586,6 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
 
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <Badge className={statusClass(status)}>{mobileAnalysisStatusLabel(locale, status)}</Badge>
-                  {risk ? <Badge className={riskClass(risk)}>{risk}</Badge> : null}
                 </div>
 
                 {summary ? (
