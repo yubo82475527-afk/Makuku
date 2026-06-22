@@ -2,8 +2,11 @@
 
 import { ArrowLeft, CalendarDays, ChevronRight, ImageIcon, Languages, Loader2, LogIn, LogOut, Plus, RefreshCw, Settings } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { LoadingOverlay } from "@/components/loading-overlay";
+import { withMinimumDelay } from "@/lib/async-ui";
 import { localeLabels, replacePathLocale, type Locale } from "@/lib/i18n/config";
 import { getMobileCopy, mobileAnalysisStatusLabel } from "@/lib/mobile-i18n";
 import type { StockRiskLevel, StoreVisitAnalysisStatus, StoreVisitAiResult } from "@/lib/types";
@@ -111,9 +114,9 @@ function MobileCaptureSettingsMenu({
   const otherLocale: Locale = locale === "en" ? "zh" : "en";
   const labels = locale === "zh"
     ? {
-        settings: "设置",
-        language: "语言",
-        logout: "退出登录",
+        settings: "\u8bbe\u7f6e",
+        language: "\u8bed\u8a00",
+        logout: "\u9000\u51fa\u767b\u5f55",
       }
     : {
         settings: "Settings",
@@ -160,6 +163,7 @@ function MobileCaptureSettingsMenu({
 }
 
 export function StoreVisitsListH5({ locale }: { locale: Locale }) {
+  const router = useRouter();
   const copy = getMobileCopy(locale);
   const [user, setUser] = useState<AppUser | null>(null);
   const [visits, setVisits] = useState<VisitListItem[]>([]);
@@ -173,21 +177,23 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
+  const [loginPhase, setLoginPhase] = useState<"idle" | "submitting" | "redirecting">("idle");
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [startingVisit, setStartingVisit] = useState(false);
   const autoAnalysisAttemptedIds = useRef<Set<string>>(new Set());
   const newVisitHref = `/${locale}/mobile/offline-capture/new`;
 
   const loginText = locale === "zh"
     ? {
-        title: "移动巡店登录",
-        username: "用户名",
-        password: "密码",
-        usernamePlaceholder: "输入用户名",
-        passwordPlaceholder: "输入密码",
-        submit: "登录",
-        submitting: "登录中...",
-        required: "请输入用户名和密码",
-        failed: "登录失败",
+        title: "\u79fb\u52a8\u5de1\u5e97\u767b\u5f55",
+        username: "\u7528\u6237\u540d",
+        password: "\u5bc6\u7801",
+        usernamePlaceholder: "\u8f93\u5165\u7528\u6237\u540d",
+        passwordPlaceholder: "\u8f93\u5165\u5bc6\u7801",
+        submit: "\u767b\u5f55",
+        submitting: "\u767b\u5f55\u4e2d...",
+        required: "\u8bf7\u8f93\u5165\u7528\u6237\u540d\u548c\u5bc6\u7801\u3002",
+        failed: "\u767b\u5f55\u5931\u8d25",
       }
     : {
         title: "Mobile Visit Login",
@@ -199,6 +205,20 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
         submitting: "Signing in...",
         required: "Enter username and password.",
         failed: "Sign-in failed",
+      };
+
+  const loadingText = locale === "zh"
+    ? {
+        loggingIn: "\u6b63\u5728\u9a8c\u8bc1\u8d26\u53f7...",
+        redirecting: "\u767b\u5f55\u6210\u529f\uff0c\u6b63\u5728\u8fdb\u5165\u7cfb\u7edf...",
+        openingVisit: "\u6b63\u5728\u6253\u5f00\u5de1\u5e97\u8868\u5355...",
+        openingVisitHint: "\u8bf7\u7a0d\u5019\uff0c\u4e0d\u8981\u91cd\u590d\u70b9\u51fb\u3002",
+      }
+    : {
+        loggingIn: "Verifying account...",
+        redirecting: "Signed in. Entering the app...",
+        openingVisit: "Opening the visit form...",
+        openingVisitHint: "Please wait and avoid tapping repeatedly.",
       };
 
   const loadVisits = useCallback(async (nextPage = 1, append = false, currentUser: AppUser | null = null) => {
@@ -241,13 +261,14 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
     }
 
     setLoginLoading(true);
+    setLoginPhase("submitting");
     setLoginError(null);
     try {
-      const res = await fetch("/api/auth/login", {
+      const res = await withMinimumDelay(fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
-      });
+      }));
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.user?.id) {
         setLoginError(data.error ?? loginText.failed);
@@ -256,13 +277,16 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
 
       const nextUser = data.user as AppUser;
       saveUser(nextUser);
+      setLoginPhase("redirecting");
       setUser(nextUser);
       setPassword("");
-      void loadVisits(1, false, nextUser);
+      await loadVisits(1, false, nextUser);
     } catch {
       setLoginError(copy.networkRetry);
+      setLoginPhase("idle");
     } finally {
       setLoginLoading(false);
+      setLoginPhase((current) => (current === "redirecting" ? "idle" : current === "submitting" ? "idle" : current));
     }
   }
 
@@ -275,6 +299,12 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
     setPassword("");
     setLoginError(null);
     setLoading(false);
+  }
+
+  function startNewVisit() {
+    if (startingVisit) return;
+    setStartingVisit(true);
+    router.push(newVisitHref);
   }
 
   async function reanalyzeVisit(visitId: string) {
@@ -346,96 +376,128 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
 
   if (!user) {
     return (
-      <main className="mx-auto min-h-screen max-w-md bg-slate-50 px-4 py-5 text-slate-950">
-        <header className="mb-4 flex items-center gap-3">
-          <Link href={`/${locale}/mobile/offline-capture`} className="rounded-full border border-slate-200 bg-white p-2 text-slate-700">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-          <div className="min-w-0 flex-1">
-            <h1 className="text-xl font-bold">{copy.myVisits}</h1>
-            <p className="text-sm text-slate-500">{copy.signInFirst}</p>
-          </div>
-          <MobileLanguageSwitch locale={locale} currentPath="/mobile/offline-capture/list" />
-        </header>
-        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <h2 className="text-base font-bold">{loginText.title}</h2>
-          {loginError ? <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{loginError}</div> : null}
-          <div className="mt-4 space-y-3">
-            <label className="block">
-              <span className="text-sm font-semibold text-slate-700">{loginText.username}</span>
-              <input
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                onKeyDown={(event) => event.key === "Enter" && handleLogin()}
-                placeholder={loginText.usernamePlaceholder}
-                className="mt-1 h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-blue-500"
-              />
-            </label>
-            <label className="block">
-              <span className="text-sm font-semibold text-slate-700">{loginText.password}</span>
-              <input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                onKeyDown={(event) => event.key === "Enter" && handleLogin()}
-                placeholder={loginText.passwordPlaceholder}
-                className="mt-1 h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-blue-500"
-              />
-            </label>
-          </div>
-          <button
-            type="button"
-            onClick={handleLogin}
-            disabled={loginLoading}
-            className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-slate-900 text-sm font-semibold text-white disabled:opacity-60"
-          >
-            {loginLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
-            {loginLoading ? loginText.submitting : loginText.submit}
-          </button>
-        </section>
-      </main>
+      <>
+        <LoadingOverlay
+          open={loginPhase !== "idle"}
+          title={loginPhase === "redirecting" ? loadingText.redirecting : loadingText.loggingIn}
+          description={locale === "zh" ? "请稍候，不要重复点击。" : "Please wait and avoid tapping repeatedly."}
+        />
+        <main className="mx-auto min-h-screen max-w-md bg-slate-50 px-4 py-5 text-slate-950">
+          <header className="mb-4 flex items-center gap-3">
+            <Link href={`/${locale}/mobile/offline-capture`} className="rounded-full border border-slate-200 bg-white p-2 text-slate-700">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-xl font-bold">{copy.myVisits}</h1>
+              <p className="text-sm text-slate-500">{copy.signInFirst}</p>
+            </div>
+            <MobileLanguageSwitch locale={locale} currentPath="/mobile/offline-capture/list" />
+          </header>
+          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h2 className="text-base font-bold">{loginText.title}</h2>
+            {loginError ? <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{loginError}</div> : null}
+            {loginLoading ? (
+              <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                {loginPhase === "redirecting" ? loadingText.redirecting : loadingText.loggingIn}
+              </div>
+            ) : null}
+            <div className="mt-4 space-y-3">
+              <label className="block">
+                <span className="text-sm font-semibold text-slate-700">{loginText.username}</span>
+                <input
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
+                  onKeyDown={(event) => event.key === "Enter" && handleLogin()}
+                  placeholder={loginText.usernamePlaceholder}
+                  disabled={loginLoading}
+                  className="mt-1 h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-blue-500 disabled:bg-slate-100"
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-semibold text-slate-700">{loginText.password}</span>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  onKeyDown={(event) => event.key === "Enter" && handleLogin()}
+                  placeholder={loginText.passwordPlaceholder}
+                  disabled={loginLoading}
+                  className="mt-1 h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-blue-500 disabled:bg-slate-100"
+                />
+              </label>
+            </div>
+            <button
+              type="button"
+              onClick={handleLogin}
+              disabled={loginLoading}
+              className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-slate-900 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {loginLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
+              {loginLoading ? loginText.submitting : loginText.submit}
+            </button>
+          </section>
+        </main>
+      </>
     );
   }
 
   return (
-    <main className="mx-auto min-h-screen max-w-md bg-slate-50 px-4 py-5 text-slate-950">
-      <header className="sticky top-0 z-10 -mx-4 border-b border-slate-200 bg-slate-50/95 px-4 pb-4 pt-1 backdrop-blur">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-normal text-blue-600">{user.displayName}</p>
-            <h1 className="mt-1 text-2xl font-bold">{copy.myVisits}</h1>
+    <>
+      <LoadingOverlay
+        open={startingVisit}
+        title={loadingText.openingVisit}
+        description={loadingText.openingVisitHint}
+      />
+      <main className="mx-auto min-h-screen max-w-md bg-slate-50 px-4 py-5 text-slate-950">
+        <header className="sticky top-0 z-10 -mx-4 border-b border-slate-200 bg-slate-50/95 px-4 pb-4 pt-1 backdrop-blur">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-normal text-blue-600">{user.displayName}</p>
+              <h1 className="mt-1 text-2xl font-bold">{copy.myVisits}</h1>
+            </div>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => loadVisits(1, false, user)} className="rounded-full border border-slate-200 bg-white p-2 text-slate-700 shadow-sm" aria-label={copy.refreshVisits}>
+                <RefreshCw className="h-4 w-4" />
+              </button>
+              <MobileCaptureSettingsMenu locale={locale} onLogout={handleLogout} />
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => loadVisits(1, false, user)} className="rounded-full border border-slate-200 bg-white p-2 text-slate-700 shadow-sm" aria-label={copy.refreshVisits}>
-              <RefreshCw className="h-4 w-4" />
-            </button>
-            <MobileCaptureSettingsMenu locale={locale} onLogout={handleLogout} />
+          <div className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-normal text-slate-500">{copy.todaysVisitCount}</div>
+            <div className="mt-1 flex items-end gap-2">
+              <span className="text-3xl font-bold">{todayCount}</span>
+              <span className="pb-1 text-sm text-slate-500">{copy.visits}</span>
+            </div>
           </div>
-        </div>
-        <div className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-normal text-slate-500">{copy.todaysVisitCount}</div>
-          <div className="mt-1 flex items-end gap-2">
-            <span className="text-3xl font-bold">{todayCount}</span>
-            <span className="pb-1 text-sm text-slate-500">{copy.visits}</span>
-          </div>
-        </div>
-      </header>
+        </header>
 
-      <section className="space-y-3 py-4">
-        {error ? <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
-        {loading ? (
-          <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500 shadow-sm">
-            <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />
-            {copy.loadingVisits}
-          </div>
-        ) : null}
+        <section className="space-y-3 py-4">
+          {error ? <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
+          {loading ? (
+            <div className="space-y-3">
+              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="h-5 w-28 animate-pulse rounded bg-slate-200" />
+                <div className="mt-3 h-4 w-40 animate-pulse rounded bg-slate-100" />
+                <div className="mt-4 h-14 animate-pulse rounded-lg bg-slate-100" />
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="h-4 w-32 animate-pulse rounded bg-slate-200" />
+                <div className="mt-3 h-4 w-52 animate-pulse rounded bg-slate-100" />
+                <div className="mt-4 h-10 animate-pulse rounded-lg bg-slate-100" />
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4 text-center text-sm text-slate-500 shadow-sm">
+                <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />
+                {copy.loadingVisits}
+              </div>
+            </div>
+          ) : null}
         {!loading && visits.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
             <div>{copy.noVisitsYet}</div>
-            <Link href={newVisitHref} className="mt-4 inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white">
+            <button type="button" onClick={startNewVisit} disabled={startingVisit} className="mt-4 inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white disabled:opacity-60">
               <Plus className="h-4 w-4" />
               {copy.newVisit}
-            </Link>
+            </button>
           </div>
         ) : null}
         {visits.map((visit) => {
@@ -515,12 +577,13 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
       ) : null}
       {visits.length > 0 ? (
         <div className="sticky bottom-0 -mx-4 border-t border-slate-200 bg-slate-50/95 px-4 py-3 backdrop-blur">
-          <Link href={newVisitHref} className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-slate-900 text-sm font-bold text-white shadow-sm">
+          <button type="button" onClick={startNewVisit} disabled={startingVisit} className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-slate-900 text-sm font-bold text-white shadow-sm disabled:opacity-60">
             <Plus className="h-4 w-4" />
             {copy.newVisit}
-          </Link>
+          </button>
         </div>
       ) : null}
-    </main>
+      </main>
+    </>
   );
 }

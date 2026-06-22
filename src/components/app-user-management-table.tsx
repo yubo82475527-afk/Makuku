@@ -3,7 +3,7 @@
 import { CheckCircle2, KeyRound, Loader2, MessageCircle, UserX, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Badge, Button, EmptyState, TextInput } from "@/components/ui";
+import { Badge, Button, EmptyState, SelectInput, TextInput } from "@/components/ui";
 import type { AppUser } from "@/lib/types";
 
 function isDisabled(user: AppUser) {
@@ -26,6 +26,7 @@ const zh = {
   email: "\u90ae\u7bb1",
   role: "\u89d2\u8272",
   status: "\u72b6\u6001",
+  roleUpdated: "\u89d2\u8272\u5df2\u66f4\u65b0\u3002",
   created: "\u521b\u5efa\u65f6\u95f4",
   actions: "\u64cd\u4f5c",
   disabled: "\u7981\u7528",
@@ -129,6 +130,12 @@ export function AppUserManagementTable({ users, locale }: { users: AppUser[]; lo
     if (ok) setNotice(nextStatus === "disabled" ? (isZh ? zh.userDisabled : "User disabled.") : (isZh ? zh.userEnabled : "User enabled."));
   }
 
+  async function updateRole(user: AppUser, nextRole: AppUser["role"]) {
+    if (user.role === nextRole) return;
+    const ok = await patchUser(user.id, { role: nextRole });
+    if (ok) setNotice(isZh ? zh.roleUpdated : "Role updated.");
+  }
+
   async function submitPasswordReset() {
     if (!resetUser) return;
     const nextPassword = password.trim();
@@ -175,7 +182,19 @@ export function AppUserManagementTable({ users, locale }: { users: AppUser[]; lo
                   <td className="py-3 pr-3 font-medium">{user.username}</td>
                   <td className="py-3 pr-3">{user.display_name}</td>
                   <td className="py-3 pr-3">{user.email || "-"}</td>
-                  <td className="py-3 pr-3"><Badge>{user.role}</Badge></td>
+                  <td className="py-3 pr-3">
+                    <SelectInput
+                      value={user.role}
+                      onChange={(event) => void updateRole(user, event.target.value as AppUser["role"])}
+                      disabled={busy}
+                      className="h-8 min-w-[132px]"
+                      aria-label={isZh ? zh.role : "Role"}
+                    >
+                      <option value="field_agent">field_agent</option>
+                      <option value="manager">manager</option>
+                      <option value="admin">admin</option>
+                    </SelectInput>
+                  </td>
                   <td className="py-3 pr-3"><Badge tone={disabled ? "medium" : "low"}>{disabled ? (isZh ? zh.disabled : "Disabled") : (isZh ? zh.enabled : "Enabled")}</Badge></td>
                   <td className="py-3 pr-3">{formatDate(user.created_at, locale)}</td>
                   <td className="py-3 pr-3">

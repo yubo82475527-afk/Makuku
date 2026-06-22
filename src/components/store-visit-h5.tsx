@@ -4,6 +4,7 @@ import { ArrowLeft, Building2, Camera, CheckCircle2, Loader2, LocateFixed, LogIn
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { LoadingOverlay } from "@/components/loading-overlay";
 import type { Locale } from "@/lib/i18n/config";
 import { getMobileCopy, mobileImageCategoryLabel } from "@/lib/mobile-i18n";
 
@@ -87,43 +88,43 @@ function localDateInputValue(date = new Date()) {
 function uiCopy(locale: Locale) {
   return locale === "zh"
     ? {
-        selectStore: "选择门店",
-        selectStoreHint: "先选择门店主数据，区域和门店类型会自动带出。",
-        searchPlaceholder: "搜索门店名称或城市",
-        noStoreFound: "未找到门店，可新建",
-        createStore: "新建门店",
-        storeNameRequired: "门店名称 *",
-        channelTypeRequired: "门店类型 *",
-        channelTypeLoading: "正在加载门店类型...",
-        channelTypeEmpty: "没有可用的线下门店类型，请先维护渠道主数据。",
-        cityRequired: "省/市/区 *",
-        addressOptional: "地址（选填）",
-        createFailed: "创建门店失败",
-        createRequired: "请填写门店名称、门店类型和省/市/区。",
-        selectedStore: "已选门店",
-        changeStore: "重选门店",
-        city: "省/市/区",
-        channelType: "门店类型",
-        address: "地址",
-        creatingVisit: "正在创建巡店...",
-        processingPhotos: "正在处理",
-        analyzingPrices: "照片已上传，正在解析价格...",
-        submitted: "已提交",
-        storeInfoIncomplete: "门店资料不完整，请重新选择或新建门店。",
-        visitDate: "巡店日期",
-        storeLocationGroup: "省/市/区与详细地址",
-        storeLocationTitle: "门店定位",
-        storeLocationHint: "免费浏览器定位，经 LocationIQ 识别后自动填充省/市/区和详细地址。",
-        locate: "定位并填充地址",
-        locating: "定位中...",
-        located: "已定位并填充",
-        locationUnavailable: "当前浏览器不支持定位，可继续创建门店。",
-        locationFailed: "定位失败或未授权，可继续创建门店。",
-        reverseAddressFailed: "地址识别失败，可手动填写省/市/区和详细地址。",
-        reverseAddressMissing: "已保存经纬度，但未识别出省/市/区或地址，可手动填写。",
+        selectStore: "\u9009\u62e9\u95e8\u5e97",
+        selectStoreHint: "\u5148\u9009\u62e9\u95e8\u5e97\u4e3b\u6570\u636e\uff0c\u533a\u57df\u548c\u95e8\u5e97\u7c7b\u578b\u4f1a\u81ea\u52a8\u5e26\u51fa\u3002",
+        searchPlaceholder: "\u641c\u7d22\u95e8\u5e97\u540d\u79f0\u6216\u57ce\u5e02",
+        noStoreFound: "\u672a\u627e\u5230\u95e8\u5e97\uff0c\u53ef\u65b0\u5efa",
+        createStore: "\u65b0\u5efa\u95e8\u5e97",
+        storeNameRequired: "\u95e8\u5e97\u540d\u79f0 *",
+        channelTypeRequired: "\u95e8\u5e97\u7c7b\u578b *",
+        channelTypeLoading: "\u6b63\u5728\u52a0\u8f7d\u95e8\u5e97\u7c7b\u578b...",
+        channelTypeEmpty: "\u6ca1\u6709\u53ef\u7528\u7684\u7ebf\u4e0b\u95e8\u5e97\u7c7b\u578b\uff0c\u8bf7\u5148\u7ef4\u62a4\u6e20\u9053\u4e3b\u6570\u636e\u3002",
+        cityRequired: "\u7701 / \u5e02 / \u533a *",
+        addressOptional: "\u5730\u5740\uff08\u9009\u586b\uff09",
+        createFailed: "\u521b\u5efa\u95e8\u5e97\u5931\u8d25",
+        createRequired: "\u8bf7\u586b\u5199\u95e8\u5e97\u540d\u79f0\u3001\u95e8\u5e97\u7c7b\u578b\u548c\u7701 / \u5e02 / \u533a\u3002",
+        selectedStore: "\u5df2\u9009\u95e8\u5e97",
+        changeStore: "\u91cd\u65b0\u9009\u62e9\u95e8\u5e97",
+        city: "\u7701 / \u5e02 / \u533a",
+        channelType: "\u95e8\u5e97\u7c7b\u578b",
+        address: "\u5730\u5740",
+        creatingVisit: "\u6b63\u5728\u521b\u5efa\u5de1\u5e97...",
+        processingPhotos: "\u6b63\u5728\u5904\u7406\u7167\u7247",
+        analyzingPrices: "\u7167\u7247\u5df2\u4e0a\u4f20\uff0c\u6b63\u5728\u89e3\u6790\u4ef7\u683c...",
+        submitted: "\u5df2\u63d0\u4ea4",
+        storeInfoIncomplete: "\u95e8\u5e97\u4e3b\u6570\u636e\u4e0d\u5b8c\u6574\uff0c\u8bf7\u91cd\u65b0\u9009\u62e9\u6216\u65b0\u5efa\u95e8\u5e97\u3002",
+        visitDate: "\u5de1\u5e97\u65e5\u671f",
+        storeLocationGroup: "\u7701 / \u5e02 / \u533a\u4e0e\u8be6\u7ec6\u5730\u5740",
+        storeLocationTitle: "\u95e8\u5e97\u5b9a\u4f4d",
+        storeLocationHint: "\u4f7f\u7528\u6d4f\u89c8\u5668\u5b9a\u4f4d\uff0c\u5e76\u901a\u8fc7 LocationIQ \u81ea\u52a8\u586b\u5199\u7701 / \u5e02 / \u533a\u548c\u5730\u5740\u3002",
+        locate: "\u5b9a\u4f4d\u5e76\u586b\u5199\u5730\u5740",
+        locating: "\u5b9a\u4f4d\u4e2d...",
+        located: "\u5df2\u5b9a\u4f4d\u5e76\u586b\u5199",
+        locationUnavailable: "\u5f53\u524d\u6d4f\u89c8\u5668\u4e0d\u652f\u6301\u5b9a\u4f4d\uff0c\u53ef\u7ee7\u7eed\u521b\u5efa\u95e8\u5e97\u3002",
+        locationFailed: "\u5b9a\u4f4d\u5931\u8d25\u6216\u672a\u6388\u6743\uff0c\u53ef\u7ee7\u7eed\u521b\u5efa\u95e8\u5e97\u3002",
+        reverseAddressFailed: "\u5730\u5740\u8bc6\u522b\u5931\u8d25\uff0c\u8bf7\u624b\u52a8\u586b\u5199\u7701 / \u5e02 / \u533a\u548c\u5730\u5740\u3002",
+        reverseAddressMissing: "\u5df2\u4fdd\u5b58\u7ecf\u7eac\u5ea6\uff0c\u4f46\u672a\u8bc6\u522b\u51fa\u7701 / \u5e02 / \u533a\u6216\u5730\u5740\uff0c\u8bf7\u624b\u52a8\u586b\u5199\u3002",
         locationAttribution: "Address by LocationIQ",
-        signInTitle: "请先登录",
-        signInBody: "新增巡店需要绑定导购员账号，登录后会自动带出提交人。",
+        signInTitle: "\u8bf7\u5148\u767b\u5f55",
+        signInBody: "\u65b0\u589e\u5de1\u5e97\u9700\u8981\u7ed1\u5b9a\u5de1\u5e97\u8d26\u53f7\uff0c\u767b\u5f55\u540e\u4f1a\u81ea\u52a8\u5e26\u51fa\u63d0\u4ea4\u4eba\u3002",
       }
     : {
         selectStore: "Select Store",
@@ -311,6 +312,7 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
   const [selectedStore, setSelectedStore] = useState<OfflineStoreOption | null>(null);
   const [images, setImages] = useState<PendingImagesByCategory>(() => emptyImagesByCategory());
   const [submitting, setSubmitting] = useState(false);
+  const [redirectingToList, setRedirectingToList] = useState(false);
   const [submitStatus, setSubmitStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -418,6 +420,7 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
       });
 
       setSubmitStatus(labels.submitted);
+      setRedirectingToList(true);
       router.replace(`/${locale}/mobile/offline-capture`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : copy.networkRetry);
@@ -429,10 +432,23 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
 
   if (!userLoaded) {
     return (
-      <main className="mx-auto flex min-h-screen max-w-md items-center justify-center bg-slate-50 px-4 text-slate-950">
-        <div className="text-center text-sm text-slate-500">
+      <main className="mx-auto min-h-screen max-w-md bg-slate-50 px-4 py-5 text-slate-950">
+        <header className="mb-4 flex items-center gap-3">
+          <div className="mt-1 h-10 w-10 animate-pulse rounded-full bg-slate-200" />
+          <div className="min-w-0 flex-1">
+            <div className="h-3 w-28 animate-pulse rounded bg-slate-200" />
+            <div className="mt-3 h-7 w-44 animate-pulse rounded bg-slate-100" />
+          </div>
+        </header>
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="h-5 w-32 animate-pulse rounded bg-slate-200" />
+          <div className="mt-4 h-11 animate-pulse rounded-lg bg-slate-100" />
+          <div className="mt-3 h-11 animate-pulse rounded-lg bg-slate-100" />
+          <div className="mt-4 h-40 animate-pulse rounded-xl bg-slate-100" />
+        </section>
+        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4 text-center text-sm text-slate-500 shadow-sm">
           <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />
-          {copy.loading}
+          {locale === "zh" ? "正在加载巡店表单..." : "Loading the visit form..."}
         </div>
       </main>
     );
@@ -460,23 +476,29 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
   }
 
   return (
-    <main className="mx-auto min-h-screen max-w-md bg-slate-50 px-4 py-5 text-slate-950">
-      <header className="mb-4 flex items-center gap-3">
-        <Link href={`/${locale}/mobile/offline-capture`} className="mt-1 rounded-full border border-slate-200 bg-white p-2 text-slate-700">
-          <ArrowLeft className="h-4 w-4" />
-        </Link>
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold uppercase tracking-normal text-blue-600">{copy.aiStoreVisit}</p>
-        </div>
-      </header>
+    <>
+      <LoadingOverlay
+        open={redirectingToList}
+        title={locale === "zh" ? "提交成功，正在返回巡店列表..." : "Submitted. Returning to the visit list..."}
+        description={locale === "zh" ? "请稍候，不要重复点击。" : "Please wait and avoid tapping repeatedly."}
+      />
+      <main className="mx-auto min-h-screen max-w-md bg-slate-50 px-4 py-5 text-slate-950">
+        <header className="mb-4 flex items-center gap-3">
+          <Link href={`/${locale}/mobile/offline-capture`} className="mt-1 rounded-full border border-slate-200 bg-white p-2 text-slate-700">
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold uppercase tracking-normal text-blue-600">{copy.aiStoreVisit}</p>
+          </div>
+        </header>
 
-      {error ? <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
-      {submitStatus ? <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">{submitStatus}</div> : null}
+        {error ? <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
+        {submitStatus ? <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">{submitStatus}</div> : null}
 
-      {!selectedStore ? (
-        <StoreSearchStep locale={locale} user={user} onSelect={(store) => { setSelectedStore(store); setError(null); }} />
-      ) : (
-        <>
+        {!selectedStore ? (
+          <StoreSearchStep locale={locale} user={user} onSelect={(store) => { setSelectedStore(store); setError(null); }} />
+        ) : (
+          <>
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -518,6 +540,7 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
                 title={mobileImageCategoryLabel(locale, category)}
                 required={false}
                 addLabel={copy.add}
+                uploadedLabel={copy.uploaded}
                 emptyText={copy.noPhotosYet}
                 images={images[category]}
                 disabled={totalImageCount >= maxImages}
@@ -527,13 +550,14 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
             ))}
           </section>
 
-          <button type="button" onClick={submit} disabled={submitting || storeInfoIncomplete} className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 text-sm font-bold text-white disabled:opacity-60">
+          <button type="button" onClick={submit} disabled={submitting || redirectingToList || storeInfoIncomplete} className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 text-sm font-bold text-white disabled:opacity-60">
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             {submitting ? (submitStatus || copy.submitting) : copy.submitStoreVisit}
           </button>
-        </>
-      )}
-    </main>
+          </>
+        )}
+      </main>
+    </>
   );
 }
 
@@ -598,6 +622,18 @@ function StoreSearchStep({ locale, user, onSelect }: { locale: Locale; user: App
       </div>
       {error ? <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
       <div className="mt-4 space-y-2 pb-24">
+        {loading && results.length === 0 ? (
+          <>
+            <div className="rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm">
+              <div className="h-4 w-36 animate-pulse rounded bg-slate-200" />
+              <div className="mt-2 h-3 w-48 animate-pulse rounded bg-slate-100" />
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm">
+              <div className="h-4 w-40 animate-pulse rounded bg-slate-200" />
+              <div className="mt-2 h-3 w-52 animate-pulse rounded bg-slate-100" />
+            </div>
+          </>
+        ) : null}
         {!loading && results.length === 0 ? <div className="rounded-xl border border-dashed border-slate-300 p-5 text-center text-sm text-slate-500">{labels.noStoreFound}</div> : null}
         {results.map((store) => (
           <button
@@ -851,6 +887,7 @@ function ImageUploadSection({
   title,
   required,
   addLabel,
+  uploadedLabel,
   emptyText,
   images,
   disabled,
@@ -860,6 +897,7 @@ function ImageUploadSection({
   title: string;
   required: boolean;
   addLabel: string;
+  uploadedLabel: string;
   emptyText: string;
   images: PendingImage[];
   disabled: boolean;
@@ -874,7 +912,7 @@ function ImageUploadSection({
             {title}
             {required ? <span className="ml-1 text-red-500">*</span> : null}
           </h3>
-          <p className="mt-1 text-xs text-slate-500">{images.length} uploaded</p>
+          <p className="mt-1 text-xs text-slate-500">{images.length} {uploadedLabel}</p>
         </div>
         <label className={`inline-flex h-10 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-white ${disabled ? "cursor-not-allowed bg-slate-300" : "cursor-pointer bg-blue-600"}`}>
           <Camera className="h-4 w-4" />

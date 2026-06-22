@@ -3,6 +3,7 @@
 import { ArrowLeft, Check, Copy, Loader2, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { withMinimumDelay } from "@/lib/async-ui";
 import { formatIdr } from "@/lib/format";
 import type { Locale } from "@/lib/i18n/config";
 import { getMobileCopy, mobileAnalysisStatusLabel, mobileImageCategoryLabel } from "@/lib/mobile-i18n";
@@ -12,6 +13,7 @@ import type {
   StoreVisitImageCategory,
   StoreVisitPriceImageAnalysis,
 } from "@/lib/types";
+import { LoadingOverlay } from "@/components/loading-overlay";
 import { MobileLanguageSwitch } from "@/components/mobile-language-switch";
 
 type SignedVisitImage = {
@@ -84,26 +86,26 @@ function formatMoney(value: number | null | undefined) {
 function detailText(locale: Locale) {
   return locale === "zh"
     ? {
-        batchCode: "拍照批次",
-        priceParsing: "价格解析",
-        displayAnalysis: "陈列解析",
-        photo: "照片",
+        batchCode: "\u62cd\u7167\u6279\u6b21",
+        priceParsing: "\u4ef7\u683c\u89e3\u6790",
+        displayAnalysis: "\u9648\u5217\u89e3\u6790",
+        photo: "\u7167\u7247",
         sku: "SKU",
-        listPrice: "标价",
-        promoType: "活动类型",
-        netPrice: "到手价",
-        pricePerPiece: "单片价",
-        noPriceRows: "这张图片还没有可展示的价格结果。",
-        noPriceResult: "还没有价格解析结果。",
-        noDisplayResult: "还没有陈列解析结果。",
-        noDisplayImages: "未上传门店陈列图片。",
-        partialSuccess: "部分照片解析成功",
-        businessAnalysisError: "部分照片没有解析成功，已成功解析的价格可以先复核；失败照片可稍后重试。",
-        systemError: "系统报错",
-        copySystemError: "复制报错",
-        copiedSystemError: "已复制",
-        photoPrefix: "照片",
-        close: "关闭",
+        listPrice: "\u6807\u4ef7",
+        promoType: "\u6d3b\u52a8\u7c7b\u578b",
+        netPrice: "\u5230\u624b\u4ef7",
+        pricePerPiece: "\u5355\u7247\u4ef7",
+        noPriceRows: "\u8fd9\u5f20\u56fe\u7247\u6682\u65f6\u6ca1\u6709\u53ef\u5c55\u793a\u7684\u4ef7\u683c\u7ed3\u679c\u3002",
+        noPriceResult: "\u6682\u65e0\u4ef7\u683c\u89e3\u6790\u7ed3\u679c\u3002",
+        noDisplayResult: "\u6682\u65e0\u9648\u5217\u89e3\u6790\u7ed3\u679c\u3002",
+        noDisplayImages: "\u672a\u4e0a\u4f20\u95e8\u5e97\u9648\u5217\u56fe\u7247\u3002",
+        partialSuccess: "\u90e8\u5206\u6210\u529f",
+        businessAnalysisError: "\u90e8\u5206\u56fe\u7247\u672a\u89e3\u6790\u6210\u529f\uff0c\u5df2\u6210\u529f\u89e3\u6790\u7684\u4ef7\u683c\u53ef\u4ee5\u5148\u590d\u6838\uff1b\u5931\u8d25\u56fe\u7247\u53ef\u7a0d\u540e\u91cd\u8bd5\u3002",
+        systemError: "\u7cfb\u7edf\u62a5\u9519",
+        copySystemError: "\u590d\u5236\u62a5\u9519",
+        copiedSystemError: "\u5df2\u590d\u5236",
+        photoPrefix: "\u7167\u7247",
+        close: "\u5173\u95ed",
       }
     : {
         batchCode: "Batch code",
@@ -135,6 +137,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   const [visit, setVisit] = useState<StoreVisitDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
+  const [analysisPhase, setAnalysisPhase] = useState<"idle" | "running" | "refreshing">("idle");
   const [error, setError] = useState<string | null>(null);
   const [activeImage, setActiveImage] = useState<{ url: string; label: string } | null>(null);
   const [copiedErrorId, setCopiedErrorId] = useState<string | null>(null);
@@ -143,7 +146,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/store-visit/${id}`);
+      const res = await withMinimumDelay(fetch(`/api/store-visit/${id}`), 300);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(data.error ?? copy.loadVisitFailed);
@@ -166,23 +169,26 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
 
   async function analyze() {
     setAnalyzing(true);
+    setAnalysisPhase("running");
     setError(null);
     try {
-      const res = await fetch("/api/store-visit/analyze", {
+      const res = await withMinimumDelay(fetch("/api/store-visit/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ visit_id: id }),
-      });
+      }), 350);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(data.error ?? copy.aiAnalysisFailed);
       }
+      setAnalysisPhase("refreshing");
       await loadVisit();
     } catch {
       setError(copy.aiAnalysisFailed);
       await loadVisit();
     } finally {
       setAnalyzing(false);
+      setAnalysisPhase("idle");
     }
   }
 
@@ -218,7 +224,17 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   }
 
   return (
-    <main className="mx-auto min-h-screen max-w-md bg-slate-50 px-4 py-5 text-slate-950">
+    <>
+      <LoadingOverlay
+        open={analysisPhase !== "idle"}
+        title={
+          analysisPhase === "refreshing"
+            ? (locale === "zh" ? "分析完成，正在刷新结果..." : "Analysis complete. Refreshing results...")
+            : (locale === "zh" ? "正在重新分析巡店..." : "Re-analyzing the visit...")
+        }
+        description={locale === "zh" ? "请稍候，不要重复点击。" : "Please wait and avoid tapping repeatedly."}
+      />
+      <main className="mx-auto min-h-screen max-w-md bg-slate-50 px-4 py-5 text-slate-950">
       <header className="mb-4 flex items-center gap-3">
         <Link href={`/${locale}/mobile/offline-capture`} className="rounded-full border border-slate-200 bg-white p-2 text-slate-700">
           <ArrowLeft className="h-4 w-4" />
@@ -234,9 +250,28 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
       {error ? <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
 
       {loading ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-          <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />
-          {copy.loadingVisit}
+        <div className="space-y-4">
+          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="h-3 w-24 animate-pulse rounded bg-slate-200" />
+                <div className="mt-3 h-7 w-40 animate-pulse rounded bg-slate-100" />
+                <div className="mt-2 h-3 w-52 animate-pulse rounded bg-slate-100" />
+              </div>
+              <div className="h-10 w-24 animate-pulse rounded-lg bg-slate-100" />
+            </div>
+          </section>
+          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="h-5 w-28 animate-pulse rounded bg-slate-200" />
+            <div className="mt-4 space-y-3">
+              <div className="h-24 animate-pulse rounded-xl bg-slate-100" />
+              <div className="h-24 animate-pulse rounded-xl bg-slate-100" />
+            </div>
+          </section>
+          <section className="rounded-2xl border border-slate-200 bg-white p-4 text-center text-sm text-slate-500 shadow-sm">
+            <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />
+            {copy.loadingVisit}
+          </section>
         </div>
       ) : null}
 
@@ -380,6 +415,20 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
         </div>
       ) : null}
 
+      {!loading && !visit && !error ? (
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500 shadow-sm">
+          <div>{locale === "zh" ? "没有找到这条巡店记录。" : "This visit record could not be found."}</div>
+          <button
+            type="button"
+            onClick={() => void loadVisit()}
+            className="mt-4 inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white"
+          >
+            <RefreshCw className="h-4 w-4" />
+            {locale === "zh" ? "重新加载" : "Reload"}
+          </button>
+        </div>
+      ) : null}
+
       {activeImage ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 p-4"
@@ -404,7 +453,8 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
           </div>
         </div>
       ) : null}
-    </main>
+      </main>
+    </>
   );
 }
 

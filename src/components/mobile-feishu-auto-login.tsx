@@ -3,6 +3,8 @@
 import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
 import type { Locale } from "@/lib/i18n/config";
+import { withMinimumDelay } from "@/lib/async-ui";
+import { LoadingOverlay } from "@/components/loading-overlay";
 
 declare global {
   interface Window {
@@ -42,7 +44,9 @@ function saveUser(user: AppUser) {
 export function MobileFeishuAutoLogin({ locale }: { locale: Locale }) {
   const feishuAppId = process.env.NEXT_PUBLIC_FEISHU_APP_ID;
   const [feishuReady, setFeishuReady] = useState(false);
+  const [status, setStatus] = useState<"idle" | "requesting" | "signing_in" | "redirecting">("idle");
   const attemptedRef = useRef(false);
+  const isZh = locale === "zh";
 
   useEffect(() => {
     if (!feishuReady || attemptedRef.current || !feishuAppId || !window.tt?.requestAccess) return;
@@ -50,45 +54,74 @@ export function MobileFeishuAutoLogin({ locale }: { locale: Locale }) {
 
     attemptedRef.current = true;
 
-    window.tt.requestAccess({
-      scopeList: [],
-      appID: feishuAppId,
-      success: async (result) => {
-        const code = String(result.code ?? "").trim();
-        if (!code) return;
+    const timer = window.setTimeout(() => {
+      setStatus("requesting");
 
-        try {
-          const response = await fetch("/api/auth/feishu-login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              code,
-              next: `/${locale}/mobile/offline-capture`,
-              purpose: "mobile_h5",
-            }),
-          });
-          const payload = await response.json().catch(() => ({}));
-          if (!response.ok || !payload.user?.id) return;
+      window.tt?.requestAccess?.({
+        scopeList: [],
+        appID: feishuAppId,
+        success: async (result) => {
+          const code = String(result.code ?? "").trim();
+          if (!code) {
+            setStatus("idle");
+            return;
+          }
 
-          saveUser(payload.user as AppUser);
-          window.location.reload();
-        } catch {
+          try {
+            setStatus("signing_in");
+            const response = await withMinimumDelay(fetch("/api/auth/feishu-login", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                code,
+                next: `/${locale}/mobile/offline-capture`,
+                purpose: "mobile_h5",
+              }),
+            }));
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.user?.id) {
+              setStatus("idle");
+              return;
+            }
+
+            saveUser(payload.user as AppUser);
+            setStatus("redirecting");
+            window.location.reload();
+          } catch {
+            setStatus("idle");
+            // Leave the existing password login fallback visible.
+          }
+        },
+        fail: () => {
+          setStatus("idle");
           // Leave the existing password login fallback visible.
-        }
-      },
-      fail: () => {
-        // Leave the existing password login fallback visible.
-      },
-    });
+        },
+      });
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, [feishuAppId, feishuReady, locale]);
 
   if (!feishuAppId) return null;
 
   return (
-    <Script
-      src="https://lf-scm-cn.feishucdn.com/lark/op/h5-js-sdk-1.5.30.js"
-      strategy="afterInteractive"
-      onLoad={() => setFeishuReady(true)}
-    />
+    <>
+      <Script
+        src="https://lf-scm-cn.feishucdn.com/lark/op/h5-js-sdk-1.5.30.js"
+        strategy="afterInteractive"
+        onLoad={() => setFeishuReady(true)}
+      />
+      <LoadingOverlay
+        open={status !== "idle"}
+        title={
+          status === "requesting"
+            ? (isZh ? "正在连接飞书..." : "Connecting to Feishu...")
+            : status === "signing_in"
+              ? (isZh ? "正在验证身份..." : "Verifying your account...")
+              : (isZh ? "登录成功，正在进入系统..." : "Signed in. Entering the app...")
+        }
+        description={isZh ? "请稍候，不要重复点击。" : "Please wait and avoid tapping repeatedly."}
+      />
+    </>
   );
 }

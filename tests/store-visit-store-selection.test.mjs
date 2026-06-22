@@ -37,6 +37,7 @@ test("new H5 store visit uses logged-in user and blocks anonymous capture", () =
   assert.match(storeVisitH5, /signInFirst/);
   assert.match(storeVisitH5, /goToCapture/);
   assert.match(storeVisitH5, /user\?\.displayName/);
+  assert.match(storeVisitH5, /Loading the visit form|正在加载巡店表单/);
   assert.doesNotMatch(storeVisitH5, /placeholder=\{copy\.promoter\}/);
 });
 
@@ -109,7 +110,19 @@ test("new H5 store visit submits photos with limited concurrency after creating 
   assert.ok(uploadIndex > createVisitIndex, "image upload should start after visit creation");
   assert.equal(analyzeIndex, -1, "submit page should not wait for analysis after image upload");
   assert.ok(listRedirectIndex > uploadIndex, "list redirect should happen after all image uploads complete");
+  assert.match(storeVisitH5, /redirectingToList/);
+  assert.match(storeVisitH5, /Returning to the visit list|正在返回巡店列表/);
   assert.doesNotMatch(storeVisitH5, /const compressedImages = \[\];[\s\S]+Uploading photo \$\{index \+ 1\}/);
+});
+
+test("mobile visit list login and new-visit entry expose explicit loading states", () => {
+  assert.match(storeVisitsListH5, /LoadingOverlay/);
+  assert.match(storeVisitsListH5, /const \[loginPhase, setLoginPhase\]/);
+  assert.match(storeVisitsListH5, /const \[startingVisit, setStartingVisit\]/);
+  assert.match(storeVisitsListH5, /startNewVisit/);
+  assert.match(storeVisitsListH5, /Opening the visit form|正在打开巡店表单/);
+  assert.match(storeVisitsListH5, /Verifying account|正在验证账号/);
+  assert.match(storeVisitsListH5, /Entering the app|正在进入系统/);
 });
 
 test("store visit image API allows the same 20-photo cap as the H5 client", () => {
@@ -155,9 +168,15 @@ test("mobile visit list and detail expose retry analysis for failed or uploaded 
   assert.match(storeVisitsListH5, /function canRetryAnalysis/);
   assert.match(storeVisitsListH5, /retryAnalyze/);
   assert.match(storeVisitsListH5, /reanalyzeVisit/);
+  assert.match(storeVisitsListH5, /withMinimumDelay/);
   assert.match(storeVisitsListH5, /fetch\("\/api\/store-visit\/analyze"/);
   assert.match(storeVisitsListH5, /analysis_status.*failed|failed.*analysis_status/s);
   assert.match(storeVisitDetailH5, /canRetryAnalysis/);
+  assert.match(storeVisitDetailH5, /withMinimumDelay/);
+  assert.match(storeVisitDetailH5, /LoadingOverlay/);
+  assert.match(storeVisitDetailH5, /const \[analysisPhase, setAnalysisPhase\]/);
+  assert.match(storeVisitDetailH5, /Re-analyzing the visit|正在重新分析巡店/);
+  assert.match(storeVisitDetailH5, /This visit record could not be found|没有找到这条巡店记录/);
   assert.match(storeVisitDetailH5, /copy\.retryAnalyze/);
   assert.match(storeVisitDetailH5, /analysis_status\?:/);
   assert.match(storeVisitDetailH5, /visit_status\?:/);

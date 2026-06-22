@@ -32,6 +32,7 @@ test("app user management API hashes passwords and supports account status", () 
   assert.match(usersApi, /createHash\("sha256"\)/);
   assert.match(usersApi, /password_hash/);
   assert.match(usersApi, /status/);
+  assert.match(usersApi, /role/);
   assert.match(usersApi, /disabled_at/);
   assert.match(usersApi, /email/);
   assert.match(usersApi, /feishu_user_id/);
@@ -40,9 +41,13 @@ test("app user management API hashes passwords and supports account status", () 
   assert.match(userCreateDialog, /name="email"/);
   assert.doesNotMatch(usersPage, /name="feishu_user_id"/);
   assert.match(userTable, /Feishu Open ID/);
+  assert.match(userTable, /SelectInput/);
   assert.match(userTable, /resolve-feishu-open-id/);
   assert.match(userTable, /Reset password/);
   assert.match(userTable, /Disable|Enable/);
+  assert.match(userTable, /option value="field_agent"/);
+  assert.match(userTable, /option value="manager"/);
+  assert.match(userTable, /option value="admin"/);
 });
 
 test("user management keeps table compact and moves actions into controls", () => {

@@ -91,6 +91,8 @@ export async function PATCH(request: Request) {
     const { body } = await readRequestBody(request);
     const id = clean(body.id);
     const status = normalizeStatus(body.status);
+    const hasRole = Object.prototype.hasOwnProperty.call(body, "role");
+    const role = hasRole ? normalizeRole(body.role) : null;
     const password = clean(body.password);
     const hasEmail = Object.prototype.hasOwnProperty.call(body, "email");
     const email = cleanNullable(body.email)?.toLowerCase() ?? null;
@@ -98,7 +100,7 @@ export async function PATCH(request: Request) {
     const feishuUserId = cleanNullable(body.feishu_user_id);
 
     if (!id) return Response.json({ error: "Missing user id" }, { status: 400 });
-    if (!status && !password && !hasEmail && !hasFeishuUserId) return Response.json({ error: "Missing status, password, email, or feishu_user_id" }, { status: 400 });
+    if (!status && !role && !password && !hasEmail && !hasFeishuUserId) return Response.json({ error: "Missing status, role, password, email, or feishu_user_id" }, { status: 400 });
 
     const update: Record<string, string | null> = {
       updated_at: new Date().toISOString(),
@@ -107,6 +109,7 @@ export async function PATCH(request: Request) {
       update.status = status;
       update.disabled_at = status === "disabled" ? new Date().toISOString() : null;
     }
+    if (role) update.role = role;
     if (password) update.password_hash = hashPassword(password);
     if (hasEmail) update.email = email;
     if (hasFeishuUserId) update.feishu_user_id = feishuUserId;

@@ -10,6 +10,7 @@ const mobileFeishuAutoLogin = existsSync("src/components/mobile-feishu-auto-logi
 const mobileCapturePage = existsSync("src/app/[locale]/mobile/offline-capture/page.tsx") ? readFileSync("src/app/[locale]/mobile/offline-capture/page.tsx", "utf8") : "";
 const mobileCaptureListPage = existsSync("src/app/[locale]/mobile/offline-capture/list/page.tsx") ? readFileSync("src/app/[locale]/mobile/offline-capture/list/page.tsx", "utf8") : "";
 const mobileCaptureNewPage = existsSync("src/app/[locale]/mobile/offline-capture/new/page.tsx") ? readFileSync("src/app/[locale]/mobile/offline-capture/new/page.tsx", "utf8") : "";
+const asyncUiHelper = existsSync("src/lib/async-ui.ts") ? readFileSync("src/lib/async-ui.ts", "utf8") : "";
 const loginRoute = readFileSync("src/app/api/auth/login/route.ts", "utf8");
 const feishuLoginRoute = existsSync("src/app/api/auth/feishu-login/route.ts") ? readFileSync("src/app/api/auth/feishu-login/route.ts", "utf8") : "";
 const logoutRoute = existsSync("src/app/api/auth/logout/route.ts") ? readFileSync("src/app/api/auth/logout/route.ts", "utf8") : "";
@@ -68,6 +69,12 @@ test("H5 capture entry auto-attempts Feishu login and still uses the shared sess
   assert.match(mobileFeishuAutoLogin, /\/api\/auth\/feishu-login/);
   assert.match(mobileFeishuAutoLogin, /mobile_h5/);
   assert.match(mobileFeishuAutoLogin, /makuku_app_user/);
+  assert.match(mobileFeishuAutoLogin, /withMinimumDelay/);
+  assert.match(asyncUiHelper, /withMinimumDelay/);
+  assert.match(mobileFeishuAutoLogin, /LoadingOverlay/);
+  assert.match(mobileFeishuAutoLogin, /Connecting to Feishu|正在连接飞书/);
+  assert.match(mobileFeishuAutoLogin, /Verifying your account|正在验证身份/);
+  assert.match(mobileFeishuAutoLogin, /Entering the app|正在进入系统/);
   assert.match(mobileCapturePage, /MobileFeishuAutoLogin/);
   assert.match(mobileCaptureListPage, /MobileFeishuAutoLogin/);
   assert.match(mobileCaptureNewPage, /MobileFeishuAutoLogin/);
