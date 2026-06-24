@@ -33,18 +33,21 @@ export async function POST(request: Request) {
     const email = requestedEmail || clean(user.email).toLowerCase();
     if (!email) return Response.json({ error: "User email is empty" }, { status: 400 });
 
-    const feishuUserId = await resolveFeishuOpenIdByEmail(email);
+    const resolved = await resolveFeishuOpenIdByEmail(email);
     const { data, error } = await supabase
       .from("app_users")
-      .update({ email, feishu_user_id: feishuUserId, updated_at: new Date().toISOString() })
+      .update({ email, feishu_user_id: resolved.openId, updated_at: new Date().toISOString() })
       .eq("id", id)
       .select("id,username,display_name,email,feishu_user_id,role,status,disabled_at,updated_at,created_at")
       .single();
 
     if (error) return Response.json({ error: error.message }, { status: 400 });
     revalidateUserViews();
-    return Response.json({ user: data });
+    return Response.json({ user: data, diagnostics: resolved.diagnostics });
   } catch (error) {
+    console.error("resolve-feishu-open-id failed", {
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
     return Response.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
   }
 }

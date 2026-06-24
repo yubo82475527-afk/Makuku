@@ -10,6 +10,8 @@ const storeVisitsApi = readFileSync("src/app/api/store-visits/route.ts", "utf8")
 const storeVisitImagesApi = readFileSync("src/app/api/store-visit/[id]/images/route.ts", "utf8");
 const storeVisitAiDebug = readFileSync("src/lib/store-visit-ai-debug.ts", "utf8");
 const offlineStoresApi = readFileSync("src/app/api/offline-stores/route.ts", "utf8");
+const storeVisitHistoryStoresApiPath = "src/app/api/store-visit-history-stores/route.ts";
+const storeVisitHistoryStoresApi = existsSync(storeVisitHistoryStoresApiPath) ? readFileSync(storeVisitHistoryStoresApiPath, "utf8") : "";
 const googleStoreSearchApiPath = "src/app/api/google-store-search/route.ts";
 const googleStoreSelectApiPath = "src/app/api/google-store-select/route.ts";
 const googleStoreSearchApi = existsSync(googleStoreSearchApiPath) ? readFileSync(googleStoreSearchApiPath, "utf8") : "";
@@ -22,20 +24,22 @@ const visitChannelMigration = readFileSync("supabase/migrations/202606170003_rel
 
 test("new H5 store visit requires selecting store master data before capture", () => {
   assert.match(storeVisitH5, /selectedStore/);
-  assert.match(storeVisitH5, /fetch\(`\/api\/google-store-search\?\$\{params\.toString\(\)\}`\)/);
-  assert.match(storeVisitH5, /googleResults/);
-  assert.match(storeVisitH5, /locateStores/);
+  assert.match(storeVisitH5, /fetch\(`\/api\/store-visit-history-stores\?\$\{params\.toString\(\)\}`\)/);
+  assert.match(storeVisitH5, /historyStores/);
+  assert.match(storeVisitH5, /loadHistoryStores/);
   assert.match(storeVisitH5, /chooseGoogleStore/);
   assert.match(storeVisitH5, /materializeSelectedGoogleStore/);
   assert.match(storeVisitH5, /GoogleStoreTypeSheet/);
   assert.match(storeVisitH5, /pendingGoogleStore/);
   assert.match(storeVisitH5, /StoreSearchStep/);
+  assert.match(storeVisitH5, /NewStoreSearchFlow/);
   assert.match(storeVisitH5, /CreateStoreSheet/);
   assert.match(storeVisitH5, /storeInfoIncomplete/);
   assert.match(storeVisitH5, /<StoreSearchStep locale=\{locale\} user=\{user\}/);
   assert.match(storeVisitH5, /created_by_user_id: user\.id/);
   assert.match(storeVisitH5, /created_by_name: user\.displayName/);
   assert.doesNotMatch(storeVisitH5, /params\.set\("scope", "master"\)/);
+  assert.doesNotMatch(storeVisitH5, /labels\.backToHistory/);
 
   assert.doesNotMatch(storeVisitH5, /placeholder=\{copy\.region\}/);
   assert.doesNotMatch(storeVisitH5, /value=\{channel\}/);
@@ -58,6 +62,7 @@ test("new H5 store visit keeps browser location inside create-store master data"
   assert.match(storeVisitH5, /CreateStoreSheet[\s\S]+navigator\.geolocation/);
   assert.match(storeVisitH5, /fetch\("\/api\/offline-stores"/);
   assert.match(storeVisitH5, /fetch\(`\/api\/google-store-search\?\$\{params\.toString\(\)\}`\)/);
+  assert.match(storeVisitH5, /setSearchMode\("new_store"\)/);
   assert.doesNotMatch(storeVisitH5, /location\?\.latitude/);
   assert.doesNotMatch(storeVisitH5, /labels\.locationTitle/);
 });
@@ -75,6 +80,25 @@ test("new store sheet loads offline channel master data for store type", () => {
   assert.match(demoData, /"MT-LKA-SUPERMARKET"/);
   assert.match(competitorExcelMigration, /update public\.channels[\s\S]*set active = false[\s\S]*where type = 'offline'/);
   assert.match(competitorExcelMigration, /'MT-LKA-SUPERMARKET'/);
+});
+
+test("history-first store search loads current user's visited stores before offering google search", () => {
+  assert.equal(existsSync(storeVisitHistoryStoresApiPath), true, "history store route should exist");
+  assert.match(storeVisitHistoryStoresApi, /user_id is required/);
+  assert.match(storeVisitHistoryStoresApi, /store_id\.not\.is\.null|not\("store_id", "is", null\)/);
+  assert.match(storeVisitHistoryStoresApi, /uploader_user_id/);
+  assert.match(storeVisitHistoryStoresApi, /last_visit_at/);
+  assert.match(storeVisitHistoryStoresApi, /visit_count/);
+  assert.match(storeVisitHistoryStoresApi, /offline_stores/);
+  assert.match(storeVisitH5, /historyStoresLoading/);
+  assert.match(storeVisitH5, /historyStoresError/);
+  assert.match(storeVisitH5, /historyStoresEmpty/);
+  assert.match(storeVisitH5, /historyResults/);
+  assert.match(storeVisitH5, /loadHistoryStores/);
+  assert.match(storeVisitH5, /fetch\(`\/api\/store-visit-history-stores\?\$\{params\.toString\(\)\}`\)/);
+  assert.match(storeVisitH5, /searchMode === "history" \? labels\.selectStore : labels\.createStore/);
+  assert.match(storeVisitH5, /searchMode === "history" \? labels\.selectStoreHint : labels\.newStoreFlowHint/);
+  assert.doesNotMatch(storeVisitH5, /useEffect\(\(\) => \{\s*locateStores\(\);/s);
 });
 
 test("google store first-time selection uses the same offline store type dropdown before materializing", () => {
@@ -266,16 +290,23 @@ test("google store APIs search places and materialize selected place into local 
 });
 
 test("store search shows manual create only after google search returns no reliable place", () => {
+  assert.match(storeVisitH5, /historyEntryAction/);
+  assert.match(storeVisitH5, /setSearchMode\("new_store"\)/);
   assert.match(storeVisitH5, /googleSearchEmpty/);
   assert.match(storeVisitH5, /showCreate/);
   assert.match(storeVisitH5, /!loading && googleResults\.length === 0/);
   assert.match(storeVisitH5, /onClick=\{\(\) => setShowCreate\(true\)\}/);
-  assert.doesNotMatch(storeVisitH5, /className="fixed bottom-4 left-1\/2 z-40 flex h-12/);
+  assert.match(storeVisitH5, /className="pointer-events-none fixed inset-x-0 bottom-0 z-20 mx-auto max-w-md px-4 pb-4/);
+  assert.match(storeVisitH5, /className="mt-4 space-y-2 pb-24"/);
 });
 
 test("store search location button keeps icon and label on one line", () => {
   assert.match(storeVisitH5, /labels\.useCurrentLocation/);
-  assert.match(storeVisitH5, /inline-flex h-7 items-center gap-1 whitespace-nowrap/);
+  assert.match(storeVisitH5, /rounded-xl border border-slate-200 bg-slate-50 px-3 py-2/);
+  assert.doesNotMatch(storeVisitH5, /text-\[11px\] font-semibold text-slate-700/);
+  assert.match(storeVisitH5, /truncate text-\[11px\] leading-4 text-slate-500/);
+  assert.match(storeVisitH5, /flex h-6 w-6 shrink-0 items-center justify-center rounded-full/);
+  assert.match(storeVisitH5, /inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full/);
 });
 
 test("mobile store visit detail header does not render a language switch", () => {

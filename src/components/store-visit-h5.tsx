@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Building2, Camera, CheckCircle2, Loader2, LocateFixed, LogIn, Plus, Search, Trash2, X } from "lucide-react";
+import { ArrowLeft, Building2, Camera, CheckCircle2, Loader2, LocateFixed, LogIn, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -37,6 +37,21 @@ type OfflineStoreOption = {
   longitude?: number | null;
   location_accuracy_m?: number | null;
   location_captured_at?: string | null;
+  channels?: { id: string; code: string; name: string; type: string } | null;
+};
+
+type HistoryStoreOption = {
+  store_id: string;
+  name: string;
+  city: string;
+  province?: string | null;
+  city_name?: string | null;
+  district?: string | null;
+  channel_type: string;
+  channel_id?: string | null;
+  address?: string | null;
+  last_visit_at: string;
+  visit_count: number;
   channels?: { id: string; code: string; name: string; type: string } | null;
 };
 
@@ -101,14 +116,34 @@ function localDateInputValue(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+function formatVisitDate(value: string, locale: Locale) {
+  const time = Date.parse(value);
+  if (!Number.isFinite(time)) return value;
+  return new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  }).format(new Date(time));
+}
+
 function uiCopy(locale: Locale) {
   return locale === "zh"
     ? {
         selectStore: "\u9009\u62e9\u95e8\u5e97",
-        selectStoreHint: "\u4f18\u5148\u6309\u5f53\u524d\u5b9a\u4f4d\u63a8\u8350 Google \u5730\u56fe\u95e8\u5e97\uff0c\u8f93\u5165\u5173\u952e\u8bcd\u540e\u4ecd\u5728\u540c\u4e00\u5217\u8868\u91cc\u6309\u8ddd\u79bb\u6392\u5e8f\u3002",
+        selectStoreHint: "\u4f18\u5148\u9009\u62e9\u4f60\u8d70\u8bbf\u8fc7\u7684\u95e8\u5e97\uff0c\u6ca1\u6709\u5408\u9002\u7684\u518d\u53bb\u65b0\u589e\u3002",
         searchPlaceholder: "\u641c\u7d22\u95e8\u5e97\u540d\u3001\u5546\u573a\u3001\u57ce\u5e02",
         noStoreFound: "\u672a\u627e\u5230\u5339\u914d\u95e8\u5e97\uff0c\u53ef\u624b\u52a8\u65b0\u5efa",
         createStore: "\u65b0\u5efa\u95e8\u5e97",
+        historySearchPlaceholder: "\u641c\u7d22\u4f60\u8d70\u8bbf\u8fc7\u7684\u95e8\u5e97",
+        historyStoresLoading: "\u6b63\u5728\u52a0\u8f7d\u4f60\u7684\u5386\u53f2\u95e8\u5e97...",
+        historyStoresError: "\u5386\u53f2\u95e8\u5e97\u52a0\u8f7d\u5931\u8d25\uff0c\u53ef\u76f4\u63a5\u53bb\u65b0\u589e\u3002",
+        historyStoresEmpty: "\u8fd8\u6ca1\u6709\u5df2\u8d70\u8bbf\u7684\u95e8\u5e97\u3002",
+        historyEntryAction: "\u65b0\u589e\u95e8\u5e97",
+        recentVisit: "\u6700\u8fd1\u8d70\u8bbf",
+        visitCountLabel: "\u8d70\u8bbf",
+        visitCountUnit: "\u6b21",
+        newStoreFlowTitle: "\u65b0\u589e\u95e8\u5e97",
+        newStoreFlowHint: "\u53ea\u5728\u6ca1\u6709\u5408\u9002\u5386\u53f2\u95e8\u5e97\u65f6\uff0c\u518d\u7528 Google \u63a8\u8350\u6216\u624b\u52a8\u65b0\u5efa\u3002",
         locatingStores: "\u6b63\u5728\u83b7\u53d6\u9644\u8fd1\u95e8\u5e97...",
         nearbySorted: "\u5df2\u6309\u5f53\u524d\u4f4d\u7f6e\u6392\u5e8f",
         matchedSorted: "\u5df2\u5148\u6309\u5173\u952e\u8bcd\u5339\u914d\uff0c\u518d\u6309\u8ddd\u79bb\u6392\u5e8f",
@@ -155,10 +190,20 @@ function uiCopy(locale: Locale) {
       }
     : {
         selectStore: "Select Store",
-        selectStoreHint: "Start with Google Places near the current location. Searching keeps the same list and still sorts by distance.",
+        selectStoreHint: "Start with stores this user has already visited. Only add a new store when none of them fit.",
         searchPlaceholder: "Search store name, mall, or city",
         noStoreFound: "No matching store found. Create one manually.",
         createStore: "Create Store",
+        historySearchPlaceholder: "Search your visited stores",
+        historyStoresLoading: "Loading your visited stores...",
+        historyStoresError: "Visited-store history could not be loaded. You can add a new store instead.",
+        historyStoresEmpty: "No visited stores yet.",
+        historyEntryAction: "Add Store",
+        recentVisit: "Recent visit",
+        visitCountLabel: "Visits",
+        visitCountUnit: "",
+        newStoreFlowTitle: "Add New Store",
+        newStoreFlowHint: "Use Google suggestions or manual creation only when no visited store fits.",
         locatingStores: "Loading nearby stores...",
         nearbySorted: "Sorted by current location",
         matchedSorted: "Matched by keyword, then sorted by distance",
@@ -652,8 +697,162 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
 function StoreSearchStep({ locale, user, onSelect }: { locale: Locale; user: AppUser; onSelect: (store: OfflineStoreOption) => void }) {
   const labels = uiCopy(locale);
   const [query, setQuery] = useState("");
+  const [searchMode, setSearchMode] = useState<"history" | "new_store">("history");
+  const [historyStores, setHistoryStores] = useState<HistoryStoreOption[]>([]);
+  const [historyStoresLoading, setHistoryStoresLoading] = useState(true);
+  const [historyStoresError, setHistoryStoresError] = useState<string | null>(null);
+  const historyResults = historyStores;
+  const historyStoresEmpty = !historyStoresLoading && historyResults.length === 0;
+
+  function toOfflineStoreOption(store: HistoryStoreOption): OfflineStoreOption {
+    return {
+      id: store.store_id,
+      name: store.name,
+      city: store.city,
+      province: store.province ?? null,
+      city_name: store.city_name ?? null,
+      district: store.district ?? null,
+      channel_type: store.channel_type,
+      channel_id: store.channel_id ?? null,
+      address: store.address ?? null,
+      channels: store.channels ?? null,
+    };
+  }
+
+  async function loadHistoryStores(keyword: string) {
+    setHistoryStoresLoading(true);
+    setHistoryStoresError(null);
+    try {
+      const params = new URLSearchParams();
+      params.set("user_id", user.id);
+      params.set("limit", "20");
+      if (keyword.trim()) params.set("q", keyword.trim());
+      const res = await fetch(`/api/store-visit-history-stores?${params.toString()}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setHistoryStores([]);
+        setHistoryStoresError(data.error ?? labels.historyStoresError);
+        return;
+      }
+      setHistoryStores((data.stores ?? []) as HistoryStoreOption[]);
+    } catch {
+      setHistoryStores([]);
+      setHistoryStoresError(labels.historyStoresError);
+    } finally {
+      setHistoryStoresLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    const timeout = setTimeout(async () => {
+      if (!cancelled && searchMode === "history") {
+        await loadHistoryStores(query);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [query, searchMode, user.id, labels.historyStoresError]);
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div>
+        <h2 className="font-semibold">{searchMode === "history" ? labels.selectStore : labels.createStore}</h2>
+        <p className="mt-1 text-xs text-slate-500">{searchMode === "history" ? labels.selectStoreHint : labels.newStoreFlowHint}</p>
+      </div>
+      <div className="relative mt-4">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder={searchMode === "history" ? labels.historySearchPlaceholder : labels.searchPlaceholder}
+          className="h-11 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm outline-none focus:border-blue-500"
+        />
+        {historyStoresLoading && searchMode === "history" ? <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-slate-400" /> : null}
+      </div>
+
+      {searchMode === "history" ? (
+        <>
+          {historyStoresError ? <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{historyStoresError}</div> : null}
+          <div className="mt-4 space-y-2 pb-24">
+            {historyStoresLoading && historyResults.length === 0 ? (
+              <>
+                <div className="rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm">
+                  <div className="h-4 w-36 animate-pulse rounded bg-slate-200" />
+                  <div className="mt-2 h-3 w-48 animate-pulse rounded bg-slate-100" />
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm">
+                  <div className="h-4 w-40 animate-pulse rounded bg-slate-200" />
+                  <div className="mt-2 h-3 w-52 animate-pulse rounded bg-slate-100" />
+                </div>
+              </>
+            ) : null}
+            {!historyStoresLoading && historyStoresEmpty ? (
+              <div className="rounded-xl border border-dashed border-slate-300 p-5 text-center text-sm text-slate-500">
+                <div>{labels.historyStoresEmpty}</div>
+                <div className="mt-1">{labels.noStoreFound}</div>
+              </div>
+            ) : null}
+            {historyResults.map((store) => (
+              <button
+                key={store.store_id}
+                type="button"
+                onClick={() => onSelect(toOfflineStoreOption(store))}
+                className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 text-left shadow-sm"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+                  <Building2 className="h-4 w-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-bold">{store.name}</span>
+                  <span className="mt-1 block truncate text-xs text-slate-500">{store.city || "-"}</span>
+                  <span className="mt-1 block truncate text-[11px] text-slate-400">
+                    {labels.recentVisit} {formatVisitDate(store.last_visit_at, locale)} / {labels.visitCountLabel} {store.visit_count}{labels.visitCountUnit}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+          <div className="pointer-events-none fixed inset-x-0 bottom-0 z-20 mx-auto max-w-md px-4 pb-4">
+            <button
+              type="button"
+              onClick={() => {
+                setQuery("");
+                setSearchMode("new_store");
+              }}
+              className="pointer-events-auto flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 text-sm font-bold text-white shadow-[0_-6px_24px_rgba(15,23,42,0.12)]"
+            >
+              <Plus className="h-4 w-4" />
+              {labels.historyEntryAction}
+            </button>
+          </div>
+        </>
+      ) : (
+        <NewStoreSearchFlow locale={locale} user={user} query={query} setQuery={setQuery} onSelect={onSelect} />
+      )}
+    </section>
+  );
+}
+
+function NewStoreSearchFlow({
+  locale,
+  user,
+  query,
+  setQuery,
+  onSelect,
+}: {
+  locale: Locale;
+  user: AppUser;
+  query: string;
+  setQuery: (value: string) => void;
+  onSelect: (store: OfflineStoreOption) => void;
+}) {
+  const labels = uiCopy(locale);
   const [googleResults, setGoogleResults] = useState<GoogleStoreOption[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [storeLocation, setStoreLocation] = useState<StoreLocationEvidence | null>(null);
@@ -690,7 +889,9 @@ function StoreSearchStep({ locale, user, onSelect }: { locale: Locale; user: App
   }
 
   useEffect(() => {
-    locateStores();
+    if (!storeLocation && !query.trim()) {
+      locateStores();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -786,31 +987,25 @@ function StoreSearchStep({ locale, user, onSelect }: { locale: Locale; user: App
   }
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div>
-        <h2 className="font-semibold">{labels.selectStore}</h2>
-        <p className="mt-1 text-xs text-slate-500">{labels.selectStoreHint}</p>
-      </div>
-      <div className="relative mt-4">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={labels.searchPlaceholder}
-          className="h-11 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm outline-none focus:border-blue-500"
-        />
-        {loading ? <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-slate-400" /> : null}
-      </div>
-      <div className="mt-3 flex items-center justify-between gap-3">
-        <div className="text-xs text-slate-500">{locationStatus || (query.trim() ? labels.matchedSorted : labels.nearbySorted)}</div>
-        <button
-          type="button"
-          onClick={locateStores}
-          className="inline-flex h-7 items-center gap-1 whitespace-nowrap rounded-full border border-slate-200 bg-white px-2.5 text-[11px] font-medium leading-none text-slate-600 transition hover:bg-slate-50"
-        >
-          <LocateFixed className="h-3 w-3" />
-          {labels.useCurrentLocation}
-        </button>
+    <>
+      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+        <div className="flex items-center gap-2">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm">
+            <LocateFixed className="h-3 w-3" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[11px] leading-4 text-slate-500">{locationStatus || (query.trim() ? labels.matchedSorted : labels.nearbySorted)}</div>
+          </div>
+          <button
+            type="button"
+            onClick={locateStores}
+            aria-label={labels.useCurrentLocation}
+            title={labels.useCurrentLocation}
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-100"
+          >
+            <RefreshCw className="h-2.5 w-2.5" />
+          </button>
+        </div>
       </div>
       {error ? <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
       <div className="mt-4 space-y-2">
@@ -884,7 +1079,7 @@ function StoreSearchStep({ locale, user, onSelect }: { locale: Locale; user: App
           onConfirm={(selectedChannel) => materializeSelectedGoogleStore(pendingGoogleStore, selectedChannel)}
         />
       ) : null}
-    </section>
+    </>
   );
 }
 

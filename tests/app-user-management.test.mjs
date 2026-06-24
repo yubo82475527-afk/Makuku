@@ -66,11 +66,21 @@ test("app user management resolves Feishu Open ID from email", () => {
   assert.match(feishuResolveApi, /resolveFeishuOpenIdByEmail/);
   assert.match(feishuResolveApi, /User email is empty/);
   assert.match(feishuResolveApi, /feishu_user_id/);
+  assert.match(feishuResolveApi, /console\.error/);
+  assert.match(feishuResolveApi, /resolve-feishu-open-id failed/);
   assert.match(feishuHelper, /FEISHU_APP_ID/);
   assert.match(feishuHelper, /FEISHU_APP_SECRET/);
   assert.match(feishuHelper, /tenant_access_token\/internal/);
   assert.match(feishuHelper, /contact\/v3\/users\/batch_get_id/);
   assert.match(feishuHelper, /open_id/);
+  assert.match(feishuHelper, /console\.info/);
+  assert.match(feishuHelper, /console\.error/);
+  assert.match(feishuHelper, /x-tt-logid/);
+  assert.match(feishuHelper, /resolveFeishuOpenIdByEmail success/);
+  assert.match(feishuHelper, /Feishu batch_get_id failed/);
+  assert.match(feishuHelper, /Feishu user lookup returned no open_id/);
+  assert.match(feishuHelper, /query_email=/);
+  assert.match(feishuHelper, /matched_users=/);
   assert.doesNotMatch(feishuResolveApi, /FEISHU_APP_SECRET/);
 });
 

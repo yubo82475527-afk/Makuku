@@ -45,7 +45,8 @@ test("new visit store selection keeps the header minimal and only shows create-s
   assert.doesNotMatch(storeVisitH5, /MobileLanguageSwitch/);
   assert.doesNotMatch(storeVisitH5, /copy\.newVisit/);
   assert.doesNotMatch(storeVisitH5, /selectedStore \? selectedStore\.name : labels\.selectStoreHint/);
-  assert.match(storeVisitH5, /<p className="mt-1 text-xs text-slate-500">\{labels\.selectStoreHint\}<\/p>/);
+  assert.match(storeVisitH5, /searchMode === "history" \? labels\.selectStoreHint : labels\.newStoreFlowHint/);
+  assert.match(storeVisitH5, /searchMode === "history" \? labels\.selectStore : labels\.createStore/);
   assert.match(storeVisitH5, /googleSearchEmpty/);
   assert.match(storeVisitH5, /onClick=\{\(\) => setShowCreate\(true\)\}/);
   assert.doesNotMatch(storeVisitH5, /className="fixed bottom-4 left-1\/2 z-40 flex h-12/);
