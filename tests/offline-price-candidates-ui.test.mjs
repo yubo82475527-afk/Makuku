@@ -11,6 +11,7 @@ const candidateRoute = readFileSync("src/app/api/ai-price-candidates/[id]/route.
 const candidateListRoute = readFileSync("src/app/api/ai-price-candidates/route.ts", "utf8");
 const aiPriceReview = readFileSync("src/lib/ai-price-review.ts", "utf8");
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
+const typesFile = readFileSync("src/lib/types.ts", "utf8");
 const materialMasterRoute = readFileSync("src/app/api/material-master/route.ts", "utf8");
 const competitorsRoute = readFileSync("src/app/api/competitors/route.ts", "utf8");
 const candidateExportRoute = readFileSync("src/app/api/ai-price-candidates/export/route.ts", "utf8");
@@ -122,6 +123,13 @@ test("photo price review keeps Chinese copy keys for table headers and actions",
   assert.match(workbench, /approvedAt/);
   assert.match(workbench, /reviewMethod/);
   assert.match(workbench, /创建时间/);
+});
+
+test("photo price review appends submitter as the last table column", () => {
+  assert.match(workbench, /<th className="px-3 py-2">\{createdAtLabel\(locale\)\}<\/th>\s*<th className="px-3 py-2">\{submitterLabel\(locale\)\}<\/th>/);
+  assert.match(workbench, /<td className="whitespace-nowrap px-3 py-3 text-slate-600">\{formatJakartaTimestamp\(candidate\.created_at\)\}<\/td>\s*<td className="px-3 py-3 text-slate-600">\{submitterNameForCandidate\(candidate\)\}<\/td>/);
+  assert.match(dataFile, /const visitColumns = "id,visit_code,store_name,city,province,city_name,district,channel_type,visit_date,created_at,uploader_name"/);
+  assert.match(typesFile, /offline_store_visits\?: Pick<OfflineStoreVisit, "id" \| "visit_code" \| "store_name" \| "city" \| "province" \| "city_name" \| "district" \| "channel_type" \| "visit_date" \| "created_at" \| "uploader_name"> \| null;/);
 });
 
 test("pending photo price review rows allow package price and piece count correction", () => {

@@ -517,7 +517,7 @@ export async function getAiPriceCandidates(filters: AiPriceCandidateFilters = {}
 
   const supabase = createSupabaseServiceClient();
   const shouldFilterVisit = Boolean(filters.dateFrom || filters.dateTo || filters.visitCode);
-  const visitColumns = "id,visit_code,store_name,city,province,city_name,district,channel_type,visit_date,created_at";
+  const visitColumns = "id,visit_code,store_name,city,province,city_name,district,channel_type,visit_date,created_at,uploader_name";
   const legacyVisitColumns = "id,store_name,city,channel_type,visit_date,created_at";
   const visitSelect = shouldFilterVisit
     ? `offline_store_visits!inner(${visitColumns})`
@@ -596,7 +596,7 @@ export async function getAiPriceCandidatesPage(filters: AiPriceCandidateFilters 
 
   const supabase = createSupabaseServiceClient();
   const shouldFilterVisit = Boolean(filters.dateFrom || filters.dateTo || filters.visitCode);
-  const visitColumns = "id,visit_code,store_name,city,province,city_name,district,channel_type,visit_date,created_at";
+  const visitColumns = "id,visit_code,store_name,city,province,city_name,district,channel_type,visit_date,created_at,uploader_name";
   const legacyVisitColumns = "id,store_name,city,channel_type,visit_date,created_at";
   const visitSelect = shouldFilterVisit
     ? `offline_store_visits!inner(${visitColumns})`

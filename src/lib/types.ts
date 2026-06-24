@@ -590,7 +590,7 @@ export type AiPriceCandidate = {
   rejection_reason?: string | null;
   review_job_id?: string | null;
   review_method?: AiPriceCandidateReviewMethod | null;
-  offline_store_visits?: Pick<OfflineStoreVisit, "id" | "visit_code" | "store_name" | "city" | "province" | "city_name" | "district" | "channel_type" | "visit_date" | "created_at"> | null;
+  offline_store_visits?: Pick<OfflineStoreVisit, "id" | "visit_code" | "store_name" | "city" | "province" | "city_name" | "district" | "channel_type" | "visit_date" | "created_at" | "uploader_name"> | null;
 };
 
 export type AiPriceReviewRule = {

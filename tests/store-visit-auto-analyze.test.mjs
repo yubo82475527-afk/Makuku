@@ -84,6 +84,7 @@ test("store visit analysis also resolves storefront image status after display A
   assert.match(storeVisitAiDebug, /display_image_failures/);
   assert.match(storeVisitAiDebug, /analysis_status: "analyzed"/);
   assert.match(storeVisitAiDebug, /displayAnalysisError = errorMessage\(error\)/);
+  assert.match(storeVisitAiDebug, /if \(displayImageEntries\.length > 0\)/);
 });
 
 test("new H5 store visit requires at least one price-tag image, not only Makuku photos", () => {
@@ -96,5 +97,7 @@ test("store visit AI uses image-level price parsing and separate display analysi
   assert.match(storeVisitAi, /export async function analyzeStoreVisitDisplayImages/);
   assert.match(storeVisitAiDebug, /analyzeStoreVisitPriceImage/);
   assert.match(storeVisitAiDebug, /analyzeStoreVisitDisplayImages/);
+  assert.doesNotMatch(storeVisitAiDebug, /analyzeStoreVisitImages/);
+  assert.match(storeVisitAiDebug, /composeStoreVisitAiResult/);
   assert.doesNotMatch(storeVisitAi, /Treat all images as ONE store-level observation/);
 });

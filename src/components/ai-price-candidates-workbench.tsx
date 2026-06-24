@@ -341,6 +341,7 @@ export function AiPriceCandidatesWorkbench({
                 {showRejectedAudit ? <th className="px-3 py-2">{copy.rejectionReason}</th> : null}
                 <th className="px-3 py-2">{copy.table.status}</th>
                 <th className="px-3 py-2">{createdAtLabel(locale)}</th>
+                <th className="px-3 py-2">{submitterLabel(locale)}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 bg-white">
@@ -454,6 +455,7 @@ export function AiPriceCandidatesWorkbench({
                     {showRejectedAudit ? <td className="max-w-xs px-3 py-3 text-slate-600">{candidate.rejection_reason ?? "-"}</td> : null}
                     <td className="px-3 py-3"><Badge>{copy.status[candidate.status] ?? candidate.status}</Badge></td>
                     <td className="whitespace-nowrap px-3 py-3 text-slate-600">{formatJakartaTimestamp(candidate.created_at)}</td>
+                    <td className="px-3 py-3 text-slate-600">{submitterNameForCandidate(candidate)}</td>
                   </tr>
                 );
               })}
@@ -1605,6 +1607,14 @@ function shortTime(value: string) {
 
 function createdAtLabel(locale: string) {
   return locale === "zh" ? "创建时间" : "Created at";
+}
+
+function submitterLabel(locale: string) {
+  return locale === "zh" ? "\u63d0\u4ea4\u4eba" : "Submitter";
+}
+
+function submitterNameForCandidate(candidate: AiPriceCandidate) {
+  return candidate.offline_store_visits?.uploader_name?.trim() || "-";
 }
 
 function formatJakartaTimestamp(value: string | null | undefined) {

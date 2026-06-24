@@ -1,7 +1,8 @@
 import {
   analyzeStoreVisitDisplayImages,
   analyzeStoreVisitPriceImage,
-  analyzeStoreVisitImages,
+  getActiveStoreVisitAiConfig,
+  normalizeAiConfig,
 } from "@/lib/store-visit-ai";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import type {
@@ -57,7 +58,49 @@ function isDisplayImageResult(value: unknown): value is StoreVisitDisplayAnalysi
     && typeof value.summary === "string";
 }
 
-function createFallbackAiResult(rows: StoreVisitPriceImageAnalysis["rows"], displayAnalysis: StoreVisitDisplayAnalysis | null): StoreVisitAiResult {
+function summarizeDisplayWarnings(displayAnalysis: StoreVisitDisplayAnalysis | null) {
+  return displayAnalysis?.warnings ?? [];
+}
+
+function collectPromotionInsights(rows: StoreVisitPriceImageAnalysis["rows"]) {
+  const promotions = new Map<string, StoreVisitAiResult["promotion_insights"]["competitor_promotions"][number]>();
+  for (const row of rows) {
+    const promoType = String(row.promo_type ?? "").trim();
+    if (!promoType) continue;
+    const brand = row.brand ?? "Unknown";
+    const description = [row.sku, promoType, row.net_price_idr ? `Rp ${row.net_price_idr}` : null].filter(Boolean).join(" / ");
+    const key = `${brand.toLowerCase()}|${promoType.toLowerCase()}|${row.sku.toLowerCase()}`;
+    if (!promotions.has(key)) {
+      promotions.set(key, {
+        brand,
+        type: "Special Offer",
+        visibility: "MEDIUM",
+        description,
+      });
+    }
+  }
+
+  return Array.from(promotions.values());
+}
+
+function composeStoreVisitAiResult({
+  rows,
+  displayAnalysis,
+  partialFailure,
+}: {
+  rows: StoreVisitPriceImageAnalysis["rows"];
+  displayAnalysis: StoreVisitDisplayAnalysis | null;
+  partialFailure: boolean;
+}): StoreVisitAiResult {
+  const displayWarnings = summarizeDisplayWarnings(displayAnalysis);
+  const warnings: StoreVisitAiResult["validation"]["warnings"] = rows.length > 0
+    ? [...displayWarnings]
+    : [{ type: "MISSING_DATA", message: "No readable price rows detected." }, ...displayWarnings];
+  if (partialFailure) {
+    warnings.push({ type: "LOW_CONFIDENCE", message: "Some price-tag photos failed analysis and need retry." });
+  }
+  const promotionItems = collectPromotionInsights(rows);
+
   return {
     raw_extraction: {
       detected_items: rows.map((row) => ({
@@ -70,7 +113,7 @@ function createFallbackAiResult(rows: StoreVisitPriceImageAnalysis["rows"], disp
     },
     validation: {
       is_valid: rows.length > 0,
-      warnings: rows.length > 0 ? [] : [{ type: "MISSING_DATA", message: "No readable price rows detected." }],
+      warnings,
     },
     shelf_understanding: {
       brands_present: [],
@@ -104,10 +147,14 @@ function createFallbackAiResult(rows: StoreVisitPriceImageAnalysis["rows"], disp
       reason: "Display-level stock risk is not available for this analysis.",
     },
     promotion_insights: {
-      competitor_promotions: [],
-      promo_pressure_level: "LOW",
+      competitor_promotions: promotionItems,
+      promo_pressure_level: promotionItems.length > 0 ? "MEDIUM" : "LOW",
     },
-    competitor_promotion: [],
+    competitor_promotion: promotionItems.map((item) => ({
+      brand: item.brand,
+      promotion_type: item.type,
+      description: item.description,
+    })),
     store_summary: displayAnalysis?.summary ?? `${rows.length} price row(s) parsed from visit photos.`,
   };
 }
@@ -117,6 +164,7 @@ export async function runStoreVisitAiAnalysisForVisit(input: {
   config?: Partial<StoreVisitAiConfig>;
 }) {
   const supabase = createSupabaseServiceClient();
+  const resolvedConfig = input.config ? normalizeAiConfig(input.config) : await getActiveStoreVisitAiConfig();
   const { data: visit, error } = await supabase
     .from("offline_store_visits")
     .select("*, offline_visit_images(*)")
@@ -225,119 +273,91 @@ export async function runStoreVisitAiAnalysisForVisit(input: {
   let displayAnalysis: Awaited<ReturnType<typeof analyzeStoreVisitDisplayImages>> | null = null;
   let displayAnalysisError: string | null = null;
   const displayImageFailures: { imageId: string; imagePath: string; systemErrorMessage: string }[] = [];
-  const reusableDisplayImages = displayImageEntries.filter((item) => (
-    item.tableImage
-    && item.tableImage.analysis_status === "analyzed"
-    && isDisplayImageResult(item.tableImage.vision_result)
-  ));
-  const pendingDisplayImages = displayImageEntries.filter((item) => (
-    item.tableImage
-    && !(item.tableImage.analysis_status === "analyzed" && isDisplayImageResult(item.tableImage.vision_result))
-  ));
-  try {
-    if (reusableDisplayImages.length > 0 && pendingDisplayImages.length === 0) {
-      displayAnalysis = {
-        normalized: reusableDisplayImages[0].tableImage?.vision_result as StoreVisitDisplayAnalysis,
-        rawText: "",
-        parsed: {},
-        metadata: {
-          model: "cached",
-          base_url: "",
-          parse_repaired: false,
-          response_format: "json_object",
-        },
-        config: input.config as StoreVisitAiConfig,
-      };
-    } else {
-      displayAnalysis = await analyzeStoreVisitDisplayImages({
-        imageUrls: displayImageUrls,
-        storeName: typedVisit.store_name,
-        region,
-        channel,
-        promoter,
-        visitDate: typedVisit.visit_date,
-        config: input.config,
-      });
+  if (displayImageEntries.length > 0) {
+    const reusableDisplayImages = displayImageEntries.filter((item) => (
+      item.tableImage
+      && item.tableImage.analysis_status === "analyzed"
+      && isDisplayImageResult(item.tableImage.vision_result)
+    ));
+    const pendingDisplayImages = displayImageEntries.filter((item) => (
+      item.tableImage
+      && !(item.tableImage.analysis_status === "analyzed" && isDisplayImageResult(item.tableImage.vision_result))
+    ));
+    try {
+      if (reusableDisplayImages.length > 0 && pendingDisplayImages.length === 0) {
+        displayAnalysis = {
+          normalized: reusableDisplayImages[0].tableImage?.vision_result as StoreVisitDisplayAnalysis,
+          rawText: "",
+          parsed: {},
+          metadata: {
+            model: "cached",
+            base_url: "",
+            parse_repaired: false,
+            response_format: "json_object",
+          },
+          config: resolvedConfig,
+        };
+      } else {
+        displayAnalysis = await analyzeStoreVisitDisplayImages({
+          imageUrls: displayImageUrls,
+          storeName: typedVisit.store_name,
+          region,
+          channel,
+          promoter,
+          visitDate: typedVisit.visit_date,
+          config: resolvedConfig,
+        });
+        for (const item of pendingDisplayImages) {
+          if (!item.tableImage) continue;
+          await supabase
+            .from("offline_visit_images")
+            .update({
+              analysis_status: "analyzed",
+              vision_result: displayAnalysis.normalized,
+              analysis_error: null,
+              error_message: null,
+            })
+            .eq("id", item.tableImage.id);
+        }
+      }
+    } catch (error) {
+      displayAnalysisError = errorMessage(error);
       for (const item of pendingDisplayImages) {
         if (!item.tableImage) continue;
+        displayImageFailures.push({
+          imageId: item.tableImage.id,
+          imagePath: item.imagePath,
+          systemErrorMessage: displayAnalysisError,
+        });
         await supabase
           .from("offline_visit_images")
           .update({
-            analysis_status: "analyzed",
-            vision_result: displayAnalysis.normalized,
-            analysis_error: null,
-            error_message: null,
+            analysis_status: "failed",
+            analysis_error: displayAnalysisError,
+            error_message: displayAnalysisError,
           })
           .eq("id", item.tableImage.id);
       }
     }
-  } catch (error) {
-    displayAnalysisError = errorMessage(error);
-    for (const item of pendingDisplayImages) {
-      if (!item.tableImage) continue;
-      displayImageFailures.push({
-        imageId: item.tableImage.id,
-        imagePath: item.imagePath,
-        systemErrorMessage: displayAnalysisError,
-      });
-      await supabase
-        .from("offline_visit_images")
-        .update({
-          analysis_status: "failed",
-          analysis_error: displayAnalysisError,
-          error_message: displayAnalysisError,
-        })
-        .eq("id", item.tableImage.id);
-    }
   }
 
   const aggregatedRows = priceImageResults.flatMap((item) => item.result.rows);
-  let aiAnalysis: Awaited<ReturnType<typeof analyzeStoreVisitImages>>;
-  try {
-    aiAnalysis = await analyzeStoreVisitImages({
-      imageUrls: signedImageUrls,
-      imageCategories,
-      storeName: typedVisit.store_name,
-      region,
-      channel,
-      promoter,
-      visitDate: typedVisit.visit_date,
-      config: input.config,
-    });
-  } catch {
-    const config = displayAnalysis?.config ?? {};
-    aiAnalysis = {
-      normalized: createFallbackAiResult(aggregatedRows, displayAnalysis?.normalized ?? null),
-      rawText: "",
-      parsed: {},
-      metadata: {
-        model: "fallback",
-        base_url: "",
-        parse_repaired: false,
-        response_format: "none",
-      },
-      config: config as StoreVisitAiConfig,
-    };
-  }
-
-  aiAnalysis.normalized.price_insights.key_sku_prices = aggregatedRows.map((row) => ({
-    brand: row.brand ?? "Unknown",
-    product: row.sku,
-    price: row.net_price_idr ? String(row.net_price_idr) : "",
-    list_price: row.list_price_idr ? String(row.list_price_idr) : null,
-    package_price: row.package_price_idr ? String(row.package_price_idr) : null,
-    net_price: row.net_price_idr ? String(row.net_price_idr) : null,
-    promo_type: row.promo_type,
-    piece_count: row.piece_count,
-    tag: "HERO",
-    confidence: 0.9,
-  }));
-  aiAnalysis.normalized.price_detection = aggregatedRows.map((row) => ({
-    brand: row.brand ?? "Unknown",
-    product: row.sku,
-    price: row.net_price_idr ? String(row.net_price_idr) : "",
-  }));
-  aiAnalysis.normalized.store_summary = displayAnalysis?.normalized.summary ?? aiAnalysis.normalized.store_summary;
+  const aiAnalysis = {
+    normalized: composeStoreVisitAiResult({
+      rows: aggregatedRows,
+      displayAnalysis: displayAnalysis?.normalized ?? null,
+      partialFailure: priceImageFailures.length > 0 && priceImageResults.length > 0,
+    }),
+    rawText: "",
+    parsed: {},
+    metadata: {
+      model: "composed",
+      base_url: "",
+      parse_repaired: false,
+      response_format: "none",
+    },
+    config: resolvedConfig,
+  };
 
   return {
     visit: typedVisit,
