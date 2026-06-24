@@ -5,6 +5,7 @@ import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/sup
 export const dynamic = "force-dynamic";
 
 const storeSelectFields = "id,name,city,province,city_name,district,google_place_id,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,created_at,channels(id,code,name,type)";
+const storeSelectFieldsWithoutGooglePlaceId = "id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,created_at,channels(id,code,name,type)";
 
 function cleanText(value: string | null) {
   return typeof value === "string" && value.trim() ? value.trim() : "";
@@ -21,6 +22,15 @@ function cleanLimit(value: string | null) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return 10;
   return Math.max(1, Math.min(20, Math.floor(parsed)));
+}
+
+function isGooglePlaceColumnError(error: { message?: string } | null) {
+  return (error?.message ?? "").includes("google_place_id");
+}
+
+function isChannelRelationError(error: { message?: string } | null) {
+  const message = error?.message ?? "";
+  return message.includes("channels") || message.includes("schema cache");
 }
 
 function mapsHeaders() {
@@ -53,10 +63,34 @@ async function attachLocalStores(stores: ReturnType<typeof buildGoogleStoreCandi
   }
 
   const supabase = createSupabaseServiceClient();
-  const { data } = await supabase
+  const initial = await supabase
     .from("offline_stores")
     .select(storeSelectFields)
     .in("google_place_id", googlePlaceIds);
+
+  if (isGooglePlaceColumnError(initial.error)) {
+    return stores.map((store) => ({ ...store, local_store: null }));
+  }
+
+  let data = initial.data as Array<Record<string, unknown>> | null;
+  let error = initial.error;
+
+  if (isChannelRelationError(error)) {
+    const legacy = await supabase
+      .from("offline_stores")
+      .select(storeSelectFieldsWithoutGooglePlaceId)
+      .in("google_place_id", googlePlaceIds);
+    data = legacy.data as Array<Record<string, unknown>> | null;
+    error = legacy.error;
+  }
+
+  if (isGooglePlaceColumnError(error)) {
+    return stores.map((store) => ({ ...store, local_store: null }));
+  }
+
+  if (error) {
+    throw new Error(error.message);
+  }
 
   const localStoreMap = new Map((data ?? []).map((store) => [String(store.google_place_id ?? ""), store]));
   return stores.map((store) => ({

@@ -7,6 +7,8 @@ import { organizationAssignmentPatch, resolveOrganizationForRegion } from "@/lib
 export const dynamic = "force-dynamic";
 
 const storeSelectFields = "id,name,city,province,city_name,district,google_place_id,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,created_at,channels(id,code,name,type)";
+const storeSelectFieldsWithoutGooglePlaceId = "id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,created_at,channels(id,code,name,type)";
+const storeSelectFieldsWithoutGooglePlaceIdOrChannels = "id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,created_at";
 
 function clean(value: unknown) {
   return String(value ?? "").trim();
@@ -64,6 +66,20 @@ export async function POST(request: Request) {
       .select(storeSelectFields)
       .eq("google_place_id", googlePlaceId)
       .maybeSingle();
+
+    if (isChannelRelationError(existing.error)) {
+      const existingWithoutChannels = await supabase
+        .from("offline_stores")
+        .select(storeSelectFieldsWithoutGooglePlaceId)
+        .eq("google_place_id", googlePlaceId)
+        .maybeSingle();
+      if (existingWithoutChannels.error && !isGooglePlaceColumnError(existingWithoutChannels.error)) {
+        return Response.json({ error: existingWithoutChannels.error.message }, { status: 400 });
+      }
+      if (existingWithoutChannels.data) {
+        return Response.json({ store: existingWithoutChannels.data });
+      }
+    }
 
     if (existing.error && !isGooglePlaceColumnError(existing.error)) {
       return Response.json({ error: existing.error.message }, { status: 400 });
@@ -168,7 +184,7 @@ export async function POST(request: Request) {
           created_by_name: auth.session.displayName,
           ...organizationPatch,
         })
-        .select(storeSelectFields)
+        .select(storeSelectFieldsWithoutGooglePlaceIdOrChannels)
         .single();
       data = legacy.data as Record<string, unknown> | null;
       error = legacy.error;

@@ -806,7 +806,7 @@ function StoreSearchStep({ locale, user, onSelect }: { locale: Locale; user: App
         <button
           type="button"
           onClick={locateStores}
-          className="inline-flex h-7 items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 text-[11px] font-medium text-slate-600 transition hover:bg-slate-50"
+          className="inline-flex h-7 items-center gap-1 whitespace-nowrap rounded-full border border-slate-200 bg-white px-2.5 text-[11px] font-medium leading-none text-slate-600 transition hover:bg-slate-50"
         >
           <LocateFixed className="h-3 w-3" />
           {labels.useCurrentLocation}

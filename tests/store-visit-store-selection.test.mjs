@@ -249,6 +249,8 @@ test("google store APIs search places and materialize selected place into local 
   assert.match(googleStoreSearchApi, /google_place_id/);
   assert.match(googleStoreSearchApi, /local_store/);
   assert.match(googleStoreSearchApi, /\.in\("google_place_id"/);
+  assert.match(googleStoreSearchApi, /isGooglePlaceColumnError/);
+  assert.match(googleStoreSearchApi, /return stores\.map\(\(store\) => \(\{ \.\.\.store, local_store: null \}\)\)/);
 
   assert.match(googleStoreSelectApi, /\.from\("offline_stores"\)/);
   assert.match(googleStoreSelectApi, /\.from\("channels"\)/);
@@ -258,6 +260,8 @@ test("google store APIs search places and materialize selected place into local 
   assert.match(googleStoreSelectApi, /created_by_name/);
   assert.match(googleStoreSelectApi, /\.eq\("type", "offline"\)/);
   assert.match(googleStoreSelectApi, /eq\("google_place_id"/);
+  assert.match(googleStoreSelectApi, /isGooglePlaceColumnError/);
+  assert.match(googleStoreSelectApi, /legacy/i);
   assert.doesNotMatch(googleStoreSelectApi, /channel_type:\s*"other"/);
 });
 
@@ -267,6 +271,11 @@ test("store search shows manual create only after google search returns no relia
   assert.match(storeVisitH5, /!loading && googleResults\.length === 0/);
   assert.match(storeVisitH5, /onClick=\{\(\) => setShowCreate\(true\)\}/);
   assert.doesNotMatch(storeVisitH5, /className="fixed bottom-4 left-1\/2 z-40 flex h-12/);
+});
+
+test("store search location button keeps icon and label on one line", () => {
+  assert.match(storeVisitH5, /labels\.useCurrentLocation/);
+  assert.match(storeVisitH5, /inline-flex h-7 items-center gap-1 whitespace-nowrap/);
 });
 
 test("mobile store visit detail header does not render a language switch", () => {
