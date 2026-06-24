@@ -34,7 +34,6 @@ function mapsHeaders() {
       "places.displayName",
       "places.formattedAddress",
       "places.location",
-      "places.distanceMeters",
       "places.addressComponents",
       "places.primaryType",
       "places.types",

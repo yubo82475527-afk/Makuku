@@ -244,7 +244,8 @@ test("google store APIs search places and materialize selected place into local 
   assert.match(googleStoreSearchApi, /places:searchNearby/);
   assert.match(googleStoreSearchApi, /places:searchText/);
   assert.match(googleStoreSearchApi, /X-Goog-FieldMask/);
-  assert.match(googleStoreSearchApi, /distanceMeters/);
+  assert.match(googleStoreSearchApi, /addressComponents/);
+  assert.doesNotMatch(googleStoreSearchApi, /distanceMeters/);
   assert.match(googleStoreSearchApi, /google_place_id/);
   assert.match(googleStoreSearchApi, /local_store/);
   assert.match(googleStoreSearchApi, /\.in\("google_place_id"/);
