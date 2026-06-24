@@ -17,6 +17,9 @@ type FeishuBatchGetIdResponse = {
   };
 };
 
+type FeishuDirectoryUser = NonNullable<NonNullable<FeishuBatchGetIdResponse["data"]>["user_list"]>[number];
+type FeishuDirectoryUserList = FeishuDirectoryUser[];
+
 type ResolveFeishuOpenIdResult = {
   openId: string;
   diagnostics: {
@@ -30,7 +33,7 @@ type ResolveFeishuOpenIdResult = {
   };
 };
 
-function summarizeFeishuUsers(users: FeishuBatchGetIdResponse["data"]["user_list"]) {
+function summarizeFeishuUsers(users: FeishuDirectoryUserList | undefined) {
   return (users ?? []).map((user) => ({
     email: user.email ?? "",
     has_open_id: Boolean(user.open_id),
