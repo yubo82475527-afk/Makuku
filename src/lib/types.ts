@@ -284,6 +284,7 @@ export type OfflineStore = {
   province?: string | null;
   city_name?: string | null;
   district?: string | null;
+  google_place_id?: string | null;
   channel_type: string;
   channel_id: string | null;
   address: string | null;

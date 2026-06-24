@@ -6,22 +6,25 @@ const storeVisitH5 = readFileSync("src/components/store-visit-h5.tsx", "utf8");
 const reverseRoutePath = "src/app/api/location/reverse/route.ts";
 const locationRegionPath = "src/lib/location-region.mjs";
 
-test("new store sheet reverse geocodes browser location without exposing LocationIQ token", () => {
+test("new store sheet reverse geocodes browser location through the server without exposing provider keys", () => {
   assert.match(storeVisitH5, /\/api\/location\/reverse/);
   assert.match(storeVisitH5, /setCity\(/);
   assert.match(storeVisitH5, /setAddress\(/);
   assert.match(storeVisitH5, /reverseAddressFailed/);
   assert.match(storeVisitH5, /LocationIQ/);
   assert.doesNotMatch(storeVisitH5, /LOCATIONIQ_API_KEY/);
+  assert.doesNotMatch(storeVisitH5, /GOOGLE_MAPS_API_KEY/);
 });
 
 test("new store sheet puts required store identity fields before the bound location group", () => {
-  const storeNameIndex = storeVisitH5.indexOf("placeholder={labels.storeNameRequired}");
-  const channelTypeIndex = storeVisitH5.indexOf("labels.channelTypeRequired");
-  const locationGroupIndex = storeVisitH5.indexOf("labels.storeLocationGroup");
-  const cityIndex = storeVisitH5.indexOf("placeholder={labels.cityRequired}");
-  const addressIndex = storeVisitH5.indexOf("placeholder={labels.addressOptional}");
-  const locateIndex = storeVisitH5.indexOf("onClick={captureStoreLocation}");
+  const createStoreSheetIndex = storeVisitH5.indexOf("function CreateStoreSheet");
+  const createStoreSheetSource = storeVisitH5.slice(createStoreSheetIndex);
+  const storeNameIndex = createStoreSheetSource.indexOf("placeholder={labels.storeNameRequired}");
+  const channelTypeIndex = createStoreSheetSource.indexOf("labels.channelTypeRequired");
+  const locationGroupIndex = createStoreSheetSource.indexOf("labels.storeLocationGroup");
+  const cityIndex = createStoreSheetSource.indexOf("placeholder={labels.cityRequired}");
+  const addressIndex = createStoreSheetSource.indexOf("placeholder={labels.addressOptional}");
+  const locateIndex = createStoreSheetSource.indexOf("onClick={captureStoreLocation}");
 
   assert.ok(storeNameIndex >= 0, "store name should be the first required identity field");
   assert.ok(channelTypeIndex > storeNameIndex, "store type should follow store name");
@@ -32,33 +35,39 @@ test("new store sheet puts required store identity fields before the bound locat
 });
 
 test("new store sheet labels location region as province city district", () => {
-  assert.match(storeVisitH5, /cityRequired: "省\/市\/区 \*"/);
-  assert.match(storeVisitH5, /city: "省\/市\/区"/);
-  assert.match(storeVisitH5, /storeLocationGroup: "省\/市\/区与详细地址"/);
-  assert.match(storeVisitH5, /自动填充省\/市\/区和详细地址/);
+  assert.match(storeVisitH5, /cityRequired: "\\u7701 \/ \\u5e02 \/ \\u533a \*"/);
+  assert.match(storeVisitH5, /city: "\\u7701 \/ \\u5e02 \/ \\u533a"/);
+  assert.match(storeVisitH5, /storeLocationGroup: "\\u7701 \/ \\u5e02 \/ \\u533a\\u4e0e\\u8be6\\u7ec6\\u5730\\u5740"/);
+  assert.match(storeVisitH5, /LocationIQ \\u81ea\\u52a8\\u586b\\u5199\\u7701 \/ \\u5e02 \/ \\u533a\\u548c\\u5730\\u5740/);
 });
 
-test("new visit store selection keeps the header minimal and create-store action fixed", () => {
+test("new visit store selection keeps the header minimal and only shows create-store after empty google results", () => {
   assert.doesNotMatch(storeVisitH5, /MobileLanguageSwitch/);
   assert.doesNotMatch(storeVisitH5, /copy\.newVisit/);
   assert.doesNotMatch(storeVisitH5, /selectedStore \? selectedStore\.name : labels\.selectStoreHint/);
-  assert.doesNotMatch(storeVisitH5, /<p className="mt-1 text-sm leading-5 text-slate-500">\{labels\.selectStoreHint\}<\/p>/);
-  assert.match(storeVisitH5, /setShowCreate\(true\)} className="fixed/);
-  assert.match(storeVisitH5, /bottom-4/);
-  assert.match(storeVisitH5, /pb-24/);
+  assert.match(storeVisitH5, /<p className="mt-1 text-xs text-slate-500">\{labels\.selectStoreHint\}<\/p>/);
+  assert.match(storeVisitH5, /googleSearchEmpty/);
+  assert.match(storeVisitH5, /onClick=\{\(\) => setShowCreate\(true\)\}/);
+  assert.doesNotMatch(storeVisitH5, /className="fixed bottom-4 left-1\/2 z-40 flex h-12/);
 });
 
-test("LocationIQ reverse API proxies coordinates through a server-only token", () => {
+test("reverse geocoding API uses Google first and keeps LocationIQ as fallback", () => {
   assert.equal(existsSync(reverseRoutePath), true, "reverse geocode route should exist");
   assert.equal(existsSync(locationRegionPath), true, "region parser should exist");
   const reverseRoute = readFileSync(reverseRoutePath, "utf8");
   const locationRegion = readFileSync(locationRegionPath, "utf8");
 
   assert.match(reverseRoute, /export const dynamic = "force-dynamic"/);
+  assert.match(reverseRoute, /process\.env\.GOOGLE_MAPS_API_KEY/);
+  assert.match(reverseRoute, /geocode\.googleapis\.com\/v4\/geocode\/location/);
+  assert.match(reverseRoute, /X-Goog-FieldMask/);
+  assert.match(reverseRoute, /provider: "google"/);
   assert.match(reverseRoute, /process\.env\.LOCATIONIQ_API_KEY/);
   assert.match(reverseRoute, /LOCATIONIQ_REGION/);
+  assert.match(reverseRoute, /provider: "locationiq"/);
   assert.match(reverseRoute, /addressdetails/);
-  assert.match(reverseRoute, /buildLocationRegion/);
+  assert.match(reverseRoute, /buildGoogleReverseLocationParts/);
+  assert.match(reverseRoute, /buildLocationRegionParts/);
   assert.doesNotMatch(reverseRoute, /normalizeaddress/);
   assert.doesNotMatch(reverseRoute, /normalizecity/);
   assert.match(locationRegion, /export function buildLocationRegion/);
@@ -74,7 +83,7 @@ test("LocationIQ reverse API proxies coordinates through a server-only token", (
   assert.match(locationRegion, /suburb/);
   assert.match(locationRegion, /region/);
   assert.match(locationRegion, /display_name/);
-  assert.match(locationRegion, /\[,\s*，\]/);
+  assert.match(locationRegion, /split\(\/\[,，\]\/\)/);
   assert.match(locationRegion, /pickBetterRegion/);
   assert.match(locationRegion, /postcode/);
   assert.match(locationRegion, /country/);

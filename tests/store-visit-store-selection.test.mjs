@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -10,6 +10,10 @@ const storeVisitsApi = readFileSync("src/app/api/store-visits/route.ts", "utf8")
 const storeVisitImagesApi = readFileSync("src/app/api/store-visit/[id]/images/route.ts", "utf8");
 const storeVisitAiDebug = readFileSync("src/lib/store-visit-ai-debug.ts", "utf8");
 const offlineStoresApi = readFileSync("src/app/api/offline-stores/route.ts", "utf8");
+const googleStoreSearchApiPath = "src/app/api/google-store-search/route.ts";
+const googleStoreSelectApiPath = "src/app/api/google-store-select/route.ts";
+const googleStoreSearchApi = existsSync(googleStoreSearchApiPath) ? readFileSync(googleStoreSearchApiPath, "utf8") : "";
+const googleStoreSelectApi = existsSync(googleStoreSelectApiPath) ? readFileSync(googleStoreSelectApiPath, "utf8") : "";
 const typesFile = readFileSync("src/lib/types.ts", "utf8");
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const demoData = readFileSync("src/lib/demo-data.ts", "utf8");
@@ -18,15 +22,20 @@ const visitChannelMigration = readFileSync("supabase/migrations/202606170003_rel
 
 test("new H5 store visit requires selecting store master data before capture", () => {
   assert.match(storeVisitH5, /selectedStore/);
-  assert.match(storeVisitH5, /fetch\(`\/api\/offline-stores\?\$\{params\.toString\(\)\}`\)/);
-  assert.match(storeVisitH5, /params\.set\("scope", "master"\)/);
-  assert.match(storeVisitH5, /params\.set\("limit", query\.trim\(\) \? "50" : "20"\)/);
+  assert.match(storeVisitH5, /fetch\(`\/api\/google-store-search\?\$\{params\.toString\(\)\}`\)/);
+  assert.match(storeVisitH5, /googleResults/);
+  assert.match(storeVisitH5, /locateStores/);
+  assert.match(storeVisitH5, /chooseGoogleStore/);
+  assert.match(storeVisitH5, /materializeSelectedGoogleStore/);
+  assert.match(storeVisitH5, /GoogleStoreTypeSheet/);
+  assert.match(storeVisitH5, /pendingGoogleStore/);
   assert.match(storeVisitH5, /StoreSearchStep/);
   assert.match(storeVisitH5, /CreateStoreSheet/);
   assert.match(storeVisitH5, /storeInfoIncomplete/);
   assert.match(storeVisitH5, /<StoreSearchStep locale=\{locale\} user=\{user\}/);
   assert.match(storeVisitH5, /created_by_user_id: user\.id/);
   assert.match(storeVisitH5, /created_by_name: user\.displayName/);
+  assert.doesNotMatch(storeVisitH5, /params\.set\("scope", "master"\)/);
 
   assert.doesNotMatch(storeVisitH5, /placeholder=\{copy\.region\}/);
   assert.doesNotMatch(storeVisitH5, /value=\{channel\}/);
@@ -48,9 +57,9 @@ test("new H5 store visit keeps browser location inside create-store master data"
   assert.match(storeVisitH5, /location_captured_at/);
   assert.match(storeVisitH5, /CreateStoreSheet[\s\S]+navigator\.geolocation/);
   assert.match(storeVisitH5, /fetch\("\/api\/offline-stores"/);
+  assert.match(storeVisitH5, /fetch\(`\/api\/google-store-search\?\$\{params\.toString\(\)\}`\)/);
   assert.doesNotMatch(storeVisitH5, /location\?\.latitude/);
   assert.doesNotMatch(storeVisitH5, /labels\.locationTitle/);
-  assert.doesNotMatch(storeVisitH5, /google\.maps|amap|qq\.maps|mapbox/i);
 });
 
 test("new store sheet loads offline channel master data for store type", () => {
@@ -66,6 +75,20 @@ test("new store sheet loads offline channel master data for store type", () => {
   assert.match(demoData, /"MT-LKA-SUPERMARKET"/);
   assert.match(competitorExcelMigration, /update public\.channels[\s\S]*set active = false[\s\S]*where type = 'offline'/);
   assert.match(competitorExcelMigration, /'MT-LKA-SUPERMARKET'/);
+});
+
+test("google store first-time selection uses the same offline store type dropdown before materializing", () => {
+  assert.match(storeVisitH5, /confirmGoogleStoreTypeTitle/);
+  assert.match(storeVisitH5, /confirmGoogleStoreTypeHint/);
+  assert.match(storeVisitH5, /function GoogleStoreTypeSheet/);
+  assert.match(storeVisitH5, /value=\{selectedChannelId\}/);
+  assert.match(storeVisitH5, /pendingGoogleStore && !pendingGoogleStore\.local_store/);
+  assert.match(storeVisitH5, /<GoogleStoreTypeSheet/);
+  assert.match(storeVisitH5, /disabled=\{loading \|\| channelsLoading \|\| !selectedChannel \|\| !store\}/);
+  assert.match(storeVisitH5, /channel_id: selectedChannel\.id/);
+  assert.match(storeVisitH5, /channel_type: selectedChannel\.code/);
+  assert.match(storeVisitH5, /onClick=\{\(\) => chooseGoogleStore\(store\)\}/);
+  assert.doesNotMatch(storeVisitH5, /onClick=\{\(\) => materializeSelectedGoogleStore\(store\)\}/);
 });
 
 test("new H5 store visit keeps visit date compact instead of a full store-info card", () => {
@@ -211,6 +234,38 @@ test("offline stores API and types preserve location-capable store master data",
   assert.match(offlineStoresApi, /\.limit\(limit\)/);
   assert.match(typesFile, /latitude\?: number \| null/);
   assert.match(typesFile, /location_accuracy_m\?: number \| null/);
+  assert.match(typesFile, /google_place_id\?: string \| null/);
+});
+
+test("google store APIs search places and materialize selected place into local offline stores", () => {
+  assert.equal(existsSync(googleStoreSearchApiPath), true, "google store search route should exist");
+  assert.equal(existsSync(googleStoreSelectApiPath), true, "google store select route should exist");
+  assert.match(googleStoreSearchApi, /process\.env\.GOOGLE_MAPS_API_KEY/);
+  assert.match(googleStoreSearchApi, /places:searchNearby/);
+  assert.match(googleStoreSearchApi, /places:searchText/);
+  assert.match(googleStoreSearchApi, /X-Goog-FieldMask/);
+  assert.match(googleStoreSearchApi, /distanceMeters/);
+  assert.match(googleStoreSearchApi, /google_place_id/);
+  assert.match(googleStoreSearchApi, /local_store/);
+  assert.match(googleStoreSearchApi, /\.in\("google_place_id"/);
+
+  assert.match(googleStoreSelectApi, /\.from\("offline_stores"\)/);
+  assert.match(googleStoreSelectApi, /\.from\("channels"\)/);
+  assert.match(googleStoreSelectApi, /google_place_id/);
+  assert.match(googleStoreSelectApi, /channel_id/);
+  assert.match(googleStoreSelectApi, /created_by_user_id/);
+  assert.match(googleStoreSelectApi, /created_by_name/);
+  assert.match(googleStoreSelectApi, /\.eq\("type", "offline"\)/);
+  assert.match(googleStoreSelectApi, /eq\("google_place_id"/);
+  assert.doesNotMatch(googleStoreSelectApi, /channel_type:\s*"other"/);
+});
+
+test("store search shows manual create only after google search returns no reliable place", () => {
+  assert.match(storeVisitH5, /googleSearchEmpty/);
+  assert.match(storeVisitH5, /showCreate/);
+  assert.match(storeVisitH5, /!loading && googleResults\.length === 0/);
+  assert.match(storeVisitH5, /onClick=\{\(\) => setShowCreate\(true\)\}/);
+  assert.doesNotMatch(storeVisitH5, /className="fixed bottom-4 left-1\/2 z-40 flex h-12/);
 });
 
 test("mobile store visit detail header does not render a language switch", () => {

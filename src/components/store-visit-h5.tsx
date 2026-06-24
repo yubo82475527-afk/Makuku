@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Building2, Camera, CheckCircle2, Loader2, LocateFixed, LogIn, MapPin, Plus, Search, Trash2, X } from "lucide-react";
+import { ArrowLeft, Building2, Camera, CheckCircle2, Loader2, LocateFixed, LogIn, Plus, Search, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -29,6 +29,7 @@ type OfflineStoreOption = {
   province?: string | null;
   city_name?: string | null;
   district?: string | null;
+  google_place_id?: string | null;
   channel_type: string;
   channel_id?: string | null;
   address?: string | null;
@@ -44,6 +45,21 @@ type StoreLocationEvidence = {
   longitude: number;
   location_accuracy_m: number | null;
   location_captured_at: string;
+};
+
+type GoogleStoreOption = {
+  google_place_id: string;
+  name: string;
+  city: string;
+  province?: string | null;
+  cityName?: string | null;
+  district?: string | null;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  distance_m?: number | null;
+  primary_type?: string | null;
+  local_store?: OfflineStoreOption | null;
 };
 
 type ReverseLocationResponse = {
@@ -89,10 +105,21 @@ function uiCopy(locale: Locale) {
   return locale === "zh"
     ? {
         selectStore: "\u9009\u62e9\u95e8\u5e97",
-        selectStoreHint: "\u5148\u9009\u62e9\u95e8\u5e97\u4e3b\u6570\u636e\uff0c\u533a\u57df\u548c\u95e8\u5e97\u7c7b\u578b\u4f1a\u81ea\u52a8\u5e26\u51fa\u3002",
-        searchPlaceholder: "\u641c\u7d22\u95e8\u5e97\u540d\u79f0\u6216\u57ce\u5e02",
-        noStoreFound: "\u672a\u627e\u5230\u95e8\u5e97\uff0c\u53ef\u65b0\u5efa",
+        selectStoreHint: "\u4f18\u5148\u6309\u5f53\u524d\u5b9a\u4f4d\u63a8\u8350 Google \u5730\u56fe\u95e8\u5e97\uff0c\u8f93\u5165\u5173\u952e\u8bcd\u540e\u4ecd\u5728\u540c\u4e00\u5217\u8868\u91cc\u6309\u8ddd\u79bb\u6392\u5e8f\u3002",
+        searchPlaceholder: "\u641c\u7d22\u95e8\u5e97\u540d\u3001\u5546\u573a\u3001\u57ce\u5e02",
+        noStoreFound: "\u672a\u627e\u5230\u5339\u914d\u95e8\u5e97\uff0c\u53ef\u624b\u52a8\u65b0\u5efa",
         createStore: "\u65b0\u5efa\u95e8\u5e97",
+        locatingStores: "\u6b63\u5728\u83b7\u53d6\u9644\u8fd1\u95e8\u5e97...",
+        nearbySorted: "\u5df2\u6309\u5f53\u524d\u4f4d\u7f6e\u6392\u5e8f",
+        matchedSorted: "\u5df2\u5148\u6309\u5173\u952e\u8bcd\u5339\u914d\uff0c\u518d\u6309\u8ddd\u79bb\u6392\u5e8f",
+        googleSearchFailed: "Google \u95e8\u5e97\u68c0\u7d22\u5931\u8d25\uff0c\u53ef\u76f4\u63a5\u624b\u52a8\u65b0\u5efa\u3002",
+        googleMaterializeFailed: "\u65e0\u6cd5\u521b\u5efa\u5f53\u524d Google \u95e8\u5e97\uff0c\u8bf7\u91cd\u8bd5\u6216\u624b\u52a8\u65b0\u5efa\u3002",
+        googleSearchEmpty: "\u6ca1\u6709\u627e\u5230\u53ef\u76f4\u63a5\u590d\u7528\u7684 Google \u95e8\u5e97\u3002",
+        useCurrentLocation: "\u83b7\u53d6\u5b9a\u4f4d",
+        choosingStore: "\u6b63\u5728\u751f\u6210\u95e8\u5e97...",
+        confirmGoogleStoreTypeTitle: "\u8fd8\u5dee\u4e00\u6b65",
+        confirmGoogleStoreTypeHint: "\u8bf7\u786e\u8ba4\u8fd9\u5bb6\u95e8\u5e97\u7684\u7c7b\u578b\uff0c\u53ea\u9700\u8bbe\u7f6e\u4e00\u6b21\u3002",
+        confirmGoogleStoreTypeAction: "\u786e\u8ba4\u5e76\u7ee7\u7eed",
         storeNameRequired: "\u95e8\u5e97\u540d\u79f0 *",
         channelTypeRequired: "\u95e8\u5e97\u7c7b\u578b *",
         channelTypeLoading: "\u6b63\u5728\u52a0\u8f7d\u95e8\u5e97\u7c7b\u578b...",
@@ -128,10 +155,21 @@ function uiCopy(locale: Locale) {
       }
     : {
         selectStore: "Select Store",
-        selectStoreHint: "Select store master data first. City and store type are locked from the master record.",
-        searchPlaceholder: "Search store name or city",
-        noStoreFound: "No store found. Create one.",
+        selectStoreHint: "Start with Google Places near the current location. Searching keeps the same list and still sorts by distance.",
+        searchPlaceholder: "Search store name, mall, or city",
+        noStoreFound: "No matching store found. Create one manually.",
         createStore: "Create Store",
+        locatingStores: "Loading nearby stores...",
+        nearbySorted: "Sorted by current location",
+        matchedSorted: "Matched by keyword, then sorted by distance",
+        googleSearchFailed: "Google store search failed. You can create the store manually.",
+        googleMaterializeFailed: "Unable to create the selected Google store. Try again or create it manually.",
+        googleSearchEmpty: "No reliable Google store match was found.",
+        useCurrentLocation: "Get location",
+        choosingStore: "Creating store...",
+        confirmGoogleStoreTypeTitle: "One more step",
+        confirmGoogleStoreTypeHint: "Confirm the store type for this place. You only need to do this once.",
+        confirmGoogleStoreTypeAction: "Confirm and continue",
         storeNameRequired: "Store name *",
         channelTypeRequired: "Store type *",
         channelTypeLoading: "Loading store types...",
@@ -187,6 +225,56 @@ function channelLabel(value: string | null | undefined, store?: OfflineStoreOpti
 
 function formatMb(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+}
+
+function formatDistance(distanceM: number | null | undefined) {
+  if (!Number.isFinite(distanceM ?? NaN)) return null;
+  if ((distanceM ?? 0) < 1000) return `${Math.round(distanceM ?? 0)}m`;
+  return `${((distanceM ?? 0) / 1000).toFixed(1)}km`;
+}
+
+function useOfflineChannelOptions(errorMessage: string) {
+  const [channels, setChannels] = useState<ChannelOption[]>([]);
+  const [selectedChannelId, setSelectedChannelId] = useState("");
+  const [channelsLoading, setChannelsLoading] = useState(true);
+  const [channelStatus, setChannelStatus] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadChannels() {
+      setChannelsLoading(true);
+      setChannelStatus("");
+      try {
+        const res = await fetch("/api/channels");
+        const data = (await res.json().catch(() => ({}))) as { channels?: ChannelOption[]; error?: string };
+        const offlineChannels = (data.channels ?? []).filter((channel) => channel.type === "offline");
+        if (cancelled) return;
+        setChannels(offlineChannels);
+        setSelectedChannelId((current) => current || offlineChannels[0]?.id || "");
+        setChannelStatus(!res.ok || data.error ? (data.error ?? errorMessage) : "");
+      } catch {
+        if (!cancelled) setChannelStatus(errorMessage);
+      } finally {
+        if (!cancelled) setChannelsLoading(false);
+      }
+    }
+
+    loadChannels();
+    return () => {
+      cancelled = true;
+    };
+  }, [errorMessage]);
+
+  return {
+    channels,
+    setChannels,
+    selectedChannelId,
+    setSelectedChannelId,
+    channelsLoading,
+    channelStatus,
+    selectedChannel: channels.find((channel) => channel.id === selectedChannelId) ?? null,
+  };
 }
 
 function loadImage(file: File) {
@@ -564,35 +652,83 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
 function StoreSearchStep({ locale, user, onSelect }: { locale: Locale; user: AppUser; onSelect: (store: OfflineStoreOption) => void }) {
   const labels = uiCopy(locale);
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<OfflineStoreOption[]>([]);
+  const [googleResults, setGoogleResults] = useState<GoogleStoreOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [storeLocation, setStoreLocation] = useState<StoreLocationEvidence | null>(null);
+  const [locationStatus, setLocationStatus] = useState("");
+  const [materializingStore, setMaterializingStore] = useState("");
+  const [pendingGoogleStore, setPendingGoogleStore] = useState<GoogleStoreOption | null>(null);
+  const googleSearchEmpty = !loading && googleResults.length === 0;
+
+  function locateStores() {
+    if (!navigator.geolocation) {
+      setLocationStatus(labels.locationUnavailable);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setLocationStatus(labels.locatingStores);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setStoreLocation({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          location_accuracy_m: Number.isFinite(position.coords.accuracy) ? Math.round(position.coords.accuracy) : null,
+          location_captured_at: new Date().toISOString(),
+        });
+        setLocationStatus(query.trim() ? labels.matchedSorted : labels.nearbySorted);
+      },
+      () => {
+        setLocationStatus(labels.locationFailed);
+        setLoading(false);
+      },
+      { enableHighAccuracy: true, maximumAge: 60_000, timeout: 8_000 },
+    );
+  }
+
+  useEffect(() => {
+    locateStores();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
+    if (!query.trim() && !storeLocation) {
+      setGoogleResults([]);
+      setLoading(false);
+      return;
+    }
     const timeout = setTimeout(async () => {
       setLoading(true);
       setError(null);
       const params = new URLSearchParams();
-      params.set("scope", "master");
-      params.set("limit", query.trim() ? "50" : "20");
-      if (query.trim()) params.set("q", query.trim());
+      params.set("limit", query.trim() ? "20" : "10");
+      if (query.trim()) params.set("query", query.trim());
+      if (storeLocation) {
+        params.set("lat", String(storeLocation.latitude));
+        params.set("lon", String(storeLocation.longitude));
+      }
       try {
-        const res = await fetch(`/api/offline-stores?${params.toString()}`);
+        const res = await fetch(`/api/google-store-search?${params.toString()}`);
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           if (!cancelled) {
-            setError(data.error ?? labels.createFailed);
-            setResults([]);
+            setError(data.error ?? labels.googleSearchFailed);
+            setGoogleResults([]);
           }
           return;
         }
-        if (!cancelled) setResults((data.stores ?? []) as OfflineStoreOption[]);
+        if (!cancelled) {
+          setGoogleResults((data.stores ?? []) as GoogleStoreOption[]);
+          setLocationStatus(query.trim() ? labels.matchedSorted : (storeLocation ? labels.nearbySorted : ""));
+        }
       } catch {
         if (!cancelled) {
-          setError(labels.createFailed);
-          setResults([]);
+          setError(labels.googleSearchFailed);
+          setGoogleResults([]);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -603,12 +739,57 @@ function StoreSearchStep({ locale, user, onSelect }: { locale: Locale; user: App
       cancelled = true;
       clearTimeout(timeout);
     };
-  }, [labels.createFailed, query]);
+  }, [labels.googleSearchFailed, labels.matchedSorted, labels.nearbySorted, query, storeLocation]);
+
+  function chooseGoogleStore(store: GoogleStoreOption) {
+    setError(null);
+    if (store.local_store) {
+      onSelect(store.local_store);
+      return;
+    }
+    setPendingGoogleStore(store);
+  }
+
+  async function materializeSelectedGoogleStore(store: GoogleStoreOption, selectedChannel: ChannelOption) {
+    setMaterializingStore(store.google_place_id);
+    setError(null);
+    try {
+      const res = await fetch("/api/google-store-select", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          google_place_id: store.google_place_id,
+          name: store.name,
+          city: store.city,
+          province: store.province ?? null,
+          cityName: store.cityName ?? null,
+          district: store.district ?? null,
+          address: store.address ?? null,
+          latitude: store.latitude ?? null,
+          longitude: store.longitude ?? null,
+          channel_id: selectedChannel.id,
+          channel_type: selectedChannel.code,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error ?? labels.googleMaterializeFailed);
+        return;
+      }
+      setPendingGoogleStore(null);
+      onSelect(data.store as OfflineStoreOption);
+    } catch {
+      setError(labels.googleMaterializeFailed);
+    } finally {
+      setMaterializingStore("");
+    }
+  }
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div>
         <h2 className="font-semibold">{labels.selectStore}</h2>
+        <p className="mt-1 text-xs text-slate-500">{labels.selectStoreHint}</p>
       </div>
       <div className="relative mt-4">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -620,9 +801,20 @@ function StoreSearchStep({ locale, user, onSelect }: { locale: Locale; user: App
         />
         {loading ? <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-slate-400" /> : null}
       </div>
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <div className="text-xs text-slate-500">{locationStatus || (query.trim() ? labels.matchedSorted : labels.nearbySorted)}</div>
+        <button
+          type="button"
+          onClick={locateStores}
+          className="inline-flex h-7 items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 text-[11px] font-medium text-slate-600 transition hover:bg-slate-50"
+        >
+          <LocateFixed className="h-3 w-3" />
+          {labels.useCurrentLocation}
+        </button>
+      </div>
       {error ? <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
-      <div className="mt-4 space-y-2 pb-24">
-        {loading && results.length === 0 ? (
+      <div className="mt-4 space-y-2">
+        {loading && googleResults.length === 0 ? (
           <>
             <div className="rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm">
               <div className="h-4 w-36 animate-pulse rounded bg-slate-200" />
@@ -634,12 +826,18 @@ function StoreSearchStep({ locale, user, onSelect }: { locale: Locale; user: App
             </div>
           </>
         ) : null}
-        {!loading && results.length === 0 ? <div className="rounded-xl border border-dashed border-slate-300 p-5 text-center text-sm text-slate-500">{labels.noStoreFound}</div> : null}
-        {results.map((store) => (
+        {!loading && googleResults.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-300 p-5 text-center text-sm text-slate-500">
+            <div>{labels.googleSearchEmpty}</div>
+            <div className="mt-1">{labels.noStoreFound}</div>
+          </div>
+        ) : null}
+        {googleResults.map((store) => (
           <button
-            key={store.id}
+            key={store.google_place_id}
             type="button"
-            onClick={() => onSelect(store)}
+            onClick={() => chooseGoogleStore(store)}
+            disabled={materializingStore === store.google_place_id}
             className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 text-left shadow-sm"
           >
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
@@ -647,16 +845,21 @@ function StoreSearchStep({ locale, user, onSelect }: { locale: Locale; user: App
             </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-bold">{store.name}</span>
-              <span className="mt-1 block truncate text-xs text-slate-500">{store.city || "-"} / {channelLabel(store.channel_type, store)}</span>
+              <span className="mt-1 block truncate text-xs text-slate-500">{store.city || "-"}</span>
+              {store.address ? <span className="mt-1 block truncate text-[11px] text-slate-400">{store.address}</span> : null}
             </span>
-            {store.address ? <MapPin className="h-4 w-4 shrink-0 text-slate-400" /> : null}
+            <span className="shrink-0 text-right text-xs text-slate-400">
+              {materializingStore === store.google_place_id ? labels.choosingStore : formatDistance(store.distance_m) ?? ""}
+            </span>
           </button>
         ))}
       </div>
-      <button type="button" onClick={() => setShowCreate(true)} className="fixed bottom-4 left-1/2 z-40 flex h-12 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-center justify-center gap-2 rounded-xl bg-slate-900 text-sm font-bold text-white shadow-lg">
-        <Plus className="h-4 w-4" />
-        {labels.createStore}
-      </button>
+      {googleSearchEmpty ? (
+        <button type="button" onClick={() => setShowCreate(true)} className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 text-sm font-bold text-white">
+          <Plus className="h-4 w-4" />
+          {labels.createStore}
+        </button>
+      ) : null}
 
       {showCreate ? (
         <CreateStoreSheet
@@ -669,7 +872,97 @@ function StoreSearchStep({ locale, user, onSelect }: { locale: Locale; user: App
           }}
         />
       ) : null}
+      {pendingGoogleStore && !pendingGoogleStore.local_store ? (
+        <GoogleStoreTypeSheet
+          locale={locale}
+          store={pendingGoogleStore}
+          loading={materializingStore === pendingGoogleStore.google_place_id}
+          onClose={() => {
+            if (materializingStore) return;
+            setPendingGoogleStore(null);
+          }}
+          onConfirm={(selectedChannel) => materializeSelectedGoogleStore(pendingGoogleStore, selectedChannel)}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function GoogleStoreTypeSheet({
+  locale,
+  store,
+  loading,
+  onClose,
+  onConfirm,
+}: {
+  locale: Locale;
+  store: GoogleStoreOption | null;
+  loading: boolean;
+  onClose: () => void;
+  onConfirm: (selectedChannel: ChannelOption) => void;
+}) {
+  const labels = uiCopy(locale);
+  const {
+    channels,
+    selectedChannelId,
+    setSelectedChannelId,
+    channelsLoading,
+    channelStatus,
+    selectedChannel,
+  } = useOfflineChannelOptions(labels.createFailed);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end bg-slate-950/40">
+      <div className="mx-auto w-full max-w-md rounded-t-2xl bg-white p-5 shadow-xl">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold">{labels.confirmGoogleStoreTypeTitle}</h2>
+            <p className="mt-1 text-sm text-slate-500">{labels.confirmGoogleStoreTypeHint}</p>
+          </div>
+          <button type="button" onClick={onClose} disabled={loading} className="rounded-full p-1 text-slate-500 disabled:opacity-50">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        {store ? (
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="text-sm font-bold text-slate-900">{store.name}</div>
+            <div className="mt-1 text-xs text-slate-500">{store.city || "-"}</div>
+            {store.address ? <div className="mt-1 text-xs text-slate-400">{store.address}</div> : null}
+          </div>
+        ) : null}
+        <label className="mt-4 block">
+          <span className="mb-1.5 block text-xs font-bold text-slate-600">{labels.channelTypeRequired}</span>
+          <select
+            required
+            value={selectedChannelId}
+            onChange={(event) => setSelectedChannelId(event.target.value)}
+            disabled={channelsLoading || channels.length === 0 || loading}
+            className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500 disabled:bg-slate-100 disabled:text-slate-500"
+          >
+            {channelsLoading ? <option value="">{labels.channelTypeLoading}</option> : null}
+            {!channelsLoading && channels.length === 0 ? <option value="">{labels.channelTypeEmpty}</option> : null}
+            {channels.map((channel) => (
+              <option key={channel.id} value={channel.id}>
+                {channel.name || channel.code}
+              </option>
+            ))}
+          </select>
+          {channelStatus ? <span className="mt-1.5 block text-xs text-amber-700">{channelStatus}</span> : null}
+        </label>
+        <button
+          type="button"
+          onClick={() => {
+            if (!selectedChannel) return;
+            onConfirm(selectedChannel);
+          }}
+          disabled={loading || channelsLoading || !selectedChannel || !store}
+          className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 text-sm font-bold text-white disabled:opacity-60"
+        >
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Building2 className="h-4 w-4" />}
+          {labels.confirmGoogleStoreTypeAction}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -680,44 +973,13 @@ function CreateStoreSheet({ locale, user, onClose, onCreated }: { locale: Locale
   const [province, setProvince] = useState("");
   const [cityName, setCityName] = useState("");
   const [district, setDistrict] = useState("");
-  const [channels, setChannels] = useState<ChannelOption[]>([]);
-  const [selectedChannelId, setSelectedChannelId] = useState("");
-  const [channelsLoading, setChannelsLoading] = useState(true);
-  const [channelStatus, setChannelStatus] = useState("");
   const [address, setAddress] = useState("");
   const [storeLocation, setStoreLocation] = useState<StoreLocationEvidence | null>(null);
   const [locationStatus, setLocationStatus] = useState("");
   const [locating, setLocating] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const selectedChannel = channels.find((channel) => channel.id === selectedChannelId) ?? null;
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadChannels() {
-      setChannelsLoading(true);
-      setChannelStatus("");
-      try {
-        const res = await fetch("/api/channels");
-        const data = (await res.json().catch(() => ({}))) as { channels?: ChannelOption[]; error?: string };
-        const offlineChannels = (data.channels ?? []).filter((channel) => channel.type === "offline");
-        if (cancelled) return;
-        setChannels(offlineChannels);
-        setSelectedChannelId((current) => current || offlineChannels[0]?.id || "");
-        setChannelStatus(!res.ok || data.error ? (data.error ?? labels.createFailed) : "");
-      } catch {
-        if (!cancelled) setChannelStatus(labels.createFailed);
-      } finally {
-        if (!cancelled) setChannelsLoading(false);
-      }
-    }
-
-    loadChannels();
-    return () => {
-      cancelled = true;
-    };
-  }, [labels.createFailed]);
+  const { channels, selectedChannelId, setSelectedChannelId, channelsLoading, channelStatus, selectedChannel } = useOfflineChannelOptions(labels.createFailed);
 
   function captureStoreLocation() {
     if (!navigator.geolocation) {
