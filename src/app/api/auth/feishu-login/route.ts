@@ -248,100 +248,26 @@ function normalizeOrganizationName(value: string) {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
-async function ensureOrganizationsExist(names: string[]) {
-  const normalizedNames = Array.from(new Set(names.map(normalizeOrganizationName).filter(Boolean)));
-  if (normalizedNames.length === 0) return [] as string[];
-
-  const supabase = createSupabaseServiceClient();
-  const { data: organizations, error } = await supabase
-    .from("organizations")
-    .select("id,name,status");
-
-  if (error) throw new Error(error.message);
-
-  const existingByName = new Map(
-    (organizations ?? []).map((organization) => [
-      normalizeOrganizationName(String(organization.name ?? "")),
-      {
-        id: String(organization.id),
-        status: String(organization.status ?? ""),
-      },
-    ]),
-  );
-
-  const organizationIds: string[] = [];
-  const missingNames: string[] = [];
-
-  for (const name of names) {
-    const normalized = normalizeOrganizationName(name);
-    if (!normalized) continue;
-    const existing = existingByName.get(normalized);
-    if (existing) {
-      organizationIds.push(existing.id);
-      if (existing.status !== "active") {
-        const { error: updateError } = await supabase
-          .from("organizations")
-          .update({
-            status: "active",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", existing.id);
-        if (updateError) throw new Error(updateError.message);
-      }
-      continue;
-    }
-    missingNames.push(name.trim());
-  }
-
-  for (const name of missingNames) {
-    const { data, error: insertError } = await supabase
-      .from("organizations")
-      .insert({
-        name,
-        status: "active",
-      })
-      .select("id,name")
-      .single();
-
-    if (insertError) {
-      const { data: retried, error: retryError } = await supabase
-        .from("organizations")
-        .select("id,name,status")
-        .ilike("name", name)
-        .limit(2);
-      if (retryError) throw new Error(retryError.message);
-      const exactMatch = (retried ?? []).find((organization) =>
-        normalizeOrganizationName(String(organization.name ?? "")) === normalizeOrganizationName(name));
-      if (!exactMatch) throw new Error(insertError.message);
-      organizationIds.push(String(exactMatch.id));
-      if (String(exactMatch.status ?? "") !== "active") {
-        const { error: updateError } = await supabase
-          .from("organizations")
-          .update({
-            status: "active",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", exactMatch.id);
-        if (updateError) throw new Error(updateError.message);
-      }
-      continue;
-    }
-
-    organizationIds.push(String(data.id));
-  }
-
-  return Array.from(new Set(organizationIds));
-}
-
 async function resolveMatchedOrganizations(openId: string) {
   const departmentNames = await getFeishuDepartmentNamesByOpenId(openId);
-  const normalizedNames = Array.from(new Set(departmentNames.map((name) => name.trim()).filter(Boolean)));
+  const normalizedNames = Array.from(new Set(departmentNames.map(normalizeOrganizationName).filter(Boolean)));
   if (normalizedNames.length === 0) {
     return { organizationIds: [] as string[], departmentNames };
   }
 
+  const supabase = createSupabaseServiceClient();
+  const { data: organizations, error } = await supabase
+    .from("organizations")
+    .select("id,name,status")
+    .eq("status", "active");
+
+  if (error) throw new Error(error.message);
+
+  const matchedOrganizations = (organizations ?? []).filter((organization) =>
+    normalizedNames.includes(normalizeOrganizationName(String(organization.name ?? ""))));
+
   return {
-    organizationIds: await ensureOrganizationsExist(normalizedNames),
+    organizationIds: matchedOrganizations.map((organization) => String(organization.id)),
     departmentNames,
   };
 }

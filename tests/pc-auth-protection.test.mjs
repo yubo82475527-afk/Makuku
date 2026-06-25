@@ -96,8 +96,9 @@ test("Feishu login API exchanges auth code for user info and creates app session
   assert.match(feishuLoginRoute, /password_login_enabled/);
   assert.match(feishuLoginRoute, /field_agent/);
   assert.match(feishuLoginRoute, /replace_user_organization_members/);
-  assert.match(feishuLoginRoute, /ensureOrganizationsExist/);
   assert.match(feishuLoginRoute, /from\("organizations"\)/);
+  assert.match(feishuLoginRoute, /\.eq\("status", "active"\)/);
+  assert.doesNotMatch(feishuLoginRoute, /\.insert\(\{\s*name,\s*status: "active"/s);
   assert.match(feishuLoginRoute, /Failed to read existing user/);
   assert.match(feishuLoginRoute, /findAppUserByEmail/);
   assert.match(feishuLoginRoute, /bindFeishuOpenIdToExistingUser/);
