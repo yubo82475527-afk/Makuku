@@ -204,7 +204,8 @@ export async function runStoreVisitAiAnalysisForVisit(input: {
   if (signedEntries.length === 0) throw new Error("Unable to create signed image URLs");
 
   const signedImageUrls = signedEntries.map((entry) => entry.url);
-  const region = typedVisit.region ?? typedVisit.city;
+  const structuredRegion = [typedVisit.province, typedVisit.city_name, typedVisit.district].filter(Boolean).join(" / ");
+  const region = typedVisit.region ?? (structuredRegion || typedVisit.city);
   const channel = typedVisit.channel ?? typedVisit.channel_type;
   const promoter = typedVisit.promoter ?? typedVisit.uploader_name;
 

@@ -8,8 +8,14 @@ import { getOfflineStoreVisit } from "@/lib/data";
 import { getPageI18n } from "@/lib/i18n/server";
 import { mobileImageCategoryLabel } from "@/lib/mobile-i18n";
 import { visitStatusLabel } from "@/lib/offline-visit-labels";
+import type { OfflineStoreVisit } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+function formatVisitRegion(visit: OfflineStoreVisit) {
+  const structured = [visit.province, visit.city_name, visit.district].map((value) => value?.trim()).filter(Boolean).join(" / ");
+  return structured || visit.city;
+}
 
 export default async function OfflineVisitDetailPage({
   params,
@@ -37,7 +43,7 @@ export default async function OfflineVisitDetailPage({
                   {visit.analysis_status ? <Badge>{visit.analysis_status}</Badge> : null}
                 </div>
                 <p className="mt-1 text-sm text-slate-600">
-                  {visit.city} / {visit.channel_type} / {visit.uploader_name} / {visit.visit_date}
+                  {formatVisitRegion(visit)} / {visit.channel_type} / {visit.uploader_name} / {visit.visit_date}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">Created {formatJakartaTime(visit.created_at)}</p>
               </div>

@@ -32,6 +32,9 @@ type OfflineStore = {
   id: string;
   name: string;
   city: string;
+  province?: string | null;
+  city_name?: string | null;
+  district?: string | null;
   channel_type: string;
   address?: string | null;
 };
@@ -77,6 +80,19 @@ function saveUser(user: AppUser) {
 
 function clearUser() {
   localStorage.removeItem(STORAGE_KEY);
+}
+
+function formatRegionLabel(region: {
+  city?: string | null;
+  province?: string | null;
+  city_name?: string | null;
+  district?: string | null;
+} | null | undefined) {
+  const structured = [region?.province, region?.city_name, region?.district]
+    .map((value) => value?.trim())
+    .filter(Boolean)
+    .join(" / ");
+  return structured || region?.city || "-";
 }
 
 // ─── Root component ───────────────────────────────────────────────────────────
@@ -316,7 +332,7 @@ function StoreSelectScreen({
           >
             <div className="min-w-0">
               <div className="truncate font-medium text-sm">{store.name}</div>
-              <div className="text-xs text-slate-500">{store.city} / {store.channel_type}</div>
+              <div className="text-xs text-slate-500">{formatRegionLabel(store)} / {store.channel_type}</div>
             </div>
             <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
           </button>
@@ -519,7 +535,7 @@ function PhotoCaptureScreen({
           <button type="button" onClick={onBack} className="text-slate-500 text-sm">← 返回</button>
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-lg font-semibold">{store.name}</h1>
-            <p className="text-xs text-slate-500">{store.city} / {store.channel_type}</p>
+            <p className="text-xs text-slate-500">{formatRegionLabel(store)} / {store.channel_type}</p>
           </div>
         </div>
       </header>
@@ -728,7 +744,7 @@ function MyVisitsScreen({
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="truncate text-sm font-semibold">{visit.store_name}</div>
-                  <div className="mt-1 text-xs text-slate-500">{visit.city} / {visit.channel_type} / {visit.visit_date}</div>
+                  <div className="mt-1 text-xs text-slate-500">{formatRegionLabel(visit)} / {visit.channel_type} / {visit.visit_date}</div>
                 </div>
                 <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
               </div>
@@ -763,7 +779,7 @@ function MobileVisitDetailScreen({
           </button>
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-lg font-semibold">{visit.store_name}</h1>
-            <p className="text-xs text-slate-500">{visit.city} / {visit.visit_date}</p>
+            <p className="text-xs text-slate-500">{formatRegionLabel(visit)} / {visit.visit_date}</p>
           </div>
         </div>
       </header>

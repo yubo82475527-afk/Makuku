@@ -22,6 +22,11 @@ function getDetectedProductCount(visit: OfflineStoreVisit) {
   return typeof legacyCount === "number" ? legacyCount : 0;
 }
 
+function formatVisitRegion(visit: OfflineStoreVisit) {
+  const structured = [visit.province, visit.city_name, visit.district].map((value) => value?.trim()).filter(Boolean).join(" / ");
+  return structured || visit.city;
+}
+
 export default async function OfflineUploadsPage({
   params,
   searchParams,
@@ -124,7 +129,7 @@ export default async function OfflineUploadsPage({
                     {visit.analysis_status ? <Badge>{visit.analysis_status}</Badge> : null}
                   </div>
                   <p className="mt-1 text-sm text-slate-600">
-                    {visit.city} / {visit.channel_type} / {visit.uploader_name} / {visit.visit_date}
+                    {formatVisitRegion(visit)} / {visit.channel_type} / {visit.uploader_name} / {visit.visit_date}
                   </p>
                 </div>
                 <Link href={`/${locale}/offline-uploads/${visit.id}`}>

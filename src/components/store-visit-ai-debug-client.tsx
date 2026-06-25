@@ -31,6 +31,11 @@ function shortDate(value?: string | null) {
   return value ? new Date(value).toLocaleString() : "-";
 }
 
+function formatVisitRegion(visit: OfflineStoreVisit | null | undefined) {
+  const structured = [visit?.province, visit?.city_name, visit?.district].map((value) => value?.trim()).filter(Boolean).join(" / ");
+  return structured || visit?.city || "-";
+}
+
 function resultCounts(result: StoreVisitAiResult | null) {
   if (!result) return { raw: 0, prices: 0, promos: 0, warnings: 0 };
   return {
@@ -202,7 +207,7 @@ export function StoreVisitAiDebugClient({
               >
                 {visits.map((visit) => (
                   <option key={visit.id} value={visit.id}>
-                    {visit.store_name} / {visit.city} / {visit.visit_date}
+                    {visit.store_name} / {formatVisitRegion(visit)} / {visit.visit_date}
                   </option>
                 ))}
               </select>
@@ -210,7 +215,7 @@ export function StoreVisitAiDebugClient({
             {selectedVisit ? (
               <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
                 <div className="font-medium text-slate-950">{selectedVisit.store_name}</div>
-                <div className="mt-1">{selectedVisit.city} / {selectedVisit.channel_type} / {selectedVisit.uploader_name}</div>
+                <div className="mt-1">{formatVisitRegion(selectedVisit)} / {selectedVisit.channel_type} / {selectedVisit.uploader_name}</div>
                 <div className="mt-1">Images: {Array.isArray(selectedVisit.image_urls) ? selectedVisit.image_urls.length : 0}</div>
               </div>
             ) : null}

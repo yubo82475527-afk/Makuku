@@ -10,6 +10,10 @@ const storeVisitsApi = readFileSync("src/app/api/store-visits/route.ts", "utf8")
 const storeVisitImagesApi = readFileSync("src/app/api/store-visit/[id]/images/route.ts", "utf8");
 const storeVisitAiDebug = readFileSync("src/lib/store-visit-ai-debug.ts", "utf8");
 const offlineStoresApi = readFileSync("src/app/api/offline-stores/route.ts", "utf8");
+const mobileOfflineApp = readFileSync("src/components/mobile-offline-app.tsx", "utf8");
+const offlineUploadsPage = readFileSync("src/app/[locale]/offline-uploads/page.tsx", "utf8");
+const offlineUploadsDetailPage = readFileSync("src/app/[locale]/offline-uploads/[id]/page.tsx", "utf8");
+const storeVisitAiDebugClient = readFileSync("src/components/store-visit-ai-debug-client.tsx", "utf8");
 const storeVisitHistoryStoresApiPath = "src/app/api/store-visit-history-stores/route.ts";
 const storeVisitHistoryStoresApi = existsSync(storeVisitHistoryStoresApiPath) ? readFileSync(storeVisitHistoryStoresApiPath, "utf8") : "";
 const googleStoreSearchApiPath = "src/app/api/google-store-search/route.ts";
@@ -82,6 +86,13 @@ test("new store sheet loads offline channel master data for store type", () => {
   assert.match(competitorExcelMigration, /'MT-LKA-SUPERMARKET'/);
 });
 
+test("offline store writes keep city as a deprecated mirror of city_name", () => {
+  assert.match(offlineStoresApi, /const legacyCity = cityName;/);
+  assert.match(offlineStoresApi, /insert\(\{[\s\S]*city: legacyCity,[\s\S]*city_name: cityName,/);
+  assert.match(googleStoreSelectApi, /const legacyCity = cityName;/);
+  assert.match(googleStoreSelectApi, /insert\(\{[\s\S]*city: legacyCity,[\s\S]*city_name: cityName,/);
+});
+
 test("history-first store search loads current user's visited stores before offering google search", () => {
   assert.equal(existsSync(storeVisitHistoryStoresApiPath), true, "history store route should exist");
   assert.match(storeVisitHistoryStoresApi, /user_id is required/);
@@ -98,6 +109,8 @@ test("history-first store search loads current user's visited stores before offe
   assert.match(storeVisitH5, /fetch\(`\/api\/store-visit-history-stores\?\$\{params\.toString\(\)\}`\)/);
   assert.match(storeVisitH5, /searchMode === "history" \? labels\.selectStore : labels\.createStore/);
   assert.match(storeVisitH5, /searchMode === "history" \? labels\.selectStoreHint : labels\.newStoreFlowHint/);
+  assert.match(storeVisitHistoryStoresApi, /formatStoreRegion/);
+  assert.match(storeVisitH5, /formatStoreRegionText/);
   assert.doesNotMatch(storeVisitH5, /useEffect\(\(\) => \{\s*locateStores\(\);/s);
 });
 
@@ -132,7 +145,30 @@ test("selected store card wraps long mobile region and address values", () => {
   assert.match(storeVisitH5, /grid-cols-1/);
   assert.match(storeVisitH5, /sm:grid-cols-\[7\.5rem_minmax\(0,1fr\)\]/);
   assert.match(storeVisitH5, /break-words text-left/);
+  assert.match(storeVisitH5, /ReadOnlyRow label=\{labels\.city\} value=\{formatStoreRegionText\(selectedStore\) \|\| "-"\}/);
+  assert.doesNotMatch(storeVisitH5, /ReadOnlyRow label=\{labels\.city\} value=\{selectedStore\.city \|\| "-"\}/);
   assert.doesNotMatch(storeVisitH5, /min-w-0 truncate text-sm font-medium text-slate-900/);
+});
+
+test("legacy mobile and review pages prefer structured region labels over raw city", () => {
+  assert.match(mobileOfflineApp, /function formatRegionLabel\(region:/);
+  assert.match(mobileOfflineApp, /formatRegionLabel\(store\)/);
+  assert.match(mobileOfflineApp, /formatRegionLabel\(visit\)/);
+  assert.match(offlineUploadsPage, /function formatVisitRegion\(visit: OfflineStoreVisit\)/);
+  assert.match(offlineUploadsPage, /formatVisitRegion\(visit\)\} \/ \{visit\.channel_type\}/);
+  assert.match(offlineUploadsDetailPage, /function formatVisitRegion\(visit:/);
+  assert.match(offlineUploadsDetailPage, /formatVisitRegion\(visit\)\} \/ \{visit\.channel_type\}/);
+  assert.match(storeVisitAiDebugClient, /function formatVisitRegion\(visit: OfflineStoreVisit \| null \| undefined\)/);
+  assert.match(storeVisitAiDebugClient, /formatVisitRegion\(visit\)/);
+});
+
+test("store visit list and debug responses expose structured region labels before legacy city", () => {
+  assert.match(storeVisitsApi, /function formatVisitRegion\(visit: OfflineStoreVisit\)/);
+  assert.match(storeVisitsApi, /region: formatVisitRegion\(visit\)/);
+  assert.match(storeVisitsApi, /city: formatVisitRegion\(visit\)/);
+  assert.match(storeVisitAiDebug, /const structuredRegion = \[typedVisit\.province, typedVisit\.city_name, typedVisit\.district\]/);
+  assert.match(storeVisitAiDebug, /const region = typedVisit\.region \?\? \(structuredRegion \|\| typedVisit\.city\)/);
+  assert.match(readFileSync("src/app/api/store-visit-ai-debug/run/route.ts", "utf8"), /city: \[result\.visit\.province, result\.visit\.city_name, result\.visit\.district\]/);
 });
 
 test("new H5 store visit allows up to 20 uploaded photos", () => {

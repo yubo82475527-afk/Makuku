@@ -255,7 +255,7 @@ function storeRegionForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
   const legacyRegion = splitLegacyRegion(visit?.city);
   return {
     province: cleanDisplayText(visit?.province) ?? cleanDisplayText(store?.province) ?? legacyRegion.province,
-    cityName: cleanDisplayText(visit?.city_name) ?? cleanDisplayText(store?.city_name) ?? legacyRegion.cityName ?? cleanDisplayText(store?.city),
+    cityName: cleanDisplayText(visit?.city_name) ?? cleanDisplayText(store?.city_name) ?? legacyRegion.cityName ?? cleanDisplayText(visit?.city) ?? cleanDisplayText(store?.city),
     district: cleanDisplayText(visit?.district) ?? cleanDisplayText(store?.district) ?? legacyRegion.district,
   };
 }

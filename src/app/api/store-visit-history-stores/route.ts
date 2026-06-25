@@ -47,6 +47,17 @@ function cleanLimit(value: string | null) {
   return Math.max(1, Math.min(50, Math.floor(parsed)));
 }
 
+function formatStoreRegion(store: {
+  city?: string | null;
+  province?: string | null;
+  city_name?: string | null;
+  district?: string | null;
+}) {
+  const parts = [store.province, store.city_name, store.district].map(cleanText).filter(Boolean);
+  if (parts.length > 0) return parts.join(" / ");
+  return cleanText(store.city);
+}
+
 function matchesKeyword(store: Pick<HistoryStoreItem, "name" | "city" | "province" | "city_name" | "district">, keyword: string) {
   if (!keyword) return true;
   const lower = keyword.toLowerCase();
@@ -103,7 +114,15 @@ function normalizeChannel(value: unknown) {
 function normalizeHistoryStore(store: StoreRow, aggregates: Map<string, VisitAggregate>): HistoryStoreItem | null {
   const storeId = cleanText(store.id);
   const name = cleanText(store.name);
-  const city = cleanText(store.city);
+  const province = cleanText(store.province) || null;
+  const cityName = cleanText(store.city_name) || null;
+  const district = cleanText(store.district) || null;
+  const city = formatStoreRegion({
+    city: cleanText(store.city) || null,
+    province,
+    city_name: cityName,
+    district,
+  });
   const channelType = cleanText(store.channel_type);
   if (!storeId || !name || !city || !channelType) return null;
 
@@ -117,9 +136,9 @@ function normalizeHistoryStore(store: StoreRow, aggregates: Map<string, VisitAgg
     store_id: storeId,
     name,
     city,
-    province: cleanText(store.province) || null,
-    city_name: cleanText(store.city_name) || null,
-    district: cleanText(store.district) || null,
+    province,
+    city_name: cityName,
+    district,
     channel_type: channelType,
     channel_id: cleanText(store.channel_id) || null,
     address: cleanText(store.address) || null,
@@ -153,7 +172,7 @@ function buildDemoHistoryStores(userId: string, q: string, limit: number) {
     .map((store) => ({
       store_id: store.id,
       name: store.name,
-      city: store.city,
+      city: formatStoreRegion(store),
       province: store.province ?? null,
       city_name: store.city_name ?? null,
       district: store.district ?? null,

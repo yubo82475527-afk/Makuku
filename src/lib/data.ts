@@ -423,9 +423,26 @@ function storeFromRegistration(input: {
   };
 }
 
-function storeKey(store: Pick<OfflineStore, "name" | "city">) {
+function cityLabelFromRegionSource(source: Pick<OfflineStore, "city" | "province" | "city_name" | "district"> | Pick<OfflineStoreVisit, "city" | "province" | "city_name" | "district"> | { city?: string | null } | null | undefined) {
+  if (!source) return null;
+  if ("province" in source || "city_name" in source || "district" in source) {
+    const label = regionLabel({
+      province: cleanRegionText("province" in source ? source.province : null),
+      cityName: cleanRegionText("city_name" in source ? source.city_name : null),
+      district: cleanRegionText("district" in source ? source.district : null),
+    });
+    if (label) return label;
+  }
+  return cleanText(source.city);
+}
+
+function storeRegionKeyLabel(store: Pick<OfflineStore, "city" | "province" | "city_name" | "district">) {
+  return cityLabelFromRegionSource(store);
+}
+
+function storeKey(store: Pick<OfflineStore, "name" | "city" | "province" | "city_name" | "district">) {
   const name = cleanText(store.name);
-  const city = cleanText(store.city);
+  const city = storeRegionKeyLabel(store);
   if (!name || !city) return null;
   return `${city.toLowerCase()}::${name.toLowerCase()}`;
 }
@@ -453,10 +470,10 @@ function mergeOfflineStores(stores: OfflineStore[]) {
 
   for (const store of stores) {
     const name = cleanText(store.name);
-    const city = cleanText(store.city);
+    const city = storeRegionKeyLabel(store);
     if (!name || !city) continue;
 
-    const key = storeKey({ name, city });
+    const key = storeKey(store);
     if (!key) continue;
     const channelType = cleanText(store.channel_type) ?? "other";
     const channel = store.channels ?? demoChannels.find((item) => item.id === store.channel_id || item.code === channelType) ?? null;
@@ -970,15 +987,15 @@ export async function getDashboardCategoryChannelMatrix(locale = "zh"): Promise<
   });
 
   const cities = Array.from(new Set([
-    ...storesResult.data.map((store) => cleanText(store.city)).filter(Boolean),
-    ...visitsResult.data.map((visit) => cleanText(visit.city)).filter(Boolean),
-    ...dashboardFeed.map((item) => cleanText(item.city)).filter(Boolean),
+    ...storesResult.data.map((store) => cityLabelFromRegionSource(store)).filter(Boolean),
+    ...visitsResult.data.map((visit) => cityLabelFromRegionSource(visit)).filter(Boolean),
+    ...dashboardFeed.map((item) => cityLabelFromRegionSource({ city: item.city })).filter(Boolean),
   ] as string[])).sort((a, b) => a.localeCompare(b));
 
   const cityRows = cities.map((city) => {
-    const storeCount = storesResult.data.filter((store) => store.city === city).length;
+    const storeCount = storesResult.data.filter((store) => cityLabelFromRegionSource(store) === city).length;
     const cells = activeChannels.map((channel) => {
-      const events = dashboardFeed.filter((item) => item.city === city && normalizeChannelCode(item.channelCode) === channel.code);
+      const events = dashboardFeed.filter((item) => cityLabelFromRegionSource({ city: item.city }) === city && normalizeChannelCode(item.channelCode) === channel.code);
       const metrics = buildMatrixCellMetrics(events, since);
       return {
         city,
@@ -1169,7 +1186,7 @@ function buildCollectionEfficiency(
     const date = visit.visit_date ? new Date(`${visit.visit_date}T00:00:00`) : new Date(visit.created_at);
     return date >= todayStart;
   }).length;
-  const weekStoreKeys = new Set(weekVisits.map((visit) => `${cleanText(visit.city) ?? ""}|${cleanText(visit.store_name) ?? ""}`));
+  const weekStoreKeys = new Set(weekVisits.map((visit) => `${regionLabel(visitRegion(visit))}|${cleanText(visit.store_name) ?? ""}`));
   const approvedCandidates = candidates.filter((candidate) => candidate.status === "approved");
   const accuracies = approvedCandidates
     .map((candidate) => ({ candidate, accuracy: candidatePriceAccuracy(candidate) }))
@@ -1398,18 +1415,20 @@ function snapshotMaterialCode(snapshot: PriceSnapshot) {
 function snapshotProvince(snapshot: PriceSnapshot) {
   const visit = snapshot.ai_price_candidates?.[0]?.offline_store_visits;
   const store = snapshot.offline_stores;
-  const fallback = splitRegion(visit?.city ?? store?.city);
-  return cleanRegionText(visit?.province) ?? cleanRegionText(store?.province) ?? fallback.province ?? "UNKNOWN";
+  const visitRegionParts = visitRegion(visit);
+  const storeRegionParts = storeRegion(store);
+  return visitRegionParts.province ?? storeRegionParts.province ?? "UNKNOWN";
 }
 
 function snapshotMatchesBenchmarkRegion(snapshot: PriceSnapshot, rule: MarketBenchmarkRule, isNational: boolean) {
   if (isNational) return true;
   const visit = snapshot.ai_price_candidates?.[0]?.offline_store_visits;
   const store = snapshot.offline_stores;
-  const fallback = splitRegion(visit?.city ?? store?.city);
-  const province = cleanRegionText(visit?.province) ?? cleanRegionText(store?.province) ?? fallback.province;
-  const cityName = cleanRegionText(visit?.city_name) ?? cleanRegionText(store?.city_name) ?? fallback.cityName;
-  const district = cleanRegionText(visit?.district) ?? cleanRegionText(store?.district) ?? fallback.district;
+  const visitRegionParts = visitRegion(visit);
+  const storeRegionParts = storeRegion(store);
+  const province = visitRegionParts.province ?? storeRegionParts.province;
+  const cityName = visitRegionParts.cityName ?? storeRegionParts.cityName;
+  const district = visitRegionParts.district ?? storeRegionParts.district;
   if (!sameLoose(province, rule.province)) return false;
   if (!sameLoose(cityName, rule.city_name)) return false;
   if (cleanText(rule.district) && !sameLoose(district, rule.district)) return false;
@@ -1682,6 +1701,10 @@ function splitRegion(value: string | null | undefined) {
   };
 }
 
+function regionLabel(region: { province?: string | null; cityName?: string | null; district?: string | null }) {
+  return [region.province, region.cityName, region.district].map(cleanRegionText).filter(Boolean).join(" / ");
+}
+
 function storeRegion(store: Pick<OfflineStore, "city" | "province" | "city_name" | "district"> | null | undefined) {
   const fallback = splitRegion(store?.city);
   return {
@@ -1691,7 +1714,7 @@ function storeRegion(store: Pick<OfflineStore, "city" | "province" | "city_name"
   };
 }
 
-function visitRegion(visit: AiPriceCandidate["offline_store_visits"]) {
+function visitRegion(visit: Pick<OfflineStoreVisit, "city" | "province" | "city_name" | "district"> | null | undefined) {
   const fallback = splitRegion(visit?.city);
   return {
     province: cleanRegionText(visit?.province) ?? fallback.province,
@@ -2036,10 +2059,10 @@ function buildBattleMapCities(input: {
 }): DashboardCategoryChannelMatrix["battleMapCities"] {
   return input.cityRows
     .map((row, index) => {
-      const cityEvents = input.feed.filter((item) => cleanText(item.city) === row.city);
+      const cityEvents = input.feed.filter((item) => cityLabelFromRegionSource({ city: item.city }) === row.city);
       const metrics = buildMatrixCellMetrics(cityEvents, input.since);
       const makukuShares = input.visits
-        .filter((visit) => cleanText(visit.city) === row.city)
+        .filter((visit) => cityLabelFromRegionSource(visit) === row.city)
         .map(readMakukuShelfShare)
         .filter(isFiniteNumber);
       const makukuShareAvg = makukuShares.length > 0
@@ -2386,7 +2409,7 @@ function buildOfflineCaptureFeedItems(visits: OfflineStoreVisit[], materialMaste
           brandId: null,
           category,
           productName,
-          city: visit.city,
+          city: cityLabelFromRegionSource(visit) ?? visit.city,
           date: visit.visit_date ?? image.uploaded_at ?? image.created_at ?? visit.created_at,
           storeName: visit.store_name,
           activityName: buildActivityName(brandName, productName, promoText, product.promo_mechanic),
@@ -2419,7 +2442,7 @@ function buildOfflineUploadFeedItems(uploads: OfflineUpload[], materialMaster: M
         brandId: null,
         category,
         productName,
-        city: upload.city,
+        city: cityLabelFromRegionSource({ city: upload.city }) ?? upload.city,
         date: ocr.created_at ?? upload.created_at,
         storeName: upload.store_name,
         activityName: buildActivityName(brandName, productName, promoText, "offline_display"),
@@ -2528,8 +2551,9 @@ export async function getOfflineUploads(): Promise<QueryResult<OfflineUpload[]>>
 function filterDemoOfflineStoreVisits(filters: OfflineStoreVisitFilters = {}) {
   return demoOfflineStoreVisits.filter((visit) => {
     const q = filters.q?.toLowerCase();
-    if (q && ![visit.store_name, visit.city, visit.uploader_name].some((value) => value.toLowerCase().includes(q))) return false;
-    if (filters.city && !visit.city.toLowerCase().includes(filters.city.toLowerCase())) return false;
+    const city = cityLabelFromRegionSource(visit);
+    if (q && ![visit.store_name, city, visit.uploader_name].filter(Boolean).some((value) => value!.toLowerCase().includes(q))) return false;
+    if (filters.city && !(city ?? "").toLowerCase().includes(filters.city.toLowerCase())) return false;
     if (filters.status && visit.visit_status !== filters.status) return false;
     if (filters.uploaderName && visit.uploader_name !== filters.uploaderName) return false;
     if (filters.uploaderUserId && visit.uploader_user_id && visit.uploader_user_id !== filters.uploaderUserId) return false;
@@ -2551,9 +2575,9 @@ export async function getOfflineStoreVisits(filters: OfflineStoreVisitFilters = 
 
     if (filters.q) {
       const q = filters.q.replaceAll(",", " ");
-      query = query.or(`store_name.ilike.%${q}%,city.ilike.%${q}%,uploader_name.ilike.%${q}%`);
+      query = query.or(`store_name.ilike.%${q}%,city_name.ilike.%${q}%,city.ilike.%${q}%,uploader_name.ilike.%${q}%`);
     }
-    if (filters.city) query = query.ilike("city", `%${filters.city}%`);
+    if (filters.city) query = query.or(`city_name.ilike.%${filters.city}%,city.ilike.%${filters.city}%`);
     if (filters.status) query = query.eq("visit_status", filters.status);
     if (includeUploaderUserId && filters.uploaderName && filters.uploaderUserId) {
       query = query.or(`uploader_user_id.eq.${filters.uploaderUserId},uploader_name.eq.${filters.uploaderName}`);

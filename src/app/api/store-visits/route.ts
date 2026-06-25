@@ -26,13 +26,18 @@ function photoCount(visit: OfflineStoreVisit) {
   return Math.max(legacyCount, rowCount);
 }
 
+function formatVisitRegion(visit: OfflineStoreVisit) {
+  const structured = [visit.province, visit.city_name, visit.district].map((value) => value?.trim()).filter(Boolean).join(" / ");
+  return visit.region ?? structured ?? visit.city ?? null;
+}
+
 function serializeVisit(visit: OfflineStoreVisit) {
   return {
     id: visit.id,
     store_name: visit.store_name,
-    region: visit.region ?? visit.city ?? null,
+    region: formatVisitRegion(visit),
     channel: visit.channel ?? visit.channel_type ?? null,
-    city: visit.city,
+    city: formatVisitRegion(visit),
     channel_type: visit.channel_type,
     visit_date: visit.visit_date,
     visit_status: visit.visit_status,

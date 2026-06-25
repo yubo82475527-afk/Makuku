@@ -9,6 +9,8 @@ const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const typesFile = readFileSync("src/lib/types.ts", "utf8");
 const reverseRoute = readFileSync("src/app/api/location/reverse/route.ts", "utf8");
 const offlineStoresRoute = readFileSync("src/app/api/offline-stores/route.ts", "utf8");
+const priceSnapshotsTable = readFileSync("src/components/price-snapshots-table.tsx", "utf8");
+const storeMasterTable = readFileSync("src/components/store-master-table.tsx", "utf8");
 
 test("app shell groups the backend navigation for price positioning and master data", () => {
   assert.match(appShell, /Dashboard/);
@@ -42,6 +44,7 @@ test("location reverse and offline stores support structured province city distr
   assert.match(offlineStoresRoute, /province/);
   assert.match(offlineStoresRoute, /city_name/);
   assert.match(offlineStoresRoute, /district/);
+  assert.match(typesFile, /@deprecated Use city_name instead\. Kept only for legacy compatibility\./);
 });
 
 test("dashboard is the weekly price coefficient board with month and region filters", () => {
@@ -77,11 +80,27 @@ test("dashboard region filters use structured store regions and ignore numeric l
   assert.match(dataFile, /offline_store_visits\(id,store_name,city,province,city_name,district/);
   assert.match(dataFile, /snapshotProvince/);
   assert.match(dataFile, /snapshotMatchesBenchmarkRegion/);
+  assert.match(dataFile, /const visitRegionParts = visitRegion\(visit\)/);
+  assert.match(dataFile, /const storeRegionParts = storeRegion\(store\)/);
+  assert.match(dataFile, /regionLabel\(visitRegion\(visit\)\)/);
+  assert.match(dataFile, /function cityLabelFromRegionSource\(source:/);
+  assert.match(dataFile, /function storeRegionKeyLabel\(store:/);
+  assert.match(dataFile, /const city = storeRegionKeyLabel\(store\)/);
+  assert.match(dataFile, /cityLabelFromRegionSource\(store\)/);
+  assert.match(dataFile, /cityLabelFromRegionSource\(visit\)/);
+  assert.match(dataFile, /cityLabelFromRegionSource\(\{ city: item\.city \}\)/);
+  assert.match(dataFile, /city:\s+cityLabelFromRegionSource\(visit\) \?\? visit\.city/);
+  assert.match(dataFile, /city:\s+cityLabelFromRegionSource\(\{ city: upload\.city \}\) \?\? upload\.city/);
+  assert.match(dataFile, /const city = cityLabelFromRegionSource\(visit\)/);
+  assert.match(dataFile, /query = query\.or\(`store_name\.ilike\.\%\$\{q\}\%,city_name\.ilike\.\%\$\{q\}\%,city\.ilike\.\%\$\{q\}\%,uploader_name\.ilike\.\%\$\{q\}\%`\)/);
   assert.match(dataFile, /cleanRegionText\(visit\?\.province\)/);
   assert.match(dataFile, /sameLoose\(province, rule\.province\)/);
   assert.match(dataFile, /sameLoose\(cityName, rule\.city_name\)/);
   assert.match(dataFile, /sameLoose\(district, rule\.district\)/);
   assert.doesNotMatch(dataFile, /byName\.size === 0 && shouldFlagSegment/);
+  assert.match(pricesPage, /cleanDisplayText\(visit\?\.city_name\) \?\? cleanDisplayText\(store\?\.city_name\) \?\? legacyRegion\.cityName \?\? cleanDisplayText\(visit\?\.city\) \?\? cleanDisplayText\(store\?\.city\)/);
+  assert.match(priceSnapshotsTable, /cleanDisplayText\(visit\?\.city_name\) \?\? cleanDisplayText\(store\?\.city_name\) \?\? legacyRegion\.cityName \?\? cleanDisplayText\(visit\?\.city\) \?\? cleanDisplayText\(store\?\.city\)/);
+  assert.match(storeMasterTable, /store\.city_name \?\? store\.city \?\? "-"/);
 });
 
 test("prices accepts dashboard drilldown filters", () => {

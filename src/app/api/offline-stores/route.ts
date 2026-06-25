@@ -240,7 +240,8 @@ export async function POST(request: Request) {
     if (auth.response) return auth.response;
     const { body, isForm } = await readRequestBody(request);
     const name = String(body.name ?? "").trim();
-    const { city, province, cityName, district } = resolveStoreRegion(body);
+    const { province, cityName, district } = resolveStoreRegion(body);
+    const legacyCity = cityName;
     const channelId = String(body.channel_id ?? "").trim() || null;
     const channelTypeFromBody = String(body.channel_type ?? "").trim();
     const address = String(body.address ?? "").trim();
@@ -253,8 +254,8 @@ export async function POST(request: Request) {
     const createdBy = String(body.created_by ?? createdByName ?? auth.session.displayName).trim() || null;
     const organizationId = String(body.organization_id ?? "").trim() || null;
 
-    if (!name || !city || (!channelId && !channelTypeFromBody)) {
-      return Response.json({ error: "Missing required fields: name, city, channel_id" }, { status: 400 });
+    if (!name || !cityName || (!channelId && !channelTypeFromBody)) {
+      return Response.json({ error: "Missing required fields: name, city_name, channel_id" }, { status: 400 });
     }
 
     const supabase = createSupabaseServiceClient();
@@ -283,7 +284,7 @@ export async function POST(request: Request) {
       .from("offline_stores")
       .insert({
         name,
-        city,
+        city: legacyCity,
         province,
         city_name: cityName,
         district,
@@ -307,7 +308,7 @@ export async function POST(request: Request) {
         .from("offline_stores")
         .insert({
           name,
-          city,
+          city: legacyCity,
           province,
           city_name: cityName,
           district,
@@ -331,7 +332,7 @@ export async function POST(request: Request) {
         .from("offline_stores")
         .insert({
           name,
-          city,
+          city: legacyCity,
           province,
           city_name: cityName,
           district,
@@ -354,7 +355,7 @@ export async function POST(request: Request) {
         .from("offline_stores")
         .insert({
           name,
-          city,
+          city: legacyCity,
           channel_type: channelType,
           channel_id: channelId,
           address: address || null,
@@ -376,7 +377,7 @@ export async function POST(request: Request) {
     if (error?.message.includes("channel_id") || error?.message.includes("channels")) {
       const legacy = await supabase
         .from("offline_stores")
-        .insert({ name, city, province, city_name: cityName, district, channel_type: channelType, address: address || null, ...organizationPatch })
+        .insert({ name, city: legacyCity, province, city_name: cityName, district, channel_type: channelType, address: address || null, ...organizationPatch })
         .select("*")
         .single();
       data = legacy.data;
@@ -386,7 +387,7 @@ export async function POST(request: Request) {
     if (isStoreCreatorColumnError(error)) {
       const noCreatorLegacy = await supabase
         .from("offline_stores")
-        .insert({ name, city, province, city_name: cityName, district, channel_type: channelType, channel_id: channelId, address: address || null, ...organizationPatch })
+        .insert({ name, city: legacyCity, province, city_name: cityName, district, channel_type: channelType, channel_id: channelId, address: address || null, ...organizationPatch })
         .select("*, channels(id,code,name,type)")
         .single();
       data = noCreatorLegacy.data;
@@ -398,7 +399,7 @@ export async function POST(request: Request) {
         store: {
           id: `demo-store-${Date.now()}`,
           name,
-          city,
+          city: legacyCity,
           province,
           city_name: cityName,
           district,

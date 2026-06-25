@@ -280,6 +280,7 @@ export type OrganizationRegionRule = {
 export type OfflineStore = {
   id: string;
   name: string;
+  /** @deprecated Use city_name instead. Kept only for legacy compatibility. */
   city: string;
   province?: string | null;
   city_name?: string | null;

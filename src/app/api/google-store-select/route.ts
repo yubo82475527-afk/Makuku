@@ -46,18 +46,18 @@ export async function POST(request: Request) {
 
     const googlePlaceId = clean(body.google_place_id);
     const name = clean(body.name);
-    const city = clean(body.city);
     const province = clean(body.province) || null;
-    const cityName = clean(body.cityName ?? body.city_name) || null;
+    const cityName = clean(body.cityName ?? body.city_name ?? body.city) || null;
     const district = clean(body.district) || null;
+    const legacyCity = cityName;
     const address = clean(body.address) || null;
     const latitude = cleanOptionalNumber(body.latitude);
     const longitude = cleanOptionalNumber(body.longitude);
     const channelId = clean(body.channel_id) || null;
     const channelTypeFromBody = clean(body.channel_type) || null;
 
-    if (!googlePlaceId || !name || !city) {
-      return Response.json({ error: "Missing required fields: google_place_id, name, city" }, { status: 400 });
+    if (!googlePlaceId || !name || !cityName) {
+      return Response.json({ error: "Missing required fields: google_place_id, name, city_name" }, { status: 400 });
     }
 
     const supabase = createSupabaseServiceClient();
@@ -119,7 +119,7 @@ export async function POST(request: Request) {
       .from("offline_stores")
       .insert({
         name,
-        city,
+        city: legacyCity,
         province,
         city_name: cityName,
         district,
@@ -144,7 +144,7 @@ export async function POST(request: Request) {
         .from("offline_stores")
         .insert({
           name,
-          city,
+          city: legacyCity,
           province,
           city_name: cityName,
           district,
@@ -170,7 +170,7 @@ export async function POST(request: Request) {
         .from("offline_stores")
         .insert({
           name,
-          city,
+          city: legacyCity,
           province,
           city_name: cityName,
           district,

@@ -20,7 +20,7 @@ export async function POST(request: Request) {
       visit: {
         id: result.visit.id,
         store_name: result.visit.store_name,
-        city: result.visit.city,
+        city: [result.visit.province, result.visit.city_name, result.visit.district].filter(Boolean).join(" / ") || result.visit.city,
         channel_type: result.visit.channel_type,
         visit_date: result.visit.visit_date,
       },

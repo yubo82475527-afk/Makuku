@@ -126,6 +126,17 @@ function formatVisitDate(value: string, locale: Locale) {
   }).format(new Date(time));
 }
 
+function formatStoreRegionText(store: {
+  city?: string | null;
+  province?: string | null;
+  city_name?: string | null;
+  district?: string | null;
+} | null | undefined) {
+  const parts = [store?.province, store?.city_name, store?.district].map((value) => String(value ?? "").trim()).filter(Boolean);
+  if (parts.length > 0) return parts.join(" / ");
+  return String(store?.city ?? "").trim();
+}
+
 function uiCopy(locale: Locale) {
   return locale === "zh"
     ? {
@@ -466,7 +477,7 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
   }, []);
 
   const totalImageCount = imageCategoryOrder.reduce((sum, category) => sum + images[category].length, 0);
-  const storeInfoIncomplete = Boolean(selectedStore && (!selectedStore.city?.trim() || !selectedStore.channel_type?.trim()));
+  const storeInfoIncomplete = Boolean(selectedStore && (!formatStoreRegionText(selectedStore) || !selectedStore.channel_type?.trim()));
 
   function addFiles(category: ImageCategory, files: FileList | null) {
     if (!files) return;
@@ -524,8 +535,8 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
         body: JSON.stringify({
           store_id: selectedStore.id,
           store_name: selectedStore.name,
-          city: selectedStore.city,
-          region: selectedStore.city,
+          city: formatStoreRegionText(selectedStore),
+          region: formatStoreRegionText(selectedStore),
           channel_type: selectedStore.channel_type,
           channel: selectedStore.channel_type,
           channel_id: selectedStore.channel_id ?? selectedStore.channels?.id ?? null,
@@ -647,7 +658,7 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
               </button>
             </div>
             <div className="mt-4 grid gap-2 text-sm">
-              <ReadOnlyRow label={labels.city} value={selectedStore.city || "-"} />
+              <ReadOnlyRow label={labels.city} value={formatStoreRegionText(selectedStore) || "-"} />
               <ReadOnlyRow label={labels.channelType} value={channelLabel(selectedStore.channel_type, selectedStore)} />
               <ReadOnlyRow label={labels.address} value={selectedStore.address || "-"} />
             </div>
@@ -808,7 +819,7 @@ function StoreSearchStep({ locale, user, onSelect }: { locale: Locale; user: App
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-bold">{store.name}</span>
-                  <span className="mt-1 block truncate text-xs text-slate-500">{store.city || "-"}</span>
+                  <span className="mt-1 block truncate text-xs text-slate-500">{formatStoreRegionText(store) || "-"}</span>
                   <span className="mt-1 block truncate text-[11px] text-slate-400">
                     {labels.recentVisit} {formatVisitDate(store.last_visit_at, locale)} / {labels.visitCountLabel} {store.visit_count}{labels.visitCountUnit}
                   </span>
@@ -1040,7 +1051,7 @@ function NewStoreSearchFlow({
             </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-bold">{store.name}</span>
-              <span className="mt-1 block truncate text-xs text-slate-500">{store.city || "-"}</span>
+              <span className="mt-1 block truncate text-xs text-slate-500">{formatStoreRegionText(store) || "-"}</span>
               {store.address ? <span className="mt-1 block truncate text-[11px] text-slate-400">{store.address}</span> : null}
             </span>
             <span className="shrink-0 text-right text-xs text-slate-400">
@@ -1121,7 +1132,7 @@ function GoogleStoreTypeSheet({
         {store ? (
           <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
             <div className="text-sm font-bold text-slate-900">{store.name}</div>
-            <div className="mt-1 text-xs text-slate-500">{store.city || "-"}</div>
+            <div className="mt-1 text-xs text-slate-500">{formatStoreRegionText(store) || "-"}</div>
             {store.address ? <div className="mt-1 text-xs text-slate-400">{store.address}</div> : null}
           </div>
         ) : null}
