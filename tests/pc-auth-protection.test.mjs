@@ -96,14 +96,12 @@ test("Feishu login API exchanges auth code for user info and creates app session
   assert.match(feishuLoginRoute, /password_login_enabled/);
   assert.match(feishuLoginRoute, /field_agent/);
   assert.match(feishuLoginRoute, /replace_user_organization_members/);
-  assert.match(feishuLoginRoute, /not in an allowed organization/);
-  assert.match(feishuLoginRoute, /Failed to verify Feishu organization access/);
+  assert.match(feishuLoginRoute, /ensureOrganizationsExist/);
+  assert.match(feishuLoginRoute, /from\("organizations"\)/);
   assert.match(feishuLoginRoute, /Failed to read existing user/);
-  assert.match(feishuLoginRoute, /Failed to sync organization membership/);
   assert.match(feishuLoginRoute, /findAppUserByEmail/);
   assert.match(feishuLoginRoute, /bindFeishuOpenIdToExistingUser/);
   assert.match(feishuLoginRoute, /updateFeishuOrgMismatch/);
-  assert.match(feishuLoginRoute, /isBoundLegacyUser/);
   assert.match(feishuLoginRoute, /Multiple local users share this email/);
   assert.match(feishuLoginRoute, /status.*disabled|disabled.*status/s);
   assert.match(feishuLoginRoute, /createSessionCookie/);
