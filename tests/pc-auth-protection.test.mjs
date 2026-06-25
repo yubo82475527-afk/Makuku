@@ -74,6 +74,8 @@ test("H5 capture entry auto-attempts Feishu login and still uses the shared sess
   assert.match(mobileFeishuAutoLogin, /LoadingOverlay/);
   assert.match(mobileFeishuAutoLogin, /payload\.error/);
   assert.match(mobileFeishuAutoLogin, /setError/);
+  assert.match(mobileFeishuAutoLogin, /\/api\/auth\/session/);
+  assert.match(mobileFeishuAutoLogin, /clearUser/);
   assert.match(mobileFeishuAutoLogin, /Connecting to Feishu|正在连接飞书/);
   assert.match(mobileFeishuAutoLogin, /Verifying your account|正在验证身份/);
   assert.match(mobileFeishuAutoLogin, /Entering the app|正在进入系统/);

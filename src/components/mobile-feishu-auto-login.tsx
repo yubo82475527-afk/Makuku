@@ -42,16 +42,52 @@ function saveUser(user: AppUser) {
   window.localStorage.setItem(storageKey, JSON.stringify(user));
 }
 
+function clearUser() {
+  window.localStorage.removeItem(storageKey);
+}
+
 export function MobileFeishuAutoLogin({ locale }: { locale: Locale }) {
   const feishuAppId = process.env.NEXT_PUBLIC_FEISHU_APP_ID;
   const [feishuReady, setFeishuReady] = useState(false);
+  const [sessionChecked, setSessionChecked] = useState(false);
   const [status, setStatus] = useState<"idle" | "requesting" | "signing_in" | "redirecting">("idle");
   const [error, setError] = useState<string | null>(null);
   const attemptedRef = useRef(false);
   const isZh = locale === "zh";
 
   useEffect(() => {
-    if (!feishuReady || attemptedRef.current || !feishuAppId || !window.tt?.requestAccess) return;
+    let cancelled = false;
+
+    async function validateExistingSession() {
+      try {
+        const stored = loadUser();
+        if (!stored?.id) {
+          if (!cancelled) setSessionChecked(true);
+          return;
+        }
+
+        const response = await fetch("/api/auth/session", { cache: "no-store" });
+        const payload = await response.json().catch(() => ({}));
+        if (!cancelled) {
+          if (!payload.user?.id) clearUser();
+          setSessionChecked(true);
+        }
+      } catch {
+        if (!cancelled) {
+          clearUser();
+          setSessionChecked(true);
+        }
+      }
+    }
+
+    void validateExistingSession();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!sessionChecked || !feishuReady || attemptedRef.current || !feishuAppId || !window.tt?.requestAccess) return;
     if (loadUser()?.id) return;
 
     attemptedRef.current = true;
@@ -113,7 +149,7 @@ export function MobileFeishuAutoLogin({ locale }: { locale: Locale }) {
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [feishuAppId, feishuReady, isZh, locale]);
+  }, [feishuAppId, feishuReady, isZh, locale, sessionChecked]);
 
   if (!feishuAppId) return null;
 
