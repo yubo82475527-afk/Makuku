@@ -181,6 +181,7 @@ test("new H5 store visit allows up to 20 uploaded photos", () => {
 
 test("new H5 store visit add-photo action sheet separates camera and album selection", () => {
   assert.match(storeVisitH5, /photoSourceSheet/);
+  assert.match(storeVisitH5, /activePhotoCategory/);
   assert.match(storeVisitH5, /pendingPhotoSelection/);
   assert.match(storeVisitH5, /sourceStatus/);
   assert.match(storeVisitH5, /cameraInputRef/);
@@ -193,6 +194,9 @@ test("new H5 store visit add-photo action sheet separates camera and album selec
   assert.match(storeVisitH5, /labels\.cameraPermissionHint/);
   assert.match(storeVisitH5, /labels\.albumSelectionHint/);
   assert.match(storeVisitH5, /onOpenSourceSheet=\{\(\) => showPhotoSourceSheet\(category\)\}/);
+  assert.match(storeVisitH5, /setActivePhotoCategory\(category\)/);
+  assert.match(storeVisitH5, /if \(!activePhotoCategory\) return/);
+  assert.match(storeVisitH5, /addFiles\(activePhotoCategory, files\)/);
   assert.match(storeVisitH5, /capture="environment"/);
   assert.match(storeVisitH5, /multiple\s+className="sr-only"/);
   assert.match(storeVisitH5, /window\.setTimeout/);

@@ -473,6 +473,7 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
   const [submitStatus, setSubmitStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [photoSourceSheet, setPhotoSourceSheet] = useState<ImageCategory | null>(null);
+  const [activePhotoCategory, setActivePhotoCategory] = useState<ImageCategory | null>(null);
   const [pendingPhotoSelection, setPendingPhotoSelection] = useState<PhotoSourceKind | null>(null);
   const [sourceStatus, setSourceStatus] = useState<string | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
@@ -517,6 +518,7 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
   function showPhotoSourceSheet(category: ImageCategory) {
     if (totalImageCount >= maxImages) return;
     setSourceStatus(null);
+    setActivePhotoCategory(category);
     setPhotoSourceSheet(category);
   }
 
@@ -553,12 +555,13 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
     clearPhotoPickerTimeout();
     const source = pendingPhotoSelection;
     setPendingPhotoSelection(null);
-    if (!photoSourceSheet) return;
+    if (!activePhotoCategory) return;
     if (!files || files.length === 0) {
       if (source) handleSourcePickerCancel(source);
       return;
     }
-    addFiles(photoSourceSheet, files);
+    addFiles(activePhotoCategory, files);
+    setActivePhotoCategory(null);
     setSourceStatus(null);
     closePhotoSourceSheet();
   }
