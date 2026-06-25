@@ -3,7 +3,7 @@
 import { ArrowLeft, Building2, Camera, CheckCircle2, Loader2, LocateFixed, LogIn, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LoadingOverlay } from "@/components/loading-overlay";
 import type { Locale } from "@/lib/i18n/config";
 import { getMobileCopy, mobileImageCategoryLabel } from "@/lib/mobile-i18n";
@@ -100,6 +100,7 @@ type PendingImage = {
 
 type PendingImagesByCategory = Record<ImageCategory, PendingImage[]>;
 type PendingImageUpload = PendingImage & { category: ImageCategory };
+type PhotoSourceKind = "camera" | "album";
 
 function emptyImagesByCategory(): PendingImagesByCategory {
   return {
@@ -198,6 +199,12 @@ function uiCopy(locale: Locale) {
         locationAttribution: "Address by LocationIQ",
         signInTitle: "\u8bf7\u5148\u767b\u5f55",
         signInBody: "\u65b0\u589e\u5de1\u5e97\u9700\u8981\u7ed1\u5b9a\u5de1\u5e97\u8d26\u53f7\uff0c\u767b\u5f55\u540e\u4f1a\u81ea\u52a8\u5e26\u51fa\u63d0\u4ea4\u4eba\u3002",
+        takePhoto: "\u62cd\u7167\u4e0a\u4f20",
+        chooseFromAlbum: "\u4ece\u76f8\u518c\u9009\u62e9",
+        cancel: "\u53d6\u6d88",
+        choosingPhotoSource: "\u6b63\u5728\u6253\u5f00",
+        cameraPermissionHint: "\u672a\u80fd\u8c03\u8d77\u76f8\u673a\u6216\u6ca1\u6709\u9009\u4e2d\u7167\u7247\u3002\u8bf7\u5141\u8bb8\u76f8\u673a\u6743\u9650\uff0c\u6216\u6539\u7528\u201c\u4ece\u76f8\u518c\u9009\u62e9\u201d\u3002",
+        albumSelectionHint: "\u672a\u9009\u4e2d\u4efb\u4f55\u7167\u7247\uff0c\u53ef\u91cd\u65b0\u4ece\u76f8\u518c\u9009\u62e9\u3002",
       }
     : {
         selectStore: "Select Store",
@@ -258,6 +265,12 @@ function uiCopy(locale: Locale) {
         locationAttribution: "Address by LocationIQ",
         signInTitle: "Sign In Required",
         signInBody: "New visits must be tied to a field user. Sign in first and the promoter is filled automatically.",
+        takePhoto: "Take Photo",
+        chooseFromAlbum: "Choose from Album",
+        cancel: "Cancel",
+        choosingPhotoSource: "Opening",
+        cameraPermissionHint: "Camera did not return a photo. Allow camera access, or use Choose from Album instead.",
+        albumSelectionHint: "No photo was selected. Try Choose from Album again.",
       };
 }
 
@@ -459,6 +472,12 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
   const [redirectingToList, setRedirectingToList] = useState(false);
   const [submitStatus, setSubmitStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [photoSourceSheet, setPhotoSourceSheet] = useState<ImageCategory | null>(null);
+  const [pendingPhotoSelection, setPendingPhotoSelection] = useState<PhotoSourceKind | null>(null);
+  const [sourceStatus, setSourceStatus] = useState<string | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const albumInputRef = useRef<HTMLInputElement | null>(null);
+  const photoPickerTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -494,6 +513,57 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
       [category]: current[category].filter((_, i) => i !== index),
     }));
   }
+
+  function showPhotoSourceSheet(category: ImageCategory) {
+    if (totalImageCount >= maxImages) return;
+    setSourceStatus(null);
+    setPhotoSourceSheet(category);
+  }
+
+  function closePhotoSourceSheet() {
+    setPhotoSourceSheet(null);
+  }
+
+  function clearPhotoPickerTimeout() {
+    if (photoPickerTimeoutRef.current !== null) {
+      window.clearTimeout(photoPickerTimeoutRef.current);
+      photoPickerTimeoutRef.current = null;
+    }
+  }
+
+  function handleSourcePickerCancel(source: PhotoSourceKind) {
+    setPendingPhotoSelection(null);
+    setSourceStatus(source === "camera" ? labels.cameraPermissionHint : labels.albumSelectionHint);
+  }
+
+  function beginPhotoSelection(source: PhotoSourceKind) {
+    const input = source === "camera" ? cameraInputRef.current : albumInputRef.current;
+    if (!input) return;
+    clearPhotoPickerTimeout();
+    setPendingPhotoSelection(source);
+    setSourceStatus(`${labels.choosingPhotoSource} ${source === "camera" ? labels.takePhoto : labels.chooseFromAlbum}...`);
+    closePhotoSourceSheet();
+    input.click();
+    photoPickerTimeoutRef.current = window.setTimeout(() => {
+      handleSourcePickerCancel(source);
+    }, 1200);
+  }
+
+  function handleSourceFiles(files: FileList | null) {
+    clearPhotoPickerTimeout();
+    const source = pendingPhotoSelection;
+    setPendingPhotoSelection(null);
+    if (!photoSourceSheet) return;
+    if (!files || files.length === 0) {
+      if (source) handleSourcePickerCancel(source);
+      return;
+    }
+    addFiles(photoSourceSheet, files);
+    setSourceStatus(null);
+    closePhotoSourceSheet();
+  }
+
+  useEffect(() => () => clearPhotoPickerTimeout(), []);
 
   async function submit() {
     if (!user?.id) {
@@ -627,6 +697,28 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
         description={locale === "zh" ? "请稍候，不要重复点击。" : "Please wait and avoid tapping repeatedly."}
       />
       <main className="mx-auto min-h-screen max-w-md bg-slate-50 px-4 py-5 text-slate-950">
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="sr-only"
+          onChange={(event) => {
+            handleSourceFiles(event.target.files);
+            event.currentTarget.value = "";
+          }}
+        />
+        <input
+          ref={albumInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="sr-only"
+          onChange={(event) => {
+            handleSourceFiles(event.target.files);
+            event.currentTarget.value = "";
+          }}
+        />
         <header className="mb-4 flex items-center gap-3">
           <Link href={`/${locale}/mobile/offline-capture`} className="mt-1 rounded-full border border-slate-200 bg-white p-2 text-slate-700">
             <ArrowLeft className="h-4 w-4" />
@@ -637,6 +729,7 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
         </header>
 
         {error ? <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
+        {sourceStatus ? <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{sourceStatus}</div> : null}
         {submitStatus ? <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">{submitStatus}</div> : null}
 
         {!selectedStore ? (
@@ -687,8 +780,8 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
                 uploadedLabel={copy.uploaded}
                 emptyText={copy.noPhotosYet}
                 images={images[category]}
-                disabled={totalImageCount >= maxImages}
-                onAdd={(files) => addFiles(category, files)}
+                disabled={totalImageCount >= maxImages || pendingPhotoSelection !== null}
+                onOpenSourceSheet={() => showPhotoSourceSheet(category)}
                 onRemove={(index) => removeImage(category, index)}
               />
             ))}
@@ -701,6 +794,37 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
           </>
         )}
       </main>
+      {photoSourceSheet ? (
+        <div className="fixed inset-0 z-50 flex items-end bg-slate-950/40" role="dialog" aria-modal="true" onClick={closePhotoSourceSheet}>
+          <div className="mx-auto w-full max-w-md rounded-t-2xl bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={() => beginPhotoSelection("camera")}
+                className="flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-900"
+              >
+                <Camera className="h-4 w-4" />
+                {labels.takePhoto}
+              </button>
+              <button
+                type="button"
+                onClick={() => beginPhotoSelection("album")}
+                className="flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-900"
+              >
+                <Plus className="h-4 w-4" />
+                {labels.chooseFromAlbum}
+              </button>
+              <button
+                type="button"
+                onClick={closePhotoSourceSheet}
+                className="flex h-12 w-full items-center justify-center rounded-xl bg-slate-900 text-sm font-semibold text-white"
+              >
+                {labels.cancel}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -1359,7 +1483,7 @@ function ImageUploadSection({
   emptyText,
   images,
   disabled,
-  onAdd,
+  onOpenSourceSheet,
   onRemove,
 }: {
   title: string;
@@ -1369,7 +1493,7 @@ function ImageUploadSection({
   emptyText: string;
   images: PendingImage[];
   disabled: boolean;
-  onAdd: (files: FileList | null) => void;
+  onOpenSourceSheet: () => void;
   onRemove: (index: number) => void;
 }) {
   return (
@@ -1382,22 +1506,15 @@ function ImageUploadSection({
           </h3>
           <p className="mt-1 text-xs text-slate-500">{images.length} {uploadedLabel}</p>
         </div>
-        <label className={`inline-flex h-10 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-white ${disabled ? "cursor-not-allowed bg-slate-300" : "cursor-pointer bg-blue-600"}`}>
+        <button
+          type="button"
+          onClick={onOpenSourceSheet}
+          disabled={disabled}
+          className={`inline-flex h-10 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-white ${disabled ? "cursor-not-allowed bg-slate-300" : "cursor-pointer bg-blue-600"}`}
+        >
           <Camera className="h-4 w-4" />
           {addLabel}
-          <input
-            type="file"
-            accept="image/*"
-            capture="environment"
-            multiple
-            className="sr-only"
-            disabled={disabled}
-            onChange={(event) => {
-              onAdd(event.target.files);
-              event.currentTarget.value = "";
-            }}
-          />
-        </label>
+        </button>
       </div>
 
       <div className="mt-4 grid grid-cols-3 gap-3">

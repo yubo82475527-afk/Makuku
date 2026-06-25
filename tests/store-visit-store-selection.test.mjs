@@ -176,7 +176,28 @@ test("new H5 store visit allows up to 20 uploaded photos", () => {
   assert.match(storeVisitH5, /slice\(0, maxImages - totalImageCount\)/);
   assert.match(storeVisitH5, /flattenedImages\.length > maxImages/);
   assert.match(storeVisitH5, /totalImageCount}\/{maxImages}/);
-  assert.match(storeVisitH5, /disabled=\{totalImageCount >= maxImages\}/);
+  assert.match(storeVisitH5, /disabled=\{totalImageCount >= maxImages \|\| pendingPhotoSelection !== null\}/);
+});
+
+test("new H5 store visit add-photo action sheet separates camera and album selection", () => {
+  assert.match(storeVisitH5, /photoSourceSheet/);
+  assert.match(storeVisitH5, /pendingPhotoSelection/);
+  assert.match(storeVisitH5, /sourceStatus/);
+  assert.match(storeVisitH5, /cameraInputRef/);
+  assert.match(storeVisitH5, /albumInputRef/);
+  assert.match(storeVisitH5, /showPhotoSourceSheet/);
+  assert.match(storeVisitH5, /beginPhotoSelection/);
+  assert.match(storeVisitH5, /handleSourcePickerCancel/);
+  assert.match(storeVisitH5, /labels\.takePhoto/);
+  assert.match(storeVisitH5, /labels\.chooseFromAlbum/);
+  assert.match(storeVisitH5, /labels\.cameraPermissionHint/);
+  assert.match(storeVisitH5, /labels\.albumSelectionHint/);
+  assert.match(storeVisitH5, /onOpenSourceSheet=\{\(\) => showPhotoSourceSheet\(category\)\}/);
+  assert.match(storeVisitH5, /capture="environment"/);
+  assert.match(storeVisitH5, /multiple\s+className="sr-only"/);
+  assert.match(storeVisitH5, /window\.setTimeout/);
+  assert.ok(storeVisitH5.indexOf("cameraInputRef") < storeVisitH5.indexOf('capture="environment"'), "camera input should still use capture");
+  assert.ok(storeVisitH5.indexOf("albumInputRef") < storeVisitH5.indexOf("multiple"), "album input should support multiple selection");
 });
 
 test("new H5 store visit submits photos with limited concurrency after creating the visit", () => {
