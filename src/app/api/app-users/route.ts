@@ -67,11 +67,13 @@ export async function POST(request: Request) {
         email,
         feishu_user_id: feishuUserId,
         password_hash: hashPassword(password),
+        password_login_enabled: true,
+        feishu_org_mismatch: false,
         role,
         status: "enabled",
         disabled_at: null,
       })
-      .select("id,username,display_name,email,feishu_user_id,role,status,disabled_at,updated_at,created_at")
+      .select("id,username,display_name,email,feishu_user_id,password_login_enabled,feishu_org_mismatch,role,status,disabled_at,updated_at,created_at")
       .single();
 
     if (error) return Response.json({ error: error.message }, { status: 400 });
@@ -119,7 +121,7 @@ export async function PATCH(request: Request) {
       .from("app_users")
       .update(update)
       .eq("id", id)
-      .select("id,username,display_name,email,feishu_user_id,role,status,disabled_at,updated_at,created_at")
+      .select("id,username,display_name,email,feishu_user_id,password_login_enabled,feishu_org_mismatch,role,status,disabled_at,updated_at,created_at")
       .single();
 
     if (error) return Response.json({ error: error.message }, { status: 400 });

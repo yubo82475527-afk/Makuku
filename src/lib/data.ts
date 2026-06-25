@@ -194,6 +194,13 @@ export async function getMarketBenchmarks(): Promise<QueryResult<MarketBenchmark
 }
 
 export async function getAppUsers(): Promise<QueryResult<AppUser[]>> {
+  return getFilteredAppUsers();
+}
+
+export async function getFilteredAppUsers(filters: {
+  q?: string;
+  role?: string;
+} = {}): Promise<QueryResult<AppUser[]>> {
   if (!hasSupabaseServiceConfig()) {
     return {
       data: [],
@@ -203,12 +210,14 @@ export async function getAppUsers(): Promise<QueryResult<AppUser[]>> {
   }
 
   const supabase = createSupabaseServiceClient();
+  const q = cleanText(filters.q)?.toLowerCase() ?? "";
+  const roleFilter = cleanText(filters.role);
   let { data, error } = await supabase
     .from("app_users")
-    .select("id,username,display_name,email,feishu_user_id,role,status,disabled_at,updated_at,created_at")
+    .select("id,username,display_name,email,feishu_user_id,password_login_enabled,feishu_org_mismatch,role,status,disabled_at,updated_at,created_at,organization_members(*, organizations(id,name,status))")
     .order("created_at", { ascending: false });
 
-  if (error?.message.includes("status") || error?.message.includes("disabled_at") || error?.message.includes("updated_at") || error?.message.includes("email") || error?.message.includes("feishu_user_id")) {
+  if (error?.message.includes("status") || error?.message.includes("disabled_at") || error?.message.includes("updated_at") || error?.message.includes("email") || error?.message.includes("feishu_user_id") || error?.message.includes("password_login_enabled") || error?.message.includes("feishu_org_mismatch")) {
     const legacy = await supabase
       .from("app_users")
       .select("id,username,display_name,role,created_at")
@@ -220,13 +229,36 @@ export async function getAppUsers(): Promise<QueryResult<AppUser[]>> {
       updated_at: null,
       email: null,
       feishu_user_id: null,
+      password_login_enabled: true,
+      feishu_org_mismatch: false,
+      organization_members: [],
     }));
     error = legacy.error;
   }
 
   if (isMissingSchemaError(error)) return { data: [], error: "Run migration 202606080004_app_user_management.sql", isDemo: false };
   if (error) return { data: [], error: error.message, isDemo: false };
-  return { data: (data ?? []) as AppUser[], error: null, isDemo: false };
+
+  const users = ((data ?? []) as AppUser[]).filter((user) => {
+    if (roleFilter && user.role !== roleFilter) return false;
+    if (!q) return true;
+
+    const organizationNames = (user.organization_members ?? [])
+      .filter((member) => member.active)
+      .map((member) => member.organizations?.name ?? "")
+      .join(" ");
+
+    const haystack = [
+      user.username,
+      user.display_name,
+      user.role,
+      organizationNames,
+    ].join(" ").toLowerCase();
+
+    return haystack.includes(q);
+  });
+
+  return { data: users, error: null, isDemo: false };
 }
 
 export async function getOrganizations(): Promise<QueryResult<Organization[]>> {

@@ -57,17 +57,17 @@ export async function POST(request: Request) {
     const supabase = createSupabaseServiceClient();
     let { data: user, error } = await supabase
       .from("app_users")
-      .select("id, username, password_hash, display_name, role, status")
+      .select("id, username, password_hash, display_name, role, status, password_login_enabled")
       .eq("username", username)
       .single();
 
-    if (isUserStatusColumnError(error)) {
+    if (isUserStatusColumnError(error) || error?.message?.includes("password_login_enabled")) {
       const legacy = await supabase
         .from("app_users")
         .select("id, username, password_hash, display_name, role")
         .eq("username", username)
         .single();
-      user = legacy.data ? { ...legacy.data, status: "enabled" } : null;
+      user = legacy.data ? { ...legacy.data, status: "enabled", password_login_enabled: true } : null;
       error = legacy.error;
     }
 
@@ -94,6 +94,10 @@ export async function POST(request: Request) {
 
     if (user.status === "disabled") {
       return Response.json({ error: "Account is disabled" }, { status: 403 });
+    }
+
+    if (user.password_login_enabled === false) {
+      return Response.json({ error: "该账号仅支持飞书登录" }, { status: 403 });
     }
 
     const valid = await comparePassword(password, user.password_hash);

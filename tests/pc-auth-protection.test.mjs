@@ -72,6 +72,8 @@ test("H5 capture entry auto-attempts Feishu login and still uses the shared sess
   assert.match(mobileFeishuAutoLogin, /withMinimumDelay/);
   assert.match(asyncUiHelper, /withMinimumDelay/);
   assert.match(mobileFeishuAutoLogin, /LoadingOverlay/);
+  assert.match(mobileFeishuAutoLogin, /payload\.error/);
+  assert.match(mobileFeishuAutoLogin, /setError/);
   assert.match(mobileFeishuAutoLogin, /Connecting to Feishu|正在连接飞书/);
   assert.match(mobileFeishuAutoLogin, /Verifying your account|正在验证身份/);
   assert.match(mobileFeishuAutoLogin, /Entering the app|正在进入系统/);
@@ -87,10 +89,31 @@ test("Feishu login API exchanges auth code for user info and creates app session
   assert.match(feishuLoginRoute, /FEISHU_APP_SECRET/);
   assert.match(feishuLoginRoute, /feishu_user_id/);
   assert.match(feishuLoginRoute, /open_id/);
+  assert.match(feishuLoginRoute, /mobile_h5/);
+  assert.match(feishuLoginRoute, /FEISHU_H5_AUTO_PROVISION_ENABLED/);
+  assert.match(feishuLoginRoute, /password_login_enabled/);
+  assert.match(feishuLoginRoute, /field_agent/);
+  assert.match(feishuLoginRoute, /replace_user_organization_members/);
+  assert.match(feishuLoginRoute, /not in an allowed organization/);
+  assert.match(feishuLoginRoute, /Failed to verify Feishu organization access/);
+  assert.match(feishuLoginRoute, /Failed to read existing user/);
+  assert.match(feishuLoginRoute, /Failed to sync organization membership/);
+  assert.match(feishuLoginRoute, /findAppUserByEmail/);
+  assert.match(feishuLoginRoute, /bindFeishuOpenIdToExistingUser/);
+  assert.match(feishuLoginRoute, /updateFeishuOrgMismatch/);
+  assert.match(feishuLoginRoute, /isBoundLegacyUser/);
+  assert.match(feishuLoginRoute, /Multiple local users share this email/);
   assert.match(feishuLoginRoute, /status.*disabled|disabled.*status/s);
   assert.match(feishuLoginRoute, /createSessionCookie/);
   assert.match(feishuLoginRoute, /Set-Cookie/);
-  assert.doesNotMatch(feishuLoginRoute, /password_hash/);
+  assert.match(feishuLoginRoute, /password_hash/);
+});
+
+test("Feishu helper supports tenant directory and department lookup", () => {
+  assert.match(readFileSync("src/lib/feishu.ts", "utf8"), /tenant_access_token\/internal/);
+  assert.match(readFileSync("src/lib/feishu.ts", "utf8"), /contact\/v3\/users\/batch_get_id/);
+  assert.match(readFileSync("src/lib/feishu.ts", "utf8"), /contact\/v3\/users\//);
+  assert.match(readFileSync("src/lib/feishu.ts", "utf8"), /contact\/v3\/departments\/batch/);
 });
 
 test("proxy protects PC backend pages but leaves H5 capture public", () => {

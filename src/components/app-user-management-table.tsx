@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { CheckCircle2, KeyRound, Loader2, MessageCircle, UserX, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, KeyRound, Loader2, MessageCircle, UserX, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Badge, Button, EmptyState, SelectInput, TextInput } from "@/components/ui";
@@ -24,6 +24,8 @@ const zh = {
   username: "\u7528\u6237\u540d",
   displayName: "\u663e\u793a\u540d",
   email: "\u90ae\u7bb1",
+  organization: "\u5f52\u5c5e\u7ec4\u7ec7",
+  orgMismatch: "\u8ddf\u98de\u4e66\u7ec4\u7ec7\u4e0d\u5339\u914d",
   role: "\u89d2\u8272",
   status: "\u72b6\u6001",
   roleUpdated: "\u89d2\u8272\u5df2\u66f4\u65b0\u3002",
@@ -67,6 +69,14 @@ export function AppUserManagementTable({ users, locale }: { users: AppUser[]; lo
   const [resolvedOpenId, setResolvedOpenId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  function organizationLabel(user: AppUser) {
+    const names = (user.organization_members ?? [])
+      .filter((member) => member.active)
+      .map((member) => member.organizations?.name)
+      .filter((name): name is string => Boolean(name));
+    return Array.from(new Set(names));
+  }
 
   async function patchUser(id: string, body: Record<string, string>) {
     setBusyId(id);
@@ -161,16 +171,17 @@ export function AppUserManagementTable({ users, locale }: { users: AppUser[]; lo
       {notice ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{notice}</div> : null}
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1050px] text-left text-sm">
+        <table className="w-full min-w-[1180px] text-left text-sm">
           <thead className="border-b border-slate-200 text-xs uppercase text-slate-500">
             <tr>
-              <th className="py-2 pr-3">{isZh ? zh.username : "Username"}</th>
-              <th className="py-2 pr-3">{isZh ? zh.displayName : "Display name"}</th>
-              <th className="py-2 pr-3">{isZh ? zh.email : "Email"}</th>
-              <th className="py-2 pr-3">{isZh ? zh.role : "Role"}</th>
-              <th className="py-2 pr-3">{isZh ? zh.status : "Status"}</th>
-              <th className="py-2 pr-3">{isZh ? zh.created : "Created"}</th>
-              <th className="py-2 pr-3">{isZh ? zh.actions : "Actions"}</th>
+              <th className="whitespace-nowrap py-2 pr-3">{isZh ? zh.username : "Username"}</th>
+              <th className="whitespace-nowrap py-2 pr-3">{isZh ? zh.displayName : "Display name"}</th>
+              <th className="whitespace-nowrap py-2 pr-3">{isZh ? zh.email : "Email"}</th>
+              <th className="whitespace-nowrap py-2 pr-3">{isZh ? zh.organization : "Organization"}</th>
+              <th className="whitespace-nowrap py-2 pr-3">{isZh ? zh.role : "Role"}</th>
+              <th className="whitespace-nowrap py-2 pr-3">{isZh ? zh.status : "Status"}</th>
+              <th className="whitespace-nowrap py-2 pr-3">{isZh ? zh.created : "Created"}</th>
+              <th className="whitespace-nowrap py-2 pr-3">{isZh ? zh.actions : "Actions"}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200">
@@ -182,6 +193,20 @@ export function AppUserManagementTable({ users, locale }: { users: AppUser[]; lo
                   <td className="py-3 pr-3 font-medium">{user.username}</td>
                   <td className="py-3 pr-3">{user.display_name}</td>
                   <td className="py-3 pr-3">{user.email || "-"}</td>
+                  <td className="max-w-[220px] py-3 pr-3 text-slate-600">
+                    <div className="flex items-center gap-2">
+                      <span>{organizationLabel(user).length ? organizationLabel(user).join(", ") : "-"}</span>
+                      {user.feishu_org_mismatch ? (
+                        <span
+                          title={isZh ? zh.orgMismatch : "Mismatch with Feishu organization"}
+                          aria-label={isZh ? zh.orgMismatch : "Mismatch with Feishu organization"}
+                          className="inline-flex h-4 w-4 items-center justify-center text-amber-500"
+                        >
+                          <AlertCircle className="h-4 w-4" />
+                        </span>
+                      ) : null}
+                    </div>
+                  </td>
                   <td className="py-3 pr-3">
                     <SelectInput
                       value={user.role}
@@ -195,10 +220,10 @@ export function AppUserManagementTable({ users, locale }: { users: AppUser[]; lo
                       <option value="admin">admin</option>
                     </SelectInput>
                   </td>
-                  <td className="py-3 pr-3"><Badge tone={disabled ? "medium" : "low"}>{disabled ? (isZh ? zh.disabled : "Disabled") : (isZh ? zh.enabled : "Enabled")}</Badge></td>
+                  <td className="whitespace-nowrap py-3 pr-3"><Badge tone={disabled ? "medium" : "low"}>{disabled ? (isZh ? zh.disabled : "Disabled") : (isZh ? zh.enabled : "Enabled")}</Badge></td>
                   <td className="py-3 pr-3">{formatDate(user.created_at, locale)}</td>
-                  <td className="py-3 pr-3">
-                    <div className="flex flex-wrap gap-2">
+                  <td className="whitespace-nowrap py-3 pr-3">
+                    <div className="flex flex-nowrap gap-2">
                       <button
                         type="button"
                         onClick={() => {
@@ -209,11 +234,11 @@ export function AppUserManagementTable({ users, locale }: { users: AppUser[]; lo
                           setNotice(null);
                         }}
                         disabled={busy}
-                        className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                        title={user.feishu_user_id ? `Open ID: ${user.feishu_user_id}` : undefined}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        title={user.feishu_user_id ? `Open ID: ${user.feishu_user_id}` : (isZh ? zh.getOpenId : "Get Open ID")}
+                        aria-label={isZh ? zh.getOpenId : "Get Open ID"}
                       >
                         {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MessageCircle className="h-3.5 w-3.5" />}
-                        {isZh ? zh.getOpenId : "Get Open ID"}
                       </button>
                       <button
                         type="button"
@@ -224,19 +249,21 @@ export function AppUserManagementTable({ users, locale }: { users: AppUser[]; lo
                           setNotice(null);
                         }}
                         disabled={busy}
-                        className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        title={isZh ? zh.resetPassword : "Reset password"}
+                        aria-label={isZh ? zh.resetPassword : "Reset password"}
                       >
                         <KeyRound className="h-3.5 w-3.5" />
-                        {isZh ? zh.resetPassword : "Reset password"}
                       </button>
                       <button
                         type="button"
                         onClick={() => toggleStatus(user)}
                         disabled={busy}
-                        className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        title={disabled ? (isZh ? zh.enable : "Enable") : (isZh ? zh.disable : "Disable")}
+                        aria-label={disabled ? (isZh ? zh.enable : "Enable") : (isZh ? zh.disable : "Disable")}
                       >
                         {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : disabled ? <CheckCircle2 className="h-3.5 w-3.5" /> : <UserX className="h-3.5 w-3.5" />}
-                        {disabled ? (isZh ? zh.enable : "Enable") : (isZh ? zh.disable : "Disable")}
                       </button>
                     </div>
                   </td>

@@ -4,6 +4,34 @@ type FeishuTenantTokenResponse = {
   tenant_access_token?: string;
 };
 
+type FeishuDirectoryUserGetResponse = {
+  code?: number;
+  msg?: string;
+  data?: {
+    user?: {
+      department_ids?: string[];
+    };
+    department_ids?: string[];
+  };
+};
+
+type FeishuDepartmentBatchResponse = {
+  code?: number;
+  msg?: string;
+  data?: {
+    items?: Array<{
+      department_id?: string;
+      open_department_id?: string;
+      name?: string;
+    }>;
+    department_infos?: Array<{
+      department_id?: string;
+      open_department_id?: string;
+      name?: string;
+    }>;
+  };
+};
+
 type FeishuBatchGetIdResponse = {
   code?: number;
   msg?: string;
@@ -66,6 +94,70 @@ async function getTenantAccessToken() {
     throw new Error(payload.msg || "Failed to get Feishu tenant access token");
   }
   return payload.tenant_access_token;
+}
+
+function chunk<T>(items: T[], size: number) {
+  const groups: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    groups.push(items.slice(index, index + size));
+  }
+  return groups;
+}
+
+function uniqueNonEmpty(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean)));
+}
+
+export async function getFeishuDepartmentNamesByOpenId(openId: string) {
+  const normalizedOpenId = openId.trim();
+  if (!normalizedOpenId) throw new Error("Missing Feishu open_id");
+
+  const token = await getTenantAccessToken();
+  const userUrl = new URL(`https://open.feishu.cn/open-apis/contact/v3/users/${encodeURIComponent(normalizedOpenId)}`);
+  userUrl.searchParams.set("user_id_type", "open_id");
+  const userResponse = await fetch(userUrl, {
+    method: "GET",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+    },
+  });
+  const userPayload = await userResponse.json().catch(() => ({})) as FeishuDirectoryUserGetResponse;
+  if (!userResponse.ok || userPayload.code !== 0) {
+    throw new Error(userPayload.msg || "Failed to fetch Feishu user departments");
+  }
+
+  const departmentIds = uniqueNonEmpty([
+    ...(userPayload.data?.user?.department_ids ?? []),
+    ...(userPayload.data?.department_ids ?? []),
+  ]);
+  if (departmentIds.length === 0) return [];
+
+  const names: string[] = [];
+  for (const ids of chunk(departmentIds, 50)) {
+    const departmentUrl = new URL("https://open.feishu.cn/open-apis/contact/v3/departments/batch");
+    departmentUrl.searchParams.set("department_id_type", "open_department_id");
+    for (const id of ids) {
+      departmentUrl.searchParams.append("department_ids", id);
+    }
+
+    const departmentResponse = await fetch(departmentUrl, {
+      method: "GET",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+    });
+    const departmentPayload = await departmentResponse.json().catch(() => ({})) as FeishuDepartmentBatchResponse;
+    if (!departmentResponse.ok || departmentPayload.code !== 0) {
+      throw new Error(departmentPayload.msg || "Failed to fetch Feishu department details");
+    }
+
+    const items = departmentPayload.data?.items ?? departmentPayload.data?.department_infos ?? [];
+    names.push(...items.map((item) => item.name ?? "").filter(Boolean));
+  }
+
+  return uniqueNonEmpty(names);
 }
 
 export async function resolveFeishuOpenIdByEmail(email: string) {

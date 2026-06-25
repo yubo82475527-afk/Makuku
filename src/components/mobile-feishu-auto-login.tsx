@@ -46,6 +46,7 @@ export function MobileFeishuAutoLogin({ locale }: { locale: Locale }) {
   const feishuAppId = process.env.NEXT_PUBLIC_FEISHU_APP_ID;
   const [feishuReady, setFeishuReady] = useState(false);
   const [status, setStatus] = useState<"idle" | "requesting" | "signing_in" | "redirecting">("idle");
+  const [error, setError] = useState<string | null>(null);
   const attemptedRef = useRef(false);
   const isZh = locale === "zh";
 
@@ -57,6 +58,7 @@ export function MobileFeishuAutoLogin({ locale }: { locale: Locale }) {
 
     const timer = window.setTimeout(() => {
       setStatus("requesting");
+      setError(null);
 
       window.tt?.requestAccess?.({
         scopeList: [],
@@ -65,6 +67,7 @@ export function MobileFeishuAutoLogin({ locale }: { locale: Locale }) {
           const code = String(result.code ?? "").trim();
           if (!code) {
             setStatus("idle");
+            setError(isZh ? "未获取到飞书授权码。" : "Did not receive a Feishu authorization code.");
             return;
           }
 
@@ -84,6 +87,11 @@ export function MobileFeishuAutoLogin({ locale }: { locale: Locale }) {
             const payload = await response.json().catch(() => ({}));
             if (!response.ok || !payload.user?.id) {
               setStatus("idle");
+              setError(
+                typeof payload.error === "string" && payload.error.trim()
+                  ? payload.error
+                  : (isZh ? "飞书登录失败，请联系管理员。" : "Feishu sign-in failed. Please contact an administrator."),
+              );
               return;
             }
 
@@ -92,18 +100,20 @@ export function MobileFeishuAutoLogin({ locale }: { locale: Locale }) {
             window.location.reload();
           } catch {
             setStatus("idle");
+            setError(isZh ? "网络异常，飞书登录未完成。" : "Network error. Feishu sign-in did not complete.");
             // Leave the existing password login fallback visible.
           }
         },
         fail: () => {
           setStatus("idle");
+          setError(isZh ? "飞书授权失败，请重试。" : "Feishu authorization failed. Please try again.");
           // Leave the existing password login fallback visible.
         },
       });
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [feishuAppId, feishuReady, locale]);
+  }, [feishuAppId, feishuReady, isZh, locale]);
 
   if (!feishuAppId) return null;
 
@@ -125,6 +135,11 @@ export function MobileFeishuAutoLogin({ locale }: { locale: Locale }) {
         }
         description={isZh ? "请稍候，不要重复点击。" : "Please wait and avoid tapping repeatedly."}
       />
+      {error ? (
+        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </div>
+      ) : null}
     </>
   );
 }

@@ -232,11 +232,14 @@ export type AppUser = {
   display_name: string;
   email?: string | null;
   feishu_user_id?: string | null;
+  password_login_enabled?: boolean | null;
+  feishu_org_mismatch?: boolean | null;
   role: AppUserRole;
   status?: AppUserStatus | null;
   disabled_at?: string | null;
   updated_at?: string | null;
   created_at: string;
+  organization_members?: OrganizationMember[];
 };
 
 export type OrganizationStatus = "active" | "inactive";
@@ -263,6 +266,7 @@ export type OrganizationMember = {
   created_at: string;
   updated_at?: string | null;
   app_users?: Pick<AppUser, "id" | "username" | "display_name" | "email" | "feishu_user_id" | "role" | "status"> | null;
+  organizations?: Pick<Organization, "id" | "name" | "status"> | null;
 };
 
 export type OrganizationRegionRule = {

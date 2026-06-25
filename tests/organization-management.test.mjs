@@ -8,6 +8,7 @@ function readIfExists(path) {
 
 const migration = readIfExists("supabase/migrations/202606160002_organizations_store_assignment.sql");
 const aiAssignmentMigration = readIfExists("supabase/migrations/202606160003_store_organization_ai_assignment.sql");
+const replaceMembersMigration = readIfExists("supabase/migrations/202606250002_replace_user_organization_members.sql");
 const typesFile = readIfExists("src/lib/types.ts");
 const dataFile = readIfExists("src/lib/data.ts");
 const helper = readIfExists("src/lib/organizations.ts");
@@ -34,6 +35,10 @@ test("organization migration creates master data, members, region rules, and sto
   assert.match(migration, /auto_region_rule/);
   assert.match(migration, /manual/);
   assert.match(migration, /uniq_organization_region_rules_active_scope/);
+  assert.match(replaceMembersMigration, /create or replace function public\.replace_user_organization_members/);
+  assert.match(replaceMembersMigration, /security definer/);
+  assert.match(replaceMembersMigration, /delete from public\.organization_members/);
+  assert.match(replaceMembersMigration, /insert into public\.organization_members/);
 });
 
 test("store organization AI assignment migration and helper are wired", () => {

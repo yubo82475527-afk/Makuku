@@ -17,20 +17,33 @@ const userCreateDialog = readIfExists("src/components/app-user-create-dialog.tsx
 const userTable = readIfExists("src/components/app-user-management-table.tsx");
 const migration = readIfExists("supabase/migrations/202606080004_app_user_management.sql");
 const feishuMigration = readIfExists("supabase/migrations/202606160001_app_user_feishu_id.sql");
+const feishuAutoProvisionMigration = readIfExists("supabase/migrations/202606250001_feishu_h5_auto_provision.sql");
+const feishuOrgMismatchMigration = readIfExists("supabase/migrations/202606250003_app_user_feishu_org_mismatch.sql");
 
 test("PC navigation exposes app user management", () => {
   assert.match(appShell, /href:\s*"\/users"/);
   assert.match(appShell, /User Management/);
   assert.ok(usersPage.includes("<AppShell"), "users page should use the PC app shell");
-  assert.match(usersPage, /getAppUsers/);
+  assert.match(usersPage, /getFilteredAppUsers/);
   assert.match(usersPage, /app-user-management-table|AppUserManagementTable/);
+  assert.match(usersPage, /searchParams:/);
+  assert.match(usersPage, /name="q"/);
+  assert.match(usersPage, /name="role"/);
+  assert.match(usersPage, /Button type="submit"/);
 });
 
 test("app user management API hashes passwords and supports account status", () => {
   assert.match(dataFile, /export async function getAppUsers/);
+  assert.match(dataFile, /export async function getFilteredAppUsers/);
+  assert.match(dataFile, /password_login_enabled/);
+  assert.match(dataFile, /feishu_org_mismatch/);
+  assert.match(dataFile, /organization_members\(\*, organizations\(id,name,status\)\)/);
+  assert.match(dataFile, /organizationNames/);
+  assert.match(dataFile, /haystack/);
   assert.match(usersApi, /from\("app_users"\)/);
   assert.match(usersApi, /createHash\("sha256"\)/);
   assert.match(usersApi, /password_hash/);
+  assert.match(usersApi, /password_login_enabled/);
   assert.match(usersApi, /status/);
   assert.match(usersApi, /role/);
   assert.match(usersApi, /disabled_at/);
@@ -41,6 +54,11 @@ test("app user management API hashes passwords and supports account status", () 
   assert.match(userCreateDialog, /name="email"/);
   assert.doesNotMatch(usersPage, /name="feishu_user_id"/);
   assert.match(userTable, /Feishu Open ID/);
+  assert.match(userTable, /organizationLabel/);
+  assert.match(userTable, /orgMismatch/);
+  assert.match(userTable, /feishu_org_mismatch/);
+  assert.match(userTable, /AlertCircle/);
+  assert.match(userTable, /organizations\?\.name/);
   assert.match(userTable, /SelectInput/);
   assert.match(userTable, /resolve-feishu-open-id/);
   assert.match(userTable, /Reset password/);
@@ -55,6 +73,7 @@ test("user management keeps table compact and moves actions into controls", () =
   assert.match(userCreateDialog, /fixed inset-0/);
   assert.match(userTable, /Get Open ID/);
   assert.match(userTable, /Reset password/);
+  assert.match(userTable, /aria-label=\{isZh \? zh\.getOpenId : "Get Open ID"\}/);
   assert.match(userTable, /title=\{user\.feishu_user_id/);
   assert.doesNotMatch(userTable, /<th[^>]*>\{isZh \? zh\.resetPassword/);
   assert.doesNotMatch(userTable, /<th[^>]*>\{isZh \? .*Feishu Open ID/);
@@ -88,6 +107,8 @@ test("disabled app users cannot log in", () => {
   assert.match(loginRoute, /status/);
   assert.match(loginRoute, /disabled/);
   assert.match(loginRoute, /Account is disabled/);
+  assert.match(loginRoute, /password_login_enabled/);
+  assert.match(loginRoute, /仅支持飞书登录/);
 });
 
 test("migration adds app user lifecycle fields", () => {
@@ -100,4 +121,8 @@ test("migration adds app user lifecycle fields", () => {
   assert.match(feishuMigration, /idx_app_users_email/);
   assert.match(feishuMigration, /add column if not exists feishu_user_id/);
   assert.match(feishuMigration, /idx_app_users_feishu_user_id/);
+  assert.match(feishuAutoProvisionMigration, /alter column email drop not null/);
+  assert.match(feishuAutoProvisionMigration, /add column if not exists password_login_enabled/);
+  assert.match(feishuAutoProvisionMigration, /create unique index if not exists uniq_app_users_feishu_user_id/);
+  assert.match(feishuOrgMismatchMigration, /add column if not exists feishu_org_mismatch/);
 });
