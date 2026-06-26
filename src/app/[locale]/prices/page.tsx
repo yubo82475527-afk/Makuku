@@ -43,18 +43,24 @@ export default async function PricesPage({
   const perPageParam = Number.parseInt(params.per_page ?? "50", 10);
   const requestedPage = Number.isFinite(pageParam) && pageParam > 0 ? Math.floor(pageParam) : 1;
   const perPage = Number.isFinite(perPageParam) && perPageParam > 0 ? Math.min(200, Math.floor(perPageParam)) : 50;
+  const capturedToExclusive = toExclusiveCapturedTo(params.createdTo);
+  const pricesResult = await getPriceSnapshots({
+    capturedFrom: params.createdFrom || undefined,
+    capturedTo: capturedToExclusive ?? undefined,
+    limit: 5000,
+  });
+  const brandSeriesOptions = uniqueOptions(pricesResult.data.map(priceBrandSeriesLabel));
+  const resolvedBrand = resolveOptionValue(brandSeriesOptions, params.brand);
   const currentParams = new URLSearchParams();
   for (const key of ["brand", "sku", "line", "priceBand", "size", "province", "cityName", "district", "store", "createdFrom", "createdTo"] as const) {
     if (params[key]) currentParams.set(key, params[key]);
   }
+  if (resolvedBrand) currentParams.set("brand", resolvedBrand);
   currentParams.set("locale", locale);
   const exportHref = `/api/price-snapshots/export?${currentParams.toString()}`;
 
-  const pricesResult = await getPriceSnapshots();
-
   const productSizes = Array.from(new Set([...pricesResult.data.map(priceSnapshotBusinessSize), params.size].filter(Boolean) as string[])).sort();
-  const brandSeriesOptions = uniqueOptions(pricesResult.data.map(priceBrandSeriesLabel));
-  const prices = pricesResult.data.filter((snapshot) => snapshotMatchesFilters(snapshot, params));
+  const prices = pricesResult.data.filter((snapshot) => snapshotMatchesFilters(snapshot, { ...params, brand: resolvedBrand ?? params.brand }));
   const total = prices.length;
   const pageCount = Math.max(1, Math.ceil(total / perPage));
   const page = Math.min(requestedPage, pageCount);
@@ -70,7 +76,7 @@ export default async function PricesPage({
       <DataNotice dict={dict} error={pricesResult.error} />
       <Card className="mb-4">
         <form className="grid gap-3 md:grid-cols-4 xl:grid-cols-10">
-          <SelectInput name="brand" defaultValue={params.brand ?? ""}>
+          <SelectInput name="brand" defaultValue={resolvedBrand ?? ""}>
             <option value="">{dict.common.allBrands}</option>
             {brandSeriesOptions.map((brand) => (
               <option key={brand} value={brand}>{brand}</option>
@@ -211,8 +217,8 @@ function snapshotMatchesFilters(
   if (params.cityName && !matchesText(region.cityName, params.cityName)) return false;
   if (params.district && !matchesText(region.district, params.district)) return false;
   if (params.store && !matchesText(storeNameForSnapshot(snapshot), params.store)) return false;
-  if (params.createdFrom && !matchesCreatedFrom(snapshot.created_at, params.createdFrom)) return false;
-  if (params.createdTo && !matchesCreatedTo(snapshot.created_at, params.createdTo)) return false;
+  if (params.createdFrom && !matchesCreatedFrom(snapshot.captured_at, params.createdFrom)) return false;
+  if (params.createdTo && !matchesCreatedTo(snapshot.captured_at, params.createdTo)) return false;
   return true;
 }
 
@@ -297,5 +303,20 @@ function matchesCreatedTo(value: string | null | undefined, dateText: string) {
 
 function uniqueOptions(values: string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort();
+}
+
+function resolveOptionValue(options: string[], value: string | null | undefined) {
+  const query = String(value ?? "").trim().toLowerCase();
+  if (!query) return null;
+  return options.find((option) => option.trim().toLowerCase() === query) ?? null;
+}
+
+function toExclusiveCapturedTo(value: string | null | undefined) {
+  const text = String(value ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+  const date = new Date(`${text}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString();
 }
 

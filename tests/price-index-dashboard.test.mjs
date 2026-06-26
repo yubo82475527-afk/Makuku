@@ -143,6 +143,14 @@ test("prices accepts dashboard drilldown filters", () => {
   assert.match(dataFile, /params\.set\("sku", input\.sku\)/);
   assert.match(pricesPage, /createdFrom\?: string/);
   assert.match(pricesPage, /createdTo\?: string/);
+  assert.match(pricesPage, /matchesCreatedFrom\(snapshot\.captured_at, params\.createdFrom\)/);
+  assert.match(pricesPage, /matchesCreatedTo\(snapshot\.captured_at, params\.createdTo\)/);
+  assert.match(pricesPage, /const resolvedBrand = resolveOptionValue\(brandSeriesOptions, params\.brand\)/);
+  assert.match(pricesPage, /const capturedToExclusive = toExclusiveCapturedTo\(params\.createdTo\)/);
+  assert.match(pricesPage, /getPriceSnapshots\(\{\s*capturedFrom: params\.createdFrom \|\| undefined,/);
+  assert.match(pricesPage, /capturedTo: capturedToExclusive \?\? undefined,/);
+  assert.match(pricesPage, /defaultValue=\{resolvedBrand \?\? \"\"\}/);
+  assert.match(pricesPage, /brand: resolvedBrand \?\? params\.brand/);
   assert.match(pricesPage, /province\?: string/);
   assert.match(pricesPage, /cityName\?: string/);
   assert.match(pricesPage, /district\?: string/);
