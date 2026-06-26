@@ -860,6 +860,7 @@ export type WeeklyPriceCoefficientCell = {
   startDate: string;
   endDate: string;
   ownAvgPrice: number | null;
+  ownCoefficient: number | null;
   ownSampleCount: number;
   ownHref: string;
   competitorCells: WeeklyPriceCoefficientCompetitorCell[];
@@ -868,6 +869,7 @@ export type WeeklyPriceCoefficientCell = {
 export type WeeklyPriceCoefficientCompetitorSeries = {
   key: string;
   label: string;
+  isBenchmark: boolean;
 };
 
 export type WeeklyPriceCoefficientCompetitorCell = {

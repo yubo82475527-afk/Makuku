@@ -1423,6 +1423,7 @@ function buildWeeklyPriceCoefficientBoard(input: {
     .map((mapping) => ({
       key: benchmarkSeriesKey(mapping.brand_id, mapping.product_series),
       label: competitorSeriesLabel(mapping.brands?.name, mapping.product_series),
+      isBenchmark: inferredMappedSeriesIsBenchmark(mapping, input.rules),
     }))
     .filter((item) => item.key && item.label);
   const allowedBenchmarkKeys = new Set(mappedSeries.map((mapping) => benchmarkSeriesKey(mapping.brand_id, mapping.product_series)));
@@ -1787,6 +1788,23 @@ function buildWeeklyCoefficientCell(input: {
     .map((snapshot) => Number(snapshot.price_per_piece))
     .filter(isPositiveNumber);
   const ownAvgPrice = averageOrNull(ownPrices);
+  const benchmarkSeries = input.competitorSeries.find((series) => series.isBenchmark) ?? null;
+  const benchmarkRules = benchmarkSeries
+    ? input.selectedRules.filter((rule) => benchmarkSeriesKey(rule.brand_id, rule.product_series) === benchmarkSeries.key)
+    : [];
+  const ownPeriodBenchmarkPrices = benchmarkSeries
+    ? benchmarkPricesFromPeriodPrices(weeklyOwnSnapshots, benchmarkRules, input.week)
+    : [];
+  const ownFallbackBenchmarkPrices = benchmarkSeries
+    ? input.benchmarkSnapshots
+      .filter((snapshot) => benchmarkSeriesKey(snapshot.competitor_products?.brand_id, snapshot.competitor_products?.product_series) === benchmarkSeries.key)
+      .filter((snapshot) => benchmarkRules.length > 0 ? benchmarkRules.some((rule) => snapshotMatchesBenchmarkRegion(snapshot, rule, false)) : true)
+      .filter((snapshot) => snapshotInPeriod(snapshot, input.week.startDate, input.week.endDate))
+      .map((snapshot) => Number(snapshot.price_per_piece))
+      .filter(isPositiveNumber)
+    : [];
+  const ownBenchmarkPrices = ownPeriodBenchmarkPrices.length > 0 ? ownPeriodBenchmarkPrices : ownFallbackBenchmarkPrices;
+  const ownBenchmarkAvgPrice = averageOrNull(ownBenchmarkPrices);
   const competitorCells = input.competitorSeries.map((series) => {
     const seriesRules = input.selectedRules.filter((rule) => benchmarkSeriesKey(rule.brand_id, rule.product_series) === series.key);
     const periodBenchmarkPrices = benchmarkPricesFromPeriodPrices(weeklyOwnSnapshots, seriesRules, input.week);
@@ -1802,7 +1820,11 @@ function buildWeeklyCoefficientCell(input: {
       seriesKey: series.key,
       benchmarkAvgPrice,
       benchmarkSampleCount: benchmarkPrices.length,
-      coefficient: ownAvgPrice && benchmarkAvgPrice ? Math.round((ownAvgPrice / benchmarkAvgPrice) * 100) / 100 : null,
+      coefficient: series.isBenchmark
+        ? (benchmarkAvgPrice ? 1 : null)
+        : ownAvgPrice && benchmarkAvgPrice
+          ? Math.round((ownAvgPrice / benchmarkAvgPrice) * 100) / 100
+          : null,
       benchmarkHref: buildWeeklyPriceHref(input.locale, {
         startDate: input.week.startDate,
         endDate: input.week.endDate,
@@ -1819,6 +1841,7 @@ function buildWeeklyCoefficientCell(input: {
     startDate: input.week.startDate,
     endDate: input.week.endDate,
     ownAvgPrice,
+    ownCoefficient: ownAvgPrice && ownBenchmarkAvgPrice ? Math.round((ownAvgPrice / ownBenchmarkAvgPrice) * 100) / 100 : null,
     ownSampleCount: ownPrices.length,
     ownHref: buildWeeklyPriceHref(input.locale, {
       startDate: input.week.startDate,
@@ -1874,6 +1897,14 @@ function benchmarkPricesFromPeriodPrices(
     }
   }
   return prices;
+}
+
+function inferredMappedSeriesIsBenchmark(
+  mapping: CompetitorSeriesMapping,
+  rules: MarketBenchmarkRule[],
+) {
+  const mappingKey = benchmarkSeriesKey(mapping.brand_id, mapping.product_series);
+  return rules.some((rule) => benchmarkSeriesKey(rule.brand_id, rule.product_series) === mappingKey);
 }
 
 function pickBestBenchmarkRuleForSnapshot(snapshot: PriceSnapshot, rules: MarketBenchmarkRule[]) {

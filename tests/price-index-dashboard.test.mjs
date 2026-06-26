@@ -63,12 +63,14 @@ test("dashboard now combines price index, exception follow-up, and execution sec
   assert.match(dashboardPage, /name="executionMonth"/);
   assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /PRICE\/PCS \{week\.label\}/);
   assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /CombinedMetricCell/);
+  assert.doesNotMatch(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /function PriceCell/);
   assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /WEEK_COLUMN_CLASS/);
 });
 
 test("dashboard derived data calculates weekly coefficients from own and benchmark averages", () => {
   assert.match(typesFile, /WeeklyPriceCoefficientBoard/);
   assert.match(typesFile, /WeeklyPriceCoefficientCell/);
+  assert.match(typesFile, /ownCoefficient: number \| null/);
   assert.match(typesFile, /WeeklyPriceCoefficientCompetitorSeries/);
   assert.match(typesFile, /WeeklyPriceCoefficientCompetitorCell/);
   assert.match(dataFile, /getWeeklyPriceCoefficientBoard/);
@@ -79,11 +81,16 @@ test("dashboard derived data calculates weekly coefficients from own and benchma
   assert.match(dataFile, /seriesNamesOverlap/);
   assert.match(dataFile, /competitorSeriesLabel/);
   assert.match(dataFile, /competitorCells/);
+  assert.match(dataFile, /ownBenchmarkAvgPrice/);
+  assert.match(dataFile, /ownCoefficient:/);
   assert.match(dataFile, /benchmarkPricesFromPeriodPrices/);
   assert.match(dataFile, /market_benchmark_period_prices/);
   assert.match(dataFile, /pickBestBenchmarkRuleForSnapshot/);
   assert.match(dataFile, /snapshotMatchesBenchmarkRegion/);
   assert.match(dataFile, /ownAvgPrice \/ benchmarkAvgPrice/);
+  assert.match(dataFile, /series\.isBenchmark/);
+  assert.match(dataFile, /coefficient:\s+series\.isBenchmark/);
+  assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /isBenchmark \? \(isZh \? "（标杆）" : " \(Benchmark\)"\) : ""/);
   assert.match(dataFile, /material_master/);
   assert.match(dataFile, /market_benchmark_rules/);
   assert.match(dataFile, /canonicalDashboardProvinceLabel/);

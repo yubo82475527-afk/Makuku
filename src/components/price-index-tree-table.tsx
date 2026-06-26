@@ -107,7 +107,10 @@ export function PriceIndexTreeTable({
             </th>
             {board.competitorSeries.map((series) => (
               <th key={`series-${series.key}`} colSpan={board.weeks.length} className="px-3 py-3 text-left font-semibold text-slate-500">
-                <div className="flex justify-start text-left">{series.label}</div>
+                <div className="flex justify-start text-left">
+                  {series.label}
+                  {series.isBenchmark ? (isZh ? "（标杆）" : " (Benchmark)") : ""}
+                </div>
               </th>
             ))}
           </tr>
@@ -181,22 +184,15 @@ function renderNodeRows(
         expanded={false}
       />
       {node.cells.map((cell) => (
-        <PriceCell
+        <CombinedMetricCell
           key={`own-${node.id}-${cell.week}`}
           href={cell.ownHref}
-          value={cell.ownAvgPrice}
+          price={cell.ownAvgPrice}
+          coefficient={cell.ownCoefficient}
           sampleCount={cell.ownSampleCount}
         />
       ))}
-      {node.cells.flatMap((cell) => cell.competitorCells.map((competitorCell) => (
-        <CombinedMetricCell
-          key={`benchmark-${node.id}-${cell.week}-${competitorCell.seriesKey}`}
-          href={competitorCell.benchmarkHref}
-          price={competitorCell.benchmarkAvgPrice}
-          coefficient={competitorCell.coefficient}
-          sampleCount={competitorCell.benchmarkSampleCount}
-        />
-      )))}
+      {renderCompetitorCells(node)}
     </tr>,
   ];
 
@@ -207,6 +203,22 @@ function renderNodeRows(
   }
 
   return rows;
+}
+
+function renderCompetitorCells(node: WeeklyPriceCoefficientNode) {
+  const seriesKeys = Array.from(new Set(node.cells.flatMap((cell) => cell.competitorCells.map((competitorCell) => competitorCell.seriesKey))));
+  return seriesKeys.flatMap((seriesKey) => node.cells.map((cell) => {
+    const competitorCell = cell.competitorCells.find((item) => item.seriesKey === seriesKey);
+    return (
+      <CombinedMetricCell
+        key={`benchmark-${node.id}-${seriesKey}-${cell.week}`}
+        href={competitorCell?.benchmarkHref ?? "#"}
+        price={competitorCell?.benchmarkAvgPrice ?? null}
+        coefficient={competitorCell?.coefficient ?? null}
+        sampleCount={competitorCell?.benchmarkSampleCount ?? 0}
+      />
+    );
+  }));
 }
 
 function HierarchyCell({
@@ -247,26 +259,6 @@ function HierarchyCell({
   );
 }
 
-function PriceCell({
-  href,
-  value,
-  sampleCount,
-}: {
-  href: string;
-  value: number | null;
-  sampleCount: number;
-}) {
-  return (
-    <td className={`${WEEK_COLUMN_CLASS} px-3 py-3 text-left tabular-nums text-slate-700`} title={`samples: ${sampleCount}`}>
-      {value === null ? "-" : (
-        <Link href={href} className="font-medium text-slate-900 hover:text-slate-700 hover:underline">
-          {formatTablePrice(value)}
-        </Link>
-      )}
-    </td>
-  );
-}
-
 function CombinedMetricCell({
   href,
   price,
@@ -281,9 +273,11 @@ function CombinedMetricCell({
   return (
     <td className={`${WEEK_COLUMN_CLASS} px-3 py-3 text-left tabular-nums text-slate-700`} title={`samples: ${sampleCount}`}>
       {price === null ? "-" : (
-        <Link href={href} className="font-medium text-slate-900 hover:text-slate-700 hover:underline">
-          {formatTablePrice(price)}
-          {coefficient === null ? "" : ` (${formatCoefficient(coefficient)})`}
+        <Link href={href} className="inline-flex flex-col items-start gap-0.5 font-medium text-slate-900 hover:text-slate-700 hover:underline">
+          <span>{formatTablePrice(price)}</span>
+          {coefficient === null ? null : (
+            <span className="text-slate-700">({formatCoefficient(coefficient)})</span>
+          )}
         </Link>
       )}
     </td>
