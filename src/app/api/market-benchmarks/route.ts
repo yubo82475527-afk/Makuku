@@ -1,7 +1,8 @@
 import { revalidatePath } from "next/cache";
 import { formReturnRedirect, readRequestBody } from "@/lib/request";
 import { getMarketBenchmarkRules } from "@/lib/data";
-import { calculateBenchmarkAverage, currentBenchmarkPeriod } from "@/lib/market-benchmark-rules";
+import { calculateBenchmarkAverage } from "@/lib/market-benchmark-rules";
+import { currentBenchmarkPeriod, monthWeeks, type BenchmarkPeriod } from "@/lib/periods";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
 import { requireAdminSession } from "@/lib/auth-session";
 import type { MarketBenchmarkPeriodPrice, MarketBenchmarkRule, PriceSnapshot } from "@/lib/types";
@@ -150,13 +151,23 @@ async function backfillPeriodPrices(input: {
   let noSample = 0;
 
   for (const rule of rules) {
+    const existingRows = input.overwrite
+      ? await listExistingPeriodPricesInRange(supabase, rule.id, input.periodType, input.startDate, input.endDate)
+      : [];
+    const existingExactKeys = new Set(existingRows.map((row) => periodKey(row.period_type, row.start_date, row.end_date)));
+    if (input.overwrite && existingRows.length > 0) {
+      await deleteExistingPeriodPricesInRange(supabase, rule.id, input.periodType, input.startDate, input.endDate);
+    }
+
     for (const period of periods) {
       const calculated = calculateBenchmarkAverage({ rule, snapshots, period });
       if (!calculated) {
         noSample += 1;
         continue;
       }
-      const existing = await getExistingPeriodPrice(supabase, rule.id, period.periodType, period.startDate, period.endDate);
+      const existing = input.overwrite
+        ? existingExactKeys.has(periodKey(period.periodType, period.startDate, period.endDate))
+        : await getExistingPeriodPrice(supabase, rule.id, period.periodType, period.startDate, period.endDate);
       if (existing && !input.overwrite) {
         skipped += 1;
         continue;
@@ -305,6 +316,41 @@ async function getExistingPeriodPrice(
   return data as { id: string } | null;
 }
 
+async function listExistingPeriodPricesInRange(
+  supabase: ReturnType<typeof createSupabaseServiceClient>,
+  ruleId: string,
+  periodType: string,
+  startDate: string,
+  endDate: string,
+) {
+  const { data, error } = await supabase
+    .from("market_benchmark_period_prices")
+    .select("id, period_type, start_date, end_date")
+    .eq("benchmark_rule_id", ruleId)
+    .eq("period_type", periodType)
+    .lte("start_date", endDate)
+    .gte("end_date", startDate);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Array<Pick<MarketBenchmarkPeriodPrice, "id" | "period_type" | "start_date" | "end_date">>;
+}
+
+async function deleteExistingPeriodPricesInRange(
+  supabase: ReturnType<typeof createSupabaseServiceClient>,
+  ruleId: string,
+  periodType: string,
+  startDate: string,
+  endDate: string,
+) {
+  const { error } = await supabase
+    .from("market_benchmark_period_prices")
+    .delete()
+    .eq("benchmark_rule_id", ruleId)
+    .eq("period_type", periodType)
+    .lte("start_date", endDate)
+    .gte("end_date", startDate);
+  if (error) throw new Error(error.message);
+}
+
 async function getLatestPriorPeriodPrice(
   supabase: ReturnType<typeof createSupabaseServiceClient>,
   ruleId: string,
@@ -337,16 +383,23 @@ async function upsertPeriodPrice(
 }
 
 function buildPeriods(periodType: "week" | "month", startDate: string, endDate: string) {
-  const periods = [];
-  let cursor = parseLocalDate(startDate);
+  const periods: BenchmarkPeriod[] = [];
+  const seen = new Set<string>();
+  let cursor = new Date(parseLocalDate(startDate).getFullYear(), parseLocalDate(startDate).getMonth(), 1);
   const end = parseLocalDate(endDate);
   while (cursor <= end) {
-    const period = currentBenchmarkPeriod(periodType, cursor);
-    const boundedStart = period.startDate < startDate ? startDate : period.startDate;
-    const boundedEnd = period.endDate > endDate ? endDate : period.endDate;
-    periods.push({ ...period, startDate: boundedStart, endDate: boundedEnd });
-    cursor = parseLocalDate(period.endDate);
-    cursor.setDate(cursor.getDate() + 1);
+    const month = dateKey(cursor).slice(0, 7);
+    const monthPeriods = periodType === "week"
+      ? monthWeeks(month)
+      : [currentBenchmarkPeriod("month", cursor)];
+    for (const period of monthPeriods) {
+      if (period.endDate < startDate || period.startDate > endDate) continue;
+      const key = periodKey(period.periodType, period.startDate, period.endDate);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      periods.push(period);
+    }
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
   }
   return periods;
 }
@@ -354,4 +407,15 @@ function buildPeriods(periodType: "week" | "month", startDate: string, endDate: 
 function parseLocalDate(value: string) {
   const [year, month, day] = value.split("-").map(Number);
   return new Date(year, (month ?? 1) - 1, day ?? 1);
+}
+
+function dateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function periodKey(periodType: string, startDate: string, endDate: string) {
+  return `${periodType}:${startDate}:${endDate}`;
 }

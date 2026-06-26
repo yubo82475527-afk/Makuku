@@ -337,6 +337,7 @@ export type MarketBenchmark = {
 };
 
 export type MarketBenchmarkPeriodType = "week" | "month";
+export type MarketBenchmarkWeekMode = "month_fixed_4" | "natural_week";
 export type MarketBenchmarkPeriodStatus = "calculated" | "carried_forward";
 
 export type MarketBenchmarkPeriodPrice = {
@@ -436,7 +437,9 @@ export type PriceSnapshot = {
   competitor_products?: CompetitorProduct | null;
   sku_master?: SkuMaster | null;
   material_master?: MaterialMaster | null;
-  offline_stores?: Pick<OfflineStore, "id" | "name" | "city" | "province" | "city_name" | "district" | "channel_type"> | null;
+  offline_stores?: Pick<OfflineStore, "id" | "name" | "city" | "province" | "city_name" | "district" | "channel_type" | "organization_id"> & {
+    organizations?: Pick<Organization, "id" | "name" | "status"> | null;
+  } | null;
   ai_price_candidates?: PriceSnapshotCandidate[];
 };
 
@@ -858,18 +861,36 @@ export type WeeklyPriceCoefficientCell = {
   endDate: string;
   ownAvgPrice: number | null;
   ownSampleCount: number;
+  ownHref: string;
+  competitorCells: WeeklyPriceCoefficientCompetitorCell[];
+};
+
+export type WeeklyPriceCoefficientCompetitorSeries = {
+  key: string;
+  label: string;
+};
+
+export type WeeklyPriceCoefficientCompetitorCell = {
+  seriesKey: string;
   benchmarkAvgPrice: number | null;
   benchmarkSampleCount: number;
   coefficient: number | null;
-  ownHref: string;
   benchmarkHref: string;
 };
 
-export type WeeklyPriceCoefficientRow = {
-  region: string;
+export type WeeklyPriceCoefficientNodeLevel = "organization" | "province" | "city" | "district" | "sku";
+
+export type WeeklyPriceCoefficientNode = {
+  id: string;
+  level: WeeklyPriceCoefficientNodeLevel;
+  organization: string | null;
   province: string | null;
-  isNational: boolean;
+  cityName: string | null;
+  district: string | null;
+  skuCode: string | null;
+  skuName: string | null;
   cells: WeeklyPriceCoefficientCell[];
+  children: WeeklyPriceCoefficientNode[];
 };
 
 export type WeeklyPriceCoefficientBoard = {
@@ -879,13 +900,11 @@ export type WeeklyPriceCoefficientBoard = {
   selectedOwnSeries: string | null;
   skuOptions: Array<{ code: string; name: string }>;
   selectedSku: string | null;
-  benchmarkOptions: Array<{ id: string; label: string }>;
-  selectedBenchmarkRuleId: string | null;
-  regionOptions: string[];
-  selectedRegion: string | null;
+  organizationOptions: string[];
+  selectedOrganization: string | null;
   weeks: Array<{ key: string; label: string; startDate: string; endDate: string }>;
-  benchmarkLabel: string | null;
-  rows: WeeklyPriceCoefficientRow[];
+  competitorSeries: WeeklyPriceCoefficientCompetitorSeries[];
+  rows: WeeklyPriceCoefficientNode[];
 };
 
 export type OpportunityActionType =

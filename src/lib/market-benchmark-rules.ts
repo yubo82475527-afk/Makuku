@@ -1,31 +1,17 @@
+import { currentBenchmarkPeriod, type BenchmarkPeriod } from "@/lib/periods";
 import type { MarketBenchmarkPeriodPrice, MarketBenchmarkPeriodType, MarketBenchmarkRule, PriceSnapshot } from "@/lib/types";
 
-export type BenchmarkPeriod = {
-  periodType: MarketBenchmarkPeriodType;
-  startDate: string;
-  endDate: string;
-};
-
-export function currentBenchmarkPeriod(periodType: MarketBenchmarkPeriodType = "week", date = new Date()): BenchmarkPeriod {
-  if (periodType === "month") {
-    const start = new Date(date.getFullYear(), date.getMonth(), 1);
-    const end = new Date(date.getFullYear(), date.getMonth() + 1, 0);
-    return { periodType, startDate: dateKey(start), endDate: dateKey(end) };
-  }
-
-  const start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const day = start.getDay();
-  const mondayOffset = day === 0 ? -6 : 1 - day;
-  start.setDate(start.getDate() + mondayOffset);
-  const end = new Date(start);
-  end.setDate(start.getDate() + 6);
-  return { periodType, startDate: dateKey(start), endDate: dateKey(end) };
-}
-
 export function latestPeriodPrice(rule: MarketBenchmarkRule, periodType: MarketBenchmarkPeriodType = "week") {
-  return [...(rule.market_benchmark_period_prices ?? [])]
-    .filter((price) => price.period_type === periodType)
-    .sort((left, right) => right.start_date.localeCompare(left.start_date))[0] ?? null;
+  const prices = [...(rule.market_benchmark_period_prices ?? [])]
+    .filter((price) => price.period_type === periodType);
+  if (periodType === "week") {
+    const currentPeriod = currentBenchmarkPeriod("week");
+    const currentPrice = prices.find((price) =>
+      price.start_date === currentPeriod.startDate && price.end_date === currentPeriod.endDate,
+    );
+    if (currentPrice) return currentPrice;
+  }
+  return prices.sort((left, right) => right.start_date.localeCompare(left.start_date))[0] ?? null;
 }
 
 export function calculateBenchmarkAverage(input: {

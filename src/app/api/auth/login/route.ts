@@ -2,12 +2,26 @@ import { createSupabaseServiceClient } from "@/lib/supabase";
 import { createSessionCookie, isAllowedAdminRole } from "@/lib/auth-session";
 import crypto from "crypto";
 
-const DEMO_USER = {
-  id: "demo-field-agent",
-  username: "demo",
-  displayName: "Demo Field Agent",
-  role: "field_agent",
-};
+const LOCAL_DEMO_USERS = [
+  {
+    id: "demo-field-agent",
+    username: "demo",
+    displayName: "Demo Field Agent",
+    role: "field_agent",
+  },
+  {
+    id: "demo-manager",
+    username: "demo-manager",
+    displayName: "Demo Manager",
+    role: "manager",
+  },
+  {
+    id: "demo-admin",
+    username: "demo-admin",
+    displayName: "Demo Admin",
+    role: "admin",
+  },
+] as const;
 
 function isMissingTableError(error: { message?: string } | null) {
   return Boolean(error?.message?.includes("Could not find the table"));
@@ -18,8 +32,9 @@ function isUserStatusColumnError(error: { message?: string } | null) {
   return message.includes("status") || message.includes("schema cache");
 }
 
-function canUseLocalDemoLogin(username: string, password: string) {
-  return process.env.NODE_ENV !== "production" && username === "demo" && password === "demo123";
+function getLocalDemoUser(username: string, password: string) {
+  if (process.env.NODE_ENV === "production" || password !== "demo123") return null;
+  return LOCAL_DEMO_USERS.find((item) => item.username === username) ?? null;
 }
 
 // Simple password comparison for development
@@ -71,13 +86,24 @@ export async function POST(request: Request) {
       error = legacy.error;
     }
 
-    if (isMissingTableError(error) && canUseLocalDemoLogin(username, password)) {
-      if (purpose === "pc_console" && !isAllowedAdminRole(DEMO_USER.role)) {
+    const localDemoUser = getLocalDemoUser(username, password);
+
+    if (localDemoUser && (isMissingTableError(error) || error || !user)) {
+      if (purpose === "pc_console" && !isAllowedAdminRole(localDemoUser.role)) {
         return Response.json({ error: "Manager or admin account required" }, { status: 403 });
       }
       return Response.json(
-        { user: DEMO_USER },
-        { headers: { "Set-Cookie": createSessionCookie({ id: DEMO_USER.id, username: DEMO_USER.username, displayName: DEMO_USER.displayName, role: DEMO_USER.role }) } },
+        { user: localDemoUser },
+        {
+          headers: {
+            "Set-Cookie": createSessionCookie({
+              id: localDemoUser.id,
+              username: localDemoUser.username,
+              displayName: localDemoUser.displayName,
+              role: localDemoUser.role,
+            }),
+          },
+        },
       );
     }
 

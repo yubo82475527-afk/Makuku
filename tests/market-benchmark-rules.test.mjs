@@ -6,6 +6,7 @@ const migration = readFileSync("supabase/migrations/202606150004_market_benchmar
 const types = readFileSync("src/lib/types.ts", "utf8");
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const helper = readFileSync("src/lib/market-benchmark-rules.ts", "utf8");
+const periods = readFileSync("src/lib/periods.ts", "utf8");
 const apiRoute = readFileSync("src/app/api/market-benchmarks/route.ts", "utf8");
 const page = readFileSync("src/app/[locale]/market-benchmarks/page.tsx", "utf8");
 const dialog = readFileSync("src/components/market-benchmark-rule-dialog.tsx", "utf8");
@@ -44,6 +45,10 @@ test("market benchmark API saves single or batch regional rules and period price
   assert.match(apiRoute, /currentBenchmarkPeriod\("week"\)/);
   assert.match(apiRoute, /calculateBenchmarkAverage/);
   assert.match(apiRoute, /carried_forward/);
+  assert.match(apiRoute, /monthWeeks\(month\)/);
+  assert.match(apiRoute, /listExistingPeriodPricesInRange/);
+  assert.match(apiRoute, /deleteExistingPeriodPricesInRange/);
+  assert.match(apiRoute, /existingExactKeys/);
   assert.doesNotMatch(apiRoute, /benchmark_competitor_product_id/);
   assert.doesNotMatch(apiRoute, /benchmark_sku_name/);
 });
@@ -78,8 +83,12 @@ test("market benchmark page is a batch region series rule surface", () => {
 });
 
 test("market benchmark helpers match optional district and preserve period labels", () => {
+  assert.match(periods, /DEFAULT_WEEK_MODE: MarketBenchmarkWeekMode = "month_fixed_4"/);
+  assert.match(periods, /monthWeeks/);
+  assert.match(periods, /W1/);
+  assert.match(periods, /W4/);
   assert.match(helper, /currentBenchmarkPeriod/);
-  assert.match(helper, /periodType === "month"/);
+  assert.match(helper, /price\.start_date === currentPeriod\.startDate/);
   assert.match(helper, /snapshotMatchesRule/);
   assert.match(helper, /cleanText\(rule\.district\)/);
   assert.match(helper, /formatBenchmarkPeriod/);

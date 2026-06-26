@@ -21,13 +21,16 @@ test("AI candidate generation assigns stable candidate keys for idempotent reana
 
 test("AI price approval reuses existing offline AI snapshots for the same image product and net price", () => {
   assert.match(reviewService, /findExistingOfflineAiSnapshot/);
+  assert.match(reviewService, /const sourceOfflineStoreId = visit\?\.store_id \?\? null/);
+  assert.match(reviewService, /offline_store_id: sourceOfflineStoreId/);
+  assert.match(reviewService, /attachOfflineStoreToSnapshot/);
   assert.match(reviewService, /source_visit_id/);
   assert.match(reviewService, /source_image_id/);
   assert.match(reviewService, /source_matched_entity_type/);
   assert.match(reviewService, /source_matched_entity_id/);
   assert.match(reviewService, /\.eq\("net_price_idr", netPrice\)/);
   assert.match(reviewService, /if \(existingSnapshot\)/);
-  assert.match(reviewService, /price_snapshot_id: existingSnapshot\.id/);
+  assert.match(reviewService, /price_snapshot_id: snapshotWithStore\.id/);
 });
 
 test("offline AI price idempotency migration constrains candidates and snapshots by image product and net price", () => {
@@ -38,6 +41,14 @@ test("offline AI price idempotency migration constrains candidates and snapshots
   assert.match(idempotencyMigration, /idx_ai_price_candidates_visit_image_entity_price_active/);
   assert.match(idempotencyMigration, /idx_price_snapshots_offline_ai_source_unique/);
   assert.match(idempotencyMigration, /where source = 'offline_ai_confirmed'/);
+});
+
+test("store link repair migration backfills offline store ids for offline AI snapshots", () => {
+  const repairMigration = readFileSync("supabase/migrations/202606260001_price_snapshot_store_link_repair.sql", "utf8");
+  assert.match(repairMigration, /add column if not exists offline_store_id/);
+  assert.match(repairMigration, /candidate_source\.store_id/);
+  assert.match(repairMigration, /offline_store_id = coalesce\(ps\.offline_store_id, candidate_source\.store_id\)/);
+  assert.match(repairMigration, /update public\.price_snapshots ps[\s\S]*set offline_store_id = visit\.store_id/);
 });
 
 test("AI candidate matching refuses to reuse competitor products from a different brand", () => {

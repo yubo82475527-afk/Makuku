@@ -103,9 +103,14 @@ export async function approveAiPriceCandidate({
     piece_count: Math.floor(reviewedPieceCount),
   });
 
-  const visit = candidate.offline_store_visits as { store_name?: string | null; visit_date?: string | null } | null;
+  const visit = candidate.offline_store_visits as {
+    store_id?: string | null;
+    store_name?: string | null;
+    visit_date?: string | null;
+  } | null;
   const sourceVisitId = candidateRow.visit_id;
   const sourceImageId = candidateRow.source_image_id ?? null;
+  const sourceOfflineStoreId = visit?.store_id ?? null;
   const sourceMatchedEntityType = candidateRow.matched_entity_type;
   const sourceMatchedEntityId = candidateRow.matched_entity_type === "material_master"
     ? materialSkuCode
@@ -130,12 +135,15 @@ export async function approveAiPriceCandidate({
     netPrice,
   });
   if (existingSnapshot) {
+    const snapshotWithStore = sourceOfflineStoreId && !existingSnapshot.offline_store_id
+      ? await attachOfflineStoreToSnapshot(supabase, existingSnapshot.id, sourceOfflineStoreId)
+      : existingSnapshot;
     const updated = await updateAiPriceCandidateWithReviewMethodFallback(supabase, candidateId, {
       status: "approved",
       parsed_price_idr: netPrice,
       reviewed_piece_count: Math.floor(reviewedPieceCount),
       reviewed_price_per_piece: normalized.price_per_piece,
-      price_snapshot_id: existingSnapshot.id,
+      price_snapshot_id: snapshotWithStore.id,
       reviewed_at: new Date().toISOString(),
       reviewed_by: reviewer ?? null,
       review_job_id: reviewJobId ?? null,
@@ -143,13 +151,14 @@ export async function approveAiPriceCandidate({
       rejection_reason: null,
     });
 
-    return { candidate: updated as AiPriceCandidate, snapshot: existingSnapshot };
+    return { candidate: updated as AiPriceCandidate, snapshot: snapshotWithStore };
   }
 
   const { data: snapshot, error: snapshotError } = await supabase
     .from("price_snapshots")
     .insert({
       ...snapshotPayload,
+      offline_store_id: sourceOfflineStoreId,
       channel: "offline",
       list_price_idr: listPrice,
       package_price_idr: packagePrice,
@@ -373,6 +382,21 @@ function inferCompetitorSize(productName: string) {
 function positiveNumberOrFallback(value: unknown, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+async function attachOfflineStoreToSnapshot(
+  supabase: SupabaseServiceClient,
+  snapshotId: string,
+  offlineStoreId: string,
+) {
+  const { data, error } = await supabase
+    .from("price_snapshots")
+    .update({ offline_store_id: offlineStoreId })
+    .eq("id", snapshotId)
+    .select("*")
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
 }
 
 async function findExistingOfflineAiSnapshot({

@@ -72,32 +72,35 @@ test("visible sample data does not look like throwaway mock data", () => {
   assert.match(demoData, /source: "pilot-sample"/);
 });
 
-test("dashboard states the weekly price coefficient objective", () => {
-  assert.match(dashboardPage, /Weekly Price Coefficient/);
-  assert.match(dashboardPage, /own SKU average price per piece/);
-  assert.match(dashboardPage, /benchmark series by region/);
+test("dashboard states the price 1.0 homepage objective", () => {
+  assert.match(dashboardPage, /Price Index/);
+  assert.match(dashboardPage, /Price Exception Follow-up/);
+  assert.match(dashboardPage, /Promoter Execution/);
 });
 
-test("dashboard is shaped around weekly own and benchmark price coefficients", () => {
+test("dashboard keeps the weekly coefficient board but is no longer a single-panel page", () => {
   assert.match(typesFile, /export type WeeklyPriceCoefficientBoard/);
   assert.match(typesFile, /export type WeeklyPriceCoefficientCell/);
+  assert.match(typesFile, /export type WeeklyPriceCoefficientCompetitorSeries/);
   assert.match(dataFile, /export async function getWeeklyPriceCoefficientBoard/);
   assert.match(dataFile, /getMarketBenchmarkRules/);
+  assert.match(dataFile, /getCompetitorSeriesMappings/);
   assert.match(dataFile, /materialMaster\.map\(\(item\) => cleanText\(item\.sub_brand\)\)/);
   assert.match(dataFile, /ownAvgPrice \/ benchmarkAvgPrice/);
-  assert.match(dashboardPage, /WeeklyPriceCoefficientTable/);
-  assert.match(dashboardPage, /PRICE\/PCS \{week\.label\}/);
-  assert.match(dashboardPage, /COEFFICIENT/);
-  assert.match(dataFile, /region: "NASIONAL"/);
+  assert.match(dashboardPage, /PriceIndexTreeTable/);
+  assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /PRICE\/PCS \{week\.label\}/);
+  assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /CombinedMetricCell/);
+  assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /WEEK_COLUMN_CLASS/);
+  assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /competitorSeries/);
   assert.match(dashboardPage, /name="month"/);
+  assert.match(dashboardPage, /name="organization"/);
   assert.match(dashboardPage, /name="ownSeries"/);
-  assert.match(dashboardPage, /name="sku"/);
-  assert.match(dashboardPage, /name="benchmarkRuleId"/);
-  assert.match(dashboardPage, /name="region"/);
-  assert.doesNotMatch(dashboardPage, /PriorityActionCard/);
-  assert.doesNotMatch(dashboardPage, /Today Priority Actions/);
-  assert.doesNotMatch(dashboardPage, /ProductSegmentPriceIndexBoard/);
-  assert.doesNotMatch(dashboardPage, /Product Segment Price Index/);
+  assert.doesNotMatch(dashboardPage, /name="sku"/);
+  assert.doesNotMatch(dashboardPage, /name="benchmarkRuleId"/);
+  assert.match(dashboardPage, /Exception Follow-up/);
+  assert.match(dashboardPage, /Promoter Execution/);
+  assert.match(dashboardPage, /flattenProblemStoreRows/);
+  assert.match(dashboardPage, /buildExecutionBoard/);
 });
 
 test("dashboard serves the product board directly instead of a loading shell", () => {

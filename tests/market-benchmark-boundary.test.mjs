@@ -104,5 +104,5 @@ test("market benchmark API saves regional series rules and period prices", () =>
 test("dashboard missing benchmark drilldown goes to benchmark configuration", () => {
   assert.match(dataFile, /buildMarketBenchmarkHref/);
   assert.match(dataFile, /\/market-benchmarks\?/);
-  assert.match(dashboardPage, /Add benchmark/);
+  assert.match(dashboardPage, /Maintain benchmark rules/);
 });

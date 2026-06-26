@@ -48,6 +48,7 @@ test("automated competitor product creation defaults package type to unknown", (
   assert.match(aiPriceReview, /package_type: "unknown"/);
   assert.match(offlineUploadConfirm, /package_type: "unknown"/);
   assert.match(offlineVisitImageConfirm, /package_type: "unknown"/);
+  assert.match(offlineVisitImageConfirm, /offline_store_id: visit\?\.store_id \?\? null/);
 });
 
 test("photo review creates new competitor products with inferred size from candidate text", () => {

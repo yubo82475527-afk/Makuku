@@ -174,8 +174,8 @@ function sameText(left: string | null | undefined, right: string | null | undefi
 }
 
 function periodTypeLabel(value: string, isZh: boolean) {
-  if (value === "month") return isZh ? "自然月" : "Month";
-  return isZh ? "自然周" : "Week";
+  if (value === "month") return isZh ? "整月" : "Month";
+  return isZh ? "月内周段" : "Monthly week";
 }
 
 

@@ -40,7 +40,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/offline-vis
       .maybeSingle();
     if (!brand) return Response.json({ error: `Brand not found: ${brandName}` }, { status: 404 });
 
-    const visit = image.offline_store_visits as { store_name: string; city: string } | null;
+    const visit = image.offline_store_visits as { store_id?: string | null; store_name: string; city: string } | null;
     const { data: existingProduct } = await supabase
       .from("competitor_products")
       .select("*, brands(id,name), sku_matches(*, sku_master(*))")
@@ -86,6 +86,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/offline-vis
       .from("price_snapshots")
       .insert({
         competitor_product_id: competitorProduct.id,
+        offline_store_id: visit?.store_id ?? null,
         channel: "offline",
         list_price_idr: Number(body.list_price_idr || price),
         package_price_idr: price,

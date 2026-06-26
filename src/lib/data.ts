@@ -15,6 +15,7 @@ import {
   demoPromoEvents,
   demoSkuMaster,
 } from "@/lib/demo-data";
+import { monthWeeks } from "@/lib/periods";
 import { createSupabaseAnonClient, createSupabaseServiceClient, hasSupabaseConfig, hasSupabaseServiceConfig } from "@/lib/supabase";
 import type {
   Alert,
@@ -48,6 +49,8 @@ import type {
   VisionDetectedProduct,
   WeeklyPriceCoefficientBoard,
   WeeklyPriceCoefficientCell,
+  WeeklyPriceCoefficientCompetitorCell,
+  WeeklyPriceCoefficientNode,
 } from "@/lib/types";
 
 type QueryResult<T> = { data: T; error: string | null; isDemo: boolean };
@@ -78,11 +81,14 @@ export type PriceSnapshotOwnerFilter = "all" | "makuku" | "competitor";
 
 export type PriceSnapshotFilters = {
   owner?: PriceSnapshotOwnerFilter;
+  capturedFrom?: string;
+  capturedTo?: string;
   limit?: number;
+  offset?: number;
 };
 
-const priceSnapshotSelectWithMaterial = "*, sku_master(*, material_master(*)), material_master(*), offline_stores(id,name,city,province,city_name,district,channel_type), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*, material_master(*)))), ai_price_candidates(id, offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))";
-const legacyPriceSnapshotSelect = "*, sku_master(*), offline_stores(id,name,city,province,city_name,district,channel_type), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*))), ai_price_candidates(id, offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))";
+const priceSnapshotSelectWithMaterial = "*, sku_master(*, material_master(*)), material_master(*), offline_stores(id,name,city,province,city_name,district,channel_type,organization_id,organizations(id,name,status)), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*, material_master(*)))), ai_price_candidates(id, offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))";
+const legacyPriceSnapshotSelect = "*, sku_master(*), offline_stores(id,name,city,province,city_name,district,channel_type,organization_id,organizations(id,name,status)), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*))), ai_price_candidates(id, offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))";
 
 export type ProductSegmentPriceIndexFilters = {
   province?: string;
@@ -483,6 +489,11 @@ function isDisabledOfflineStore(store: OfflineStore) {
   return store.status === "disabled" || Boolean(store.disabled_at || store.deleted_at);
 }
 
+function isMasterOfflineStoreId(id: string | null | undefined) {
+  const value = String(id ?? "");
+  return Boolean(value) && !value.startsWith("visit-store-") && !value.startsWith("upload-store-");
+}
+
 function filterOfflineStoresByStatus(stores: OfflineStore[], status: OfflineStoreStatusFilter) {
   if (status === "all") return stores;
   return stores.filter((store) => status === "disabled" ? isDisabledOfflineStore(store) : !isDisabledOfflineStore(store));
@@ -530,6 +541,7 @@ function mergeOfflineStores(stores: OfflineStore[]) {
 
     merged.set(key, {
       ...current,
+      id: isMasterOfflineStoreId(current.id) ? current.id : normalizedStore.id,
       channel_type: current.channel_type || normalizedStore.channel_type,
       channel_id: current.channel_id ?? normalizedStore.channel_id,
       address: current.address ?? normalizedStore.address,
@@ -851,7 +863,8 @@ export async function getCompetitorSeriesMappings(): Promise<QueryResult<Competi
 export async function getPriceSnapshots(filters: PriceSnapshotFilters = {}): Promise<QueryResult<PriceSnapshot[]>> {
   const owner = filters.owner ?? "all";
   const limit = Math.min(5000, Math.max(1, Math.floor(filters.limit ?? 1000)));
-  const fallback = filterPriceSnapshotsByOwner(demoPriceSnapshots, owner).slice(0, limit);
+  const offset = Math.max(0, Math.floor(filters.offset ?? 0));
+  const fallback = filterPriceSnapshotsByOwner(demoPriceSnapshots, owner).slice(offset, offset + limit);
   if (!hasSupabaseConfig()) return { data: fallback, error: null, isDemo: true };
   const supabase = createSupabaseServiceClient();
   const buildQuery = (select: string) => {
@@ -863,11 +876,18 @@ export async function getPriceSnapshots(filters: PriceSnapshotFilters = {}): Pro
       query = query.not("competitor_product_id", "is", null);
     }
 
+    if (filters.capturedFrom) {
+      query = query.gte("captured_at", filters.capturedFrom);
+    }
+    if (filters.capturedTo) {
+      query = query.lt("captured_at", filters.capturedTo);
+    }
+
     return query
       .order("captured_at", { ascending: false })
       .order("created_at", { ascending: false })
       .order("id", { ascending: true })
-      .limit(limit);
+      .range(offset, offset + limit - 1);
   };
 
   const result = await buildQuery(priceSnapshotSelectWithMaterial);
@@ -1107,39 +1127,148 @@ export async function getOpportunityActions(locale = "zh"): Promise<QueryResult<
   };
 }
 
-export async function getProductSegmentBattles(locale = "zh"): Promise<QueryResult<{ summary: ProductSegmentBattleSummary; battles: ProductSegmentBattle[] }>> {
-  return getProductSegmentPriceIndexBattles(locale);
+export async function getProductSegmentBattles(
+  locale = "zh",
+  filters: ProductSegmentPriceIndexFilters = {},
+): Promise<QueryResult<{ summary: ProductSegmentBattleSummary; battles: ProductSegmentBattle[] }>> {
+  return getProductSegmentPriceIndexBattles(locale, filters);
 }
 
 export type WeeklyPriceCoefficientFilters = {
   month?: string;
   ownSeries?: string;
   sku?: string;
-  benchmarkRuleId?: string;
-  region?: string;
+  organization?: string;
 };
 
 export async function getWeeklyPriceCoefficientBoard(
   locale = "zh",
   filters: WeeklyPriceCoefficientFilters = {},
 ): Promise<QueryResult<WeeklyPriceCoefficientBoard>> {
-  const [materialResult, snapshotsResult, rulesResult] = await Promise.all([
+  const month = normalizeDashboardMonth(filters.month);
+  const [year, monthNumber] = month.split("-").map(Number);
+  const monthStart = `${month}-01T00:00:00.000Z`;
+  const monthEnd = new Date(Date.UTC(year, monthNumber ?? 1, 1)).toISOString();
+  const [materialResult, rulesResult, mappingsResult] = await Promise.all([
     getMaterialMaster(),
-    getPriceSnapshots({ limit: 5000 }),
     getMarketBenchmarkRules(),
+    getCompetitorSeriesMappings(),
   ]);
+  const ownSeriesOptions = uniqueStrings(materialResult.data.map((item) => cleanText(item.sub_brand)));
+  const selectedOwnSeries = filters.ownSeries && ownSeriesOptions.includes(filters.ownSeries)
+    ? filters.ownSeries
+    : ownSeriesOptions[0] ?? null;
+  const scopedMaterialCodes = materialResult.data
+    .filter((item) => cleanText(item.sub_brand) === selectedOwnSeries)
+    .map((item) => item.tenant_sku_code);
+  const scopedMappings = mappingsResult.data.filter((mapping) => {
+    if (!mapping.active) return false;
+    return seriesNamesOverlap(mapping.target_makuku_series, selectedOwnSeries);
+  });
+  const scopedSnapshotsResult = await getWeeklyBoardSnapshotsForPeriod({
+    capturedFrom: monthStart,
+    capturedTo: monthEnd,
+    materialCodes: scopedMaterialCodes,
+    competitorMappings: scopedMappings,
+  });
   const data = buildWeeklyPriceCoefficientBoard({
     locale,
     materialMaster: materialResult.data,
-    snapshots: snapshotsResult.data,
+    snapshots: scopedSnapshotsResult.data,
     rules: rulesResult.data,
+    mappings: mappingsResult.data,
     filters,
   });
   return {
     data,
-    error: materialResult.error ?? snapshotsResult.error ?? rulesResult.error,
-    isDemo: materialResult.isDemo || snapshotsResult.isDemo || rulesResult.isDemo,
+    error: materialResult.error ?? scopedSnapshotsResult.error ?? rulesResult.error ?? mappingsResult.error,
+    isDemo: materialResult.isDemo || scopedSnapshotsResult.isDemo || rulesResult.isDemo || mappingsResult.isDemo,
   };
+}
+
+async function getWeeklyBoardSnapshotsForPeriod(filters: {
+  capturedFrom: string;
+  capturedTo: string;
+  materialCodes: string[];
+  competitorMappings: CompetitorSeriesMapping[];
+}) {
+  if (!hasSupabaseServiceConfig()) {
+    return {
+      data: demoPriceSnapshots,
+      error: null,
+      isDemo: true,
+    } satisfies QueryResult<PriceSnapshot[]>;
+  }
+
+  const supabase = createSupabaseServiceClient();
+  const select = "id,competitor_product_id,material_sku_code,price_per_piece,captured_at,created_at,sku_master_id,offline_store_id,sku_master(material_sku_code),material_master(tenant_sku_code),offline_stores(id,name,city,province,city_name,district,channel_type,organization_id,organizations(id,name,status)),competitor_products(id,brand_id,product_series,brands(id,name),sku_matches(sku_master(material_sku_code))),ai_price_candidates(id,offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))";
+
+  const ownRows: PriceSnapshot[] = [];
+  if (filters.materialCodes.length > 0) {
+    let from = 0;
+    const size = 1000;
+    while (true) {
+      const { data, error } = await supabase
+        .from("price_snapshots")
+        .select(select)
+        .gte("captured_at", filters.capturedFrom)
+        .lt("captured_at", filters.capturedTo)
+        .is("competitor_product_id", null)
+        .in("material_sku_code", filters.materialCodes)
+        .order("captured_at", { ascending: false })
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true })
+        .range(from, from + size - 1);
+      if (error) {
+        return { data: demoPriceSnapshots, error: error.message, isDemo: true };
+      }
+      ownRows.push(...((data ?? []) as unknown as PriceSnapshot[]));
+      if ((data ?? []).length < size) break;
+      from += size;
+    }
+  }
+
+  const competitorKeySet = new Set(filters.competitorMappings.map((mapping) => benchmarkSeriesKey(mapping.brand_id, mapping.product_series)));
+  const { data: competitorProducts, error: competitorProductsError } = await supabase
+    .from("competitor_products")
+    .select("id,brand_id,product_series")
+    .order("created_at", { ascending: false });
+  if (competitorProductsError) {
+    return { data: demoPriceSnapshots, error: competitorProductsError.message, isDemo: true };
+  }
+  const competitorIds = (competitorProducts ?? [])
+    .filter((item) => competitorKeySet.has(benchmarkSeriesKey(item.brand_id, item.product_series)))
+    .map((item) => item.id);
+
+  const competitorRows: PriceSnapshot[] = [];
+  if (competitorIds.length > 0) {
+    let from = 0;
+    const size = 1000;
+    while (true) {
+      const { data, error } = await supabase
+        .from("price_snapshots")
+        .select(select)
+        .gte("captured_at", filters.capturedFrom)
+        .lt("captured_at", filters.capturedTo)
+        .in("competitor_product_id", competitorIds)
+        .order("captured_at", { ascending: false })
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true })
+        .range(from, from + size - 1);
+      if (error) {
+        return { data: demoPriceSnapshots, error: error.message, isDemo: true };
+      }
+      competitorRows.push(...((data ?? []) as unknown as PriceSnapshot[]));
+      if ((data ?? []).length < size) break;
+      from += size;
+    }
+  }
+
+  return {
+    data: [...ownRows, ...competitorRows],
+    error: null,
+    isDemo: false,
+  } satisfies QueryResult<PriceSnapshot[]>;
 }
 
 export async function getProductSegmentPriceIndexBattles(
@@ -1265,10 +1394,16 @@ function buildWeeklyPriceCoefficientBoard(input: {
   materialMaster: MaterialMaster[];
   snapshots: PriceSnapshot[];
   rules: MarketBenchmarkRule[];
+  mappings: CompetitorSeriesMapping[];
   filters: WeeklyPriceCoefficientFilters;
 }): WeeklyPriceCoefficientBoard {
   const month = normalizeDashboardMonth(input.filters.month);
-  const weeks = monthWeeks(month);
+  const weeks = monthWeeks(month).map((week) => ({
+    key: week.key ?? week.label ?? week.startDate,
+    label: week.label ?? week.key ?? week.startDate,
+    startDate: week.startDate,
+    endDate: week.endDate,
+  }));
   const ownSeriesOptions = uniqueStrings(input.materialMaster.map((item) => cleanText(item.sub_brand)));
   const selectedOwnSeries = input.filters.ownSeries && ownSeriesOptions.includes(input.filters.ownSeries)
     ? input.filters.ownSeries
@@ -1280,61 +1415,63 @@ function buildWeeklyPriceCoefficientBoard(input: {
     : null;
   const scopedMaterials = selectedSku ? ownMaterials.filter((item) => item.tenant_sku_code === selectedSku) : ownMaterials;
   const scopedMaterialCodes = new Set(scopedMaterials.map((item) => item.tenant_sku_code));
-  const benchmarkOptions = input.rules
-    .filter((rule) => rule.active)
-    .map((rule) => ({ id: rule.id, label: benchmarkRuleLabel(rule) }))
-    .sort((a, b) => a.label.localeCompare(b.label));
-  const selectedBenchmarkRuleId = input.filters.benchmarkRuleId && benchmarkOptions.some((item) => item.id === input.filters.benchmarkRuleId)
-    ? input.filters.benchmarkRuleId
-    : benchmarkOptions[0]?.id ?? null;
-  const selectedRule = input.rules.find((rule) => rule.id === selectedBenchmarkRuleId) ?? null;
-  const ownSnapshots = input.snapshots.filter((snapshot) => {
+  const mappedSeries = input.mappings.filter((mapping) => {
+    if (!mapping.active) return false;
+    return seriesNamesOverlap(mapping.target_makuku_series, selectedOwnSeries);
+  });
+  const competitorSeries = mappedSeries
+    .map((mapping) => ({
+      key: benchmarkSeriesKey(mapping.brand_id, mapping.product_series),
+      label: competitorSeriesLabel(mapping.brands?.name, mapping.product_series),
+    }))
+    .filter((item) => item.key && item.label);
+  const allowedBenchmarkKeys = new Set(mappedSeries.map((mapping) => benchmarkSeriesKey(mapping.brand_id, mapping.product_series)));
+  const inferredRules = input.rules.filter((rule) => {
+    if (!rule.active) return false;
+    return allowedBenchmarkKeys.has(benchmarkSeriesKey(rule.brand_id, rule.product_series));
+  });
+  const scopedSnapshots = input.snapshots.filter((snapshot) => {
+    const organizationName = snapshotOrganizationName(snapshot);
+    return Boolean(organizationName);
+  });
+  const ownSnapshots = scopedSnapshots.filter((snapshot) => {
     if (snapshot.competitor_product_id) return false;
     const code = snapshotMaterialCode(snapshot);
     return Boolean(code && scopedMaterialCodes.has(code));
   });
-  const benchmarkSnapshots = input.snapshots.filter((snapshot) => {
-    if (!selectedRule || !snapshot.competitor_products) return false;
-    if (snapshot.competitor_products.brand_id !== selectedRule.brand_id) return false;
-    if (normalizeDashboardText(snapshot.competitor_products.product_series) !== normalizeDashboardText(selectedRule.product_series)) return false;
+  const benchmarkSnapshots = scopedSnapshots.filter((snapshot) => {
+    if (!snapshot.competitor_products) return false;
+    const key = benchmarkSeriesKey(snapshot.competitor_products.brand_id, snapshot.competitor_products.product_series);
+    if (!allowedBenchmarkKeys.has(key)) return false;
     const benchmarkMaterialCode = snapshot.competitor_products.sku_matches
       ?.map((match) => match.sku_master?.material_sku_code)
       .find((code) => code && scopedMaterialCodes.has(code));
     return Boolean(benchmarkMaterialCode);
   });
-  const regionOptions = uniqueStrings([
-    ...ownSnapshots.map((snapshot) => snapshotProvince(snapshot)),
-    ...benchmarkSnapshots.map((snapshot) => snapshotProvince(snapshot)),
-    ...input.rules.map((rule) => cleanRegionText(rule.province)),
+  const organizationOptions = uniqueStrings([
+    ...ownSnapshots.map((snapshot) => snapshotOrganizationName(snapshot)),
+    ...benchmarkSnapshots.map((snapshot) => snapshotOrganizationName(snapshot)),
   ]);
-  const selectedRegion = input.filters.region && regionOptions.includes(input.filters.region) ? input.filters.region : null;
-  const visibleRegions = (selectedRegion ? [selectedRegion] : regionOptions).filter(Boolean);
-  const rows = [
-    ...visibleRegions.map((region) => buildWeeklyCoefficientRow({
-      locale: input.locale,
-      region,
-      province: region,
-      isNational: false,
-      weeks,
-      ownSnapshots,
-      benchmarkSnapshots,
-      selectedRule,
-      selectedOwnSeries,
-      selectedSku,
-    })),
-    buildWeeklyCoefficientRow({
-      locale: input.locale,
-      region: "NASIONAL",
-      province: null,
-      isNational: true,
-      weeks,
-      ownSnapshots,
-      benchmarkSnapshots,
-      selectedRule,
-      selectedOwnSeries,
-      selectedSku,
-    }),
-  ];
+  const selectedOrganization = input.filters.organization && organizationOptions.includes(input.filters.organization)
+    ? input.filters.organization
+    : null;
+  const visibleOwnSnapshots = selectedOrganization
+    ? ownSnapshots.filter((snapshot) => snapshotOrganizationName(snapshot) === selectedOrganization)
+    : ownSnapshots;
+  const visibleBenchmarkSnapshots = selectedOrganization
+    ? benchmarkSnapshots.filter((snapshot) => snapshotOrganizationName(snapshot) === selectedOrganization)
+    : benchmarkSnapshots;
+  const rows = buildWeeklyCoefficientTree({
+    locale: input.locale,
+    weeks,
+    ownSnapshots: visibleOwnSnapshots,
+    benchmarkSnapshots: visibleBenchmarkSnapshots,
+    selectedRules: inferredRules,
+    competitorSeries,
+    selectedOwnSeries,
+    selectedSku,
+    skuLookup: new Map(skuOptions.map((item) => [item.code, item.name])),
+  });
 
   return {
     month,
@@ -1343,98 +1480,419 @@ function buildWeeklyPriceCoefficientBoard(input: {
     selectedOwnSeries,
     skuOptions,
     selectedSku,
-    benchmarkOptions,
-    selectedBenchmarkRuleId,
-    regionOptions,
-    selectedRegion,
+    organizationOptions,
+    selectedOrganization,
     weeks,
-    benchmarkLabel: selectedRule ? benchmarkRuleLabel(selectedRule) : null,
+    competitorSeries,
     rows,
   };
 }
 
-function buildWeeklyCoefficientRow(input: {
+function buildWeeklyCoefficientTree(input: {
   locale: string;
-  region: string;
-  province: string | null;
-  isNational: boolean;
   weeks: WeeklyPriceCoefficientBoard["weeks"];
   ownSnapshots: PriceSnapshot[];
   benchmarkSnapshots: PriceSnapshot[];
-  selectedRule: MarketBenchmarkRule | null;
+  selectedRules: MarketBenchmarkRule[];
+  competitorSeries: WeeklyPriceCoefficientBoard["competitorSeries"];
   selectedOwnSeries: string | null;
   selectedSku: string | null;
+  skuLookup: Map<string, string>;
 }) {
-  return {
-    region: input.region,
+  const groups = groupSnapshotsByLabel(input.ownSnapshots, (snapshot) => snapshotOrganizationName(snapshot));
+  return Array.from(groups.entries())
+    .map(([organization, ownGroupSnapshots]) => {
+      const benchmarkGroupSnapshots = input.benchmarkSnapshots.filter((snapshot) => snapshotOrganizationName(snapshot) === organization);
+      return buildWeeklyCoefficientNode({
+        locale: input.locale,
+        level: "organization",
+        label: organization,
+        organization,
+        province: null,
+        cityName: null,
+        district: null,
+        skuCode: null,
+        skuName: null,
+        weeks: input.weeks,
+        ownSnapshots: ownGroupSnapshots,
+        benchmarkSnapshots: benchmarkGroupSnapshots,
+        selectedRules: input.selectedRules,
+        competitorSeries: input.competitorSeries,
+        selectedOwnSeries: input.selectedOwnSeries,
+        selectedSku: input.selectedSku,
+        children: buildProvinceNodes({
+          ...input,
+          organization,
+          ownSnapshots: ownGroupSnapshots,
+          benchmarkSnapshots: benchmarkGroupSnapshots,
+        }),
+      });
+    })
+    .sort((a, b) => (a.organization ?? "").localeCompare(b.organization ?? ""));
+}
+
+function buildProvinceNodes(input: {
+  locale: string;
+  weeks: WeeklyPriceCoefficientBoard["weeks"];
+  organization: string;
+  ownSnapshots: PriceSnapshot[];
+  benchmarkSnapshots: PriceSnapshot[];
+  selectedRules: MarketBenchmarkRule[];
+  competitorSeries: WeeklyPriceCoefficientBoard["competitorSeries"];
+  selectedOwnSeries: string | null;
+  selectedSku: string | null;
+  skuLookup: Map<string, string>;
+}) {
+  const groups = groupSnapshotsByLabel(input.ownSnapshots, (snapshot) => canonicalDashboardProvinceLabel(snapshotProvince(snapshot)));
+  return Array.from(groups.entries())
+    .map(([province, ownGroupSnapshots]) => {
+      const benchmarkGroupSnapshots = input.benchmarkSnapshots.filter((snapshot) => canonicalDashboardProvinceLabel(snapshotProvince(snapshot)) === province);
+      return buildWeeklyCoefficientNode({
+        locale: input.locale,
+        level: "province",
+        label: province,
+        organization: input.organization,
+        province,
+        cityName: null,
+        district: null,
+        skuCode: null,
+        skuName: null,
+        weeks: input.weeks,
+        ownSnapshots: ownGroupSnapshots,
+        benchmarkSnapshots: benchmarkGroupSnapshots,
+        selectedRules: input.selectedRules,
+        competitorSeries: input.competitorSeries,
+        selectedOwnSeries: input.selectedOwnSeries,
+        selectedSku: input.selectedSku,
+        children: buildCityNodes({
+          ...input,
+          province,
+          ownSnapshots: ownGroupSnapshots,
+          benchmarkSnapshots: benchmarkGroupSnapshots,
+        }),
+      });
+    })
+    .sort((a, b) => (a.province ?? "").localeCompare(b.province ?? ""));
+}
+
+function buildCityNodes(input: {
+  locale: string;
+  weeks: WeeklyPriceCoefficientBoard["weeks"];
+  organization: string;
+  province: string;
+  ownSnapshots: PriceSnapshot[];
+  benchmarkSnapshots: PriceSnapshot[];
+  selectedRules: MarketBenchmarkRule[];
+  competitorSeries: WeeklyPriceCoefficientBoard["competitorSeries"];
+  selectedOwnSeries: string | null;
+  selectedSku: string | null;
+  skuLookup: Map<string, string>;
+}) {
+  const groups = groupSnapshotsByLabel(input.ownSnapshots, (snapshot) => snapshotRegionParts(snapshot).cityName ?? "Unknown City");
+  return Array.from(groups.entries())
+    .map(([cityName, ownGroupSnapshots]) => {
+      const benchmarkGroupSnapshots = input.benchmarkSnapshots.filter((snapshot) => (snapshotRegionParts(snapshot).cityName ?? "Unknown City") === cityName);
+      return buildWeeklyCoefficientNode({
+        locale: input.locale,
+        level: "city",
+        label: cityName,
+        organization: input.organization,
+        province: input.province,
+        cityName,
+        district: null,
+        skuCode: null,
+        skuName: null,
+        weeks: input.weeks,
+        ownSnapshots: ownGroupSnapshots,
+        benchmarkSnapshots: benchmarkGroupSnapshots,
+        selectedRules: input.selectedRules,
+        competitorSeries: input.competitorSeries,
+        selectedOwnSeries: input.selectedOwnSeries,
+        selectedSku: input.selectedSku,
+        children: buildDistrictNodes({
+          ...input,
+          cityName,
+          ownSnapshots: ownGroupSnapshots,
+          benchmarkSnapshots: benchmarkGroupSnapshots,
+        }),
+      });
+    })
+    .sort((a, b) => (a.cityName ?? "").localeCompare(b.cityName ?? ""));
+}
+
+function buildDistrictNodes(input: {
+  locale: string;
+  weeks: WeeklyPriceCoefficientBoard["weeks"];
+  organization: string;
+  province: string;
+  cityName: string;
+  ownSnapshots: PriceSnapshot[];
+  benchmarkSnapshots: PriceSnapshot[];
+  selectedRules: MarketBenchmarkRule[];
+  competitorSeries: WeeklyPriceCoefficientBoard["competitorSeries"];
+  selectedOwnSeries: string | null;
+  selectedSku: string | null;
+  skuLookup: Map<string, string>;
+}) {
+  const groups = groupSnapshotsByLabel(input.ownSnapshots, (snapshot) => snapshotRegionParts(snapshot).district ?? "No district");
+  return Array.from(groups.entries())
+    .map(([district, ownGroupSnapshots]) => {
+      const benchmarkGroupSnapshots = input.benchmarkSnapshots.filter((snapshot) => (snapshotRegionParts(snapshot).district ?? "No district") === district);
+      return buildWeeklyCoefficientNode({
+        locale: input.locale,
+        level: "district",
+        label: district,
+        organization: input.organization,
+        province: input.province,
+        cityName: input.cityName,
+        district,
+        skuCode: null,
+        skuName: null,
+        weeks: input.weeks,
+        ownSnapshots: ownGroupSnapshots,
+        benchmarkSnapshots: benchmarkGroupSnapshots,
+        selectedRules: input.selectedRules,
+        competitorSeries: input.competitorSeries,
+        selectedOwnSeries: input.selectedOwnSeries,
+        selectedSku: input.selectedSku,
+        children: buildSkuNodes({
+          ...input,
+          district,
+          ownSnapshots: ownGroupSnapshots,
+          benchmarkSnapshots: benchmarkGroupSnapshots,
+        }),
+      });
+    })
+    .sort((a, b) => (a.district ?? "").localeCompare(b.district ?? ""));
+}
+
+function buildSkuNodes(input: {
+  locale: string;
+  weeks: WeeklyPriceCoefficientBoard["weeks"];
+  organization: string;
+  province: string;
+  cityName: string;
+  district: string;
+  ownSnapshots: PriceSnapshot[];
+  benchmarkSnapshots: PriceSnapshot[];
+  selectedRules: MarketBenchmarkRule[];
+  competitorSeries: WeeklyPriceCoefficientBoard["competitorSeries"];
+  selectedOwnSeries: string | null;
+  selectedSku: string | null;
+  skuLookup: Map<string, string>;
+}) {
+  const groups = groupSnapshotsByLabel(input.ownSnapshots, (snapshot) => snapshotMaterialCode(snapshot));
+  return Array.from(groups.entries())
+    .map(([skuCode, ownGroupSnapshots]) => {
+      const benchmarkGroupSnapshots = input.benchmarkSnapshots.filter((snapshot) => {
+        const benchmarkMaterialCode = snapshot.competitor_products?.sku_matches
+          ?.map((match) => match.sku_master?.material_sku_code)
+          .find((code) => code === skuCode);
+        return Boolean(benchmarkMaterialCode);
+      });
+      return buildWeeklyCoefficientNode({
+        locale: input.locale,
+        level: "sku",
+        label: skuCode,
+        organization: input.organization,
+        province: input.province,
+        cityName: input.cityName,
+        district: input.district,
+        skuCode,
+        skuName: input.skuLookup.get(skuCode) ?? skuCode,
+        weeks: input.weeks,
+        ownSnapshots: ownGroupSnapshots,
+        benchmarkSnapshots: benchmarkGroupSnapshots,
+        selectedRules: input.selectedRules,
+        competitorSeries: input.competitorSeries,
+        selectedOwnSeries: input.selectedOwnSeries,
+        selectedSku: skuCode,
+        children: [],
+      });
+    })
+    .sort((a, b) => (a.skuCode ?? "").localeCompare(b.skuCode ?? ""));
+}
+
+function buildWeeklyCoefficientNode(input: {
+  locale: string;
+  level: WeeklyPriceCoefficientNode["level"];
+  label: string;
+  organization: string | null;
+  province: string | null;
+  cityName: string | null;
+  district: string | null;
+  skuCode: string | null;
+  skuName: string | null;
+  weeks: WeeklyPriceCoefficientBoard["weeks"];
+  ownSnapshots: PriceSnapshot[];
+  benchmarkSnapshots: PriceSnapshot[];
+  selectedRules: MarketBenchmarkRule[];
+  competitorSeries: WeeklyPriceCoefficientBoard["competitorSeries"];
+  selectedOwnSeries: string | null;
+  selectedSku: string | null;
+  children: WeeklyPriceCoefficientNode[];
+}): WeeklyPriceCoefficientNode {
+  const nodeKey = buildWeeklyCoefficientNodeId({
+    level: input.level,
+    organization: input.organization,
     province: input.province,
-    isNational: input.isNational,
-    cells: input.weeks.map((week) => {
-      const ownPrices = input.ownSnapshots
-        .filter((snapshot) => input.isNational || sameLoose(snapshotProvince(snapshot), input.province))
-        .filter((snapshot) => snapshotInPeriod(snapshot, week.startDate, week.endDate))
-        .map((snapshot) => Number(snapshot.price_per_piece))
-        .filter(isPositiveNumber);
-      const benchmarkPrices = input.benchmarkSnapshots
-        .filter((snapshot) => input.isNational || sameLoose(snapshotProvince(snapshot), input.province))
-        .filter((snapshot) => input.selectedRule ? snapshotMatchesBenchmarkRegion(snapshot, input.selectedRule, input.isNational) : true)
-        .filter((snapshot) => snapshotInPeriod(snapshot, week.startDate, week.endDate))
-        .map((snapshot) => Number(snapshot.price_per_piece))
-        .filter(isPositiveNumber);
-      const ownAvgPrice = averageOrNull(ownPrices);
-      const benchmarkAvgPrice = averageOrNull(benchmarkPrices);
-      return {
-        week: week.key,
-        startDate: week.startDate,
-        endDate: week.endDate,
-        ownAvgPrice,
-        ownSampleCount: ownPrices.length,
-        benchmarkAvgPrice,
-        benchmarkSampleCount: benchmarkPrices.length,
-        coefficient: ownAvgPrice && benchmarkAvgPrice ? Math.round((ownAvgPrice / benchmarkAvgPrice) * 100) / 100 : null,
-        ownHref: buildWeeklyPriceHref(input.locale, {
-          startDate: week.startDate,
-          endDate: week.endDate,
-          province: input.province,
-          brand: input.selectedOwnSeries ? `MAKUKU ${input.selectedOwnSeries}` : undefined,
-          sku: input.selectedSku ?? undefined,
-        }),
-        benchmarkHref: buildWeeklyPriceHref(input.locale, {
-          startDate: week.startDate,
-          endDate: week.endDate,
-          province: input.province,
-          brand: input.selectedRule ? benchmarkRuleLabel(input.selectedRule) : undefined,
-        }),
-      } satisfies WeeklyPriceCoefficientCell;
-    }),
+    cityName: input.cityName,
+    district: input.district,
+    skuCode: input.skuCode,
+    label: input.label,
+  });
+
+  return {
+    id: nodeKey,
+    level: input.level,
+    organization: input.organization,
+    province: input.province,
+    cityName: input.cityName,
+    district: input.district,
+    skuCode: input.skuCode,
+    skuName: input.skuName,
+    cells: input.weeks.map((week) => buildWeeklyCoefficientCell({
+      locale: input.locale,
+      week,
+      ownSnapshots: input.ownSnapshots,
+      benchmarkSnapshots: input.benchmarkSnapshots,
+      selectedRules: input.selectedRules,
+      competitorSeries: input.competitorSeries,
+      selectedOwnSeries: input.selectedOwnSeries,
+      selectedSku: input.selectedSku,
+      province: input.province,
+      cityName: input.cityName,
+      district: input.district,
+    })),
+    children: input.children,
   };
+}
+
+function buildWeeklyCoefficientCell(input: {
+  locale: string;
+  week: WeeklyPriceCoefficientBoard["weeks"][number];
+  ownSnapshots: PriceSnapshot[];
+  benchmarkSnapshots: PriceSnapshot[];
+  selectedRules: MarketBenchmarkRule[];
+  competitorSeries: WeeklyPriceCoefficientBoard["competitorSeries"];
+  selectedOwnSeries: string | null;
+  selectedSku: string | null;
+  province: string | null;
+  cityName: string | null;
+  district: string | null;
+}) {
+  const weeklyOwnSnapshots = input.ownSnapshots
+    .filter((snapshot) => snapshotInPeriod(snapshot, input.week.startDate, input.week.endDate));
+  const ownPrices = weeklyOwnSnapshots
+    .map((snapshot) => Number(snapshot.price_per_piece))
+    .filter(isPositiveNumber);
+  const ownAvgPrice = averageOrNull(ownPrices);
+  const competitorCells = input.competitorSeries.map((series) => {
+    const seriesRules = input.selectedRules.filter((rule) => benchmarkSeriesKey(rule.brand_id, rule.product_series) === series.key);
+    const periodBenchmarkPrices = benchmarkPricesFromPeriodPrices(weeklyOwnSnapshots, seriesRules, input.week);
+    const fallbackBenchmarkPrices = input.benchmarkSnapshots
+      .filter((snapshot) => benchmarkSeriesKey(snapshot.competitor_products?.brand_id, snapshot.competitor_products?.product_series) === series.key)
+      .filter((snapshot) => seriesRules.length > 0 ? seriesRules.some((rule) => snapshotMatchesBenchmarkRegion(snapshot, rule, false)) : true)
+      .filter((snapshot) => snapshotInPeriod(snapshot, input.week.startDate, input.week.endDate))
+      .map((snapshot) => Number(snapshot.price_per_piece))
+      .filter(isPositiveNumber);
+    const benchmarkPrices = periodBenchmarkPrices.length > 0 ? periodBenchmarkPrices : fallbackBenchmarkPrices;
+    const benchmarkAvgPrice = averageOrNull(benchmarkPrices);
+    return {
+      seriesKey: series.key,
+      benchmarkAvgPrice,
+      benchmarkSampleCount: benchmarkPrices.length,
+      coefficient: ownAvgPrice && benchmarkAvgPrice ? Math.round((ownAvgPrice / benchmarkAvgPrice) * 100) / 100 : null,
+      benchmarkHref: buildWeeklyPriceHref(input.locale, {
+        startDate: input.week.startDate,
+        endDate: input.week.endDate,
+        province: input.province,
+        cityName: input.cityName,
+        district: input.district,
+        brand: series.label,
+      }),
+    };
+  });
+
+  return {
+    week: input.week.key ?? input.week.label ?? input.week.startDate,
+    startDate: input.week.startDate,
+    endDate: input.week.endDate,
+    ownAvgPrice,
+    ownSampleCount: ownPrices.length,
+    ownHref: buildWeeklyPriceHref(input.locale, {
+      startDate: input.week.startDate,
+      endDate: input.week.endDate,
+      province: input.province,
+      cityName: input.cityName,
+      district: input.district,
+      brand: input.selectedOwnSeries ? `MAKUKU ${input.selectedOwnSeries}` : undefined,
+      sku: input.selectedSku ?? undefined,
+    }),
+    competitorCells,
+  } satisfies WeeklyPriceCoefficientCell;
+}
+
+function buildWeeklyCoefficientNodeId(input: {
+  level: WeeklyPriceCoefficientNode["level"];
+  organization: string | null;
+  province: string | null;
+  cityName: string | null;
+  district: string | null;
+  skuCode: string | null;
+  label: string | null;
+}) {
+  const parts = [
+    input.organization ?? "__root__",
+    input.province ?? "__root__",
+    input.cityName ?? "__root__",
+    input.district ?? "__root__",
+    input.skuCode ?? "__root__",
+    input.label ?? "__root__",
+  ].map((part) => normalizeDashboardText(part) || "__empty__");
+  return `${input.level}:${parts.join(">")}`;
+}
+
+function benchmarkPricesFromPeriodPrices(
+  ownSnapshots: PriceSnapshot[],
+  rules: MarketBenchmarkRule[],
+  week: WeeklyPriceCoefficientBoard["weeks"][number],
+) {
+  if (rules.length === 0 || ownSnapshots.length === 0) return [];
+  const prices: number[] = [];
+  for (const snapshot of ownSnapshots) {
+    const rule = pickBestBenchmarkRuleForSnapshot(snapshot, rules);
+    if (!rule) continue;
+    const periodPrice = rule.market_benchmark_period_prices?.find((price) =>
+      price.period_type === "week"
+      && price.start_date === week.startDate
+      && price.end_date === week.endDate
+      && isPositiveNumber(price.benchmark_price_per_piece),
+    );
+    if (periodPrice?.benchmark_price_per_piece) {
+      prices.push(Number(periodPrice.benchmark_price_per_piece));
+    }
+  }
+  return prices;
+}
+
+function pickBestBenchmarkRuleForSnapshot(snapshot: PriceSnapshot, rules: MarketBenchmarkRule[]) {
+  const matchedRules = rules.filter((rule) => snapshotMatchesBenchmarkRegion(snapshot, rule, false));
+  if (matchedRules.length === 0) return null;
+  return matchedRules.sort((left, right) => benchmarkRuleSpecificity(right) - benchmarkRuleSpecificity(left))[0] ?? null;
+}
+
+function benchmarkRuleSpecificity(rule: Pick<MarketBenchmarkRule, "district" | "city_name" | "province">) {
+  let score = 0;
+  if (cleanText(rule.province)) score += 1;
+  if (cleanText(rule.city_name)) score += 2;
+  if (cleanText(rule.district)) score += 4;
+  return score;
 }
 
 function normalizeDashboardMonth(value: string | null | undefined) {
   const text = String(value ?? "").trim();
   return /^\d{4}-\d{2}$/.test(text) ? text : dateKey(new Date()).slice(0, 7);
-}
-
-function monthWeeks(month: string) {
-  const [year, monthNumber] = month.split("-").map(Number);
-  const first = new Date(year, (monthNumber ?? 1) - 1, 1);
-  const last = new Date(year, monthNumber ?? 1, 0);
-  const weeks: Array<{ key: string; label: string; startDate: string; endDate: string }> = [];
-  let cursor = new Date(first);
-  for (let index = 1; index <= 4 && cursor <= last; index += 1) {
-    const start = new Date(cursor);
-    const end = new Date(cursor);
-    end.setDate(end.getDate() + 6);
-    if (end > last) end.setTime(last.getTime());
-    weeks.push({ key: `W${index}`, label: `W${index}`, startDate: dateKey(start), endDate: dateKey(end) });
-    cursor = new Date(end);
-    cursor.setDate(cursor.getDate() + 1);
-  }
-  while (weeks.length < 4) {
-    const index = weeks.length + 1;
-    weeks.push({ key: `W${index}`, label: `W${index}`, startDate: month, endDate: month });
-  }
-  return weeks;
 }
 
 function snapshotMaterialCode(snapshot: PriceSnapshot) {
@@ -1444,12 +1902,25 @@ function snapshotMaterialCode(snapshot: PriceSnapshot) {
     ?? null;
 }
 
+function snapshotOrganizationName(snapshot: PriceSnapshot) {
+  return cleanText(snapshot.offline_stores?.organizations?.name) ?? null;
+}
+
 function snapshotProvince(snapshot: PriceSnapshot) {
+  const region = snapshotRegionParts(snapshot);
+  return region.province ?? "UNKNOWN";
+}
+
+function snapshotRegionParts(snapshot: PriceSnapshot) {
   const visit = snapshot.ai_price_candidates?.[0]?.offline_store_visits;
   const store = snapshot.offline_stores;
   const visitRegionParts = visitRegion(visit);
   const storeRegionParts = storeRegion(store);
-  return visitRegionParts.province ?? storeRegionParts.province ?? "UNKNOWN";
+  return {
+    province: visitRegionParts.province ?? storeRegionParts.province ?? null,
+    cityName: visitRegionParts.cityName ?? storeRegionParts.cityName ?? null,
+    district: visitRegionParts.district ?? storeRegionParts.district ?? null,
+  };
 }
 
 function snapshotMatchesBenchmarkRegion(snapshot: PriceSnapshot, rule: MarketBenchmarkRule, isNational: boolean) {
@@ -1472,22 +1943,91 @@ function snapshotInPeriod(snapshot: PriceSnapshot, startDate: string, endDate: s
   return capturedDate >= startDate && capturedDate <= endDate;
 }
 
-function buildWeeklyPriceHref(locale: string, input: { startDate: string; endDate: string; province: string | null; brand?: string; sku?: string }) {
+function buildWeeklyPriceHref(locale: string, input: {
+  startDate: string;
+  endDate: string;
+  province: string | null;
+  cityName?: string | null;
+  district?: string | null;
+  brand?: string;
+  sku?: string;
+}) {
   const params = new URLSearchParams();
   params.set("createdFrom", input.startDate);
   params.set("createdTo", input.endDate);
   if (input.province) params.set("province", input.province);
+  if (input.cityName) params.set("cityName", input.cityName);
+  if (input.district) params.set("district", input.district);
   if (input.brand) params.set("brand", input.brand);
   if (input.sku) params.set("sku", input.sku);
   return `/${locale}/prices?${params.toString()}`;
+}
+
+function groupSnapshotsByLabel(snapshots: PriceSnapshot[], getLabel: (snapshot: PriceSnapshot) => string | null) {
+  const groups = new Map<string, PriceSnapshot[]>();
+  for (const snapshot of snapshots) {
+    const label = cleanText(getLabel(snapshot));
+    if (!label) continue;
+    const current = groups.get(label) ?? [];
+    current.push(snapshot);
+    groups.set(label, current);
+  }
+  return groups;
 }
 
 function averageOrNull(values: number[]) {
   return values.length ? Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 100) / 100 : null;
 }
 
-function benchmarkRuleLabel(rule: MarketBenchmarkRule) {
-  return [rule.brands?.name, rule.product_series].map(cleanText).filter(Boolean).join(" ") || "Benchmark";
+function benchmarkSeriesKey(brandId: string | null | undefined, productSeries: string | null | undefined) {
+  return `${cleanText(brandId) ?? ""}|${normalizeDashboardText(productSeries)}`;
+}
+
+function competitorSeriesLabel(brandName: string | null | undefined, productSeries: string | null | undefined) {
+  return [cleanText(brandName), cleanText(productSeries)].filter(Boolean).join(" ");
+}
+
+function seriesNamesOverlap(left: string | null | undefined, right: string | null | undefined) {
+  const leftKey = normalizeDashboardText(left);
+  const rightKey = normalizeDashboardText(right);
+  if (!leftKey || !rightKey) return false;
+  return leftKey === rightKey || leftKey.includes(rightKey) || rightKey.includes(leftKey);
+}
+
+function buildDashboardProvinceGroups(values: Array<string | null | undefined>) {
+  const groups = new Map<string, Set<string>>();
+  for (const value of values) {
+    const raw = cleanRegionText(value);
+    if (!raw) continue;
+    const label = canonicalDashboardProvinceLabel(raw);
+    const current = groups.get(label) ?? new Set<string>();
+    current.add(raw);
+    groups.set(label, current);
+  }
+  return Array.from(groups.entries())
+    .map(([label, rawValues]) => ({ label, rawValues: Array.from(rawValues).sort() }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function canonicalDashboardProvinceLabel(value: string) {
+  const lower = value.toLowerCase();
+  if (value.includes("上海") || lower.includes("shanghai") || lower.includes("shang hai")) return "Shanghai";
+  if (lower === "daerah khusus ibukota jakarta") return "Jakarta";
+  return formatDashboardRegionDisplay(value);
+}
+
+function formatDashboardRegionDisplay(value: string) {
+  if (/^[A-Z\s]+$/.test(value)) {
+    return value
+      .toLowerCase()
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+  }
+  return value;
+}
+
+function matchesProvinceGroup(value: string | null | undefined, provinceValues: string[] | null) {
+  if (!provinceValues || provinceValues.length === 0) return true;
+  return provinceValues.some((province) => sameLoose(value, province));
 }
 
 function normalizeDashboardText(value: string | null | undefined) {

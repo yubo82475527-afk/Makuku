@@ -103,6 +103,7 @@ function detailText(locale: Locale) {
         systemError: "\u7cfb\u7edf\u62a5\u9519",
         copySystemError: "\u590d\u5236\u62a5\u9519",
         copiedSystemError: "\u5df2\u590d\u5236",
+        copySystemErrorFailed: "\u590d\u5236\u5931\u8d25\uff0c\u8bf7\u624b\u52a8\u957f\u6309\u9009\u4e2d\u62a5\u9519\u5185\u5bb9\u3002",
         photoPrefix: "\u7167\u7247",
         close: "\u5173\u95ed",
       }
@@ -125,6 +126,7 @@ function detailText(locale: Locale) {
         systemError: "System error",
         copySystemError: "Copy error",
         copiedSystemError: "Copied",
+        copySystemErrorFailed: "Copy failed. Please long-press and select the error text manually.",
         photoPrefix: "Photo",
         close: "Close",
       };
@@ -217,9 +219,13 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   const failedImages = (visit?.offline_visit_images ?? []).filter((image) => image.analysis_status === "failed" && (image.analysis_error || image.error_message));
 
   async function copySystemError(id: string, value: string) {
-    await navigator.clipboard.writeText(value);
-    setCopiedErrorId(id);
-    window.setTimeout(() => setCopiedErrorId((current) => (current === id ? null : current)), 1600);
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedErrorId(id);
+      window.setTimeout(() => setCopiedErrorId((current) => (current === id ? null : current)), 1600);
+    } catch {
+      setError(text.copySystemErrorFailed);
+    }
   }
 
   return (

@@ -265,10 +265,10 @@ export function StoreMasterTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200">
-            {visibleStores.map((store) => {
+            {visibleStores.map((store, index) => {
               const disabled = isDisabledStore(store);
               return (
-                <tr key={store.id}>
+                <tr key={`${store.id}-${index}`}>
                   <td className="py-3 pr-3">
                     <input
                       type="checkbox"

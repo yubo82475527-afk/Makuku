@@ -47,33 +47,61 @@ test("location reverse and offline stores support structured province city distr
   assert.match(typesFile, /@deprecated Use city_name instead\. Kept only for legacy compatibility\./);
 });
 
-test("dashboard is the weekly price coefficient board with month and region filters", () => {
-  assert.match(dashboardPage, /Weekly Price Coefficient/);
-  assert.match(dashboardPage, /WeeklyPriceCoefficientTable/);
-  assert.match(dashboardPage, /month/);
-  assert.match(dashboardPage, /ownSeries/);
-  assert.match(dashboardPage, /sku/);
-  assert.match(dashboardPage, /benchmarkRuleId/);
-  assert.match(dashboardPage, /region/);
-  assert.match(dataFile, /region: "NASIONAL"/);
-  assert.match(dashboardPage, /PRICE\/PCS \{week\.label\}/);
-  assert.match(dashboardPage, /COEFFICIENT/);
-  assert.doesNotMatch(dashboardPage, /PriorityActionCard/);
-  assert.doesNotMatch(dashboardPage, /Today Priority Actions/);
+test("dashboard now combines price index, exception follow-up, and execution sections", () => {
+  assert.match(dashboardPage, /Price Index/);
+  assert.match(dashboardPage, /Exception Follow-up/);
+  assert.match(dashboardPage, /Promoter Execution/);
+  assert.match(dashboardPage, /PriceIndexTreeTable/);
+  assert.match(dashboardPage, /flattenProblemStoreRows/);
+  assert.match(dashboardPage, /buildExecutionBoard/);
+  assert.match(dashboardPage, /name="month"/);
+  assert.match(dashboardPage, /name="organization"/);
+  assert.match(dashboardPage, /name="ownSeries"/);
+  assert.doesNotMatch(dashboardPage, /name="sku"/);
+  assert.doesNotMatch(dashboardPage, /name="benchmarkRuleId"/);
+  assert.match(dashboardPage, /name="exceptionProvince"/);
+  assert.match(dashboardPage, /name="executionMonth"/);
+  assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /PRICE\/PCS \{week\.label\}/);
+  assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /CombinedMetricCell/);
+  assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /WEEK_COLUMN_CLASS/);
 });
 
 test("dashboard derived data calculates weekly coefficients from own and benchmark averages", () => {
   assert.match(typesFile, /WeeklyPriceCoefficientBoard/);
   assert.match(typesFile, /WeeklyPriceCoefficientCell/);
+  assert.match(typesFile, /WeeklyPriceCoefficientCompetitorSeries/);
+  assert.match(typesFile, /WeeklyPriceCoefficientCompetitorCell/);
   assert.match(dataFile, /getWeeklyPriceCoefficientBoard/);
   assert.match(dataFile, /buildWeeklyPriceCoefficientBoard/);
   assert.match(dataFile, /monthWeeks/);
   assert.match(dataFile, /averageOrNull/);
-  assert.match(dataFile, /benchmarkRuleLabel/);
+  assert.match(dataFile, /getCompetitorSeriesMappings/);
+  assert.match(dataFile, /seriesNamesOverlap/);
+  assert.match(dataFile, /competitorSeriesLabel/);
+  assert.match(dataFile, /competitorCells/);
+  assert.match(dataFile, /benchmarkPricesFromPeriodPrices/);
+  assert.match(dataFile, /market_benchmark_period_prices/);
+  assert.match(dataFile, /pickBestBenchmarkRuleForSnapshot/);
   assert.match(dataFile, /snapshotMatchesBenchmarkRegion/);
   assert.match(dataFile, /ownAvgPrice \/ benchmarkAvgPrice/);
   assert.match(dataFile, /material_master/);
   assert.match(dataFile, /market_benchmark_rules/);
+  assert.match(dataFile, /canonicalDashboardProvinceLabel/);
+  assert.match(dataFile, /buildWeeklyCoefficientTree/);
+  assert.match(dataFile, /snapshotOrganizationName/);
+});
+
+test("dashboard exception and execution sections reuse current data sources before dedicated aggregate tables exist", () => {
+  assert.match(dashboardPage, /getProductSegmentBattles/);
+  assert.match(dashboardPage, /getAlerts/);
+  assert.match(dashboardPage, /getOfflineStoreVisits/);
+  assert.match(dashboardPage, /problemStoreCount/);
+  assert.match(dashboardPage, /visitWeekKey/);
+  assert.match(dashboardPage, /actualVisitCount/);
+  assert.match(dashboardPage, /completionRate/);
+  assert.match(dashboardPage, /normalizeExecutionOrganization/);
+  assert.match(dashboardPage, /formatExecutionRegionLabel/);
+  assert.match(dashboardPage, /formatLooseRegionText/);
 });
 
 test("dashboard region filters use structured store regions and ignore numeric legacy city values", () => {

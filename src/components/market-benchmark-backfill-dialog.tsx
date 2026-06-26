@@ -24,7 +24,7 @@ export function MarketBenchmarkBackfillDialog({
     <>
       <Button type="button" onClick={() => setOpen(true)} className="min-w-[150px] bg-slate-900 text-white hover:bg-slate-800">
         <CalendarClock size={16} aria-hidden="true" />
-        {isZh ? "补算历史周期价" : "Backfill Prices"}
+        {isZh ? "补算周期价" : "Backfill Prices"}
       </Button>
       {open ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4 py-6">
@@ -33,7 +33,9 @@ export function MarketBenchmarkBackfillDialog({
               <div>
                 <h2 className="font-semibold">{isZh ? "补算历史周期价" : "Backfill Historical Period Prices"}</h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  {isZh ? "按真实市场价格回填历史周期价；默认只补缺失，不覆盖已有周期价。" : "Backfill historical prices from real market prices. Existing period prices are skipped by default."}
+                  {isZh
+                    ? "按真实市场价格补算历史周期价。默认只补缺失值，不覆盖已存在周期价。"
+                    : "Backfill historical prices from real market prices. Existing period prices are skipped by default."}
                 </p>
               </div>
               <button
@@ -50,8 +52,8 @@ export function MarketBenchmarkBackfillDialog({
               <input type="hidden" name="intent" value="backfill_period_prices" />
               <input type="hidden" name="return_to" value={`/${locale}/market-benchmarks`} />
               <SelectInput name="period_type" defaultValue="week">
-                <option value="week">{isZh ? "自然周" : "Week"}</option>
-                <option value="month">{isZh ? "自然月" : "Month"}</option>
+                <option value="week">{isZh ? "月内周段" : "Monthly week"}</option>
+                <option value="month">{isZh ? "整月" : "Month"}</option>
               </SelectInput>
               <SelectInput name="scope" defaultValue="all">
                 <option value="all">{isZh ? "全部规则" : "All rules"}</option>
@@ -60,7 +62,7 @@ export function MarketBenchmarkBackfillDialog({
               <TextInput name="start_date" type="date" required />
               <TextInput name="end_date" type="date" required />
               <SelectInput name="rule_id" defaultValue="" className="md:col-span-2">
-                <option value="">{isZh ? "选择规则（仅指定规则时需要）" : "Select rule (only for selected scope)"}</option>
+                <option value="">{isZh ? "选择规则，仅指定规则时需要" : "Select rule (only for selected scope)"}</option>
                 {rules.map((rule) => (
                   <option key={rule.id} value={rule.id}>{rule.label}</option>
                 ))}
