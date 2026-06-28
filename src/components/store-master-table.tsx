@@ -3,15 +3,25 @@
 import { Ban, CheckCircle2, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { StoreCreateDialog } from "@/components/store-create-dialog";
 import { Badge, SelectInput } from "@/components/ui";
-import type { ChannelMaster, OfflineStore, Organization } from "@/lib/types";
+import type { OfflineStore, Organization } from "@/lib/types";
 
 type ConfirmDeletePanel = {
   stores: OfflineStore[];
   nextStatus: "enabled" | "disabled";
   title: string;
   description: string;
+};
+
+type ConfirmOrganizationPanelProps = {
+  organizations: Organization[];
+  selectedCount: number;
+  value: string;
+  loading: boolean;
+  isZh: boolean;
+  onChange: (value: string) => void;
+  onConfirm: () => void;
+  onCancel: () => void;
 };
 
 function isDisabledStore(store: OfflineStore) {
@@ -37,14 +47,10 @@ function storeCreator(store: OfflineStore) {
 export function StoreMasterTable({
   stores,
   organizations,
-  channels,
-  useChannelTypeFallback,
   locale,
 }: {
   stores: OfflineStore[];
   organizations: Organization[];
-  channels: ChannelMaster[];
-  useChannelTypeFallback: boolean;
   locale: string;
 }) {
   const router = useRouter();
@@ -52,10 +58,11 @@ export function StoreMasterTable({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [changedIds, setChangedIds] = useState<Set<string>>(() => new Set());
   const [confirmTarget, setConfirmTarget] = useState<ConfirmDeletePanel | null>(null);
-  const [organizationDrafts, setOrganizationDrafts] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [bulkOrganizationId, setBulkOrganizationId] = useState("");
+  const [organizationDialogOpen, setOrganizationDialogOpen] = useState(false);
 
   const visibleStores = useMemo(() => stores.filter((store) => !changedIds.has(store.id)), [changedIds, stores]);
   const selectedVisibleIds = selectedIds.filter((id) => visibleStores.some((store) => store.id === id));
@@ -106,18 +113,27 @@ export function StoreMasterTable({
     };
   }
 
-  async function updateStoreOrganization(store: OfflineStore, action: "assign_organization" | "auto_assign_organization") {
+  function openOrganizationDialog() {
+    if (selectedVisibleIds.length === 0 || loading) return;
+    setError(null);
+    setNotice(null);
+    setBulkOrganizationId("");
+    setOrganizationDialogOpen(true);
+  }
+
+  async function updateSelectedOrganization() {
+    if (selectedVisibleIds.length === 0 || !bulkOrganizationId || loading) return;
     setLoading(true);
     setError(null);
     setNotice(null);
     try {
+      const organizationId = bulkOrganizationId === "unassigned" ? null : bulkOrganizationId;
       const response = await fetch("/api/offline-stores", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          id: store.id,
-          action,
-          organization_id: action === "assign_organization" ? (organizationDrafts[store.id] ?? store.organization_id ?? "") : "",
+          ids: selectedVisibleIds,
+          organization_id: organizationId,
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -125,41 +141,14 @@ export function StoreMasterTable({
         setError(payload.error ?? (isZh ? "\u7ec4\u7ec7\u66f4\u65b0\u5931\u8d25\u3002" : "Organization update failed."));
         return;
       }
-      setNotice(isZh ? "\u95e8\u5e97\u7ec4\u7ec7\u5df2\u66f4\u65b0\u3002" : "Store organization updated.");
+      const count = payload.updated_count ?? selectedVisibleIds.length;
+      setSelectedIds([]);
+      setBulkOrganizationId("");
+      setOrganizationDialogOpen(false);
+      setNotice(isZh ? `\u5df2\u66f4\u65b0 ${count} \u5bb6\u95e8\u5e97\u7684\u7ec4\u7ec7\u3002` : `Updated organization for ${count} stores.`);
       router.refresh();
     } catch {
       setError(isZh ? "\u7f51\u7edc\u5f02\u5e38\uff0c\u7ec4\u7ec7\u6ca1\u6709\u63d0\u4ea4\u6210\u529f\u3002" : "Network error. Organization was not submitted.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function rematchSelectedStores() {
-    if (selectedVisibleIds.length === 0 || loading) return;
-    setLoading(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const response = await fetch("/api/offline-stores", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          ids: selectedVisibleIds,
-          action: "auto_assign_organization",
-        }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setError(payload.error ?? (isZh ? "\u6279\u91cf\u91cd\u5339\u914d\u5931\u8d25\u3002" : "Bulk rematch failed."));
-        return;
-      }
-      setSelectedIds([]);
-      setNotice(isZh
-        ? `\u5df2\u5904\u7406 ${payload.updated_count ?? selectedVisibleIds.length} \u5bb6\u95e8\u5e97\uff1a\u89c4\u5219\u547d\u4e2d ${payload.rule_matched_count ?? 0}\uff0cAI\u5efa\u8bae ${payload.ai_suggested_count ?? 0}\uff0c\u672a\u5206\u914d ${payload.unassigned_count ?? 0}\uff0c\u8df3\u8fc7\u624b\u52a8 ${payload.manual_skipped_count ?? 0}\u3002`
-        : `Processed ${payload.updated_count ?? selectedVisibleIds.length} stores: ${payload.rule_matched_count ?? 0} rule matched, ${payload.ai_suggested_count ?? 0} AI suggested, ${payload.unassigned_count ?? 0} unassigned, ${payload.manual_skipped_count ?? 0} manual skipped.`);
-      router.refresh();
-    } catch {
-      setError(isZh ? "\u7f51\u7edc\u5f02\u5e38\uff0c\u6279\u91cf\u91cd\u5339\u914d\u6ca1\u6709\u63d0\u4ea4\u6210\u529f\u3002" : "Network error. Bulk rematch was not submitted.");
     } finally {
       setLoading(false);
     }
@@ -204,16 +193,17 @@ export function StoreMasterTable({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm font-medium text-slate-700">{isZh ? "\u95e8\u5e97\u4e3b\u6570\u636e" : "Store master data"}</div>
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={rematchSelectedStores}
-            disabled={selectedVisibleIds.length === 0 || loading}
-            className="inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-md bg-slate-900 px-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            {isZh ? "\u6279\u91cf\u91cd\u5339\u914d\u7ec4\u7ec7" : "Bulk Rematch Organizations"}
-          </button>
-          <StoreCreateDialog channels={channels} organizations={organizations} useChannelTypeFallback={useChannelTypeFallback} locale={locale} />
+          {selectedVisibleIds.length > 0 ? (
+            <button
+              type="button"
+              onClick={openOrganizationDialog}
+              disabled={loading}
+              className="inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-md bg-slate-900 px-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {isZh ? "\u4fee\u6539\u7ec4\u7ec7" : "Change Organization"}
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -233,6 +223,23 @@ export function StoreMasterTable({
           onConfirm={confirmStatusChange}
           onCancel={() => {
             if (!loading) setConfirmTarget(null);
+          }}
+        />
+      ) : null}
+
+      {organizationDialogOpen ? (
+        <ConfirmOrganizationPanel
+          organizations={organizations}
+          selectedCount={selectedVisibleIds.length}
+          value={bulkOrganizationId}
+          loading={loading}
+          isZh={isZh}
+          onChange={setBulkOrganizationId}
+          onConfirm={updateSelectedOrganization}
+          onCancel={() => {
+            if (loading) return;
+            setBulkOrganizationId("");
+            setOrganizationDialogOpen(false);
           }}
         />
       ) : null}
@@ -286,56 +293,21 @@ export function StoreMasterTable({
                   <td className="py-3 pr-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <span>{store.organizations?.name ?? "-"}</span>
-                      {store.organization_assignment_method ? (
-                        <Badge tone={store.organization_assignment_method === "manual" ? "medium" : "low"}>
-                          {store.organization_assignment_method === "manual"
-                            ? (isZh ? "\u624b\u52a8" : "Manual")
-                            : store.organization_assignment_method === "ai_suggested"
-                              ? (isZh ? "AI\u5efa\u8bae" : "AI")
-                              : (isZh ? "\u81ea\u52a8" : "Auto")}
-                        </Badge>
-                      ) : null}
                     </div>
                   </td>
                   <td className="whitespace-nowrap py-3 pr-3 text-slate-600">{formatCreatedAt(store.created_at, locale)}</td>
                   <td className="whitespace-nowrap py-3 pr-3 text-slate-600">{storeCreator(store)}</td>
-                  <td className="min-w-96 py-3 pr-3">
+                  <td className="min-w-32 py-3 pr-3">
                     <div className="flex flex-wrap items-center gap-2">
-                      <SelectInput
-                        value={organizationDrafts[store.id] ?? store.organization_id ?? ""}
-                        onChange={(event) => setOrganizationDrafts((current) => ({ ...current, [store.id]: event.target.value }))}
-                        className="h-8 w-36 text-xs"
-                      >
-                        <option value="">{isZh ? "\u672a\u5206\u914d" : "Unassigned"}</option>
-                        {organizations.map((organization) => (
-                          <option key={organization.id} value={organization.id}>{organization.name}</option>
-                        ))}
-                      </SelectInput>
                       <button
                         type="button"
-                        onClick={() => updateStoreOrganization(store, "assign_organization")}
+                        onClick={() => disabled ? singleEnable(store) : singleDisable(store)}
                         disabled={loading}
-                        className="h-8 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                        className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
                       >
-                        {isZh ? "\u4fdd\u5b58\u7ec4\u7ec7" : "Save Org"}
+                        {disabled ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Ban className="h-3.5 w-3.5" />}
+                        {disabled ? (isZh ? "\u542f\u7528" : "Enable") : (isZh ? "\u7981\u7528" : "Disable")}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => updateStoreOrganization(store, "auto_assign_organization")}
-                        disabled={loading}
-                        className="h-8 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-                      >
-                        {isZh ? "\u91cd\u5339\u914d" : "Rematch"}
-                      </button>
-                    <button
-                      type="button"
-                      onClick={() => disabled ? singleEnable(store) : singleDisable(store)}
-                      disabled={loading}
-                      className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-                    >
-                      {disabled ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Ban className="h-3.5 w-3.5" />}
-                      {disabled ? (isZh ? "\u542f\u7528" : "Enable") : (isZh ? "\u7981\u7528" : "Disable")}
-                    </button>
                     </div>
                   </td>
                 </tr>
@@ -387,6 +359,66 @@ function ConfirmDeletePanel({
         >
           {cancelLabel}
         </button>
+      </div>
+    </div>
+  );
+}
+
+function ConfirmOrganizationPanel({
+  organizations,
+  selectedCount,
+  value,
+  loading,
+  isZh,
+  onChange,
+  onConfirm,
+  onCancel,
+}: ConfirmOrganizationPanelProps) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 px-4">
+      <div className="w-full max-w-md rounded-lg bg-white shadow-2xl">
+        <div className="border-b border-slate-200 px-5 py-4">
+          <div className="text-base font-semibold text-slate-950">{isZh ? "\u4fee\u6539\u7ec4\u7ec7" : "Change Organization"}</div>
+          <div className="mt-1 text-sm text-slate-500">
+            {isZh ? `\u5c06\u4fee\u6539 ${selectedCount} \u5bb6\u95e8\u5e97\u7684\u7ec4\u7ec7\u3002` : `Change organization for ${selectedCount} selected stores.`}
+          </div>
+        </div>
+        <div className="space-y-4 px-5 py-5">
+          <label className="block text-sm font-medium text-slate-700">
+            <span className="mb-1 block">{isZh ? "\u9009\u62e9\u7ec4\u7ec7" : "Organization"}</span>
+            <SelectInput
+              value={value}
+              onChange={(event) => onChange(event.target.value)}
+              disabled={loading}
+              className="w-full"
+            >
+              <option value="">{isZh ? "\u9009\u62e9\u7ec4\u7ec7" : "Select organization"}</option>
+              <option value="unassigned">{isZh ? "\u672a\u5206\u914d" : "Unassigned"}</option>
+              {organizations.map((organization) => (
+                <option key={organization.id} value={organization.id}>{organization.name}</option>
+              ))}
+            </SelectInput>
+          </label>
+        </div>
+        <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={loading}
+            className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            {isZh ? "\u53d6\u6d88" : "Cancel"}
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading || !value}
+            className="inline-flex h-9 items-center gap-2 rounded-md bg-slate-900 px-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {isZh ? "\u786e\u8ba4" : "Confirm"}
+          </button>
+        </div>
       </div>
     </div>
   );

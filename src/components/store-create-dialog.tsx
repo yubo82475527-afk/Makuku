@@ -4,16 +4,14 @@ import { Plus, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button, SelectInput, TextInput } from "@/components/ui";
-import type { ChannelMaster, Organization } from "@/lib/types";
+import type { ChannelMaster } from "@/lib/types";
 
 export function StoreCreateDialog({
   channels,
-  organizations,
   useChannelTypeFallback,
   locale,
 }: {
   channels: ChannelMaster[];
-  organizations: Organization[];
   useChannelTypeFallback: boolean;
   locale: string;
 }) {
@@ -58,7 +56,7 @@ export function StoreCreateDialog({
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
               <div>
                 <div className="text-base font-semibold text-slate-950">{isZh ? "新增门店" : "Add Store"}</div>
-                <div className="mt-1 text-xs text-slate-500">{isZh ? "填写门店基础信息，归属组织可手动指定。" : "Fill store details. Organization can be assigned manually."}</div>
+                <div className="mt-1 text-xs text-slate-500">{isZh ? "填写门店基础信息。" : "Fill store details."}</div>
               </div>
               <button type="button" onClick={() => setOpen(false)} disabled={saving} className="rounded-md border border-slate-300 p-2 text-slate-600 hover:bg-slate-50 disabled:opacity-50" aria-label={isZh ? "关闭" : "Close"}>
                 <X className="h-4 w-4" />
@@ -84,14 +82,6 @@ export function StoreCreateDialog({
               </Field>
               <Field label={isZh ? "区" : "District"}>
                 <TextInput name="district" autoComplete="off" />
-              </Field>
-              <Field label={isZh ? "归属组织" : "Organization"}>
-                <SelectInput name="organization_id">
-                  <option value="">{isZh ? "按区域自动匹配" : "Auto match by region"}</option>
-                  {organizations.map((organization) => (
-                    <option key={organization.id} value={organization.id}>{organization.name}</option>
-                  ))}
-                </SelectInput>
               </Field>
               {error ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 md:col-span-2">{error}</div> : null}
               <div className="flex justify-end gap-2 border-t border-slate-200 pt-4 md:col-span-2">

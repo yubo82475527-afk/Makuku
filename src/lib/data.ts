@@ -510,7 +510,12 @@ function filterDisabledOfflineStores(stores: OfflineStore[], disabledStoreIds: S
   });
 }
 
-function mergeOfflineStores(stores: OfflineStore[]) {
+function storeMergeKey(store: Pick<OfflineStore, "id" | "name" | "city" | "province" | "city_name" | "district">) {
+  if (isMasterOfflineStoreId(store.id)) return `id:${store.id}`;
+  return storeKey(store);
+}
+
+export function mergeOfflineStores(stores: OfflineStore[]) {
   const merged = new Map<string, OfflineStore>();
 
   for (const store of stores) {
@@ -518,7 +523,7 @@ function mergeOfflineStores(stores: OfflineStore[]) {
     const city = storeRegionKeyLabel(store);
     if (!name || !city) continue;
 
-    const key = storeKey(store);
+    const key = storeMergeKey(store);
     if (!key) continue;
     const channelType = cleanText(store.channel_type) ?? "other";
     const channel = store.channels ?? demoChannels.find((item) => item.id === store.channel_id || item.code === channelType) ?? null;

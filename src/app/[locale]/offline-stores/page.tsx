@@ -1,7 +1,7 @@
 import { AppShell } from "@/components/app-shell";
 import { StoreMasterTable } from "@/components/store-master-table";
 import { Button, Card, DataNotice, SelectInput } from "@/components/ui";
-import { getChannels, getOfflineStores, getOrganizations } from "@/lib/data";
+import { getOfflineStores, getOrganizations } from "@/lib/data";
 import { getPageI18n } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
@@ -19,13 +19,10 @@ export default async function OfflineStoresPage({
   const rawOrganization = Array.isArray(query.organization) ? query.organization[0] : query.organization;
   const statusFilter = rawStatus === "disabled" || rawStatus === "all" ? rawStatus : "enabled";
   const organizationFilter = rawOrganization?.trim() || "all";
-  const [storesResult, channelsResult, organizationsResult] = await Promise.all([
+  const [storesResult, organizationsResult] = await Promise.all([
     getOfflineStores({ status: statusFilter, organization: organizationFilter }),
-    getChannels(),
     getOrganizations(),
   ]);
-  const offlineChannels = channelsResult.data.filter((channel) => channel.active && channel.type === "offline");
-  const useChannelTypeFallback = offlineChannels.every((channel) => channel.id.startsWith("ch-"));
   const isZh = locale === "zh";
   const queryParts = [
     statusFilter === "enabled" ? "" : `status=${statusFilter}`,
@@ -34,8 +31,8 @@ export default async function OfflineStoresPage({
   const currentPath = `/offline-stores${queryParts.length ? `?${queryParts.join("&")}` : ""}`;
 
   return (
-    <AppShell locale={locale} dict={dict} title={isZh ? "\u95e8\u5e97\u5217\u8868" : "Store List"} currentPath={currentPath} isDemo={storesResult.isDemo || channelsResult.isDemo || organizationsResult.isDemo}>
-      <DataNotice dict={dict} error={storesResult.error ?? channelsResult.error ?? organizationsResult.error} />
+    <AppShell locale={locale} dict={dict} title={isZh ? "\u95e8\u5e97\u5217\u8868" : "Store List"} currentPath={currentPath} isDemo={storesResult.isDemo || organizationsResult.isDemo}>
+      <DataNotice dict={dict} error={storesResult.error ?? organizationsResult.error} />
 
       <Card className="mb-4">
         <div className="flex flex-wrap items-center gap-3">
@@ -61,8 +58,6 @@ export default async function OfflineStoresPage({
         <StoreMasterTable
           stores={storesResult.data}
           organizations={organizationsResult.data}
-          channels={offlineChannels}
-          useChannelTypeFallback={useChannelTypeFallback}
           locale={locale}
         />
       </Card>

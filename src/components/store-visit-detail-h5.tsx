@@ -770,13 +770,13 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
               <div className="mt-4 space-y-2">
                 <button
                   type="button"
-                    disabled={updateLocked || actionSheetImageIsAnalyzing}
-                    onClick={() => {
-                      setActionSheet(null);
-                      cameraRetakeInputRefs.current[actionSheet.imageId]?.click();
-                    }}
-                    className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-medium text-slate-800 disabled:opacity-50"
-                  >
+                  disabled={updateLocked || actionSheetImageIsAnalyzing}
+                  onClick={() => {
+                    setActionSheet(null);
+                    cameraRetakeInputRefs.current[actionSheet.imageId]?.click();
+                  }}
+                  className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-medium text-slate-800 disabled:opacity-50"
+                >
                   <span>{retakePhotoLabel}</span>
                   <Camera className="h-4 w-4 text-slate-400" />
                 </button>

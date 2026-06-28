@@ -2,7 +2,6 @@ import { revalidatePath } from "next/cache";
 import { requireAppSession } from "@/lib/auth-session";
 import { readRequestBody } from "@/lib/request";
 import { createSupabaseServiceClient } from "@/lib/supabase";
-import { organizationAssignmentPatch, resolveOrganizationForRegion } from "@/lib/organizations";
 
 export const dynamic = "force-dynamic";
 
@@ -112,9 +111,6 @@ export async function POST(request: Request) {
       return Response.json({ error: "Missing required fields: channel_id or channel_type" }, { status: 400 });
     }
 
-    const assignment = await resolveOrganizationForRegion(supabase, { province, cityName, district });
-    const organizationPatch = organizationAssignmentPatch(assignment);
-
     const insertResult = await supabase
       .from("offline_stores")
       .insert({
@@ -132,7 +128,6 @@ export async function POST(request: Request) {
         created_by: auth.session.displayName,
         created_by_user_id: auth.session.id,
         created_by_name: auth.session.displayName,
-        ...organizationPatch,
       })
       .select(storeSelectFields)
       .single();
@@ -157,7 +152,6 @@ export async function POST(request: Request) {
           created_by: auth.session.displayName,
           created_by_user_id: auth.session.id,
           created_by_name: auth.session.displayName,
-          ...organizationPatch,
         })
         .select("id,name,city,province,city_name,district,google_place_id,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,created_at")
         .single();
@@ -182,7 +176,6 @@ export async function POST(request: Request) {
           created_by: auth.session.displayName,
           created_by_user_id: auth.session.id,
           created_by_name: auth.session.displayName,
-          ...organizationPatch,
         })
         .select(storeSelectFieldsWithoutGooglePlaceIdOrChannels)
         .single();
