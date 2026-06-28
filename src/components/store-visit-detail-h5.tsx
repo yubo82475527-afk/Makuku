@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Camera, Check, ChevronDown, ChevronRight, Copy, Ellipsis, Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowLeft, Camera, Check, ChevronDown, ChevronRight, Copy, Ellipsis, Image as ImageIcon, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
@@ -149,6 +149,8 @@ function detailText(locale: Locale) {
         photoPrefix: "照片",
         close: "关闭",
         retake: "重拍",
+        retakePhoto: "拍照重拍",
+        replaceFromAlbum: "从相册替换",
         updateThisPhoto: "更新这张",
         updated: "已更新",
         refreshingOne: "本张识别结果已刷新",
@@ -182,6 +184,8 @@ function detailText(locale: Locale) {
         photoPrefix: "Photo",
         close: "Close",
         retake: "Retake",
+        retakePhoto: "Retake Photo",
+        replaceFromAlbum: "Replace from Album",
         updateThisPhoto: "Update Photo",
         updated: "Updated",
         refreshingOne: "This photo result has been refreshed",
@@ -224,6 +228,8 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   const confirmDeleteActionLabel = textOrFallback(text.confirmDeleteAction, locale === "zh" ? "确认删除" : "Confirm Delete");
   const deletingLabel = textOrFallback(text.deleting, locale === "zh" ? "删除中..." : "Deleting...");
   const photoActionsLabel = textOrFallback(text.photoActions, locale === "zh" ? "照片操作" : "Photo actions");
+  const retakePhotoLabel = textOrFallback(text.retakePhoto, locale === "zh" ? "拍照重拍" : "Retake Photo");
+  const replaceFromAlbumLabel = textOrFallback(text.replaceFromAlbum, locale === "zh" ? "从相册替换" : "Replace from Album");
   const reAnalyzeLabel = textOrFallback(text.reAnalyze, locale === "zh" ? "重新识别" : "Re-analyze");
   const deleteLabel = textOrFallback(text.delete, locale === "zh" ? "删除" : "Delete");
   const [visit, setVisit] = useState<StoreVisitDetail | null>(null);
@@ -245,7 +251,8 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   const [actionSheet, setActionSheet] = useState<ImageActionSheetState | null>(null);
   const [reanalyzeConfirm, setReanalyzeConfirm] = useState<ReanalyzeConfirmState | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmState | null>(null);
-  const retakeInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const cameraRetakeInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const albumRetakeInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const loadVisit = useCallback(async (options?: { preserveLoading?: boolean }) => {
     if (!options?.preserveLoading) setLoading(true);
@@ -648,7 +655,8 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   retryingImageIds={retryingImageIds}
                   onOpenActions={(imageId, imageCategory, label) => setActionSheet({ imageId, category: imageCategory, label })}
                   onRetakeFile={(imageId, file) => void uploadPricePhoto({ file, category: "makuku_shelf", targetImageId: imageId })}
-                  retakeInputRefs={retakeInputRefs}
+                  cameraRetakeInputRefs={cameraRetakeInputRefs}
+                  albumRetakeInputRefs={albumRetakeInputRefs}
                 />
 
                 <PriceSectionGroup
@@ -666,7 +674,8 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   retryingImageIds={retryingImageIds}
                   onOpenActions={(imageId, imageCategory, label) => setActionSheet({ imageId, category: imageCategory, label })}
                   onRetakeFile={(imageId, file) => void uploadPricePhoto({ file, category: "competitor_shelf", targetImageId: imageId })}
-                  retakeInputRefs={retakeInputRefs}
+                  cameraRetakeInputRefs={cameraRetakeInputRefs}
+                  albumRetakeInputRefs={albumRetakeInputRefs}
                 />
               </div>
             </section>
@@ -761,15 +770,27 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
               <div className="mt-4 space-y-2">
                 <button
                   type="button"
+                    disabled={updateLocked || actionSheetImageIsAnalyzing}
+                    onClick={() => {
+                      setActionSheet(null);
+                      cameraRetakeInputRefs.current[actionSheet.imageId]?.click();
+                    }}
+                    className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-medium text-slate-800 disabled:opacity-50"
+                  >
+                  <span>{retakePhotoLabel}</span>
+                  <Camera className="h-4 w-4 text-slate-400" />
+                </button>
+                <button
+                  type="button"
                   disabled={updateLocked || actionSheetImageIsAnalyzing}
                   onClick={() => {
                     setActionSheet(null);
-                    retakeInputRefs.current[actionSheet.imageId]?.click();
+                    albumRetakeInputRefs.current[actionSheet.imageId]?.click();
                   }}
                   className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-medium text-slate-800 disabled:opacity-50"
                 >
-                  <span>{text.retake}</span>
-                  <Camera className="h-4 w-4 text-slate-400" />
+                  <span>{replaceFromAlbumLabel}</span>
+                  <ImageIcon className="h-4 w-4 text-slate-400" />
                 </button>
                 <button
                   type="button"
@@ -913,7 +934,8 @@ function PriceSectionGroup({
   onPreview,
   onOpenActions,
   onRetakeFile,
-  retakeInputRefs,
+  cameraRetakeInputRefs,
+  albumRetakeInputRefs,
 }: {
   locale: Locale;
   title: string;
@@ -929,7 +951,8 @@ function PriceSectionGroup({
   onPreview: (image: { url: string; label: string }) => void;
   onOpenActions: (imageId: string, category: "makuku_shelf" | "competitor_shelf", label: string) => void;
   onRetakeFile: (imageId: string, file: File) => void;
-  retakeInputRefs: MutableRefObject<Record<string, HTMLInputElement | null>>;
+  cameraRetakeInputRefs: MutableRefObject<Record<string, HTMLInputElement | null>>;
+  albumRetakeInputRefs: MutableRefObject<Record<string, HTMLInputElement | null>>;
 }) {
   const photoActionsLabel = textOrFallback(text.photoActions, locale === "zh" ? "照片操作" : "Photo actions");
 
@@ -983,10 +1006,22 @@ function PriceSectionGroup({
                   </button>
                 )}
                 <input
-                  ref={(node) => { retakeInputRefs.current[section.image.id] = node; }}
+                  ref={(node) => { cameraRetakeInputRefs.current[section.image.id] = node; }}
                   type="file"
                   accept="image/*"
                   capture="environment"
+                  className="sr-only"
+                  disabled={updateLocked || isAnalyzingImage}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) onRetakeFile(section.image.id, file);
+                    event.currentTarget.value = "";
+                  }}
+                />
+                <input
+                  ref={(node) => { albumRetakeInputRefs.current[section.image.id] = node; }}
+                  type="file"
+                  accept="image/*"
                   className="sr-only"
                   disabled={updateLocked || isAnalyzingImage}
                   onChange={(event) => {
