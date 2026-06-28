@@ -330,6 +330,10 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
     makuku_shelf: priceParseSections.filter((section) => section.category === "makuku_shelf"),
     competitor_shelf: priceParseSections.filter((section) => section.category === "competitor_shelf"),
   }), [priceParseSections]);
+  const actionSheetImage = actionSheet
+    ? priceParseSections.find((section) => section.image.id === actionSheet.imageId)?.image ?? null
+    : null;
+  const actionSheetImageIsAnalyzing = actionSheetImage?.analysis_status === "analyzing";
 
   const displayImages = (visit?.offline_visit_images ?? [])
     .map((image) => ({
@@ -757,7 +761,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
               <div className="mt-4 space-y-2">
                 <button
                   type="button"
-                  disabled={updateLocked}
+                  disabled={updateLocked || actionSheetImageIsAnalyzing}
                   onClick={() => {
                     setActionSheet(null);
                     retakeInputRefs.current[actionSheet.imageId]?.click();
@@ -783,7 +787,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                 </button>
                 <button
                   type="button"
-                  disabled={updateLocked || deletingImageIds.includes(actionSheet.imageId)}
+                  disabled={updateLocked || actionSheetImageIsAnalyzing || deletingImageIds.includes(actionSheet.imageId)}
                   onClick={() => {
                     const imageId = actionSheet.imageId;
                     const label = actionSheet.label;
@@ -948,7 +952,7 @@ function PriceSectionGroup({
             const previewUrl = sectionLocalUpload?.previewUrl ?? section.signedImage?.url ?? null;
             const isProcessingRetake = sectionLocalUpload?.mode === "retake";
             const isAnalyzingImage = section.image.analysis_status === "analyzing";
-            const isActionDisabled = updateLocked || isAnalyzingImage || retryingImageIds.includes(section.image.id) || deletingImageIds.includes(section.image.id);
+            const isActionDisabled = updateLocked || retryingImageIds.includes(section.image.id) || deletingImageIds.includes(section.image.id);
 
             return (
               <>
