@@ -23,6 +23,7 @@ export async function GET(request: Request) {
     dateFrom: searchParams.get("date_from") || undefined,
     dateTo: searchParams.get("date_to") || undefined,
     visitCode: searchParams.get("visit_code")?.trim() || undefined,
+    imageId: searchParams.get("image_id")?.trim() || undefined,
   });
 
   return Response.json({

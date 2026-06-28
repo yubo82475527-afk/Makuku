@@ -17,7 +17,8 @@ test("legacy competitors route redirects to competitor product master", () => {
 test("competitor mapping is an automatic series rule configuration page", () => {
   assert.match(competitorMappingsPage, /CompetitorSeriesRulesPanel/);
   assert.match(competitorMappingsPage, /getCompetitorSeriesMappings/);
-  assert.match(competitorMappingsPage, /automaticRules/);
+  assert.doesNotMatch(competitorMappingsPage, /automaticRules/);
+  assert.doesNotMatch(competitorMappingsPage, /filteredCompetitorSkus/);
   assert.match(competitorSeriesRulesPanel, /data-role="automatic-mapping-rules"/);
   assert.match(competitorSeriesRulesPanel, /target_makuku_series/);
   assert.match(competitorSeriesRulesPanel, /coveredSkus/);

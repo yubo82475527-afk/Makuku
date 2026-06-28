@@ -13,7 +13,6 @@ const pcProtectedRoots = new Set([
   "competitors",
   "competitor-products",
   "competitor-mappings",
-  "market-benchmarks",
   "promo-events",
   "alerts",
   "channels",

@@ -25,13 +25,14 @@ test("board navigation exposes the one-week product workflow", () => {
   assert.match(appShell, /Photo Price Review/);
   assert.match(appShell, /Price Positioning/);
   assert.match(appShell, /Competitor Mapping/);
-  assert.match(appShell, /Market Benchmarks/);
   assert.match(appShell, /Master Data/);
   assert.match(appShell, /Product Master/);
   assert.match(appShell, /Store Master/);
   assert.match(appShell, /User Management/);
   assert.match(appShell, /\/offline-stores/);
-  assert.match(appShell, /\/market-benchmarks/);
+  assert.match(appShell, /\/competitor-mappings/);
+  assert.doesNotMatch(appShell, /\/market-benchmarks/);
+  assert.doesNotMatch(appShell, /Market Benchmarks/);
 
   assert.doesNotMatch(appShell, /Operating Queue/);
   assert.doesNotMatch(appShell, /SKU Price Monitor/);
@@ -83,8 +84,8 @@ test("dashboard keeps the weekly coefficient board but is no longer a single-pan
   assert.match(typesFile, /export type WeeklyPriceCoefficientCell/);
   assert.match(typesFile, /export type WeeklyPriceCoefficientCompetitorSeries/);
   assert.match(dataFile, /export async function getWeeklyPriceCoefficientBoard/);
-  assert.match(dataFile, /getMarketBenchmarkRules/);
   assert.match(dataFile, /getCompetitorSeriesMappings/);
+  assert.match(dataFile, /is_default_benchmark/);
   assert.match(dataFile, /materialMaster\.map\(\(item\) => cleanText\(item\.sub_brand\)\)/);
   assert.match(dataFile, /ownAvgPrice \/ benchmarkAvgPrice/);
   assert.match(dashboardPage, /PriceIndexTreeTable/);

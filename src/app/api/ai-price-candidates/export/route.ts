@@ -4,6 +4,7 @@ import type { AiPriceCandidate, MaterialMaster } from "@/lib/types";
 
 const csvColumns = [
   "candidate_id",
+  "image_id",
   "visit_code",
   "visit_date",
   "store_name",
@@ -84,6 +85,7 @@ export async function GET(request: Request) {
     const dateFrom = searchParams.get("date_from");
     const dateTo = searchParams.get("date_to");
     const visitCode = searchParams.get("visit_code")?.trim();
+    const imageId = searchParams.get("image_id")?.trim();
     const status = searchParams.get("status");
 
     if ((dateFrom && !isDateInput(dateFrom)) || (dateTo && !isDateInput(dateTo))) {
@@ -97,6 +99,7 @@ export async function GET(request: Request) {
       dateFrom: dateFrom || undefined,
       dateTo: dateTo || undefined,
       visitCode: visitCode || undefined,
+      imageId: imageId || undefined,
       status: status ? status as "pending" | "approved" | "rejected" : undefined,
       limit: 5000,
     });
@@ -113,6 +116,7 @@ export async function GET(request: Request) {
 
       return [
         candidate.id,
+        candidate.source_image_id,
         visit?.visit_code,
         visit?.visit_date,
         visit?.store_name,

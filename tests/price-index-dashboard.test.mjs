@@ -19,7 +19,8 @@ test("app shell groups the backend navigation for price positioning and master d
   assert.match(appShell, /Photo Price Review/);
   assert.match(appShell, /Price Positioning/);
   assert.match(appShell, /Competitor Mapping/);
-  assert.match(appShell, /Market Benchmarks/);
+  assert.doesNotMatch(appShell, /Market Benchmarks/);
+  assert.doesNotMatch(appShell, /\/market-benchmarks/);
   assert.match(appShell, /Master Data/);
   assert.match(appShell, /Product Master/);
   assert.match(appShell, /Store Master/);
@@ -28,9 +29,11 @@ test("app shell groups the backend navigation for price positioning and master d
   assert.doesNotMatch(appShell, /Executive Board/);
 });
 
-test("market benchmark schema and page exist", () => {
-  assert.equal(existsSync("src/app/[locale]/market-benchmarks/page.tsx"), true);
-  assert.equal(existsSync("src/app/api/market-benchmarks/route.ts"), true);
+test("market benchmark management moved into competitor mapping", () => {
+  assert.equal(existsSync("src/app/[locale]/market-benchmarks/page.tsx"), false);
+  assert.equal(existsSync("src/app/api/market-benchmarks/route.ts"), false);
+  assert.match(appShell, /Competitor Mapping/);
+  assert.match(appShell, /\/competitor-mappings/);
   assert.match(typesFile, /export type MarketBenchmark/);
   assert.match(dataFile, /getMarketBenchmarks/);
   assert.match(dataFile, /market_benchmarks/);
@@ -83,16 +86,18 @@ test("dashboard derived data calculates weekly coefficients from own and benchma
   assert.match(dataFile, /competitorCells/);
   assert.match(dataFile, /ownBenchmarkAvgPrice/);
   assert.match(dataFile, /ownCoefficient:/);
-  assert.match(dataFile, /benchmarkPricesFromPeriodPrices/);
-  assert.match(dataFile, /market_benchmark_period_prices/);
-  assert.match(dataFile, /pickBestBenchmarkRuleForSnapshot/);
-  assert.match(dataFile, /snapshotMatchesBenchmarkRegion/);
+  assert.match(dataFile, /is_default_benchmark/);
+  assert.match(dataFile, /defaultBenchmarkSeries/);
+  assert.match(dataFile, /defaultBenchmarkSeries \? defaultBenchmarkPrices : \[\]/);
+  assert.doesNotMatch(dataFile, /allMappedBenchmarkPrices/);
+  assert.doesNotMatch(dataFile, /benchmarkPricesFromPeriodPrices/);
+  assert.doesNotMatch(dataFile, /market_benchmark_period_prices/);
+  assert.doesNotMatch(dataFile, /pickBestBenchmarkRuleForSnapshot/);
   assert.match(dataFile, /ownAvgPrice \/ benchmarkAvgPrice/);
   assert.match(dataFile, /series\.isBenchmark/);
   assert.match(dataFile, /coefficient:\s+series\.isBenchmark/);
   assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /isBenchmark \? \(isZh \? "（标杆）" : " \(Benchmark\)"\) : ""/);
   assert.match(dataFile, /material_master/);
-  assert.match(dataFile, /market_benchmark_rules/);
   assert.match(dataFile, /canonicalDashboardProvinceLabel/);
   assert.match(dataFile, /buildWeeklyCoefficientTree/);
   assert.match(dataFile, /snapshotOrganizationName/);
@@ -114,7 +119,6 @@ test("dashboard exception and execution sections reuse current data sources befo
 test("dashboard region filters use structured store regions and ignore numeric legacy city values", () => {
   assert.match(dataFile, /offline_store_visits\(id,store_name,city,province,city_name,district/);
   assert.match(dataFile, /snapshotProvince/);
-  assert.match(dataFile, /snapshotMatchesBenchmarkRegion/);
   assert.match(dataFile, /const visitRegionParts = visitRegion\(visit\)/);
   assert.match(dataFile, /const storeRegionParts = storeRegion\(store\)/);
   assert.match(dataFile, /regionLabel\(visitRegion\(visit\)\)/);
@@ -129,9 +133,10 @@ test("dashboard region filters use structured store regions and ignore numeric l
   assert.match(dataFile, /const city = cityLabelFromRegionSource\(visit\)/);
   assert.match(dataFile, /query = query\.or\(`store_name\.ilike\.\%\$\{q\}\%,city_name\.ilike\.\%\$\{q\}\%,city\.ilike\.\%\$\{q\}\%,uploader_name\.ilike\.\%\$\{q\}\%`\)/);
   assert.match(dataFile, /cleanRegionText\(visit\?\.province\)/);
-  assert.match(dataFile, /sameLoose\(province, rule\.province\)/);
-  assert.match(dataFile, /sameLoose\(cityName, rule\.city_name\)/);
-  assert.match(dataFile, /sameLoose\(district, rule\.district\)/);
+  assert.match(dataFile, /snapshotRegionParts\(snapshot\)/);
+  assert.match(dataFile, /visitRegionParts\.province \?\? storeRegionParts\.province/);
+  assert.match(dataFile, /visitRegionParts\.cityName \?\? storeRegionParts\.cityName/);
+  assert.match(dataFile, /visitRegionParts\.district \?\? storeRegionParts\.district/);
   assert.doesNotMatch(dataFile, /byName\.size === 0 && shouldFlagSegment/);
   assert.match(pricesPage, /cleanDisplayText\(visit\?\.city_name\) \?\? cleanDisplayText\(store\?\.city_name\) \?\? legacyRegion\.cityName \?\? cleanDisplayText\(visit\?\.city\) \?\? cleanDisplayText\(store\?\.city\)/);
   assert.match(priceSnapshotsTable, /cleanDisplayText\(visit\?\.city_name\) \?\? cleanDisplayText\(store\?\.city_name\) \?\? legacyRegion\.cityName \?\? cleanDisplayText\(visit\?\.city\) \?\? cleanDisplayText\(store\?\.city\)/);
@@ -155,4 +160,14 @@ test("prices accepts dashboard drilldown filters", () => {
   assert.match(pricesPage, /cityName\?: string/);
   assert.match(pricesPage, /district\?: string/);
   assert.match(pricesPage, /store\?: string/);
+});
+
+test("real market price filters use primary and collapsible advanced groups", () => {
+  assert.match(pricesPage, /const hasAdvancedFilters =/);
+  assert.match(pricesPage, /<PriceDateRangeFilter/);
+  assert.match(pricesPage, /<details open=\{hasAdvancedFilters \|\| undefined\}/);
+  assert.match(pricesPage, /<summary[\s\S]*SlidersHorizontal/);
+  for (const name of ["brand", "priceBand", "size", "createdFrom", "createdTo", "province", "cityName", "district", "store", "sku", "visitCode"]) {
+    assert.match(pricesPage, new RegExp(`name="${name}"`));
+  }
 });

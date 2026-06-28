@@ -6,7 +6,6 @@ import {
   ClipboardCheck,
   Database,
   Gauge,
-  MapPinned,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
@@ -46,7 +45,6 @@ const navGroups = [
     label: { zh: "\u4ef7\u683c\u5b9a\u4f4d\u7ba1\u7406", en: "Price Positioning" },
     items: [
       { href: "/competitor-mappings", label: { zh: "\u7ade\u54c1\u6620\u5c04", en: "Competitor Mapping" }, icon: Tags },
-      { href: "/market-benchmarks", label: { zh: "\u5e02\u573a\u6807\u6746\u7ba1\u7406", en: "Market Benchmarks" }, icon: MapPinned },
     ],
   },
   {

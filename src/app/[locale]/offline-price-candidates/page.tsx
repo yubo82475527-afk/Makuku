@@ -25,6 +25,7 @@ export default async function OfflinePriceCandidatesPage({
   const dateFrom = getFilter("date_from");
   const dateTo = getFilter("date_to");
   const visitCode = getFilter("visit_code").trim();
+  const imageId = getFilter("image_id").trim();
   const rawStatus = getFilter("status");
   const currentStatus = rawStatus === "approved" || rawStatus === "rejected" || rawStatus === "all" ? rawStatus : "pending";
   const statusFilter = currentStatus === "all" ? undefined : currentStatus as AiPriceCandidateStatus;
@@ -37,6 +38,7 @@ export default async function OfflinePriceCandidatesPage({
   if (dateFrom) exportParams.set("date_from", dateFrom);
   if (dateTo) exportParams.set("date_to", dateTo);
   if (visitCode) exportParams.set("visit_code", visitCode);
+  if (imageId) exportParams.set("image_id", imageId);
   if (statusFilter) exportParams.set("status", statusFilter);
   const exportHref = `/api/ai-price-candidates/export${exportParams.size > 0 ? `?${exportParams.toString()}` : ""}`;
 
@@ -45,6 +47,7 @@ export default async function OfflinePriceCandidatesPage({
       dateFrom: dateFrom || undefined,
       dateTo: dateTo || undefined,
       visitCode: visitCode || undefined,
+      imageId: imageId || undefined,
       status: statusFilter,
       page,
       perPage,
@@ -59,9 +62,10 @@ export default async function OfflinePriceCandidatesPage({
       <DataNotice error={candidatesResult.error ?? ruleResult.error} dict={dict} />
 
       <Card className="mb-4">
-        <form className="grid gap-3 md:grid-cols-[minmax(280px,1fr)_minmax(180px,240px)_minmax(120px,180px)]">
+        <form className="grid gap-3 md:grid-cols-[minmax(240px,1fr)_minmax(180px,220px)_minmax(180px,220px)_minmax(120px,180px)]">
           <DateRangeFilter locale={locale} dateFrom={dateFrom} dateTo={dateTo} />
           <BatchCodeFilter locale={locale} visitCode={visitCode} />
+          <ImageIdFilter locale={locale} imageId={imageId} />
           <Button type="submit">{dict.common.filter}</Button>
         </form>
       </Card>
@@ -87,6 +91,7 @@ export default async function OfflinePriceCandidatesPage({
             date_from: dateFrom || undefined,
             date_to: dateTo || undefined,
             visit_code: visitCode || undefined,
+            image_id: imageId || undefined,
           }}
           rule={ruleResult.data}
         />
@@ -105,6 +110,23 @@ function BatchCodeFilter({ locale, visitCode }: { locale: string; visitCode: str
       <input
         name="visit_code"
         defaultValue={visitCode}
+        placeholder={placeholder}
+        className="min-w-0 flex-1 bg-transparent py-2 outline-none"
+      />
+    </label>
+  );
+}
+
+function ImageIdFilter({ locale, imageId }: { locale: string; imageId: string }) {
+  const label = locale === "zh" ? "图片编号" : "Image ID";
+  const placeholder = locale === "zh" ? "输入图片编号" : "Search image";
+
+  return (
+    <label className="flex min-h-10 items-center rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus-within:border-slate-500 focus-within:ring-2 focus-within:ring-slate-200">
+      <span className="mr-2 shrink-0 text-xs font-medium text-slate-500">{label}</span>
+      <input
+        name="image_id"
+        defaultValue={imageId}
         placeholder={placeholder}
         className="min-w-0 flex-1 bg-transparent py-2 outline-none"
       />

@@ -39,22 +39,11 @@ export default async function CompetitorMappingsPage({
     return true;
   });
   const copy = getCopy(locale);
-  const automaticRules = seriesMappingsResult.data.filter((rule) => rule.active).length;
 
   return (
     <AppShell locale={locale} dict={dict} title={copy.title} currentPath="/competitor-mappings" isDemo={productsResult.isDemo || materialResult.isDemo || seriesMappingsResult.isDemo}>
       <DataNotice dict={dict} error={productsResult.error ?? brandsResult.error ?? materialResult.error ?? seriesMappingsResult.error} />
       <Card className="mb-4">
-        <div className="mb-4 grid gap-3 md:grid-cols-3">
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <div className="text-xs font-semibold text-slate-500">{copy.automaticRules}</div>
-            <div className="mt-1 text-2xl font-semibold text-slate-950">{automaticRules}</div>
-          </div>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <div className="text-xs font-semibold text-slate-500">{copy.filteredCompetitorSkus}</div>
-            <div className="mt-1 text-2xl font-semibold text-slate-950">{filteredProducts.length}</div>
-          </div>
-        </div>
         <form className="grid gap-3 md:grid-cols-3">
           <SelectInput name="brand" defaultValue={params.brand ?? ""}>
             <option value="">{dict.common.allBrands}</option>
@@ -96,8 +85,6 @@ function getCopy(locale: string) {
     allSeries: isZh ? "全部系列" : "All series",
     noSeries: isZh ? "无系列" : "No series",
     productMasterLink: isZh ? "进入竞品主数据" : "Go to Competitor Product Master",
-    automaticRules: isZh ? "自动映射规则" : "Automatic rules",
-    filteredCompetitorSkus: isZh ? "筛选后竞品 SKU" : "Filtered competitor SKUs",
   };
 }
 

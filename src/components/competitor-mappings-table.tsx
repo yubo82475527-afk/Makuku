@@ -39,7 +39,7 @@ export function CompetitorMappingsTable({ products, materials, locale, dict, map
             const match = product.sku_matches?.[0];
             const selectedMaterialCode = findMaterialCodeForSku(match?.sku_master, materials);
             const setBenchmarkHref = match?.sku_master
-              ? `/${locale}/market-benchmarks?competitorProductId=${encodeURIComponent(product.id)}`
+              ? `/${locale}/competitor-mappings?competitorProductId=${encodeURIComponent(product.id)}`
               : null;
             return (
               <tr key={product.id} className="hover:bg-slate-50">

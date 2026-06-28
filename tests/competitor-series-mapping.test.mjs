@@ -92,13 +92,17 @@ test("competitor mapping page exposes only automatic series mapping rules", () =
   assert.match(page, /params\.series/);
   assert.match(page, /filteredRules/);
   assert.match(page, /rules=\{filteredRules\}/);
+  assert.doesNotMatch(page, /automaticRules/);
+  assert.doesNotMatch(page, /filteredCompetitorSkus/);
   assert.doesNotMatch(page, /CompetitorMappingsTable/);
   assert.doesNotMatch(page, /mappingStatus/);
 });
 
 test("competitor mapping page is framed as automatic sku mapping configuration", () => {
   assert.match(page, /Auto SKU Mapping|自动 SKU 映射/);
-  assert.match(page, /automaticRules/);
+  assert.match(page, /<form className="grid gap-3 md:grid-cols-3">/);
+  assert.doesNotMatch(page, /automaticRules/);
+  assert.doesNotMatch(page, /filteredCompetitorSkus/);
   assert.doesNotMatch(page, /manualExceptions/);
   assert.match(panel, /Automatic Mapping Rules/);
   assert.match(panel, /Default benchmark/);

@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
 import { Badge, Button, EmptyState } from "@/components/ui";
-import { formatIdr, formatJakartaTime } from "@/lib/format";
+import { formatIdr, formatJakartaTime, formatShortImageId } from "@/lib/format";
 import type { AiPriceCandidate, AiPriceCandidateMatchType, AiPriceReviewJob, AiPriceReviewJobItem, AiPriceReviewRule, CompetitorProduct, MaterialMaster } from "@/lib/types";
 
 type WorkbenchFilters = {
@@ -14,6 +14,7 @@ type WorkbenchFilters = {
   date_from?: string;
   date_to?: string;
   visit_code?: string;
+  image_id?: string;
 };
 
 type StatusTabValue = "pending" | "approved" | "rejected" | "all";
@@ -67,7 +68,8 @@ export function AiPriceCandidatesWorkbench({
   rule: AiPriceReviewRule;
 }) {
   const router = useRouter();
-  const copy = getWorkbenchCopy(locale);
+  const copy = getWorkbenchCopy(locale) as WorkbenchCopy & { table: WorkbenchCopy["table"] & { imageId: string } };
+  copy.table.imageId = locale === "zh" ? "图片编号" : "Image ID";
   const aiConfidenceHelp = locale === "zh"
     ? "AI 置信度 = AI 对品牌、商品、价格识别结果的整体把握，当前按识别模型输出的 confidence 展示。"
     : "AI confidence is the model confidence for the extracted brand, product, and price.";
@@ -318,6 +320,7 @@ export function AiPriceCandidatesWorkbench({
                 </th>
                 <th className="px-3 py-2">{copy.table.store}</th>
                 <th className="px-3 py-2">{copy.table.batch}</th>
+                <th className="px-3 py-2">{copy.table.imageId}</th>
                 <th className="px-3 py-2">{copy.table.date}</th>
                 <th className="px-3 py-2">{copy.table.brand}</th>
                 <th className="px-3 py-2">{copy.table.product}</th>
@@ -379,6 +382,7 @@ export function AiPriceCandidatesWorkbench({
                       </button>
                     </td>
                     <td className="px-3 py-3 font-medium text-slate-700">{visit?.visit_code ?? "-"}</td>
+                    <td className="px-3 py-3 font-medium text-slate-700">{formatShortImageId(candidate.source_image_id)}</td>
                     <td className="px-3 py-3 text-slate-600">{visit?.visit_date ?? shortTime(candidate.created_at)}</td>
                     <td className="px-3 py-3 font-medium text-slate-900">{candidate.raw_brand || "-"}</td>
                     <td className="max-w-xs px-3 py-3 text-slate-700">{candidate.raw_product || "-"}</td>
@@ -1279,6 +1283,7 @@ function PageLink({ locale, page, perPage, filters, disabled, children }: { loca
   if (filters.date_from) params.set("date_from", filters.date_from);
   if (filters.date_to) params.set("date_to", filters.date_to);
   if (filters.visit_code) params.set("visit_code", filters.visit_code);
+  if (filters.image_id) params.set("image_id", filters.image_id);
   const href = `/${locale}/offline-price-candidates?${params.toString()}`;
   return disabled
     ? <span className="inline-flex h-9 items-center rounded-md border border-slate-200 px-3 text-slate-400">{children}</span>
@@ -1293,6 +1298,7 @@ function statusTabHref(locale: string, filters: WorkbenchFilters, status: Status
   if (filters.date_from) params.set("date_from", filters.date_from);
   if (filters.date_to) params.set("date_to", filters.date_to);
   if (filters.visit_code) params.set("visit_code", filters.visit_code);
+  if (filters.image_id) params.set("image_id", filters.image_id);
   return `/${locale}/offline-price-candidates?${params.toString()}`;
 }
 

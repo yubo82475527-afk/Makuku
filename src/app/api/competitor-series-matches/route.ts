@@ -154,10 +154,10 @@ function revalidateCompetitorMappingPages() {
   revalidatePath("/en/competitor-products");
   revalidatePath("/zh/competitor-mappings");
   revalidatePath("/en/competitor-mappings");
-  revalidatePath("/zh/market-benchmarks");
-  revalidatePath("/en/market-benchmarks");
   revalidatePath("/zh/prices");
   revalidatePath("/en/prices");
+  revalidatePath("/zh/dashboard");
+  revalidatePath("/en/dashboard");
 }
 
 function cleanRequired(value: unknown, field: string) {

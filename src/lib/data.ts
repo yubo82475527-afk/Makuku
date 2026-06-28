@@ -6,7 +6,6 @@ import {
   demoCompetitors,
   demoCompetitorSeriesMappings,
   demoMaterialMaster,
-  demoMarketBenchmarkRules,
   demoMarketBenchmarks,
   demoOfflineStores,
   demoOfflineStoreVisits,
@@ -15,6 +14,7 @@ import {
   demoPromoEvents,
   demoSkuMaster,
 } from "@/lib/demo-data";
+import { formatShortImageId } from "@/lib/format";
 import { monthWeeks } from "@/lib/periods";
 import { findMatchingMaterialForSeries } from "@/lib/competitor-series-mapping";
 import { createSupabaseAnonClient, createSupabaseServiceClient, hasSupabaseConfig, hasSupabaseServiceConfig } from "@/lib/supabase";
@@ -32,7 +32,6 @@ import type {
   DashboardInsight,
   MaterialMaster,
   MarketBenchmark,
-  MarketBenchmarkRule,
   OfflineStore,
   OfflineUpload,
   OfflineStoreVisit,
@@ -72,6 +71,7 @@ export type AiPriceCandidateFilters = {
   dateFrom?: string;
   dateTo?: string;
   visitCode?: string;
+  imageId?: string;
   status?: "pending" | "approved" | "rejected";
   limit?: number;
   page?: number;
@@ -617,9 +617,9 @@ export async function getAiPriceCandidates(filters: AiPriceCandidateFilters = {}
       .from("ai_price_candidates")
       .select(`*, ${legacyVisitSelect}`)
       .limit(filters.limit ?? 200);
-    if (filters.dateFrom) legacyQuery = legacyQuery.gte("offline_store_visits.visit_date", filters.dateFrom);
-    if (filters.dateTo) legacyQuery = legacyQuery.lte("offline_store_visits.visit_date", filters.dateTo);
-    if (filters.status) legacyQuery = legacyQuery.eq("status", filters.status);
+      if (filters.dateFrom) legacyQuery = legacyQuery.gte("offline_store_visits.visit_date", filters.dateFrom);
+      if (filters.dateTo) legacyQuery = legacyQuery.lte("offline_store_visits.visit_date", filters.dateTo);
+      if (filters.status) legacyQuery = legacyQuery.eq("status", filters.status);
     if (filters.status === "approved") {
       legacyQuery = legacyQuery.order("reviewed_at", { ascending: false }).order("created_at", { ascending: false });
     } else {
@@ -635,9 +635,10 @@ export async function getAiPriceCandidates(filters: AiPriceCandidateFilters = {}
   }
   if (error) return { data: [], error: error.message, isDemo: false };
   const rows = (data ?? []) as AiPriceCandidate[];
+  const imageFilteredRows = filters.imageId ? rows.filter((candidate) => matchesAiPriceCandidateImageId(candidate, filters.imageId!)) : rows;
   if (!filters.status) {
     const statusRank: Record<string, number> = { pending: 0, approved: 1, rejected: 2 };
-    rows.sort((a, b) => {
+    imageFilteredRows.sort((a, b) => {
       const rankCompare = (statusRank[a.status] ?? 3) - (statusRank[b.status] ?? 3);
       if (rankCompare !== 0) return rankCompare;
       const aTime = a.status === "approved" ? a.reviewed_at ?? a.created_at : a.created_at;
@@ -645,7 +646,7 @@ export async function getAiPriceCandidates(filters: AiPriceCandidateFilters = {}
       return new Date(bTime).getTime() - new Date(aTime).getTime();
     });
   }
-  return { data: rows, error: null, isDemo: false };
+  return { data: imageFilteredRows, error: null, isDemo: false };
 }
 
 export async function getAiPriceCandidatesPage(filters: AiPriceCandidateFilters = {}): Promise<PaginatedQueryResult<AiPriceCandidate>> {
@@ -664,6 +665,30 @@ export async function getAiPriceCandidatesPage(filters: AiPriceCandidateFilters 
   }
 
   const supabase = createSupabaseServiceClient();
+  if (filters.imageId) {
+    const imageFilteredResult = await getAiPriceCandidates({
+      dateFrom: filters.dateFrom,
+      dateTo: filters.dateTo,
+      visitCode: filters.visitCode,
+      imageId: filters.imageId,
+      status: filters.status,
+      limit: Math.max(page * perPage, 5000),
+    });
+    if (imageFilteredResult.error) {
+      return { data: [], total: 0, page, perPage, error: imageFilteredResult.error, isDemo: imageFilteredResult.isDemo };
+    }
+    const candidates = await attachAiPriceCandidateMatchLabels(supabase, imageFilteredResult.data);
+    const total = candidates.length;
+    const from = (page - 1) * perPage;
+    return {
+      data: candidates.slice(from, from + perPage),
+      total,
+      page,
+      perPage,
+      error: null,
+      isDemo: imageFilteredResult.isDemo,
+    };
+  }
   const shouldFilterVisit = Boolean(filters.dateFrom || filters.dateTo || filters.visitCode);
   const visitColumns = "id,visit_code,store_name,city,province,city_name,district,channel_type,visit_date,created_at,uploader_name";
   const legacyVisitColumns = "id,store_name,city,channel_type,visit_date,created_at";
@@ -716,27 +741,18 @@ export async function getAiPriceCandidatesPage(filters: AiPriceCandidateFilters 
   return { data: candidates, total: count ?? 0, page, perPage, error: null, isDemo: false };
 }
 
+function matchesAiPriceCandidateImageId(candidate: AiPriceCandidate, imageId: string) {
+  const normalizedQuery = String(imageId ?? "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+  if (!normalizedQuery) return true;
+  const normalizedSourceImageId = String(candidate.source_image_id ?? "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+  if (!normalizedSourceImageId) return false;
+  return normalizedSourceImageId.endsWith(normalizedQuery) || formatShortImageId(candidate.source_image_id) === normalizedQuery;
+}
+
 function filterStoresByOrganization(stores: OfflineStore[], organization: OfflineStoreOrganizationFilter) {
   if (organization === "all") return stores;
   if (organization === "unassigned") return stores.filter((store) => !store.organization_id);
   return stores.filter((store) => store.organization_id === organization);
-}
-
-export async function getMarketBenchmarkRules(): Promise<QueryResult<MarketBenchmarkRule[]>> {
-  if (!hasSupabaseServiceConfig()) return { data: demoMarketBenchmarkRules, error: null, isDemo: true };
-
-  const supabase = createSupabaseServiceClient();
-  const { data, error } = await supabase
-    .from("market_benchmark_rules")
-    .select("*, brands(id,name), market_benchmark_period_prices(*)")
-    .eq("active", true)
-    .order("created_at", { ascending: false });
-
-  if (isMissingSchemaError(error) || error?.message.includes("market_benchmark_rules")) {
-    return { data: demoMarketBenchmarkRules, error: "Run migration 202606150004_market_benchmark_rules.sql", isDemo: true };
-  }
-  if (error) return { data: demoMarketBenchmarkRules, error: error.message, isDemo: true };
-  return { data: (data ?? []) as MarketBenchmarkRule[], error: null, isDemo: false };
 }
 
 async function attachAiPriceCandidateMatchLabels(supabase: ReturnType<typeof createSupabaseServiceClient>, candidates: AiPriceCandidate[]) {
@@ -1176,9 +1192,8 @@ export async function getWeeklyPriceCoefficientBoard(
   const [year, monthNumber] = month.split("-").map(Number);
   const monthStart = `${month}-01T00:00:00.000Z`;
   const monthEnd = new Date(Date.UTC(year, monthNumber ?? 1, 1)).toISOString();
-  const [materialResult, rulesResult, mappingsResult] = await Promise.all([
+  const [materialResult, mappingsResult] = await Promise.all([
     getMaterialMaster(),
-    getMarketBenchmarkRules(),
     getCompetitorSeriesMappings(),
   ]);
   const ownSeriesOptions = uniqueStrings(materialResult.data.map((item) => cleanText(item.sub_brand)));
@@ -1202,14 +1217,13 @@ export async function getWeeklyPriceCoefficientBoard(
     locale,
     materialMaster: materialResult.data,
     snapshots: scopedSnapshotsResult.data,
-    rules: rulesResult.data,
     mappings: mappingsResult.data,
     filters,
   });
   return {
     data,
-    error: materialResult.error ?? scopedSnapshotsResult.error ?? rulesResult.error ?? mappingsResult.error,
-    isDemo: materialResult.isDemo || scopedSnapshotsResult.isDemo || rulesResult.isDemo || mappingsResult.isDemo,
+    error: materialResult.error ?? scopedSnapshotsResult.error ?? mappingsResult.error,
+    isDemo: materialResult.isDemo || scopedSnapshotsResult.isDemo || mappingsResult.isDemo,
   };
 }
 
@@ -1420,7 +1434,6 @@ function buildWeeklyPriceCoefficientBoard(input: {
   locale: string;
   materialMaster: MaterialMaster[];
   snapshots: PriceSnapshot[];
-  rules: MarketBenchmarkRule[];
   mappings: CompetitorSeriesMapping[];
   filters: WeeklyPriceCoefficientFilters;
 }): WeeklyPriceCoefficientBoard {
@@ -1450,14 +1463,10 @@ function buildWeeklyPriceCoefficientBoard(input: {
     .map((mapping) => ({
       key: benchmarkSeriesKey(mapping.brand_id, mapping.product_series),
       label: competitorSeriesLabel(mapping.brands?.name, mapping.product_series),
-      isBenchmark: inferredMappedSeriesIsBenchmark(mapping, input.rules),
+      isBenchmark: mapping.is_default_benchmark,
     }))
     .filter((item) => item.key && item.label);
   const allowedBenchmarkKeys = new Set(mappedSeries.map((mapping) => benchmarkSeriesKey(mapping.brand_id, mapping.product_series)));
-  const inferredRules = input.rules.filter((rule) => {
-    if (!rule.active) return false;
-    return allowedBenchmarkKeys.has(benchmarkSeriesKey(rule.brand_id, rule.product_series));
-  });
   const scopedSnapshots = input.snapshots.filter((snapshot) => {
     const organizationName = snapshotOrganizationName(snapshot);
     return Boolean(organizationName);
@@ -1492,7 +1501,6 @@ function buildWeeklyPriceCoefficientBoard(input: {
     weeks,
     ownSnapshots: visibleOwnSnapshots,
     benchmarkSnapshots: visibleBenchmarkSnapshots,
-    selectedRules: inferredRules,
     competitorSeries,
     selectedOwnSeries,
     selectedSku,
@@ -1521,7 +1529,6 @@ function buildWeeklyCoefficientTree(input: {
   weeks: WeeklyPriceCoefficientBoard["weeks"];
   ownSnapshots: PriceSnapshot[];
   benchmarkSnapshots: PriceSnapshot[];
-  selectedRules: MarketBenchmarkRule[];
   competitorSeries: WeeklyPriceCoefficientBoard["competitorSeries"];
   selectedOwnSeries: string | null;
   selectedSku: string | null;
@@ -1546,7 +1553,6 @@ function buildWeeklyCoefficientTree(input: {
         weeks: input.weeks,
         ownSnapshots: ownGroupSnapshots,
         benchmarkSnapshots: benchmarkGroupSnapshots,
-        selectedRules: input.selectedRules,
         competitorSeries: input.competitorSeries,
         selectedOwnSeries: input.selectedOwnSeries,
         selectedSku: input.selectedSku,
@@ -1567,7 +1573,6 @@ function buildProvinceNodes(input: {
   organization: string;
   ownSnapshots: PriceSnapshot[];
   benchmarkSnapshots: PriceSnapshot[];
-  selectedRules: MarketBenchmarkRule[];
   competitorSeries: WeeklyPriceCoefficientBoard["competitorSeries"];
   selectedOwnSeries: string | null;
   selectedSku: string | null;
@@ -1592,7 +1597,6 @@ function buildProvinceNodes(input: {
         weeks: input.weeks,
         ownSnapshots: ownGroupSnapshots,
         benchmarkSnapshots: benchmarkGroupSnapshots,
-        selectedRules: input.selectedRules,
         competitorSeries: input.competitorSeries,
         selectedOwnSeries: input.selectedOwnSeries,
         selectedSku: input.selectedSku,
@@ -1614,7 +1618,6 @@ function buildCityNodes(input: {
   province: string;
   ownSnapshots: PriceSnapshot[];
   benchmarkSnapshots: PriceSnapshot[];
-  selectedRules: MarketBenchmarkRule[];
   competitorSeries: WeeklyPriceCoefficientBoard["competitorSeries"];
   selectedOwnSeries: string | null;
   selectedSku: string | null;
@@ -1639,7 +1642,6 @@ function buildCityNodes(input: {
         weeks: input.weeks,
         ownSnapshots: ownGroupSnapshots,
         benchmarkSnapshots: benchmarkGroupSnapshots,
-        selectedRules: input.selectedRules,
         competitorSeries: input.competitorSeries,
         selectedOwnSeries: input.selectedOwnSeries,
         selectedSku: input.selectedSku,
@@ -1662,7 +1664,6 @@ function buildDistrictNodes(input: {
   cityName: string;
   ownSnapshots: PriceSnapshot[];
   benchmarkSnapshots: PriceSnapshot[];
-  selectedRules: MarketBenchmarkRule[];
   competitorSeries: WeeklyPriceCoefficientBoard["competitorSeries"];
   selectedOwnSeries: string | null;
   selectedSku: string | null;
@@ -1687,7 +1688,6 @@ function buildDistrictNodes(input: {
         weeks: input.weeks,
         ownSnapshots: ownGroupSnapshots,
         benchmarkSnapshots: benchmarkGroupSnapshots,
-        selectedRules: input.selectedRules,
         competitorSeries: input.competitorSeries,
         selectedOwnSeries: input.selectedOwnSeries,
         selectedSku: input.selectedSku,
@@ -1711,7 +1711,6 @@ function buildSkuNodes(input: {
   district: string;
   ownSnapshots: PriceSnapshot[];
   benchmarkSnapshots: PriceSnapshot[];
-  selectedRules: MarketBenchmarkRule[];
   competitorSeries: WeeklyPriceCoefficientBoard["competitorSeries"];
   selectedOwnSeries: string | null;
   selectedSku: string | null;
@@ -1738,7 +1737,6 @@ function buildSkuNodes(input: {
         weeks: input.weeks,
         ownSnapshots: ownGroupSnapshots,
         benchmarkSnapshots: benchmarkGroupSnapshots,
-        selectedRules: input.selectedRules,
         competitorSeries: input.competitorSeries,
         selectedOwnSeries: input.selectedOwnSeries,
         selectedSku: skuCode,
@@ -1761,7 +1759,6 @@ function buildWeeklyCoefficientNode(input: {
   weeks: WeeklyPriceCoefficientBoard["weeks"];
   ownSnapshots: PriceSnapshot[];
   benchmarkSnapshots: PriceSnapshot[];
-  selectedRules: MarketBenchmarkRule[];
   competitorSeries: WeeklyPriceCoefficientBoard["competitorSeries"];
   selectedOwnSeries: string | null;
   selectedSku: string | null;
@@ -1791,7 +1788,6 @@ function buildWeeklyCoefficientNode(input: {
       week,
       ownSnapshots: input.ownSnapshots,
       benchmarkSnapshots: input.benchmarkSnapshots,
-      selectedRules: input.selectedRules,
       competitorSeries: input.competitorSeries,
       selectedOwnSeries: input.selectedOwnSeries,
       selectedSku: input.selectedSku,
@@ -1808,7 +1804,6 @@ function buildWeeklyCoefficientCell(input: {
   week: WeeklyPriceCoefficientBoard["weeks"][number];
   ownSnapshots: PriceSnapshot[];
   benchmarkSnapshots: PriceSnapshot[];
-  selectedRules: MarketBenchmarkRule[];
   competitorSeries: WeeklyPriceCoefficientBoard["competitorSeries"];
   selectedOwnSeries: string | null;
   selectedSku: string | null;
@@ -1822,33 +1817,22 @@ function buildWeeklyCoefficientCell(input: {
     .map((snapshot) => Number(snapshot.price_per_piece))
     .filter(isPositiveNumber);
   const ownAvgPrice = averageOrNull(ownPrices);
-  const benchmarkSeries = input.competitorSeries.find((series) => series.isBenchmark) ?? null;
-  const benchmarkRules = benchmarkSeries
-    ? input.selectedRules.filter((rule) => benchmarkSeriesKey(rule.brand_id, rule.product_series) === benchmarkSeries.key)
-    : [];
-  const ownPeriodBenchmarkPrices = benchmarkSeries
-    ? benchmarkPricesFromPeriodPrices(weeklyOwnSnapshots, benchmarkRules, input.week)
-    : [];
-  const ownFallbackBenchmarkPrices = benchmarkSeries
-    ? input.benchmarkSnapshots
-      .filter((snapshot) => benchmarkSeriesKey(snapshot.competitor_products?.brand_id, snapshot.competitor_products?.product_series) === benchmarkSeries.key)
-      .filter((snapshot) => benchmarkRules.length > 0 ? benchmarkRules.some((rule) => snapshotMatchesBenchmarkRegion(snapshot, rule, false)) : true)
-      .filter((snapshot) => snapshotInPeriod(snapshot, input.week.startDate, input.week.endDate))
+  const defaultBenchmarkSeries = input.competitorSeries.find((series) => series.isBenchmark) ?? null;
+  const weeklyBenchmarkSnapshots = input.benchmarkSnapshots
+    .filter((snapshot) => snapshotInPeriod(snapshot, input.week.startDate, input.week.endDate));
+  const defaultBenchmarkPrices = defaultBenchmarkSeries
+    ? weeklyBenchmarkSnapshots
+      .filter((snapshot) => benchmarkSeriesKey(snapshot.competitor_products?.brand_id, snapshot.competitor_products?.product_series) === defaultBenchmarkSeries.key)
       .map((snapshot) => Number(snapshot.price_per_piece))
       .filter(isPositiveNumber)
     : [];
-  const ownBenchmarkPrices = ownPeriodBenchmarkPrices.length > 0 ? ownPeriodBenchmarkPrices : ownFallbackBenchmarkPrices;
+  const ownBenchmarkPrices = defaultBenchmarkSeries ? defaultBenchmarkPrices : [];
   const ownBenchmarkAvgPrice = averageOrNull(ownBenchmarkPrices);
   const competitorCells = input.competitorSeries.map((series) => {
-    const seriesRules = input.selectedRules.filter((rule) => benchmarkSeriesKey(rule.brand_id, rule.product_series) === series.key);
-    const periodBenchmarkPrices = benchmarkPricesFromPeriodPrices(weeklyOwnSnapshots, seriesRules, input.week);
-    const fallbackBenchmarkPrices = input.benchmarkSnapshots
+    const benchmarkPrices = weeklyBenchmarkSnapshots
       .filter((snapshot) => benchmarkSeriesKey(snapshot.competitor_products?.brand_id, snapshot.competitor_products?.product_series) === series.key)
-      .filter((snapshot) => seriesRules.length > 0 ? seriesRules.some((rule) => snapshotMatchesBenchmarkRegion(snapshot, rule, false)) : true)
-      .filter((snapshot) => snapshotInPeriod(snapshot, input.week.startDate, input.week.endDate))
       .map((snapshot) => Number(snapshot.price_per_piece))
       .filter(isPositiveNumber);
-    const benchmarkPrices = periodBenchmarkPrices.length > 0 ? periodBenchmarkPrices : fallbackBenchmarkPrices;
     const benchmarkAvgPrice = averageOrNull(benchmarkPrices);
     return {
       seriesKey: series.key,
@@ -1910,51 +1894,6 @@ function buildWeeklyCoefficientNodeId(input: {
   return `${input.level}:${parts.join(">")}`;
 }
 
-function benchmarkPricesFromPeriodPrices(
-  ownSnapshots: PriceSnapshot[],
-  rules: MarketBenchmarkRule[],
-  week: WeeklyPriceCoefficientBoard["weeks"][number],
-) {
-  if (rules.length === 0 || ownSnapshots.length === 0) return [];
-  const prices: number[] = [];
-  for (const snapshot of ownSnapshots) {
-    const rule = pickBestBenchmarkRuleForSnapshot(snapshot, rules);
-    if (!rule) continue;
-    const periodPrice = rule.market_benchmark_period_prices?.find((price) =>
-      price.period_type === "week"
-      && price.start_date === week.startDate
-      && price.end_date === week.endDate
-      && isPositiveNumber(price.benchmark_price_per_piece),
-    );
-    if (periodPrice?.benchmark_price_per_piece) {
-      prices.push(Number(periodPrice.benchmark_price_per_piece));
-    }
-  }
-  return prices;
-}
-
-function inferredMappedSeriesIsBenchmark(
-  mapping: CompetitorSeriesMapping,
-  rules: MarketBenchmarkRule[],
-) {
-  const mappingKey = benchmarkSeriesKey(mapping.brand_id, mapping.product_series);
-  return rules.some((rule) => benchmarkSeriesKey(rule.brand_id, rule.product_series) === mappingKey);
-}
-
-function pickBestBenchmarkRuleForSnapshot(snapshot: PriceSnapshot, rules: MarketBenchmarkRule[]) {
-  const matchedRules = rules.filter((rule) => snapshotMatchesBenchmarkRegion(snapshot, rule, false));
-  if (matchedRules.length === 0) return null;
-  return matchedRules.sort((left, right) => benchmarkRuleSpecificity(right) - benchmarkRuleSpecificity(left))[0] ?? null;
-}
-
-function benchmarkRuleSpecificity(rule: Pick<MarketBenchmarkRule, "district" | "city_name" | "province">) {
-  let score = 0;
-  if (cleanText(rule.province)) score += 1;
-  if (cleanText(rule.city_name)) score += 2;
-  if (cleanText(rule.district)) score += 4;
-  return score;
-}
-
 function normalizeDashboardMonth(value: string | null | undefined) {
   const text = String(value ?? "").trim();
   return /^\d{4}-\d{2}$/.test(text) ? text : dateKey(new Date()).slice(0, 7);
@@ -2001,21 +1940,6 @@ function snapshotRegionParts(snapshot: PriceSnapshot) {
     cityName: visitRegionParts.cityName ?? storeRegionParts.cityName ?? null,
     district: visitRegionParts.district ?? storeRegionParts.district ?? null,
   };
-}
-
-function snapshotMatchesBenchmarkRegion(snapshot: PriceSnapshot, rule: MarketBenchmarkRule, isNational: boolean) {
-  if (isNational) return true;
-  const visit = snapshot.ai_price_candidates?.[0]?.offline_store_visits;
-  const store = snapshot.offline_stores;
-  const visitRegionParts = visitRegion(visit);
-  const storeRegionParts = storeRegion(store);
-  const province = visitRegionParts.province ?? storeRegionParts.province;
-  const cityName = visitRegionParts.cityName ?? storeRegionParts.cityName;
-  const district = visitRegionParts.district ?? storeRegionParts.district;
-  if (!sameLoose(province, rule.province)) return false;
-  if (!sameLoose(cityName, rule.city_name)) return false;
-  if (cleanText(rule.district) && !sameLoose(district, rule.district)) return false;
-  return true;
 }
 
 function snapshotInPeriod(snapshot: PriceSnapshot, startDate: string, endDate: string) {
@@ -2290,7 +2214,7 @@ function buildProductSegmentBattles(input: {
           cityName: regionParts.cityName,
           district: regionParts.district,
         })
-        : buildMarketBenchmarkHref(input.locale, {
+        : buildCompetitorMappingHref(input.locale, {
           line: group.line,
           size: group.size,
           priceBand: group.priceBand,
@@ -2447,12 +2371,12 @@ function buildDashboardPriceHref(locale: string, input: {
   return `/${locale}/prices?${params.toString()}`;
 }
 
-function buildMarketBenchmarkHref(locale: string, input: { line: string; size: string; priceBand: string }) {
+function buildCompetitorMappingHref(locale: string, input: { line: string; size: string; priceBand: string }) {
   const params = new URLSearchParams();
   params.set("line", input.line);
   params.set("size", input.size);
   params.set("priceBand", input.priceBand);
-  return `/${locale}/market-benchmarks?${params.toString()}`;
+  return `/${locale}/competitor-mappings?${params.toString()}`;
 }
 
 function productLineLabel(value: SkuMaster["pack_type"]) {

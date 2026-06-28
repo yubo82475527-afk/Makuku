@@ -20,7 +20,7 @@ const protectedRoutes = [
   "src/app/api/price-snapshots/route.ts",
   "src/app/api/offline-stores/route.ts",
   "src/app/api/app-users/route.ts",
-  "src/app/api/market-benchmarks/route.ts",
+  "src/app/api/competitor-series-matches/route.ts",
   "src/app/api/sku-matches/route.ts",
   "src/app/api/competitors/route.ts",
   "src/app/api/ai-price-candidates/bulk-review/route.ts",
@@ -125,7 +125,7 @@ test("proxy protects PC backend pages but leaves H5 capture public", () => {
   assert.match(proxyFile, /prices/);
   assert.match(proxyFile, /offline-price-candidates/);
   assert.match(proxyFile, /offline-stores/);
-  assert.match(proxyFile, /market-benchmarks/);
+  assert.doesNotMatch(proxyFile, /market-benchmarks/);
   assert.match(proxyFile, /mobile\/offline-capture/);
   assert.match(proxyFile, /isPcProtectedPath/);
   assert.match(proxyFile, /isAllowedAdminRole/);

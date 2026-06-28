@@ -1,97 +1,48 @@
-﻿import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-const migration = readFileSync("supabase/migrations/202606150004_market_benchmark_rules.sql", "utf8");
+const mappingMigration = readFileSync("supabase/migrations/202606280001_competitor_series_mapping_default_benchmark.sql", "utf8");
 const types = readFileSync("src/lib/types.ts", "utf8");
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
-const helper = readFileSync("src/lib/market-benchmark-rules.ts", "utf8");
-const periods = readFileSync("src/lib/periods.ts", "utf8");
-const apiRoute = readFileSync("src/app/api/market-benchmarks/route.ts", "utf8");
-const page = readFileSync("src/app/[locale]/market-benchmarks/page.tsx", "utf8");
-const dialog = readFileSync("src/components/market-benchmark-rule-dialog.tsx", "utf8");
-const backfillDialog = readFileSync("src/components/market-benchmark-backfill-dialog.tsx", "utf8");
+const competitorSeriesRoute = readFileSync("src/app/api/competitor-series-matches/route.ts", "utf8");
+const competitorMappingPage = readFileSync("src/app/[locale]/competitor-mappings/page.tsx", "utf8");
+const rulesPanel = readFileSync("src/components/competitor-series-rules-panel.tsx", "utf8");
 
-test("market benchmark rule schema supports region series rules and flexible periods", () => {
-  assert.match(migration, /create table if not exists public\.market_benchmark_rules/);
-  assert.match(migration, /province text not null/);
-  assert.match(migration, /city_name text not null/);
-  assert.match(migration, /district text/);
-  assert.match(migration, /brand_id uuid not null/);
-  assert.match(migration, /product_series text/);
-  assert.match(migration, /create table if not exists public\.market_benchmark_period_prices/);
-  assert.match(migration, /period_type text not null check \(period_type in \('week', 'month'\)\)/);
-  assert.match(migration, /uniq_market_benchmark_rules_active_scope/);
-  assert.match(migration, /uniq_market_benchmark_period_prices_period/);
-  assert.match(migration, /truncate table public\.market_benchmarks/);
-  assert.match(types, /MarketBenchmarkRule/);
-  assert.match(types, /MarketBenchmarkPeriodPrice/);
+test("competitor series mapping schema owns the default benchmark flag", () => {
+  assert.match(mappingMigration, /alter table public\.competitor_series_mappings/);
+  assert.match(mappingMigration, /is_default_benchmark boolean not null default false/);
+  assert.match(mappingMigration, /uniq_competitor_series_mappings_default_benchmark/);
+  assert.match(types, /is_default_benchmark: boolean/);
 });
 
-test("market benchmark API saves single or batch regional rules and period prices", () => {
-  assert.match(apiRoute, /getMarketBenchmarkRules/);
-  assert.match(apiRoute, /backfill_period_prices/);
-  assert.match(apiRoute, /parseRegions/);
-  assert.match(apiRoute, /targetRegions/);
-  assert.match(apiRoute, /backfillPeriodPrices/);
-  assert.match(apiRoute, /overwrite/);
-  assert.match(apiRoute, /buildPeriods/);
-  assert.match(apiRoute, /province/);
-  assert.match(apiRoute, /city_name/);
-  assert.match(apiRoute, /district/);
-  assert.match(apiRoute, /brand_id/);
-  assert.match(apiRoute, /product_series/);
-  assert.match(apiRoute, /cleanSeries/);
-  assert.match(apiRoute, /currentBenchmarkPeriod\("week"\)/);
-  assert.match(apiRoute, /calculateBenchmarkAverage/);
-  assert.match(apiRoute, /carried_forward/);
-  assert.match(apiRoute, /monthWeeks\(month\)/);
-  assert.match(apiRoute, /listExistingPeriodPricesInRange/);
-  assert.match(apiRoute, /deleteExistingPeriodPricesInRange/);
-  assert.match(apiRoute, /existingExactKeys/);
-  assert.doesNotMatch(apiRoute, /benchmark_competitor_product_id/);
-  assert.doesNotMatch(apiRoute, /benchmark_sku_name/);
+test("benchmark selection is configured inline on competitor mapping rules", () => {
+  assert.match(competitorMappingPage, /CompetitorSeriesRulesPanel/);
+  assert.match(rulesPanel, /name="intent" value="set_benchmark"/);
+  assert.match(rulesPanel, /name="intent" value="clear_benchmark"/);
+  assert.match(rulesPanel, /is_default_benchmark/);
+  assert.match(rulesPanel, /defaultBenchmark/);
+  assert.match(competitorSeriesRoute, /setDefaultBenchmarkRule/);
+  assert.match(competitorSeriesRoute, /clearDefaultBenchmarkRule/);
+  assert.match(competitorSeriesRoute, /is_default_benchmark: true/);
+  assert.match(competitorSeriesRoute, /is_default_benchmark: false/);
 });
 
-test("market benchmark page is a batch region series rule surface", () => {
-  assert.match(page, /getMarketBenchmarkRules/);
-  assert.match(page, /MarketBenchmarkRuleDialog/);
-  assert.match(page, /MarketBenchmarkBackfillDialog/);
-  assert.match(page, /name="province"/);
-  assert.match(page, /name="cityName"/);
-  assert.match(page, /name="district"/);
-  assert.match(page, /name="brand"/);
-  assert.match(page, /name="series"/);
-  assert.match(page, /visibleRules/);
-  assert.match(page, /latestPeriodPrice/);
-  assert.match(dialog, /New Rule/);
-  assert.match(dialog, /selectedBrandId/);
-  assert.match(dialog, /selectedSeries/);
-  assert.match(dialog, /regionRows/);
-  assert.match(dialog, /newRegionDraft/);
-  assert.match(dialog, /name="regions"/);
-  assert.match(dialog, /name="brand_id"/);
-  assert.match(dialog, /name="product_series"/);
-  assert.match(backfillDialog, /Backfill Prices/);
-  assert.match(backfillDialog, /name="intent" value="backfill_period_prices"/);
-  assert.match(backfillDialog, /name="period_type"/);
-  assert.match(backfillDialog, /name="start_date"/);
-  assert.match(backfillDialog, /name="end_date"/);
-  assert.match(backfillDialog, /name="overwrite"/);
-  assert.doesNotMatch(page, /competitorProductId/);
-  assert.doesNotMatch(page, /name="benchmark_price_per_piece"/);
+test("standalone market benchmark management surface is gone", () => {
+  assert.equal(existsSync("src/app/[locale]/market-benchmarks/page.tsx"), false);
+  assert.equal(existsSync("src/app/api/market-benchmarks/route.ts"), false);
+  assert.equal(existsSync("src/components/market-benchmark-rule-dialog.tsx"), false);
+  assert.equal(existsSync("src/components/market-benchmark-backfill-dialog.tsx"), false);
 });
 
-test("market benchmark helpers match optional district and preserve period labels", () => {
-  assert.match(periods, /DEFAULT_WEEK_MODE: MarketBenchmarkWeekMode = "month_fixed_4"/);
-  assert.match(periods, /monthWeeks/);
-  assert.match(periods, /W1/);
-  assert.match(periods, /W4/);
-  assert.match(helper, /currentBenchmarkPeriod/);
-  assert.match(helper, /price\.start_date === currentPeriod\.startDate/);
-  assert.match(helper, /snapshotMatchesRule/);
-  assert.match(helper, /cleanText\(rule\.district\)/);
-  assert.match(helper, /formatBenchmarkPeriod/);
-  assert.match(dataFile, /getMarketBenchmarkRules/);
-  assert.match(dataFile, /market_benchmark_period_prices/);
+test("weekly price coefficient board does not use legacy benchmark rule period prices", () => {
+  assert.match(dataFile, /getCompetitorSeriesMappings/);
+  assert.match(dataFile, /mapping\.is_default_benchmark/);
+  assert.match(dataFile, /defaultBenchmarkSeries/);
+  assert.match(dataFile, /defaultBenchmarkSeries \? defaultBenchmarkPrices : \[\]/);
+  assert.doesNotMatch(dataFile, /allMappedBenchmarkPrices/);
+  assert.doesNotMatch(dataFile, /getMarketBenchmarkRules\(\)/);
+  assert.doesNotMatch(dataFile, /benchmarkPricesFromPeriodPrices/);
+  assert.doesNotMatch(dataFile, /pickBestBenchmarkRuleForSnapshot/);
+  assert.doesNotMatch(dataFile, /market_benchmark_period_prices/);
 });

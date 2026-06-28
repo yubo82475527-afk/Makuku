@@ -155,7 +155,7 @@ export function CompetitorMappingTable({ products, materials, locale, dict, mapp
               const match = product.sku_matches?.[0];
               const selectedMaterialCode = findMaterialCodeForSku(match?.sku_master, materials);
               const setBenchmarkHref = match?.sku_master
-                ? `/${locale}/market-benchmarks?competitorProductId=${encodeURIComponent(product.id)}`
+                ? `/${locale}/competitor-mappings?competitorProductId=${encodeURIComponent(product.id)}`
                 : null;
               const draft = productDraft(product);
               const isSaving = savingIds.includes(product.id);

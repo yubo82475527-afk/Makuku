@@ -140,8 +140,8 @@ function PriceIndexSection({
               : "Expand by organization, province, city, district, and SKU to review weekly price per piece and coefficient."}
           </p>
         </div>
-        <Link href={`/${locale}/market-benchmarks`} className="text-sm font-medium text-slate-700 hover:underline">
-          {isZh ? "维护标杆规则" : "Maintain benchmark rules"}
+        <Link href={`/${locale}/competitor-mappings`} className="text-sm font-medium text-slate-700 hover:underline">
+          {isZh ? "维护竞品映射" : "Maintain competitor mapping"}
         </Link>
       </div>
       <WeeklyPriceCoefficientFilters board={board} isZh={isZh} />

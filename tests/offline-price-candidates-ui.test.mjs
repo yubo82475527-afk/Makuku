@@ -117,6 +117,23 @@ test("photo price review filters by fuzzy store visit batch code", () => {
   assert.match(dataFile, /\.ilike\("offline_store_visits\.visit_code", `%\$\{escapeIlikePattern\(filters\.visitCode\)\}%`\)/);
 });
 
+test("photo price review filters by source image id and shows it in the list", () => {
+  assert.match(candidatesPage, /const imageId = getFilter\("image_id"\)\.trim\(\)/);
+  assert.match(candidatesPage, /name="image_id"/);
+  assert.match(candidatesPage, /defaultValue=\{imageId\}/);
+  assert.match(candidatesPage, /exportParams\.set\("image_id", imageId\)/);
+  assert.match(candidatesPage, /imageId: imageId \|\| undefined/);
+  assert.match(workbench, /copy\.table\.imageId/);
+  assert.match(workbench, /<td className="px-3 py-3 font-medium text-slate-700">\{formatShortImageId\(candidate\.source_image_id\)\}<\/td>/);
+  assert.match(candidateListRoute, /imageId: searchParams\.get\("image_id"\)\?\.trim\(\) \|\| undefined/);
+  assert.match(candidateExportRoute, /const imageId = searchParams\.get\("image_id"\)\?\.trim\(\)/);
+  assert.match(candidateExportRoute, /imageId: imageId \|\| undefined/);
+  assert.match(dataFile, /imageId\?: string/);
+  assert.match(dataFile, /matchesAiPriceCandidateImageId/);
+  assert.match(dataFile, /normalizedSourceImageId\.endsWith\(normalizedQuery\)/);
+  assert.doesNotMatch(dataFile, /\.ilike\("source_image_id"/);
+});
+
 test("photo price review keeps Chinese copy keys for table headers and actions", () => {
   assert.match(workbench, /locale === "zh"/);
   assert.match(workbench, /approveSelected/);
@@ -263,18 +280,26 @@ test("photo price review uses row click drawer with compact risk indicators and 
 });
 
 test("store visit detail route returns signed photos from new image table and legacy arrays", () => {
-  assert.match(storeVisitRoute, /offline_visit_images\(\*\)/);
+  assert.match(storeVisitRoute, /const visitSelect = "id,visit_code,[\s\S]+offline_visit_images\(id,visit_id,replaces_image_id,replaced_by_image_id,deleted_at,deletion_reason,image_type,image_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at\)"/);
+  assert.match(storeVisitRoute, /const legacyVisitSelect = "id,visit_code,[\s\S]+offline_visit_images\(id,visit_id,image_type,image_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at\)"/);
   assert.match(storeVisitRoute, /offline-visit-images/);
   assert.match(storeVisitRoute, /store-visits/);
   assert.match(storeVisitRoute, /signed_images/);
   assert.match(storeVisitRoute, /own_shelf[\s\S]+makuku_shelf/);
   assert.match(storeVisitRoute, /toStoreVisitImageCategory/);
+  assert.match(storeVisitRoute, /isMissingImageLifecycleColumnsError/);
+  assert.match(storeVisitRoute, /replaced_offline_visit_images/);
 });
 
 test("mobile store visit detail can preview photos from the thumbnail grid", () => {
   assert.match(storeVisitDetailH5, /activeImage/);
   assert.match(storeVisitDetailH5, /setActiveImage/);
-  assert.match(storeVisitDetailH5, /aria-label=\{locale === "zh" \? "放大照片" : "Preview photo"\}/);
+  assert.match(storeVisitDetailH5, /previewPhoto: "预览照片"/);
+  assert.match(storeVisitDetailH5, /expandPhoto: "放大照片"/);
+  assert.match(storeVisitDetailH5, /previewPhoto: "Preview photo"/);
+  assert.match(storeVisitDetailH5, /expandPhoto: "Preview photo"/);
+  assert.match(storeVisitDetailH5, /aria-label=\{text\.previewPhoto\}/);
+  assert.match(storeVisitDetailH5, /aria-label=\{text\.expandPhoto\}/);
   assert.match(storeVisitDetailH5, /role="dialog"/);
   assert.match(storeVisitDetailH5, /max-h-\[82vh\]/);
 });

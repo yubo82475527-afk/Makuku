@@ -1,4 +1,4 @@
-﻿import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -11,13 +11,10 @@ const competitorProductsTable = readFileSync("src/components/competitor-products
 const competitorsRoute = readFileSync("src/app/api/competitors/route.ts", "utf8");
 const skuMatchesRoute = readFileSync("src/app/api/sku-matches/route.ts", "utf8");
 const skuMasterBridge = readFileSync("src/lib/sku-master-bridge.ts", "utf8");
-const marketBenchmarksPage = readFileSync("src/app/[locale]/market-benchmarks/page.tsx", "utf8");
-const marketBenchmarkBackfillDialog = readFileSync("src/components/market-benchmark-backfill-dialog.tsx", "utf8");
-const marketBenchmarkRuleDialog = readFileSync("src/components/market-benchmark-rule-dialog.tsx", "utf8");
-const marketBenchmarksRoute = readFileSync("src/app/api/market-benchmarks/route.ts", "utf8");
 const dashboardPage = readFileSync("src/app/[locale]/dashboard/page.tsx", "utf8");
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const productMasterSearchSelect = readFileSync("src/components/product-master-search-select.tsx", "utf8");
+const appShell = readFileSync("src/components/app-shell.tsx", "utf8");
 
 test("SKU price monitor stays a price fact view without benchmark configuration actions", () => {
   assert.match(pricesPage, /Export CSV/);
@@ -27,7 +24,7 @@ test("SKU price monitor stays a price fact view without benchmark configuration 
   assert.doesNotMatch(pricesPage, /benchmark_competitor_product_id/);
 });
 
-test("competitor mapping exposes automatic series rules without sku-level benchmark management", () => {
+test("competitor mapping exposes automatic series rules and benchmark selection", () => {
   assert.match(competitorMappingsPage, /CompetitorSeriesRulesPanel/);
   assert.match(competitorMappingsPage, /getCompetitorSeriesMappings/);
   assert.match(competitorMappingsPage, /getMaterialMaster/);
@@ -52,7 +49,7 @@ test("competitor mapping exposes automatic series rules without sku-level benchm
   assert.match(productMasterSearchSelect, /name="material_sku_code"/);
 });
 
-test("manual competitor mapping is confirmed without a second approval step", () => {
+test("manual competitor mapping remains an explicit SKU exception path", () => {
   assert.match(skuMatchesRoute, /reviewed: true/);
   assert.match(skuMatchesRoute, /\.delete\(\)[\s\S]*\.eq\("competitor_product_id", competitorProductId\)/);
   assert.match(skuMatchesRoute, /sku_matches/);
@@ -62,48 +59,26 @@ test("manual competitor mapping is confirmed without a second approval step", ()
   assert.doesNotMatch(competitorsRoute, /body\.reviewed/);
 });
 
-test("market benchmark page is the regional series rule configuration center", () => {
-  assert.match(marketBenchmarksPage, /getMarketBenchmarkRules/);
-  assert.match(marketBenchmarksPage, /getCompetitorProducts/);
-  assert.match(marketBenchmarksPage, /searchParams/);
-  assert.match(marketBenchmarksPage, /MarketBenchmarkRuleDialog/);
-  assert.match(marketBenchmarksPage, /MarketBenchmarkBackfillDialog/);
-  assert.match(marketBenchmarksPage, /name="province"/);
-  assert.match(marketBenchmarksPage, /name="cityName"/);
-  assert.match(marketBenchmarksPage, /name="district"/);
-  assert.match(marketBenchmarksPage, /name="brand"/);
-  assert.match(marketBenchmarksPage, /name="series"/);
-  assert.match(marketBenchmarksPage, /visibleRules/);
-  assert.match(marketBenchmarksPage, /latestPeriodPrice/);
-  assert.match(marketBenchmarkRuleDialog, /New Rule/);
-  assert.match(marketBenchmarkRuleDialog, /regionRows/);
-  assert.match(marketBenchmarkRuleDialog, /newRegionDraft/);
-  assert.match(marketBenchmarkRuleDialog, /name="regions"/);
-  assert.match(marketBenchmarkRuleDialog, /name="brand_id"/);
-  assert.match(marketBenchmarkRuleDialog, /name="product_series"/);
-  assert.match(marketBenchmarkBackfillDialog, /Backfill Prices/);
-  assert.match(marketBenchmarkBackfillDialog, /backfill_period_prices/);
-  assert.doesNotMatch(marketBenchmarksPage, /competitorProductId/);
-  assert.doesNotMatch(marketBenchmarksPage, /name="benchmark_price_per_piece"/);
+test("standalone market benchmark management is removed from product routes", () => {
+  assert.equal(existsSync("src/app/[locale]/market-benchmarks/page.tsx"), false);
+  assert.equal(existsSync("src/app/api/market-benchmarks/route.ts"), false);
+  assert.equal(existsSync("src/components/market-benchmark-rule-dialog.tsx"), false);
+  assert.equal(existsSync("src/components/market-benchmark-backfill-dialog.tsx"), false);
+  assert.doesNotMatch(appShell, /market-benchmarks/);
+  assert.doesNotMatch(appShell, /Market Benchmarks/);
+  assert.doesNotMatch(dashboardPage, /Maintain benchmark rules/);
+  assert.match(dashboardPage, /competitor-mappings/);
 });
 
-test("market benchmark API saves regional series rules and period prices", () => {
-  assert.match(marketBenchmarksRoute, /getMarketBenchmarkRules/);
-  assert.match(marketBenchmarksRoute, /findActiveRule/);
-  assert.match(marketBenchmarksRoute, /backfillPeriodPrices/);
-  assert.match(marketBenchmarksRoute, /parseRegions/);
-  assert.match(marketBenchmarksRoute, /cleanSeries/);
-  assert.match(marketBenchmarksRoute, /market_benchmark_rules/);
-  assert.match(marketBenchmarksRoute, /market_benchmark_period_prices/);
-  assert.match(marketBenchmarksRoute, /calculateBenchmarkAverage/);
-  assert.match(marketBenchmarksRoute, /carried_forward/);
-  assert.match(marketBenchmarksRoute, /price_snapshots/);
-  assert.match(marketBenchmarksRoute, /\.eq\("active", true\)/);
-  assert.doesNotMatch(marketBenchmarksRoute, /benchmark_competitor_product_id/);
-});
-
-test("dashboard missing benchmark drilldown goes to benchmark configuration", () => {
-  assert.match(dataFile, /buildMarketBenchmarkHref/);
-  assert.match(dataFile, /\/market-benchmarks\?/);
-  assert.match(dashboardPage, /Maintain benchmark rules/);
+test("dashboard price index derives benchmark selection from competitor mappings", () => {
+  assert.match(dataFile, /getCompetitorSeriesMappings/);
+  assert.match(dataFile, /is_default_benchmark/);
+  assert.match(dataFile, /defaultBenchmarkSeries/);
+  assert.match(dataFile, /defaultBenchmarkSeries \? defaultBenchmarkPrices : \[\]/);
+  assert.doesNotMatch(dataFile, /allMappedBenchmarkPrices/);
+  assert.doesNotMatch(dataFile, /getMarketBenchmarkRules\(\)/);
+  assert.doesNotMatch(dataFile, /market_benchmark_rules/);
+  assert.doesNotMatch(dataFile, /market_benchmark_period_prices/);
+  assert.doesNotMatch(dataFile, /buildMarketBenchmarkHref/);
+  assert.doesNotMatch(dataFile, /\/market-benchmarks\?/);
 });
