@@ -42,6 +42,8 @@ test("photo price review uses status tabs instead of top status dropdown", () =>
   assert.match(workbench, /pending.*approved.*rejected.*all/s);
   assert.match(workbench, /statusTabs/);
   assert.match(workbench, /URLSearchParams/);
+  assert.match(candidatesPage, /status:\s*currentStatus/);
+  assert.match(workbench, /params\.set\("status", status\)/);
   assert.doesNotMatch(candidatesPage, /statusHref/);
   assert.doesNotMatch(candidatesPage, /tabClass/);
 });
@@ -204,6 +206,8 @@ test("photo price review shows and edits matched SKU on pending candidates", () 
   assert.match(workbench, /copy\.editMatch/);
   assert.match(workbench, /MatchEditorDialog/);
   assert.match(workbench, /candidate\.status === "pending"/);
+  assert.match(workbench, /whitespace-normal break-words/);
+  assert.doesNotMatch(workbench, /max-w-52 truncate text-xs text-slate-500/);
   assert.match(workbench, /action: "update_match"/);
   assert.match(workbench, /action: "create_competitor_match"/);
   assert.match(workbench, /createCompetitorMatch/);

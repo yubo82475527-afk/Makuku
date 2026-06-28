@@ -20,6 +20,7 @@ type RankedSkuCandidate<T> = {
     tokenCoverage: number;
     formatScore: number;
     packageExpressionScore: number;
+    versionScore: number;
     activeScore: number;
   };
 };
@@ -108,6 +109,13 @@ function hasPackageExpression(text: string, size: string | null, pieceCount: num
   return compactText(text).includes(expression);
 }
 
+function extractProductVersionScore(value: string | null | undefined) {
+  const versions = Array.from(normalizeText(value).matchAll(/\b(\d+)\s+0\b/g))
+    .map((match) => Number(match[1]))
+    .filter((version) => Number.isFinite(version));
+  return versions.length > 0 ? Math.max(...versions) : 0;
+}
+
 export function extractSkuMatchAttributes(
   text: string | null | undefined,
   structuredFields?: {
@@ -145,6 +153,7 @@ function compareRank(left: RankedSkuCandidate<unknown>, right: RankedSkuCandidat
   return left.rank.tokenCoverage - right.rank.tokenCoverage
     || left.rank.formatScore - right.rank.formatScore
     || left.rank.packageExpressionScore - right.rank.packageExpressionScore
+    || left.rank.versionScore - right.rank.versionScore
     || left.rank.activeScore - right.rank.activeScore;
 }
 
@@ -172,6 +181,7 @@ export function rankHardMatchedSkuCandidate<T>({
       tokenCoverage: tokenScore(candidate.normalizedText, targetText),
       formatScore: candidate.format && target.format && candidate.format === target.format ? 1 : 0,
       packageExpressionScore: hasPackageExpression(targetText, candidate.size, candidate.pieceCount) ? 1 : 0,
+      versionScore: extractProductVersionScore(targetText),
       activeScore: active === false ? 0 : 1,
     },
   };

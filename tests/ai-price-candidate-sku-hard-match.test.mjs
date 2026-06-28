@@ -13,10 +13,10 @@ function loadCandidateModule() {
       esModuleInterop: true,
     },
   }).outputText;
-  const module = { exports: {} };
+  const testModule = { exports: {} };
   const sandbox = {
-    module,
-    exports: module.exports,
+    module: testModule,
+    exports: testModule.exports,
     require: (id) => {
       if (id === "@/lib/supabase") {
         return {
@@ -53,7 +53,7 @@ function loadCandidateModule() {
     },
   };
   vm.runInNewContext(transpiled, sandbox);
-  return module.exports;
+  return testModule.exports;
 }
 
 function parsePieceCount(value) {
@@ -193,6 +193,44 @@ test("Makuku hard match ranks format and token coverage after hard attributes pa
 
   assert.equal(result?.item.tenant_sku_code, "pro-tape-l32");
   assert.equal(result?.score, 1);
+});
+
+test("Makuku hard match prefers the newest product version after hard attributes pass", () => {
+  const result = candidates.pickBestMaterialForCandidate(
+    { brand: "Makuku", product: "Makuku Pro Care Pants M36", parsedPrice: 169500, pieceCount: 36 },
+    [
+      material({
+        tenant_sku_code: "pro-pants-m36",
+        tenant_sku_name: "MAKUKU Air Diapers Pro Care Pants M36",
+        sub_brand: "Pro Care",
+        sub_type: "M",
+        pack_count: 36,
+      }),
+      material({
+        tenant_sku_code: "pro-2-pants-m36",
+        tenant_sku_name: "MAKUKU Air Diapers Pro Care 2.0 Pants M36",
+        sub_brand: "Pro Care",
+        sub_type: "M",
+        pack_count: 36,
+      }),
+      material({
+        tenant_sku_code: "pro-3-pants-m36",
+        tenant_sku_name: "MAKUKU Air Diapers Pro Care 3.0 Pants M36",
+        sub_brand: "Pro Care",
+        sub_type: "M",
+        pack_count: 36,
+      }),
+      material({
+        tenant_sku_code: "pro-4-pants-m36",
+        tenant_sku_name: "MAKUKU Air Diapers Pro Care 4.0 Pants M36",
+        sub_brand: "Pro Care",
+        sub_type: "M",
+        pack_count: 36,
+      }),
+    ],
+  );
+
+  assert.equal(result?.item.tenant_sku_code, "pro-4-pants-m36");
 });
 
 test("Makuku hard match returns unmatched when multiple candidates cannot be uniquely ranked", () => {
