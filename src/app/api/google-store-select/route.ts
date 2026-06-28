@@ -91,7 +91,7 @@ export async function POST(request: Request) {
       return Response.json({ error: "Missing required fields: channel_id or channel_type" }, { status: 400 });
     }
 
-    let channelIdToSave = channelId;
+    const channelIdToSave = channelId;
     let channelType = channelTypeFromBody;
     if (channelIdToSave) {
       const { data: channel, error: channelError } = await supabase

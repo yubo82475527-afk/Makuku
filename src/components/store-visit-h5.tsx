@@ -248,7 +248,7 @@ function uiCopy(locale: Locale) {
         address: "Address",
         creatingVisit: "Creating store visit...",
         processingPhotos: "Processing",
-        analyzingPrices: "Photos uploaded. Parsing prices...",
+        analyzingPrices: "Photos uploaded. Parsing price tags only...",
         submitted: "Submitted.",
         storeInfoIncomplete: "Store master data is incomplete. Select or create another store.",
         visitDate: "Visit Date",
@@ -300,6 +300,17 @@ function formatDistance(distanceM: number | null | undefined) {
   if (!Number.isFinite(distanceM ?? NaN)) return null;
   if ((distanceM ?? 0) < 1000) return `${Math.round(distanceM ?? 0)}m`;
   return `${((distanceM ?? 0) / 1000).toFixed(1)}km`;
+}
+
+function useDebouncedValue<T>(value: T, delayMs: number) {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(timeout);
+  }, [delayMs, value]);
+
+  return debounced;
 }
 
 function useOfflineChannelOptions(errorMessage: string) {
@@ -839,6 +850,7 @@ function StoreSearchStep({ locale, user, onSelect }: { locale: Locale; user: App
   const [historyStores, setHistoryStores] = useState<HistoryStoreOption[]>([]);
   const [historyStoresLoading, setHistoryStoresLoading] = useState(true);
   const [historyStoresError, setHistoryStoresError] = useState<string | null>(null);
+  const debouncedHistoryQuery = useDebouncedValue(query, 400);
   const historyResults = historyStores;
   const historyStoresEmpty = !historyStoresLoading && historyResults.length === 0;
 
@@ -883,17 +895,16 @@ function StoreSearchStep({ locale, user, onSelect }: { locale: Locale; user: App
 
   useEffect(() => {
     let cancelled = false;
-    const timeout = setTimeout(async () => {
+    void (async () => {
       if (!cancelled && searchMode === "history") {
-        await loadHistoryStores(query);
+        await loadHistoryStores(debouncedHistoryQuery);
       }
-    }, 250);
+    })();
 
     return () => {
       cancelled = true;
-      clearTimeout(timeout);
     };
-  }, [query, searchMode, user.id, labels.historyStoresError]);
+  }, [debouncedHistoryQuery, searchMode, user.id, labels.historyStoresError]);
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -1028,17 +1039,26 @@ function NewStoreSearchFlow({
 
   useEffect(() => {
     if (!storeLocation && !query.trim()) {
-      locateStores();
+      const timeout = window.setTimeout(() => locateStores(), 0);
+      return () => window.clearTimeout(timeout);
     }
+    return undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     let cancelled = false;
     if (!query.trim() && !storeLocation) {
-      setGoogleResults([]);
-      setLoading(false);
-      return;
+      const timeout = window.setTimeout(() => {
+        if (!cancelled) {
+          setGoogleResults([]);
+          setLoading(false);
+        }
+      }, 0);
+      return () => {
+        cancelled = true;
+        window.clearTimeout(timeout);
+      };
     }
     const timeout = setTimeout(async () => {
       setLoading(true);

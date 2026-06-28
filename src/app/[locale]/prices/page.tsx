@@ -24,6 +24,7 @@ export default async function PricesPage({
   searchParams: Promise<{
     brand?: string;
     sku?: string;
+    visitCode?: string;
     line?: string;
     priceBand?: string;
     size?: string;
@@ -47,12 +48,13 @@ export default async function PricesPage({
   const pricesResult = await getPriceSnapshots({
     capturedFrom: params.createdFrom || undefined,
     capturedTo: capturedToExclusive ?? undefined,
+    visitCode: params.visitCode || undefined,
     limit: 5000,
   });
   const brandSeriesOptions = uniqueOptions(pricesResult.data.map(priceBrandSeriesLabel));
   const resolvedBrand = resolveOptionValue(brandSeriesOptions, params.brand);
   const currentParams = new URLSearchParams();
-  for (const key of ["brand", "sku", "line", "priceBand", "size", "province", "cityName", "district", "store", "createdFrom", "createdTo"] as const) {
+  for (const key of ["brand", "sku", "visitCode", "line", "priceBand", "size", "province", "cityName", "district", "store", "createdFrom", "createdTo"] as const) {
     if (params[key]) currentParams.set(key, params[key]);
   }
   if (resolvedBrand) currentParams.set("brand", resolvedBrand);
@@ -97,6 +99,7 @@ export default async function PricesPage({
           <TextInput name="district" placeholder={locale === "zh" ? "区/县" : "District"} defaultValue={params.district ?? ""} />
           <TextInput name="store" placeholder={locale === "zh" ? "门店" : "Store"} defaultValue={params.store ?? ""} />
           <TextInput name="sku" placeholder={dict.prices.skuId} defaultValue={params.sku ?? ""} />
+          <TextInput name="visitCode" placeholder={locale === "zh" ? "巡店编号" : "Visit Code"} defaultValue={params.visitCode ?? ""} />
           <TextInput name="createdFrom" type="date" defaultValue={params.createdFrom ?? ""} />
           <TextInput name="createdTo" type="date" defaultValue={params.createdTo ?? ""} />
           <Button type="submit">{dict.common.filter}</Button>
@@ -193,6 +196,7 @@ function snapshotMatchesFilters(
   params: {
     brand?: string;
     sku?: string;
+    visitCode?: string;
     line?: string;
     priceBand?: string;
     size?: string;
@@ -217,6 +221,7 @@ function snapshotMatchesFilters(
   if (params.cityName && !matchesText(region.cityName, params.cityName)) return false;
   if (params.district && !matchesText(region.district, params.district)) return false;
   if (params.store && !matchesText(storeNameForSnapshot(snapshot), params.store)) return false;
+  if (params.visitCode && !matchesText(visitCodeForSnapshot(snapshot), params.visitCode)) return false;
   if (params.createdFrom && !matchesCreatedFrom(snapshot.captured_at, params.createdFrom)) return false;
   if (params.createdTo && !matchesCreatedTo(snapshot.captured_at, params.createdTo)) return false;
   return true;
@@ -224,6 +229,15 @@ function snapshotMatchesFilters(
 
 type PriceSnapshotForStoreRegion = {
   captured_at?: string | null;
+  offline_store_visits?: {
+    visit_code?: string | null;
+    store_name?: string | null;
+    city?: string | null;
+    province?: string | null;
+    city_name?: string | null;
+    district?: string | null;
+    visit_date?: string | null;
+  } | null;
   offline_stores?: {
     name?: string | null;
     city?: string | null;
@@ -234,6 +248,7 @@ type PriceSnapshotForStoreRegion = {
   competitor_products?: { shop_name?: string | null } | null;
   ai_price_candidates?: {
     offline_store_visits?: {
+      visit_code?: string | null;
       store_name?: string | null;
       city?: string | null;
       province?: string | null;
@@ -245,6 +260,7 @@ type PriceSnapshotForStoreRegion = {
 };
 
 function storeVisitForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
+  if (snapshot.offline_store_visits) return snapshot.offline_store_visits;
   return snapshot.ai_price_candidates?.find((candidate) => candidate.offline_store_visits)?.offline_store_visits ?? null;
 }
 
@@ -253,6 +269,10 @@ function storeNameForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
     ?? cleanDisplayText(snapshot.offline_stores?.name)
     ?? cleanDisplayText(snapshot.competitor_products?.shop_name)
     ?? "-";
+}
+
+function visitCodeForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
+  return cleanDisplayText(storeVisitForSnapshot(snapshot)?.visit_code) ?? "-";
 }
 
 function storeRegionForSnapshot(snapshot: PriceSnapshotForStoreRegion) {

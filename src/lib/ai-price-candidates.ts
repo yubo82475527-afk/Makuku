@@ -9,6 +9,7 @@ type CandidateInput = {
   visitId: string;
   aiResult: StoreVisitAiResult;
   sourceItems?: SourceItem[];
+  affectedImageIds?: string[];
 };
 
 type SourceItem = {
@@ -334,11 +335,20 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
   })).filter(isPriceCandidate)) ?? sourceItems(input.aiResult);
   if (items.length === 0) return [];
 
-  await supabase
-    .from("ai_price_candidates")
-    .delete()
-    .eq("visit_id", input.visitId)
-    .neq("status", "approved");
+  if (input.affectedImageIds && input.affectedImageIds.length > 0) {
+    await supabase
+      .from("ai_price_candidates")
+      .delete()
+      .eq("visit_id", input.visitId)
+      .in("source_image_id", input.affectedImageIds)
+      .neq("status", "approved");
+  } else {
+    await supabase
+      .from("ai_price_candidates")
+      .delete()
+      .eq("visit_id", input.visitId)
+      .neq("status", "approved");
+  }
 
   const { data: approvedCandidateRows, error: approvedCandidateError } = await supabase
     .from("ai_price_candidates")

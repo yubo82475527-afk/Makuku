@@ -1,5 +1,5 @@
 import { priceBrandSeriesLabel } from "@/lib/brand-series";
-import { formatIdr, formatJakartaTime, formatPricePerPiece } from "@/lib/format";
+import { formatIdr, formatJakartaDateTimeSeconds, formatPricePerPiece, formatShortImageId } from "@/lib/format";
 import {
   priceSnapshotBenchmarkMaterial,
   priceSnapshotBenchmarkSku,
@@ -53,6 +53,8 @@ const csvColumns = {
     "District",
     "Collector",
     "Create Time",
+    "Visit Code",
+    "Image ID",
   ],
 };
 
@@ -80,6 +82,7 @@ export async function GET(request: Request) {
     const cityName = searchParams.get("cityName");
     const district = searchParams.get("district");
     const store = searchParams.get("store");
+    const visitCode = searchParams.get("visitCode");
     const createdFrom = searchParams.get("createdFrom");
     const createdTo = searchParams.get("createdTo");
     const locale = searchParams.get("locale") === "zh" ? "zh" : "en";
@@ -87,7 +90,8 @@ export async function GET(request: Request) {
 
     const { data, error } = await supabase
       .from("price_snapshots")
-      .select("*, sku_master(*, material_master(*)), material_master(*), offline_stores(id,name,city,province,city_name,district,channel_type), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*, material_master(*)))), ai_price_candidates(id, offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))")
+      .select("*, sku_master(*, material_master(*)), material_master(*), offline_store_visits!source_visit_id(id,visit_code,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at), offline_stores(id,name,city,province,city_name,district,channel_type), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*, material_master(*)))), ai_price_candidates(id, offline_store_visits(id,visit_code,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))")
+      .order("created_at", { ascending: false })
       .order("captured_at", { ascending: false })
       .limit(5000);
     if (error) return Response.json({ error: error.message }, { status: 500 });
@@ -106,6 +110,7 @@ export async function GET(request: Request) {
       if (cityName && !matchesText(region.cityName, cityName)) return false;
       if (district && !matchesText(region.district, district)) return false;
       if (store && !matchesText(storeNameForSnapshot(snapshot), store)) return false;
+      if (visitCode && !matchesText(visitCodeForSnapshot(snapshot), visitCode)) return false;
       if (createdFrom && !matchesCreatedFrom(snapshot.created_at, createdFrom)) return false;
       if (createdTo && !matchesCreatedTo(snapshot.created_at, createdTo)) return false;
       return true;
@@ -133,6 +138,8 @@ export async function GET(request: Request) {
         region.district ?? "-",
         uploaderNameForSnapshot(snapshot),
         formatSnapshotCreatedAt(snapshot),
+        visitCodeForSnapshot(snapshot),
+        imageIdForSnapshot(snapshot),
       ].map(csvEscape).join(",");
     });
 
@@ -164,6 +171,16 @@ type PriceSnapshotForStoreRegion = {
   captured_at?: string | null;
   created_at?: string | null;
   source?: string | null;
+  offline_store_visits?: {
+    store_name?: string | null;
+    visit_code?: string | null;
+    city?: string | null;
+    province?: string | null;
+    city_name?: string | null;
+    district?: string | null;
+    visit_date?: string | null;
+    uploader_name?: string | null;
+  } | null;
   offline_stores?: {
     name?: string | null;
     city?: string | null;
@@ -176,6 +193,7 @@ type PriceSnapshotForStoreRegion = {
   ai_price_candidates?: {
     offline_store_visits?: {
       store_name?: string | null;
+      visit_code?: string | null;
       city?: string | null;
       province?: string | null;
       city_name?: string | null;
@@ -250,6 +268,7 @@ function snapshotPromoTypeLabel(snapshot: PriceSnapshot, isZh: boolean) {
 }
 
 function storeVisitForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
+  if (snapshot.offline_store_visits) return snapshot.offline_store_visits;
   return snapshot.ai_price_candidates?.find((candidate) => candidate.offline_store_visits)?.offline_store_visits ?? null;
 }
 
@@ -265,14 +284,22 @@ function uploaderNameForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
   return cleanDisplayText(storeVisitForSnapshot(snapshot)?.uploader_name) ?? "-";
 }
 
+function visitCodeForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
+  return cleanDisplayText(storeVisitForSnapshot(snapshot)?.visit_code) ?? "-";
+}
+
+function imageIdForSnapshot(snapshot: PriceSnapshot) {
+  return formatShortImageId(snapshot.source_image_id);
+}
+
 function formatSnapshotCapturedAt(snapshot: PriceSnapshotForStoreRegion) {
   const visitDate = cleanDisplayText(storeVisitForSnapshot(snapshot)?.visit_date);
   if (visitDate) return visitDate.slice(0, 10);
-  return formatJakartaTime(snapshot.captured_at);
+  return formatJakartaDateTimeSeconds(snapshot.captured_at);
 }
 
 function formatSnapshotCreatedAt(snapshot: PriceSnapshotForStoreRegion) {
-  return formatJakartaTime(snapshot.created_at);
+  return formatJakartaDateTimeSeconds(snapshot.created_at);
 }
 
 function storeRegionForSnapshot(snapshot: PriceSnapshotForStoreRegion) {

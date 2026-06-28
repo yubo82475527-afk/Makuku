@@ -151,6 +151,25 @@ export type StoreVisitAiConfig = {
   activated_at?: string | null;
 };
 
+export type AiApiFamily = "chat_completions" | "responses";
+
+export type AiRequestDiagnostic = {
+  model: string;
+  base_url: string;
+  api_family: AiApiFamily;
+  request_url: string;
+  response_format: "json_object" | "none";
+  parse_repaired: boolean;
+  fallback_used: boolean;
+  fallback_reason?: string;
+  attempt_count: number;
+  http_status?: number;
+  provider_request_id?: string;
+  provider_error_type?: string;
+  provider_error_code?: string;
+  usage?: unknown;
+};
+
 export type Brand = {
   id: string;
   name: string;
@@ -440,6 +459,7 @@ export type PriceSnapshot = {
   offline_stores?: Pick<OfflineStore, "id" | "name" | "city" | "province" | "city_name" | "district" | "channel_type" | "organization_id"> & {
     organizations?: Pick<Organization, "id" | "name" | "status"> | null;
   } | null;
+  offline_store_visits?: PriceSnapshotVisit | null;
   ai_price_candidates?: PriceSnapshotCandidate[];
 };
 
@@ -508,6 +528,10 @@ export type OfflineImageVisionResult = {
 export type OfflineVisitImage = {
   id: string;
   visit_id: string;
+  replaces_image_id?: string | null;
+  replaced_by_image_id?: string | null;
+  deleted_at?: string | null;
+  deletion_reason?: string | null;
   image_type: OfflineImageType;
   image_path: string;
   image_url: string | null;
@@ -599,6 +623,8 @@ export type AiPriceCandidate = {
   rejection_reason?: string | null;
   review_job_id?: string | null;
   review_method?: AiPriceCandidateReviewMethod | null;
+  h5_lifecycle_status?: "deleted" | "replaced" | "reanalyzed" | null;
+  h5_lifecycle_at?: string | null;
   offline_store_visits?: Pick<OfflineStoreVisit, "id" | "visit_code" | "store_name" | "city" | "province" | "city_name" | "district" | "channel_type" | "visit_date" | "created_at" | "uploader_name"> | null;
 };
 

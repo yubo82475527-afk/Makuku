@@ -527,6 +527,8 @@ export async function analyzeStoreVisitImages(input: {
 }
 
 export async function analyzeStoreVisitPriceImage(input: {
+  visitId?: string;
+  imageId?: string;
   imageUrl: string;
   imageCategory: StoreVisitImageCategory;
   storeName: string;
@@ -560,6 +562,18 @@ export async function analyzeStoreVisitPriceImage(input: {
     ],
     temperature: config.temperature,
     maxTokens: Math.min(config.max_tokens, 2500),
+  });
+
+  console.info("[store-visit-ai] price image analyzed", {
+    visit_id: input.visitId ?? null,
+    image_id: input.imageId ?? null,
+    model: completion.metadata.model,
+    api_family: completion.metadata.api_family,
+    request_url: completion.metadata.request_url,
+    http_status: completion.metadata.http_status ?? null,
+    provider_request_id: completion.metadata.provider_request_id ?? completion.metadata.response_id ?? null,
+    fallback_used: completion.metadata.fallback_used,
+    attempt_count: completion.metadata.attempt_count,
   });
 
   return {

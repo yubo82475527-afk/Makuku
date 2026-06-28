@@ -1,6 +1,6 @@
 import { demoOfflineStoreVisits } from "@/lib/demo-data";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
-import type { OfflineStoreVisit } from "@/lib/types";
+import type { OfflineStoreVisit, StoreVisitAiResult } from "@/lib/types";
 
 const defaultPageSize = 20;
 const maxPageSize = 50;
@@ -32,6 +32,26 @@ function formatVisitRegion(visit: OfflineStoreVisit) {
 }
 
 function serializeVisit(visit: OfflineStoreVisit) {
+  const storeSummary = typeof visit.ai_result?.store_summary === "string" ? visit.ai_result.store_summary : null;
+  const keySkuPrices = Array.isArray(visit.ai_result?.price_insights?.key_sku_prices)
+    ? visit.ai_result.price_insights.key_sku_prices.map((row) => ({
+        brand: row.brand,
+        product: row.product,
+        price: row.price,
+        piece_count: row.piece_count,
+        tag: row.tag,
+        confidence: row.confidence,
+      }))
+    : [];
+  const aiResult = (storeSummary || keySkuPrices.length > 0)
+    ? ({
+        store_summary: storeSummary ?? "",
+        price_insights: {
+          brand_price_range: [],
+          key_sku_prices: keySkuPrices,
+        },
+      } as unknown as StoreVisitAiResult)
+    : null;
   return {
     id: visit.id,
     store_name: visit.store_name,
@@ -43,7 +63,7 @@ function serializeVisit(visit: OfflineStoreVisit) {
     visit_status: visit.visit_status,
     analysis_status: visit.analysis_status ?? "pending",
     analysis_error: visit.analysis_error ?? null,
-    ai_result: visit.ai_result ?? null,
+    ai_result: aiResult,
     image_urls: visit.image_urls ?? [],
     photo_count: photoCount(visit),
     created_at: visit.created_at,
@@ -63,7 +83,7 @@ export async function GET(request: Request) {
     const page = readPositiveInt(searchParams.get("page"), 1);
     const pageSize = Math.min(readPositiveInt(searchParams.get("page_size"), defaultPageSize), maxPageSize);
     const from = (page - 1) * pageSize;
-    const to = from + pageSize - 1;
+    const fetchTo = from + pageSize;
 
     if (!userId) {
       return Response.json({ error: "user_id is required" }, { status: 400 });
@@ -90,18 +110,18 @@ export async function GET(request: Request) {
     const supabase = createSupabaseServiceClient();
     let visitsResult = await supabase
       .from("offline_store_visits")
-      .select("*, offline_visit_images(id)", { count: "exact" })
+      .select("id,store_name,region,channel,city,province,city_name,district,channel_type,visit_date,visit_status,analysis_status,analysis_error,ai_result,created_at,image_urls,offline_visit_images(id)", { count: "exact" })
       .or(`user_id.eq.${userId},uploader_user_id.eq.${userId}`)
       .order("created_at", { ascending: false })
-      .range(from, to);
+      .range(from, fetchTo);
 
     if (visitsResult.error?.message.includes("user_id")) {
       visitsResult = await supabase
         .from("offline_store_visits")
-        .select("*, offline_visit_images(id)", { count: "exact" })
+        .select("id,store_name,region,channel,city,province,city_name,district,channel_type,visit_date,visit_status,analysis_status,analysis_error,ai_result,created_at,image_urls,offline_visit_images(id)", { count: "exact" })
         .eq("uploader_user_id", userId)
         .order("created_at", { ascending: false })
-        .range(from, to);
+        .range(from, fetchTo);
     }
 
     if (visitsResult.error) {
@@ -125,13 +145,17 @@ export async function GET(request: Request) {
         .lt("created_at", end);
     }
 
+    const rows = (visitsResult.data ?? []) as OfflineStoreVisit[];
+    const hasNext = rows.length > pageSize;
+    const pagedRows = hasNext ? rows.slice(0, pageSize) : rows;
+
     return Response.json({
-      visits: ((visitsResult.data ?? []) as OfflineStoreVisit[]).map(serializeVisit),
+      visits: pagedRows.map(serializeVisit),
       pagination: {
         page,
         page_size: pageSize,
-        total: visitsResult.count ?? 0,
-        has_next: from + pageSize < (visitsResult.count ?? 0),
+        total: visitsResult.count ?? from + pagedRows.length,
+        has_next: hasNext,
       },
       today_count: countResult.count ?? 0,
     });

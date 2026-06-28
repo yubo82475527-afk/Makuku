@@ -452,7 +452,14 @@ export function AiPriceCandidatesWorkbench({
                     {showApprovedAudit ? <td className="px-3 py-3 text-slate-600">{candidate.reviewed_at ? formatJakartaTime(candidate.reviewed_at) : "-"}</td> : null}
                     {showApprovedAudit ? <td className="px-3 py-3 text-slate-600">{reviewMethodLabel(candidate, copy)}</td> : null}
                     {showRejectedAudit ? <td className="px-3 py-3 text-slate-600">{candidate.reviewed_at ? formatJakartaTime(candidate.reviewed_at) : "-"}</td> : null}
-                    {showRejectedAudit ? <td className="max-w-xs px-3 py-3 text-slate-600">{candidate.rejection_reason ?? "-"}</td> : null}
+                    {showRejectedAudit ? (
+                      <td className="max-w-xs px-3 py-3 text-slate-600">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span>{candidate.rejection_reason ?? "-"}</span>
+                          {candidate.h5_lifecycle_status ? <Badge>{h5LifecycleLabel(candidate.h5_lifecycle_status)}</Badge> : null}
+                        </div>
+                      </td>
+                    ) : null}
                     <td className="px-3 py-3"><Badge>{copy.status[candidate.status] ?? candidate.status}</Badge></td>
                     <td className="whitespace-nowrap px-3 py-3 text-slate-600">{formatJakartaTimestamp(candidate.created_at)}</td>
                     <td className="px-3 py-3 text-slate-600">{submitterNameForCandidate(candidate)}</td>
@@ -1303,6 +1310,12 @@ function warningMessagesForCandidate(candidate: AiPriceCandidate) {
 
 function matchedSkuLabel(candidate: AiPriceCandidate, copy: WorkbenchCopy) {
   return candidate.matched_sku_label || candidate.matched_label || (candidate.matched_entity_type === "unmatched" ? copy.unmatched : candidate.matched_entity_type);
+}
+
+function h5LifecycleLabel(value: NonNullable<AiPriceCandidate["h5_lifecycle_status"]>) {
+  if (value === "deleted") return "H5 deleted";
+  if (value === "replaced") return "H5 replaced";
+  return "H5 re-analyzed";
 }
 
 function candidateCanBeApproved(candidate: AiPriceCandidate) {

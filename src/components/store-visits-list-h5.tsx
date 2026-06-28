@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { ArrowLeft, CalendarDays, ChevronRight, ImageIcon, Languages, Loader2, LogIn, LogOut, Plus, RefreshCw, Settings } from "lucide-react";
 import Link from "next/link";
@@ -10,6 +10,7 @@ import { withMinimumDelay } from "@/lib/async-ui";
 import { localeLabels, replacePathLocale, type Locale } from "@/lib/i18n/config";
 import { writeLocalePreferenceCookie } from "@/lib/locale-preference";
 import { getMobileCopy, mobileAnalysisStatusLabel } from "@/lib/mobile-i18n";
+import { summarizeBrandSkuCounts } from "@/lib/store-visit-summary";
 import type { StoreVisitAnalysisStatus, StoreVisitAiResult } from "@/lib/types";
 import { MobileLanguageSwitch } from "@/components/mobile-language-switch";
 
@@ -86,40 +87,10 @@ function formatVisitDate(value: string, locale: Locale) {
   }).format(new Date(`${value}T00:00:00`));
 }
 
-function isAllUpperCase(value: string) {
-  return value === value.toUpperCase() && value !== value.toLowerCase();
-}
-
-function shouldReplaceBrandLabel(current: string, next: string) {
-  return isAllUpperCase(current) && !isAllUpperCase(next);
-}
-
 function summarizeVisitBrandCounts(aiResult: StoreVisitAiResult | null | undefined, locale: Locale) {
   const priceRows = aiResult?.price_insights?.key_sku_prices ?? [];
   if (!priceRows.length) return aiResult?.store_summary ?? null;
-
-  const brandSkuMap = new Map<string, { label: string; skus: Set<string> }>();
-  for (const row of priceRows) {
-    const brand = String(row.brand ?? "").trim();
-    const sku = String(row.product ?? "").trim();
-    if (!brand || !sku) continue;
-    const brandKey = brand.toLowerCase();
-    if (!brandSkuMap.has(brandKey)) {
-      brandSkuMap.set(brandKey, { label: brand, skus: new Set<string>() });
-    }
-    const entry = brandSkuMap.get(brandKey);
-    if (!entry) continue;
-    if (shouldReplaceBrandLabel(entry.label, brand)) {
-      entry.label = brand;
-    }
-    entry.skus.add(sku);
-  }
-
-  if (brandSkuMap.size === 0) return aiResult?.store_summary ?? null;
-
-  return Array.from(brandSkuMap.entries())
-    .map(([, entry]) => (locale === "zh" ? `${entry.label} ${entry.skus.size}个SKU` : `${entry.label} ${entry.skus.size} SKU`))
-    .join(locale === "zh" ? "，" : ", ");
+  return summarizeBrandSkuCounts(priceRows, locale) ?? aiResult?.store_summary ?? null;
 }
 
 function Badge({ children, className }: { children: ReactNode; className: string }) {

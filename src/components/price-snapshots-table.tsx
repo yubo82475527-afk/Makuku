@@ -4,7 +4,7 @@ import { Loader2, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { priceBrandSeriesLabel } from "@/lib/brand-series";
-import { formatIdr, formatJakartaTime, formatPricePerPiece } from "@/lib/format";
+import { formatIdr, formatJakartaDateTimeSeconds, formatPricePerPiece, formatShortImageId } from "@/lib/format";
 import { priceSnapshotBenchmarkMaterial, priceSnapshotBusinessSegment } from "@/lib/price-snapshot-business";
 import type { PriceSnapshot } from "@/lib/types";
 
@@ -14,6 +14,16 @@ type PriceSnapshotForStoreRegion = {
   captured_at?: string | null;
   created_at?: string | null;
   source?: string | null;
+  offline_store_visits?: {
+    visit_code?: string | null;
+    store_name?: string | null;
+    city?: string | null;
+    province?: string | null;
+    city_name?: string | null;
+    district?: string | null;
+    visit_date?: string | null;
+    uploader_name?: string | null;
+  } | null;
   offline_stores?: {
     name?: string | null;
     city?: string | null;
@@ -25,6 +35,7 @@ type PriceSnapshotForStoreRegion = {
   competitor_products?: { shop_name?: string | null; normalized_name?: string | null } | null;
   ai_price_candidates?: {
     offline_store_visits?: {
+      visit_code?: string | null;
       store_name?: string | null;
       city?: string | null;
       province?: string | null;
@@ -167,6 +178,8 @@ export function PriceSnapshotsTable({
               <th className="py-2 pr-3">{isZh ? "区" : "District"}</th>
               <th className="w-20 whitespace-nowrap py-2 pr-3">{isZh ? "采集人" : "Collector"}</th>
               <th className="py-2 pr-3">{isZh ? "创建时间" : "Create Time"}</th>
+              <th className="py-2 pr-3">{isZh ? "巡店编号" : "Visit Code"}</th>
+              <th className="py-2 pr-3">{isZh ? "图片编号" : "Image ID"}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200">
@@ -202,6 +215,8 @@ export function PriceSnapshotsTable({
                   <td className="py-3 pr-3">{region.district ?? "-"}</td>
                   <td className="whitespace-nowrap py-3 pr-3">{uploaderNameForSnapshot(snapshot)}</td>
                   <td className="py-3 pr-3">{formatSnapshotCreatedAt(snapshot)}</td>
+                  <td className="whitespace-nowrap py-3 pr-3">{visitCodeForSnapshot(snapshot)}</td>
+                  <td className="whitespace-nowrap py-3 pr-3">{imageIdForSnapshot(snapshot)}</td>
                 </tr>
               );
             })}
@@ -338,6 +353,7 @@ function cleanDisplayText(value: string | null | undefined) {
 }
 
 function storeVisitForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
+  if (snapshot.offline_store_visits) return snapshot.offline_store_visits;
   return snapshot.ai_price_candidates?.find((candidate) => candidate.offline_store_visits)?.offline_store_visits ?? null;
 }
 
@@ -351,6 +367,14 @@ function storeNameForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
 function uploaderNameForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
   if (String(snapshot.source ?? "").startsWith("excel_import")) return "Excel";
   return cleanDisplayText(storeVisitForSnapshot(snapshot)?.uploader_name) ?? "-";
+}
+
+function visitCodeForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
+  return cleanDisplayText(storeVisitForSnapshot(snapshot)?.visit_code) ?? "-";
+}
+
+function imageIdForSnapshot(snapshot: PriceSnapshot) {
+  return formatShortImageId(snapshot.source_image_id);
 }
 
 function splitLegacyRegion(value: string | null | undefined) {
@@ -383,7 +407,7 @@ function formatSnapshotCapturedAt(snapshot: PriceSnapshotForStoreRegion) {
 }
 
 function formatSnapshotCreatedAt(snapshot: PriceSnapshotForStoreRegion) {
-  return formatJakartaTime(snapshot.created_at);
+  return formatJakartaDateTimeSeconds(snapshot.created_at);
 }
 
 function formatJakartaDate(value: string | null | undefined) {

@@ -30,6 +30,36 @@ export function formatJakartaTime(value: string | null | undefined) {
   }).format(new Date(value));
 }
 
+export function formatJakartaDateTimeSeconds(value: string | null | undefined) {
+  if (!value) return "-";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(value));
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+  const hour = parts.find((part) => part.type === "hour")?.value;
+  const minute = parts.find((part) => part.type === "minute")?.value;
+  const second = parts.find((part) => part.type === "second")?.value;
+  return year && month && day && hour && minute && second
+    ? `${year}-${month}-${day} ${hour}:${minute}:${second}`
+    : "-";
+}
+
+export function formatShortImageId(value: string | null | undefined, length = 8) {
+  const normalized = String(value ?? "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+  if (!normalized) return "-";
+  const safeLength = Math.min(Math.max(length, 4), 10);
+  return normalized.slice(-safeLength);
+}
+
 export function severityClass(severity: Severity | string | null | undefined) {
   switch (severity) {
     case "critical":

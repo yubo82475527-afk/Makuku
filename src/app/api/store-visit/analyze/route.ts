@@ -1,7 +1,5 @@
 import { revalidatePath } from "next/cache";
-import { autoApproveAiPriceCandidatesForVisit } from "@/lib/ai-price-review";
-import { generateAiPriceCandidates } from "@/lib/ai-price-candidates";
-import { runStoreVisitAiAnalysisForVisit } from "@/lib/store-visit-ai-debug";
+import { runStoreVisitAnalysis } from "@/lib/store-visit-analysis";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import { requireAppSession } from "@/lib/auth-session";
 import type { OfflineStoreVisit } from "@/lib/types";
@@ -58,81 +56,19 @@ export async function POST(request: Request) {
       })
       .eq("id", visitId);
 
-    const aiAnalysis = await runStoreVisitAiAnalysisForVisit({ visitId });
-    if (aiAnalysis.allPriceImagesFailed) {
-      throw new Error("AI 暂时没有返回可用的价格解析结果，请稍后重试失败照片。");
-    }
-    const aiResult = aiAnalysis.normalized;
-    const sourceItems = (aiAnalysis.price_image_results ?? []).flatMap((imageResult) => (
-      imageResult.result.rows.map((row, rowIndex) => ({
-        brand: row.brand ?? "Unknown",
-        product: row.sku,
-        price: row.net_price_idr ? String(row.net_price_idr) : "",
-        list_price: row.list_price_idr ? String(row.list_price_idr) : null,
-        package_price: row.package_price_idr ? String(row.package_price_idr) : null,
-        net_price: row.net_price_idr ? String(row.net_price_idr) : null,
-        promo_type: row.promo_type,
-        piece_count: row.piece_count,
-        type: "SKU" as const,
-        tag: "HERO",
-        confidence: 0.9,
-        source: "key_sku" as const,
-        sourceImageId: imageResult.imageId,
-        sourceRowIndex: rowIndex,
-      }))
-    ));
-    const candidates = await generateAiPriceCandidates({ visitId, aiResult, sourceItems });
-    const autoReview = await autoApproveAiPriceCandidatesForVisit({ supabase, visitId, candidates });
-    const autoReviewedCount = autoReview.approvedCount;
-    const analysisStatus = aiAnalysis.partialFailure ? "partial" : "completed";
-    const partialAnalysisError = aiAnalysis.partialFailure
-      ? "部分照片解析失败，已成功解析的价格可以先复核；失败照片可稍后重试。"
-      : null;
-
-    const { data: updated, error: updateError } = await supabase
-      .from("offline_store_visits")
-      .update({
-        ai_result: aiResult,
-        summary_result: {
-          ai_result_card: aiResult,
-          raw_ai_text: aiAnalysis.rawText,
-          raw_ai_parsed: aiAnalysis.parsed,
-          price_image_results: aiAnalysis.price_image_results ?? [],
-          analysis_partial_failures: aiAnalysis.price_image_failures ?? [],
-          display_analysis: aiAnalysis.display_analysis ?? null,
-          display_analysis_error: aiAnalysis.display_analysis_error ?? null,
-          ai_provider_metadata: aiAnalysis.metadata,
-          ai_config: {
-            id: aiAnalysis.config.id,
-            version_name: aiAnalysis.config.version_name,
-            temperature: aiAnalysis.config.temperature,
-            max_tokens: aiAnalysis.config.max_tokens,
-          },
-          image_paths: aiAnalysis.image_paths,
-          image_categories: aiAnalysis.image_categories,
-          signed_image_count: aiAnalysis.signed_image_count,
-          image_input_mode: aiAnalysis.image_input_mode,
-          ai_price_candidate_count: candidates.length,
-          auto_reviewed_count: autoReviewedCount,
-          auto_review_method: "auto_rule",
-          auto_review_failed_count: autoReview.failedCount,
-        },
-        analysis_status: analysisStatus,
-        visit_status: "analyzed",
-        analysis_error: partialAnalysisError,
-      })
-      .eq("id", visitId)
-      .select("*")
-      .single();
-
-    if (updateError) throw new Error(updateError.message);
+    const result = await runStoreVisitAnalysis({ visitId });
 
     revalidatePath("/zh/mobile/offline-capture");
     revalidatePath(`/zh/mobile/offline-capture/${visitId}`);
     revalidatePath("/en/mobile/offline-capture");
     revalidatePath(`/en/mobile/offline-capture/${visitId}`);
 
-    return Response.json({ visit: updated, visit_code: visitCode, ai_result: aiResult, auto_reviewed_count: autoReviewedCount });
+    return Response.json({
+      visit: result.visit,
+      visit_code: visitCode,
+      ai_result: result.aiResult,
+      auto_reviewed_count: result.autoReviewedCount,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     if (visitId) await failVisit(visitId, message);

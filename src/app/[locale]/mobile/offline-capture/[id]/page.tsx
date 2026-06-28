@@ -1,4 +1,4 @@
-import { StoreVisitDetailH5 } from "@/components/store-visit-detail-h5";
+import { StoreVisitDetailH5 } from "../../../../../components/store-visit-detail-h5";
 import { getPageI18n } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";

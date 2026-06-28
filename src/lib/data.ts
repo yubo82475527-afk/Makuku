@@ -83,12 +83,14 @@ export type PriceSnapshotFilters = {
   owner?: PriceSnapshotOwnerFilter;
   capturedFrom?: string;
   capturedTo?: string;
+  visitCode?: string;
   limit?: number;
   offset?: number;
 };
 
-const priceSnapshotSelectWithMaterial = "*, sku_master(*, material_master(*)), material_master(*), offline_stores(id,name,city,province,city_name,district,channel_type,organization_id,organizations(id,name,status)), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*, material_master(*)))), ai_price_candidates(id, offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))";
-const legacyPriceSnapshotSelect = "*, sku_master(*), offline_stores(id,name,city,province,city_name,district,channel_type,organization_id,organizations(id,name,status)), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*))), ai_price_candidates(id, offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))";
+const priceSnapshotVisitColumns = "id,visit_code,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at";
+const priceSnapshotSelectWithMaterial = `*, sku_master(*, material_master(*)), material_master(*), offline_stores(id,name,city,province,city_name,district,channel_type,organization_id,organizations(id,name,status)), offline_store_visits!source_visit_id(${priceSnapshotVisitColumns}), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*, material_master(*)))), ai_price_candidates(id, offline_store_visits(${priceSnapshotVisitColumns}))`;
+const legacyPriceSnapshotSelect = `*, sku_master(*), offline_stores(id,name,city,province,city_name,district,channel_type,organization_id,organizations(id,name,status)), offline_store_visits!source_visit_id(${priceSnapshotVisitColumns}), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*))), ai_price_candidates(id, offline_store_visits(${priceSnapshotVisitColumns}))`;
 
 export type ProductSegmentPriceIndexFilters = {
   province?: string;
@@ -882,20 +884,39 @@ export async function getPriceSnapshots(filters: PriceSnapshotFilters = {}): Pro
     if (filters.capturedTo) {
       query = query.lt("captured_at", filters.capturedTo);
     }
-
     return query
-      .order("captured_at", { ascending: false })
       .order("created_at", { ascending: false })
+      .order("captured_at", { ascending: false })
       .order("id", { ascending: true })
       .range(offset, offset + limit - 1);
   };
 
   const result = await buildQuery(priceSnapshotSelectWithMaterial);
   if (result.error?.message.includes("material_sku_code") || result.error?.message.includes("material_master") || result.error?.message.includes("relationship")) {
-    return fromSupabase<PriceSnapshot[]>(buildQuery(legacyPriceSnapshotSelect), fallback);
+    const legacy = await fromSupabase<PriceSnapshot[]>(buildQuery(legacyPriceSnapshotSelect), fallback);
+    if (filters.visitCode) {
+      return {
+        ...legacy,
+        data: legacy.data.filter((snapshot) => String(resolveVisitCode(snapshot) ?? "").toLowerCase().includes(filters.visitCode!.trim().toLowerCase())),
+      };
+    }
+    return legacy;
   }
   if (result.error) return { data: fallback, error: result.error.message, isDemo: true };
-  return { data: (result.data ?? []) as unknown as PriceSnapshot[], error: null, isDemo: false };
+  const snapshots = (result.data ?? []) as unknown as PriceSnapshot[];
+  return {
+    data: filters.visitCode
+      ? snapshots.filter((snapshot) => String(resolveVisitCode(snapshot) ?? "").toLowerCase().includes(filters.visitCode!.trim().toLowerCase()))
+      : snapshots,
+    error: null,
+    isDemo: false,
+  };
+}
+
+function resolveVisitCode(snapshot: PriceSnapshot) {
+  const directVisitCode = snapshot.offline_store_visits?.visit_code?.trim();
+  if (directVisitCode) return directVisitCode;
+  return snapshot.ai_price_candidates?.find((candidate) => candidate.offline_store_visits?.visit_code)?.offline_store_visits?.visit_code ?? null;
 }
 
 function filterPriceSnapshotsByOwner(snapshots: PriceSnapshot[], owner: PriceSnapshotOwnerFilter) {

@@ -1,6 +1,6 @@
 import { demoOfflineStoreVisits, demoOfflineStores } from "@/lib/demo-data";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
-import type { OfflineStore, OfflineStoreVisit } from "@/lib/types";
+import type { OfflineStore } from "@/lib/types";
 
 type HistoryStoreItem = {
   store_id: string;
@@ -31,6 +31,8 @@ type HistoryVisitRow = {
 };
 
 type StoreRow = Record<string, unknown>;
+
+const maxRecentVisitRows = 800;
 
 const fullStoreSelect = "id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,created_at,channels(id,code,name,type)";
 const noChannelStoreSelect = "id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,created_at";
@@ -200,7 +202,7 @@ async function readVisitRows(userId: string): Promise<{ rows: HistoryVisitRow[];
     .eq("user_id", userId)
     .not("store_id", "is", null)
     .order("created_at", { ascending: false })
-    .limit(5000);
+    .limit(maxRecentVisitRows);
 
   data = primary.data;
   error = primary.error;
@@ -212,7 +214,7 @@ async function readVisitRows(userId: string): Promise<{ rows: HistoryVisitRow[];
       .eq("uploader_user_id", userId)
       .not("store_id", "is", null)
       .order("created_at", { ascending: false })
-      .limit(5000);
+      .limit(maxRecentVisitRows);
     data = legacy.data;
     error = legacy.error;
   }
