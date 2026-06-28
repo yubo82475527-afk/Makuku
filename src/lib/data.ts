@@ -16,6 +16,7 @@ import {
   demoSkuMaster,
 } from "@/lib/demo-data";
 import { monthWeeks } from "@/lib/periods";
+import { findMatchingMaterialForSeries } from "@/lib/competitor-series-mapping";
 import { createSupabaseAnonClient, createSupabaseServiceClient, hasSupabaseConfig, hasSupabaseServiceConfig } from "@/lib/supabase";
 import type {
   Alert,
@@ -1227,7 +1228,7 @@ async function getWeeklyBoardSnapshotsForPeriod(filters: {
   }
 
   const supabase = createSupabaseServiceClient();
-  const select = "id,competitor_product_id,material_sku_code,price_per_piece,captured_at,created_at,sku_master_id,offline_store_id,sku_master(material_sku_code),material_master(tenant_sku_code),offline_stores(id,name,city,province,city_name,district,channel_type,organization_id,organizations(id,name,status)),competitor_products(id,brand_id,product_series,brands(id,name),sku_matches(sku_master(material_sku_code))),ai_price_candidates(id,offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))";
+  const select = "id,competitor_product_id,material_sku_code,price_per_piece,captured_at,created_at,sku_master_id,offline_store_id,sku_master(material_sku_code),material_master(tenant_sku_code),offline_stores(id,name,city,province,city_name,district,channel_type,organization_id,organizations(id,name,status)),competitor_products(id,brand_id,product_series,raw_title,normalized_name,size,piece_count,brands(id,name),sku_matches(match_method,sku_master(material_sku_code))),ai_price_candidates(id,offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))";
 
   const ownRows: PriceSnapshot[] = [];
   if (filters.materialCodes.length > 0) {
@@ -1470,10 +1471,8 @@ function buildWeeklyPriceCoefficientBoard(input: {
     if (!snapshot.competitor_products) return false;
     const key = benchmarkSeriesKey(snapshot.competitor_products.brand_id, snapshot.competitor_products.product_series);
     if (!allowedBenchmarkKeys.has(key)) return false;
-    const benchmarkMaterialCode = snapshot.competitor_products.sku_matches
-      ?.map((match) => match.sku_master?.material_sku_code)
-      .find((code) => code && scopedMaterialCodes.has(code));
-    return Boolean(benchmarkMaterialCode);
+    const benchmarkMaterialCode = competitorSnapshotMaterialCode(snapshot, mappedSeries, input.materialMaster);
+    return Boolean(benchmarkMaterialCode && scopedMaterialCodes.has(benchmarkMaterialCode));
   });
   const organizationOptions = uniqueStrings([
     ...ownSnapshots.map((snapshot) => snapshotOrganizationName(snapshot)),
@@ -1498,6 +1497,8 @@ function buildWeeklyPriceCoefficientBoard(input: {
     selectedOwnSeries,
     selectedSku,
     skuLookup: new Map(skuOptions.map((item) => [item.code, item.name])),
+    mappings: mappedSeries,
+    materialMaster: input.materialMaster,
   });
 
   return {
@@ -1525,6 +1526,8 @@ function buildWeeklyCoefficientTree(input: {
   selectedOwnSeries: string | null;
   selectedSku: string | null;
   skuLookup: Map<string, string>;
+  mappings: CompetitorSeriesMapping[];
+  materialMaster: MaterialMaster[];
 }) {
   const groups = groupSnapshotsByLabel(input.ownSnapshots, (snapshot) => snapshotOrganizationName(snapshot));
   return Array.from(groups.entries())
@@ -1569,6 +1572,8 @@ function buildProvinceNodes(input: {
   selectedOwnSeries: string | null;
   selectedSku: string | null;
   skuLookup: Map<string, string>;
+  mappings: CompetitorSeriesMapping[];
+  materialMaster: MaterialMaster[];
 }) {
   const groups = groupSnapshotsByLabel(input.ownSnapshots, (snapshot) => canonicalDashboardProvinceLabel(snapshotProvince(snapshot)));
   return Array.from(groups.entries())
@@ -1614,6 +1619,8 @@ function buildCityNodes(input: {
   selectedOwnSeries: string | null;
   selectedSku: string | null;
   skuLookup: Map<string, string>;
+  mappings: CompetitorSeriesMapping[];
+  materialMaster: MaterialMaster[];
 }) {
   const groups = groupSnapshotsByLabel(input.ownSnapshots, (snapshot) => snapshotRegionParts(snapshot).cityName ?? "Unknown City");
   return Array.from(groups.entries())
@@ -1660,6 +1667,8 @@ function buildDistrictNodes(input: {
   selectedOwnSeries: string | null;
   selectedSku: string | null;
   skuLookup: Map<string, string>;
+  mappings: CompetitorSeriesMapping[];
+  materialMaster: MaterialMaster[];
 }) {
   const groups = groupSnapshotsByLabel(input.ownSnapshots, (snapshot) => snapshotRegionParts(snapshot).district ?? "No district");
   return Array.from(groups.entries())
@@ -1707,15 +1716,14 @@ function buildSkuNodes(input: {
   selectedOwnSeries: string | null;
   selectedSku: string | null;
   skuLookup: Map<string, string>;
+  mappings: CompetitorSeriesMapping[];
+  materialMaster: MaterialMaster[];
 }) {
   const groups = groupSnapshotsByLabel(input.ownSnapshots, (snapshot) => snapshotMaterialCode(snapshot));
   return Array.from(groups.entries())
     .map(([skuCode, ownGroupSnapshots]) => {
       const benchmarkGroupSnapshots = input.benchmarkSnapshots.filter((snapshot) => {
-        const benchmarkMaterialCode = snapshot.competitor_products?.sku_matches
-          ?.map((match) => match.sku_master?.material_sku_code)
-          .find((code) => code === skuCode);
-        return Boolean(benchmarkMaterialCode);
+        return competitorSnapshotMaterialCode(snapshot, input.mappings, input.materialMaster) === skuCode;
       });
       return buildWeeklyCoefficientNode({
         locale: input.locale,
@@ -1957,6 +1965,21 @@ function snapshotMaterialCode(snapshot: PriceSnapshot) {
     ?? cleanText(snapshot.sku_master?.material_sku_code)
     ?? cleanText(snapshot.material_master?.tenant_sku_code)
     ?? null;
+}
+
+function competitorSnapshotMaterialCode(snapshot: PriceSnapshot, mappings: CompetitorSeriesMapping[], materials: MaterialMaster[]) {
+  const manualCode = snapshot.competitor_products?.sku_matches
+    ?.filter((match) => String(match.match_method ?? "") !== "series_rule")
+    ?.map((match) => cleanText(match.sku_master?.material_sku_code))
+    .find(Boolean);
+  if (manualCode) return manualCode;
+
+  const product = snapshot.competitor_products;
+  if (!product) return null;
+  const mapping = mappings.find((item) => item.active && benchmarkSeriesKey(item.brand_id, item.product_series) === benchmarkSeriesKey(product.brand_id, product.product_series));
+  if (!mapping) return null;
+  const materialMatch = findMatchingMaterialForSeries(product, mapping.target_makuku_series, materials);
+  return materialMatch.material?.tenant_sku_code ?? null;
 }
 
 function snapshotOrganizationName(snapshot: PriceSnapshot) {

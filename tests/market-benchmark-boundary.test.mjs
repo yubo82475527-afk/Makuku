@@ -6,6 +6,7 @@ const pricesPage = readFileSync("src/app/[locale]/prices/page.tsx", "utf8");
 const priceSnapshotsTable = readFileSync("src/components/price-snapshots-table.tsx", "utf8");
 const competitorMappingsPage = readFileSync("src/app/[locale]/competitor-mappings/page.tsx", "utf8");
 const competitorMappingTable = readFileSync("src/components/competitor-mappings-table.tsx", "utf8");
+const competitorSeriesRulesPanel = readFileSync("src/components/competitor-series-rules-panel.tsx", "utf8");
 const competitorProductsTable = readFileSync("src/components/competitor-products-table.tsx", "utf8");
 const competitorsRoute = readFileSync("src/app/api/competitors/route.ts", "utf8");
 const skuMatchesRoute = readFileSync("src/app/api/sku-matches/route.ts", "utf8");
@@ -26,29 +27,29 @@ test("SKU price monitor stays a price fact view without benchmark configuration 
   assert.doesNotMatch(pricesPage, /benchmark_competitor_product_id/);
 });
 
-test("competitor mapping exposes only mapping and set-as-benchmark controls", () => {
-  assert.match(competitorMappingsPage, /CompetitorMappingsTable/);
+test("competitor mapping exposes automatic series rules without sku-level benchmark management", () => {
+  assert.match(competitorMappingsPage, /CompetitorSeriesRulesPanel/);
+  assert.match(competitorMappingsPage, /getCompetitorSeriesMappings/);
   assert.match(competitorMappingsPage, /getMaterialMaster/);
-  assert.match(competitorMappingTable, /setBenchmarkHref/);
-  assert.match(competitorMappingTable, /sku_master/);
-  assert.match(competitorMappingTable, /Set benchmark/);
-  assert.match(competitorMappingTable, /Missing Makuku SKU/);
-  assert.match(competitorMappingTable, /Mapped Makuku SKU/);
-  assert.match(competitorMappingTable, /tenant_sku_code/);
-  assert.match(competitorMappingTable, /tenant_sku_name/);
-  assert.match(competitorMappingTable, /action="\/api\/sku-matches"/);
-  assert.match(competitorMappingTable, /name="competitor_product_id"/);
-  assert.match(competitorMappingTable, /ProductMasterSearchSelect/);
+  assert.match(competitorSeriesRulesPanel, /data-role="automatic-mapping-rules"/);
+  assert.match(competitorSeriesRulesPanel, /target_makuku_series/);
+  assert.match(competitorSeriesRulesPanel, /name="intent" value="set_benchmark"/);
+  assert.match(competitorSeriesRulesPanel, /name="intent" value="clear_benchmark"/);
+  assert.match(competitorSeriesRulesPanel, /is_default_benchmark/);
+  assert.match(competitorSeriesRulesPanel, /coveredSkus/);
+  assert.doesNotMatch(competitorMappingsPage, /CompetitorMappingsTable/);
+  assert.doesNotMatch(competitorMappingsPage, /ProductMasterSearchSelect/);
+  assert.doesNotMatch(competitorSeriesRulesPanel, /manualOverrides/);
+  assert.doesNotMatch(competitorSeriesRulesPanel, /Manual override/);
   assert.doesNotMatch(competitorMappingTable, /\/api\/competitors/);
   assert.doesNotMatch(competitorMappingTable, /intent: "update_segment"/);
   assert.doesNotMatch(competitorMappingTable, /onBlur=\{\(\) => saveProductFields/);
   assert.doesNotMatch(competitorProductsTable, /intent: "update_segment"/);
   assert.doesNotMatch(competitorProductsTable, /Product Grade|Grade/);
-  assert.match(productMasterSearchSelect, /name="material_sku_code"/);
   assert.doesNotMatch(competitorMappingsPage, /getSkuMaster/);
-  assert.doesNotMatch(competitorMappingTable, /name="reviewed"/);
-  assert.doesNotMatch(competitorMappingTable, /benchmark_price_per_piece/);
-  assert.doesNotMatch(competitorMappingTable, /active benchmark/i);
+  assert.doesNotMatch(competitorMappingsPage, /benchmark_price_per_piece/);
+  assert.doesNotMatch(competitorMappingsPage, /setBenchmarkHref/);
+  assert.match(productMasterSearchSelect, /name="material_sku_code"/);
 });
 
 test("manual competitor mapping is confirmed without a second approval step", () => {

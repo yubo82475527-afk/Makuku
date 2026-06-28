@@ -2,7 +2,7 @@ export type Channel = "shopee" | "tiktok" | "offline" | "manual";
 export type ChannelType = "online" | "offline";
 export type PackType = "pants" | "tape" | "unknown";
 export type Segment = "AD" | "BD Eco" | "BD MID" | "unknown";
-export type MatchMethod = "rule" | "ai" | "manual" | "series_rule";
+export type MatchMethod = "rule" | "ai" | "manual";
 export type Severity = "low" | "medium" | "high" | "critical";
 export type PromoEventType =
   | "price_drop"
@@ -405,6 +405,7 @@ export type CompetitorSeriesMapping = {
   brand_id: string;
   product_series: string | null;
   target_makuku_series: string;
+  is_default_benchmark: boolean;
   active: boolean;
   created_at: string;
   updated_at: string | null;

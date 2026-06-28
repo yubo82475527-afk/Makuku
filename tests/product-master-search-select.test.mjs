@@ -8,9 +8,11 @@ const competitorMappingTable = readFileSync("src/components/competitor-mappings-
 const componentPath = "src/components/product-master-search-select.tsx";
 const searchSelect = existsSync(componentPath) ? readFileSync(componentPath, "utf8") : "";
 
-test("competitor mapping uses a searchable product master picker", () => {
-  assert.match(competitorsPage, /CompetitorMappingsTable/);
+test("product master picker remains reusable but is not mounted on 1.0 competitor mapping", () => {
+  assert.match(competitorsPage, /CompetitorSeriesRulesPanel/);
   assert.match(competitorsPage, /materials=\{materialResult\.data\}/);
+  assert.doesNotMatch(competitorsPage, /CompetitorMappingsTable/);
+  assert.doesNotMatch(competitorsPage, /ProductMasterSearchSelect/);
   assert.match(competitorMappingTable, /ProductMasterSearchSelect/);
   assert.match(competitorMappingTable, /materials=\{materials\}/);
   assert.doesNotMatch(competitorsPage, /<SelectInput name="material_sku_code"/);

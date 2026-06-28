@@ -1,6 +1,5 @@
 import { revalidatePath } from "next/cache";
 import { requireAdminSession } from "@/lib/auth-session";
-import { applySeriesMappingRuleToGroup, clearSeriesRuleMatches } from "@/lib/competitor-series-mapping";
 import { formReturnRedirect, readRequestBody } from "@/lib/request";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 
@@ -15,12 +14,30 @@ export async function POST(request: Request) {
     const intent = String(body.intent ?? "save");
     const supabase = createSupabaseServiceClient();
 
-    if (intent === "clear") {
+    if (intent === "clear" || intent === "delete_rule") {
       await deactivateRule(supabase, brandId, productSeries);
-      const cleared = await clearSeriesRuleMatches(supabase, brandId, productSeries);
       revalidateCompetitorMappingPages();
       if (isForm) return formReturnRedirect(request, body, "/competitor-mappings");
-      return Response.json({ data: cleared });
+      return Response.json({ data: { deleted: true } });
+    }
+
+    if (intent === "set_benchmark") {
+      const targetMakukuSeries = cleanRequired(body.target_makuku_series, "target_makuku_series");
+      const benchmarkRule = await setDefaultBenchmarkRule(supabase, {
+        brand_id: brandId,
+        product_series: productSeries,
+        target_makuku_series: targetMakukuSeries,
+      });
+      revalidateCompetitorMappingPages();
+      if (isForm) return formReturnRedirect(request, body, "/competitor-mappings");
+      return Response.json({ data: benchmarkRule });
+    }
+
+    if (intent === "clear_benchmark") {
+      const benchmarkRule = await clearDefaultBenchmarkRule(supabase, brandId, productSeries);
+      revalidateCompetitorMappingPages();
+      if (isForm) return formReturnRedirect(request, body, "/competitor-mappings");
+      return Response.json({ data: benchmarkRule });
     }
 
     const targetMakukuSeries = cleanRequired(body.target_makuku_series, "target_makuku_series");
@@ -29,15 +46,10 @@ export async function POST(request: Request) {
       product_series: productSeries,
       target_makuku_series: targetMakukuSeries,
     });
-    const summary = await applySeriesMappingRuleToGroup(supabase, {
-      brand_id: brandId,
-      product_series: productSeries,
-      target_makuku_series: targetMakukuSeries,
-    });
 
     revalidateCompetitorMappingPages();
     if (isForm) return formReturnRedirect(request, body, "/competitor-mappings?mapping=all");
-    return Response.json({ data: rule, summary });
+    return Response.json({ data: rule });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
   }
@@ -69,6 +81,44 @@ async function saveRule(supabase: ReturnType<typeof createSupabaseServiceClient>
       target_makuku_series: payload.target_makuku_series,
       active: true,
     })
+    .select("*")
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+async function setDefaultBenchmarkRule(
+  supabase: ReturnType<typeof createSupabaseServiceClient>,
+  payload: { brand_id: string; product_series: string | null; target_makuku_series: string },
+) {
+  const existing = await findActiveRule(supabase, payload.brand_id, payload.product_series);
+  if (!existing?.id) throw new Error("Active series mapping rule is required before setting benchmark");
+
+  const { error: clearError } = await supabase
+    .from("competitor_series_mappings")
+    .update({ is_default_benchmark: false, updated_at: new Date().toISOString() })
+    .eq("active", true)
+    .ilike("target_makuku_series", payload.target_makuku_series);
+  if (clearError) throw new Error(clearError.message);
+
+  const { data, error } = await supabase
+    .from("competitor_series_mappings")
+    .update({ is_default_benchmark: true, updated_at: new Date().toISOString() })
+    .eq("id", existing.id)
+    .select("*")
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+async function clearDefaultBenchmarkRule(supabase: ReturnType<typeof createSupabaseServiceClient>, brandId: string, productSeries: string | null) {
+  const existing = await findActiveRule(supabase, brandId, productSeries);
+  if (!existing?.id) throw new Error("Active series mapping rule is required before clearing benchmark");
+
+  const { data, error } = await supabase
+    .from("competitor_series_mappings")
+    .update({ is_default_benchmark: false, updated_at: new Date().toISOString() })
+    .eq("id", existing.id)
     .select("*")
     .single();
   if (error) throw new Error(error.message);

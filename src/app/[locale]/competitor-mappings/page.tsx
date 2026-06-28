@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { AppShell } from "@/components/app-shell";
-import { CompetitorMappingsTable } from "@/components/competitor-mappings-table";
 import { CompetitorSeriesRulesPanel } from "@/components/competitor-series-rules-panel";
-import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
+import { Button, Card, DataNotice, SelectInput } from "@/components/ui";
 import { getBrands, getCompetitorProducts, getCompetitorSeriesMappings, getMaterialMaster } from "@/lib/data";
 import { getPageI18n } from "@/lib/i18n/server";
 
@@ -11,11 +10,10 @@ export default async function CompetitorMappingsPage({
   searchParams,
 }: {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ brand?: string; series?: string; product?: string; size?: string; mapping?: string }>;
+  searchParams: Promise<{ brand?: string; series?: string }>;
 }) {
   const { locale, dict } = await getPageI18n(routeParams);
   const params = await searchParams;
-  const mappingStatus = normalizeMappingStatus(params.mapping);
   const [productsResult, brandsResult, materialResult, seriesMappingsResult] = await Promise.all([
     getCompetitorProducts(),
     getBrands(),
@@ -33,23 +31,31 @@ export default async function CompetitorMappingsPage({
   const filteredProducts = competitorProducts.filter((product) => {
     if (params.brand && product.brand_id !== params.brand) return false;
     if (params.series && seriesKey(product.product_series) !== seriesKey(params.series)) return false;
-    if (params.product && !productNameMatches(product, params.product)) return false;
-    if (params.size && product.size !== params.size) return false;
     return true;
   });
-  const products = filteredProducts.filter((product) => {
-    if (mappingStatus === "pending" && product.sku_matches?.[0]) return false;
-    if (mappingStatus === "mapped" && !product.sku_matches?.[0]) return false;
+  const filteredRules = seriesMappingsResult.data.filter((rule) => {
+    if (params.brand && rule.brand_id !== params.brand) return false;
+    if (params.series && seriesKey(rule.product_series) !== seriesKey(params.series)) return false;
     return true;
   });
   const copy = getCopy(locale);
+  const automaticRules = seriesMappingsResult.data.filter((rule) => rule.active).length;
 
   return (
     <AppShell locale={locale} dict={dict} title={copy.title} currentPath="/competitor-mappings" isDemo={productsResult.isDemo || materialResult.isDemo || seriesMappingsResult.isDemo}>
       <DataNotice dict={dict} error={productsResult.error ?? brandsResult.error ?? materialResult.error ?? seriesMappingsResult.error} />
       <Card className="mb-4">
-        <form className="grid gap-3 md:grid-cols-5">
-          <input type="hidden" name="mapping" value={mappingStatus} />
+        <div className="mb-4 grid gap-3 md:grid-cols-3">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="text-xs font-semibold text-slate-500">{copy.automaticRules}</div>
+            <div className="mt-1 text-2xl font-semibold text-slate-950">{automaticRules}</div>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="text-xs font-semibold text-slate-500">{copy.filteredCompetitorSkus}</div>
+            <div className="mt-1 text-2xl font-semibold text-slate-950">{filteredProducts.length}</div>
+          </div>
+        </div>
+        <form className="grid gap-3 md:grid-cols-3">
           <SelectInput name="brand" defaultValue={params.brand ?? ""}>
             <option value="">{dict.common.allBrands}</option>
             {brandOptions.map((brand) => <option key={brand.id} value={brand.id}>{brand.name}</option>)}
@@ -58,15 +64,12 @@ export default async function CompetitorMappingsPage({
             <option value="">{copy.allSeries}</option>
             {seriesOptions.map((series) => <option key={series.value} value={series.value}>{series.label}</option>)}
           </SelectInput>
-          <TextInput name="product" placeholder={dict.common.product} defaultValue={params.product ?? ""} />
-          <TextInput name="size" placeholder={dict.common.size} defaultValue={params.size ?? ""} />
           <Button type="submit">{dict.common.filter}</Button>
         </form>
       </Card>
 
       <Card>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <MappingStatusTabs locale={locale} params={params} active={mappingStatus} labels={copy} />
           <Link href={`/${locale}/competitor-products`} className="text-sm font-medium text-blue-700 hover:underline">
             {copy.productMasterLink}
           </Link>
@@ -74,10 +77,9 @@ export default async function CompetitorMappingsPage({
         <CompetitorSeriesRulesPanel
           products={filteredProducts}
           materials={materialResult.data}
-          rules={seriesMappingsResult.data}
+          rules={filteredRules}
           locale={locale}
         />
-        <CompetitorMappingsTable products={products} materials={materialResult.data} locale={locale} dict={dict} mappingStatus={mappingStatus} />
       </Card>
     </AppShell>
   );
@@ -87,77 +89,15 @@ function isOwnBrandName(value: string | null | undefined) {
   return value?.trim().toLowerCase() === "makuku";
 }
 
-function productNameMatches(product: { raw_title: string; normalized_name: string }, keyword: string) {
-  const normalizedKeyword = keyword.trim().toLowerCase();
-  if (!normalizedKeyword) return true;
-  return `${product.raw_title} ${product.normalized_name}`.toLowerCase().includes(normalizedKeyword);
-}
-
-type MappingStatus = "pending" | "mapped" | "all";
-
-function normalizeMappingStatus(value: string | undefined): MappingStatus {
-  if (value === "mapped" || value === "all") return value;
-  return "pending";
-}
-
-function MappingStatusTabs({
-  locale,
-  params,
-  active,
-  labels,
-}: {
-  locale: string;
-  params: { brand?: string; series?: string; product?: string; size?: string };
-  active: MappingStatus;
-  labels: ReturnType<typeof getCopy>;
-}) {
-  const tabs: Array<{ value: MappingStatus; label: string }> = [
-    { value: "pending", label: labels.pending },
-    { value: "mapped", label: labels.mapped },
-    { value: "all", label: labels.all },
-  ];
-
-  return (
-    <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
-      {tabs.map((tab) => {
-        const selected = active === tab.value;
-        return (
-          <Link
-            key={tab.value}
-            href={mappingStatusHref(locale, params, tab.value)}
-            className={selected
-              ? "inline-flex h-8 items-center rounded-md bg-white px-3 text-sm font-semibold text-slate-950 shadow-sm"
-              : "inline-flex h-8 items-center rounded-md px-3 text-sm font-medium text-slate-600 hover:bg-white"}
-          >
-            {tab.label}
-          </Link>
-        );
-      })}
-    </div>
-  );
-}
-
-function mappingStatusHref(locale: string, params: { brand?: string; series?: string; product?: string; size?: string }, mapping: MappingStatus) {
-  const nextParams = new URLSearchParams();
-  if (mapping !== "pending") nextParams.set("mapping", mapping);
-  if (params.brand) nextParams.set("brand", params.brand);
-  if (params.series) nextParams.set("series", params.series);
-  if (params.product) nextParams.set("product", params.product);
-  if (params.size) nextParams.set("size", params.size);
-  const query = nextParams.toString();
-  return `/${locale}/competitor-mappings${query ? `?${query}` : ""}`;
-}
-
 function getCopy(locale: string) {
   const isZh = locale === "zh";
   return {
-    title: isZh ? "竞品映射" : "Competitor Mapping",
-    pending: isZh ? "待关联" : "Pending",
-    mapped: isZh ? "已关联" : "Mapped",
-    all: isZh ? "全部" : "All",
+    title: isZh ? "自动 SKU 映射" : "Auto SKU Mapping",
     allSeries: isZh ? "全部系列" : "All series",
     noSeries: isZh ? "无系列" : "No series",
     productMasterLink: isZh ? "进入竞品主数据" : "Go to Competitor Product Master",
+    automaticRules: isZh ? "自动映射规则" : "Automatic rules",
+    filteredCompetitorSkus: isZh ? "筛选后竞品 SKU" : "Filtered competitor SKUs",
   };
 }
 
