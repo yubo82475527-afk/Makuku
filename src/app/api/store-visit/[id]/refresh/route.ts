@@ -1,8 +1,11 @@
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { runStoreVisitAnalysis } from "@/lib/store-visit-analysis";
 import { requireAppSession } from "@/lib/auth-session";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import { refreshStoreVisitStoredPriceState } from "@/lib/store-visit-image-maintenance";
+
+export const maxDuration = 300;
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -46,41 +49,39 @@ export async function POST(request: Request, ctx: RouteContext) {
     revalidatePath("/en/mobile/offline-capture");
     revalidatePath(`/en/mobile/offline-capture/${id}`);
 
-    queueMicrotask(() => {
-      void (async () => {
+    after(async () => {
+      try {
+        await runStoreVisitAnalysis({
+          visitId: id,
+          affectedImageIds,
+          invalidateAffectedImageSnapshots: true,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error";
+        console.error("[store-visit-refresh] async refresh failed", {
+          visit_id: id,
+          affected_image_ids: affectedImageIds,
+          error: message,
+        });
         try {
-          await runStoreVisitAnalysis({
+          await refreshStoreVisitStoredPriceState({
             visitId: id,
-            affectedImageIds,
-            invalidateAffectedImageSnapshots: true,
+            analysisStatusOverride: "failed",
+            analysisErrorOverride: message,
+            visitStatusOverride: "uploaded",
           });
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "Unknown error";
-          console.error("[store-visit-refresh] async refresh failed", {
+        } catch (refreshError) {
+          console.error("[store-visit-refresh] failed to persist async failure state", {
             visit_id: id,
             affected_image_ids: affectedImageIds,
-            error: message,
+            error: refreshError instanceof Error ? refreshError.message : String(refreshError),
           });
-          try {
-            await refreshStoreVisitStoredPriceState({
-              visitId: id,
-              analysisStatusOverride: "failed",
-              analysisErrorOverride: message,
-              visitStatusOverride: "uploaded",
-            });
-          } catch (refreshError) {
-            console.error("[store-visit-refresh] failed to persist async failure state", {
-              visit_id: id,
-              affected_image_ids: affectedImageIds,
-              error: refreshError instanceof Error ? refreshError.message : String(refreshError),
-            });
-          }
-          revalidatePath("/zh/mobile/offline-capture");
-          revalidatePath(`/zh/mobile/offline-capture/${id}`);
-          revalidatePath("/en/mobile/offline-capture");
-          revalidatePath(`/en/mobile/offline-capture/${id}`);
         }
-      })();
+        revalidatePath("/zh/mobile/offline-capture");
+        revalidatePath(`/zh/mobile/offline-capture/${id}`);
+        revalidatePath("/en/mobile/offline-capture");
+        revalidatePath(`/en/mobile/offline-capture/${id}`);
+      }
     });
 
     return Response.json({
