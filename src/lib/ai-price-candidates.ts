@@ -5,6 +5,25 @@ import type { AiPriceCandidate, CompetitorProduct, MaterialMaster, StoreVisitAiR
 
 type Warning = { type: string; message: string };
 
+type SkuMatchAttributes = {
+  normalizedText: string;
+  series: string | null;
+  size: string | null;
+  pieceCount: number | null;
+  format: "tape" | "pants" | null;
+};
+
+type RankedSkuCandidate<T> = {
+  item: T;
+  score: number;
+  rank: {
+    tokenCoverage: number;
+    formatScore: number;
+    packageExpressionScore: number;
+    activeScore: number;
+  };
+};
+
 type CandidateInput = {
   visitId: string;
   aiResult: StoreVisitAiResult;
@@ -56,6 +75,113 @@ function tokenScore(query: string, target: string) {
 
 function compactText(value: string | null | undefined) {
   return normalizeText(value).replace(/\s+/g, "");
+}
+
+function seriesKey(value: string | null | undefined) {
+  return normalizeText(value).replace(/\b(?:makuku|air|diapers?|3|0|2)\b/g, " ").replace(/\s+/g, " ").trim() || null;
+}
+
+function extractKnownSeries(value: string | null | undefined) {
+  const text = normalizeText(value);
+  if (text.includes("pro care")) return "pro care";
+  if (text.includes("dry care")) return "dry care";
+  if (text.includes("comfort fit")) return "comfort fit";
+  if (text.includes("skin health")) return "skin health";
+  if (text.includes("slim")) return "slim";
+  return null;
+}
+
+function extractFormat(value: string | null | undefined): "tape" | "pants" | null {
+  const text = normalizeText(value);
+  if (text.includes("tape")) return "tape";
+  if (text.includes("pants") || text.includes("celana")) return "pants";
+  return null;
+}
+
+function normalizedPackageExpression(size: string | null, pieceCount: number | null) {
+  return size && pieceCount ? `${size.toLowerCase()}${pieceCount}` : null;
+}
+
+function hasPackageExpression(text: string, size: string | null, pieceCount: number | null) {
+  const expression = normalizedPackageExpression(size, pieceCount);
+  if (!expression) return false;
+  return compactText(text).includes(expression);
+}
+
+export function extractSkuMatchAttributes(
+  text: string | null | undefined,
+  structuredFields?: {
+    series?: string | null;
+    size?: string | null;
+    pieceCount?: number | null;
+    format?: "tape" | "pants" | string | null;
+  },
+): SkuMatchAttributes {
+  const normalizedText = normalizeText(text);
+  const normalizedFormat = extractFormat(structuredFields?.format) ?? extractFormat(text);
+  return {
+    normalizedText,
+    series: seriesKey(structuredFields?.series) ?? extractKnownSeries(text),
+    size: normalizedMaterialSize(structuredFields?.size) ?? extractCandidateSize(text),
+    pieceCount: normalizePieceCount(structuredFields?.pieceCount) ?? extractPieceCount(text),
+    format: normalizedFormat === "tape" || normalizedFormat === "pants" ? normalizedFormat : null,
+  };
+}
+
+function seriesMatches(candidate: SkuMatchAttributes, target: SkuMatchAttributes) {
+  if (!target.series) return false;
+  if (candidate.series && candidate.series === target.series) return true;
+  return candidate.normalizedText.includes(target.series);
+}
+
+export function skuAttributesHardMatch(candidate: SkuMatchAttributes, target: SkuMatchAttributes) {
+  if (!seriesMatches(candidate, target)) return false;
+  if (!candidate.size || !target.size || candidate.size !== target.size) return false;
+  if (!candidate.pieceCount || !target.pieceCount || candidate.pieceCount !== target.pieceCount) return false;
+  return true;
+}
+
+function compareRank(left: RankedSkuCandidate<unknown>, right: RankedSkuCandidate<unknown>) {
+  return left.rank.tokenCoverage - right.rank.tokenCoverage
+    || left.rank.formatScore - right.rank.formatScore
+    || left.rank.packageExpressionScore - right.rank.packageExpressionScore
+    || left.rank.activeScore - right.rank.activeScore;
+}
+
+function sameRank(left: RankedSkuCandidate<unknown>, right: RankedSkuCandidate<unknown>) {
+  return compareRank(left, right) === 0;
+}
+
+export function rankHardMatchedSkuCandidate<T>({
+  candidate,
+  target,
+  item,
+  targetText,
+  active,
+}: {
+  candidate: SkuMatchAttributes;
+  target: SkuMatchAttributes;
+  item: T;
+  targetText: string;
+  active?: boolean;
+}): RankedSkuCandidate<T> {
+  return {
+    item,
+    score: 1,
+    rank: {
+      tokenCoverage: tokenScore(candidate.normalizedText, targetText),
+      formatScore: candidate.format && target.format && candidate.format === target.format ? 1 : 0,
+      packageExpressionScore: hasPackageExpression(targetText, candidate.size, candidate.pieceCount) ? 1 : 0,
+      activeScore: active === false ? 0 : 1,
+    },
+  };
+}
+
+export function pickUniqueHardMatchedCandidate<T>(ranked: RankedSkuCandidate<T>[]) {
+  if (ranked.length === 0) return null;
+  const sorted = [...ranked].sort((left, right) => compareRank(right, left));
+  if (sorted.length > 1 && sameRank(sorted[0], sorted[1])) return null;
+  return { item: sorted[0].item, score: sorted[0].score };
 }
 
 function competitorBrandsMatch(candidateBrand: string | null | undefined, productBrand: string | null | undefined) {
@@ -184,46 +310,33 @@ function normalizedCompetitorSize(value: string | null | undefined) {
   return null;
 }
 
-function materialCandidateRank(candidate: { brand: string; product: string; parsedPrice: number | null; pieceCount: number | null; size: string | null }, item: MaterialMaster) {
-  const materialSize = normalizedMaterialSize(item.sub_type);
-  const materialPieceCount = normalizePieceCount(item.pack_count);
-  const sizeScore = candidate.size && materialSize === candidate.size ? 1 : 0;
-  const pieceScore = candidate.pieceCount && materialPieceCount === candidate.pieceCount ? 1 : 0;
-  const brandScore = tokenScore(candidate.brand, [item.brand, item.sub_brand].filter(Boolean).join(" "));
-  const productScore = tokenScore(candidate.product, [item.tenant_sku_name, item.type, item.sub_type, item.pack_count].filter(Boolean).join(" "));
-  const priceScore = candidate.parsedPrice && item.pcs_price
-    ? Math.max(0, 1 - Math.min(Math.abs(candidate.parsedPrice - item.pcs_price) / Math.max(item.pcs_price, 1), 1))
-    : 0;
-  return {
-    sizeScore,
-    pieceScore,
-    brandScore,
-    productScore,
-    priceScore,
-    score: Math.min(1, pieceScore * 0.35 + sizeScore * 0.3 + brandScore * 0.15 + productScore * 0.15 + priceScore * 0.05),
-  };
+function materialTargetAttributes(item: MaterialMaster) {
+  return extractSkuMatchAttributes(
+    [item.tenant_sku_name, item.type, item.sub_type, item.pack_count].filter(Boolean).join(" "),
+    {
+      series: item.sub_brand,
+      size: item.sub_type,
+      pieceCount: normalizePieceCount(item.pack_count),
+      format: extractFormat([item.tenant_sku_name, item.sub_category, item.type].filter(Boolean).join(" ")),
+    },
+  );
 }
 
 export function pickBestMaterialForCandidate(candidate: { brand: string; product: string; parsedPrice: number | null; pieceCount: number | null }, materials: MaterialMaster[]) {
-  const size = extractCandidateSize(candidate.product);
-  const pieceCount = normalizePieceCount(candidate.pieceCount);
-  const enrichedCandidate = { ...candidate, pieceCount, size };
-  const sizePieceExactMatches = size && pieceCount
-    ? materials.filter((item) => normalizedMaterialSize(item.sub_type) === size && normalizePieceCount(item.pack_count) === pieceCount)
-    : [];
-  const candidateMaterials = sizePieceExactMatches.length > 0 ? sizePieceExactMatches : materials;
-  let best: { item: MaterialMaster; score: number } | null = null;
-  for (const item of candidateMaterials) {
-    const rank = materialCandidateRank(enrichedCandidate, item);
-    const score = sizePieceExactMatches.length > 0 ? rank.score : Math.min(rank.score, 0.64);
-    const exactTieBreak = rank.pieceScore + rank.sizeScore;
-    const bestRank = best ? materialCandidateRank(enrichedCandidate, best.item) : null;
-    const bestTieBreak = bestRank ? bestRank.pieceScore + bestRank.sizeScore : -1;
-    if (!best || score > best.score || score === best.score && exactTieBreak > bestTieBreak) {
-      best = { item, score };
-    }
-  }
-  return best;
+  const candidateAttributes = extractSkuMatchAttributes(candidate.product, {
+    pieceCount: normalizePieceCount(candidate.pieceCount),
+  });
+  const ranked = materials.flatMap((item) => {
+    const target = materialTargetAttributes(item);
+    if (!skuAttributesHardMatch(candidateAttributes, target)) return [];
+    return rankHardMatchedSkuCandidate({
+      candidate: candidateAttributes,
+      target,
+      item,
+      targetText: [item.tenant_sku_name, item.type, item.sub_type, item.pack_count].filter(Boolean).join(" "),
+    });
+  });
+  return pickUniqueHardMatchedCandidate(ranked);
 }
 
 function pickBestMaterial(candidate: { brand: string; product: string; parsedPrice: number | null; pieceCount: number | null }, materials: MaterialMaster[]) {
@@ -233,46 +346,33 @@ function pickBestMaterial(candidate: { brand: string; product: string; parsedPri
   return best;
 }
 
-function competitorCandidateRank(candidate: { brand: string; product: string; pieceCount: number | null; size: string | null }, item: CompetitorProduct) {
-  const competitorSize = normalizedCompetitorSize(item.size) ?? extractCandidateSize(item.normalized_name) ?? extractCandidateSize(item.raw_title);
-  const competitorPieceCount = normalizePieceCount(item.piece_count);
-  const sizeScore = candidate.size && competitorSize === candidate.size ? 1 : 0;
-  const pieceScore = candidate.pieceCount && competitorPieceCount === candidate.pieceCount ? 1 : 0;
-  const brandScore = tokenScore(candidate.brand, item.brands?.name ?? "");
-  const productScore = tokenScore(candidate.product, [item.normalized_name, item.raw_title, item.size, item.piece_count].filter(Boolean).join(" "));
-  return {
-    sizeScore,
-    pieceScore,
-    brandScore,
-    productScore,
-    score: Math.min(1, pieceScore * 0.4 + sizeScore * 0.3 + brandScore * 0.15 + productScore * 0.15),
-  };
+function competitorTargetAttributes(item: CompetitorProduct) {
+  const targetText = [item.product_series, item.normalized_name, item.raw_title, item.size, item.piece_count].filter(Boolean).join(" ");
+  return extractSkuMatchAttributes(targetText, {
+    series: item.product_series,
+    size: normalizedCompetitorSize(item.size) ?? extractCandidateSize(item.normalized_name) ?? extractCandidateSize(item.raw_title),
+    pieceCount: normalizePieceCount(item.piece_count),
+    format: extractFormat(targetText),
+  });
 }
 
 export function pickBestCompetitorForCandidate(candidate: { brand: string; product: string; pieceCount: number | null }, products: CompetitorProduct[]) {
-  const size = extractCandidateSize(candidate.product);
-  const pieceCount = normalizePieceCount(candidate.pieceCount);
+  const candidateAttributes = extractSkuMatchAttributes(candidate.product, {
+    pieceCount: normalizePieceCount(candidate.pieceCount),
+  });
   const brandMatchedProducts = products.filter((item) => competitorBrandsMatch(candidate.brand, item.brands?.name));
-  const competitorSizePieceExactMatches = size && pieceCount
-    ? brandMatchedProducts.filter((item) => {
-      const itemSize = normalizedCompetitorSize(item.size) ?? extractCandidateSize(item.normalized_name) ?? extractCandidateSize(item.raw_title);
-      return itemSize === size && normalizePieceCount(item.piece_count) === pieceCount;
-    })
-    : [];
-  const candidateProducts = competitorSizePieceExactMatches.length > 0 ? competitorSizePieceExactMatches : brandMatchedProducts;
-  let best: { item: CompetitorProduct; score: number } | null = null;
-  const enrichedCandidate = { ...candidate, pieceCount, size };
-  for (const item of candidateProducts) {
-    const rank = competitorCandidateRank(enrichedCandidate, item);
-    const score = competitorSizePieceExactMatches.length > 0 ? rank.score : Math.min(rank.score, 0.64);
-    const exactTieBreak = rank.pieceScore + rank.sizeScore;
-    const bestRank = best ? competitorCandidateRank(enrichedCandidate, best.item) : null;
-    const bestTieBreak = bestRank ? bestRank.pieceScore + bestRank.sizeScore : -1;
-    if (!best || score > best.score || score === best.score && exactTieBreak > bestTieBreak) {
-      best = { item, score };
-    }
-  }
-  return best;
+  const ranked = brandMatchedProducts.flatMap((item) => {
+    const target = competitorTargetAttributes(item);
+    if (!skuAttributesHardMatch(candidateAttributes, target)) return [];
+    return rankHardMatchedSkuCandidate({
+      candidate: candidateAttributes,
+      target,
+      item,
+      targetText: [item.product_series, item.normalized_name, item.raw_title, item.size, item.piece_count].filter(Boolean).join(" "),
+      active: item.status !== "disabled",
+    });
+  });
+  return pickUniqueHardMatchedCandidate(ranked);
 }
 
 function pickBestCompetitor(candidate: { brand: string; product: string; pieceCount: number | null }, products: CompetitorProduct[]) {
