@@ -83,7 +83,7 @@ export default async function OfflinePriceCandidatesPage({
           perPage={candidatesResult.perPage}
           locale={locale}
           filters={{
-            status: statusFilter,
+            status: currentStatus,
             date_from: dateFrom || undefined,
             date_to: dateTo || undefined,
             visit_code: visitCode || undefined,

@@ -10,7 +10,7 @@ import { formatIdr, formatJakartaTime } from "@/lib/format";
 import type { AiPriceCandidate, AiPriceCandidateMatchType, AiPriceReviewJob, AiPriceReviewJobItem, AiPriceReviewRule, CompetitorProduct, MaterialMaster } from "@/lib/types";
 
 type WorkbenchFilters = {
-  status?: "pending" | "approved" | "rejected";
+  status?: StatusTabValue;
   date_from?: string;
   date_to?: string;
   visit_code?: string;
@@ -283,8 +283,8 @@ export function AiPriceCandidatesWorkbench({
 
   const from = total === 0 ? 0 : (page - 1) * perPage + 1;
   const to = Math.min(total, page * perPage);
-  const showApprovedAudit = filters.status === "approved" || !filters.status;
-  const showRejectedAudit = filters.status === "rejected" || !filters.status;
+  const showApprovedAudit = filters.status === "approved" || filters.status === "all" || !filters.status;
+  const showRejectedAudit = filters.status === "rejected" || filters.status === "all" || !filters.status;
 
   return (
     <div className="space-y-4">
@@ -742,7 +742,7 @@ function MatchedSkuCell({
   return (
     <div className="space-y-1">
       <div className="font-medium text-slate-900">{Math.round(candidate.match_score * 100)}%</div>
-      <div className="max-w-52 truncate text-xs text-slate-500" title={label}>{label}</div>
+      <div className="max-w-72 whitespace-normal break-words text-xs leading-5 text-slate-500" title={label}>{label}</div>
       {candidate.status === "pending" ? (
         <button type="button" onClick={onEdit} className="text-xs font-medium text-blue-700 hover:underline">
           {copy.editMatch}
@@ -1289,7 +1289,7 @@ function statusTabHref(locale: string, filters: WorkbenchFilters, status: Status
   const params = new URLSearchParams();
   params.set("page", "1");
   params.set("per_page", "50");
-  if (status !== "all") params.set("status", status);
+  params.set("status", status);
   if (filters.date_from) params.set("date_from", filters.date_from);
   if (filters.date_to) params.set("date_to", filters.date_to);
   if (filters.visit_code) params.set("visit_code", filters.visit_code);
