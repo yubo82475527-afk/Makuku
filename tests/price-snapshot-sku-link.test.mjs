@@ -75,12 +75,22 @@ test("real market price page supports created_at date range filters in page and 
   assert.match(pricesPage, /currentParams\.set\(key, params\[key\]\)/);
   assert.match(pricesPage, /params\.createdFrom/);
   assert.match(pricesPage, /params\.createdTo/);
-  assert.match(pricesPage, /matchesCreatedFrom\(snapshot\.created_at, params\.createdFrom\)/);
-  assert.match(pricesPage, /matchesCreatedTo\(snapshot\.created_at, params\.createdTo\)/);
+  assert.match(pricesPage, /matchesCreatedFrom\(snapshot\.captured_at, params\.createdFrom\)/);
+  assert.match(pricesPage, /matchesCreatedTo\(snapshot\.captured_at, params\.createdTo\)/);
   assert.match(priceExportRoute, /const createdFrom = searchParams\.get\("createdFrom"\)/);
   assert.match(priceExportRoute, /const createdTo = searchParams\.get\("createdTo"\)/);
   assert.match(priceExportRoute, /matchesCreatedFrom\(snapshot\.created_at, createdFrom\)/);
   assert.match(priceExportRoute, /matchesCreatedTo\(snapshot\.created_at, createdTo\)/);
+});
+
+test("real market price visit and image ids link to filtered photo price review", () => {
+  assert.match(priceSnapshotsTable, /import Link from "next\/link"/);
+  assert.match(priceSnapshotsTable, /function photoReviewHref\(locale: string, filters: \{ visitCode\?: string \| null; imageId\?: string \| null \}\)/);
+  assert.match(priceSnapshotsTable, /params\.set\("visit_code", visitCode\)/);
+  assert.match(priceSnapshotsTable, /params\.set\("image_id", imageId\)/);
+  assert.match(priceSnapshotsTable, /`\/\$\{locale\}\/offline-price-candidates\?\$\{params\.toString\(\)\}`/);
+  assert.match(priceSnapshotsTable, /<LinkedReviewValue[\s\S]+value=\{visitCodeForSnapshot\(snapshot\)\}[\s\S]+href=\{photoReviewHref\(locale, \{ visitCode: visitCodeForSnapshot\(snapshot\) \}\)\}/);
+  assert.match(priceSnapshotsTable, /<LinkedReviewValue[\s\S]+value=\{imageIdForSnapshot\(snapshot\)\}[\s\S]+href=\{photoReviewHref\(locale, \{ imageId: imageIdForSnapshot\(snapshot\) \}\)\}/);
 });
 
 test("real market price page shows activity type and three business prices", () => {
@@ -150,7 +160,7 @@ test("price snapshots query supports owner visibility while market price page sh
   assert.match(dataFile, /owner === "makuku"[\s\S]*sku_master_id\.not\.is\.null,material_sku_code\.not\.is\.null[\s\S]*\.is\("competitor_product_id", null\)/);
   assert.match(dataFile, /owner === "competitor"[\s\S]*\.not\("competitor_product_id", "is", null\)/);
 
-  assert.match(pricesPage, /getPriceSnapshots\(\)/);
+  assert.match(pricesPage, /getPriceSnapshots\(\{[\s\S]*limit: 5000/);
   assert.match(pricesPage, /name="brand"/);
   assert.doesNotMatch(pricesPage, /owner\?: "all" \| "makuku" \| "competitor"/);
   assert.doesNotMatch(pricesPage, /normalizeOwner\(params\.owner\)/);

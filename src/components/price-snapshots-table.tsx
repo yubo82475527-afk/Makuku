@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { Loader2, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { priceBrandSeriesLabel } from "@/lib/brand-series";
@@ -215,8 +216,18 @@ export function PriceSnapshotsTable({
                   <td className="py-3 pr-3">{region.district ?? "-"}</td>
                   <td className="whitespace-nowrap py-3 pr-3">{uploaderNameForSnapshot(snapshot)}</td>
                   <td className="py-3 pr-3">{formatSnapshotCreatedAt(snapshot)}</td>
-                  <td className="whitespace-nowrap py-3 pr-3">{visitCodeForSnapshot(snapshot)}</td>
-                  <td className="whitespace-nowrap py-3 pr-3">{imageIdForSnapshot(snapshot)}</td>
+                  <td className="whitespace-nowrap py-3 pr-3">
+                    <LinkedReviewValue
+                      value={visitCodeForSnapshot(snapshot)}
+                      href={photoReviewHref(locale, { visitCode: visitCodeForSnapshot(snapshot) })}
+                    />
+                  </td>
+                  <td className="whitespace-nowrap py-3 pr-3">
+                    <LinkedReviewValue
+                      value={imageIdForSnapshot(snapshot)}
+                      href={photoReviewHref(locale, { imageId: imageIdForSnapshot(snapshot) })}
+                    />
+                  </td>
                 </tr>
               );
             })}
@@ -225,6 +236,25 @@ export function PriceSnapshotsTable({
       </div>
     </div>
   );
+}
+
+function LinkedReviewValue({ value, href }: { value: string; href: string }) {
+  if (!cleanDisplayText(value)) return <span>-</span>;
+
+  return (
+    <Link href={href} prefetch={false} className="font-medium text-blue-700 underline-offset-2 hover:underline">
+      {value}
+    </Link>
+  );
+}
+
+function photoReviewHref(locale: string, filters: { visitCode?: string | null; imageId?: string | null }) {
+  const params = new URLSearchParams();
+  const visitCode = cleanDisplayText(filters.visitCode);
+  const imageId = cleanDisplayText(filters.imageId);
+  if (visitCode) params.set("visit_code", visitCode);
+  if (imageId) params.set("image_id", imageId);
+  return `/${locale}/offline-price-candidates?${params.toString()}`;
 }
 
 function ConfirmDeletePanel({

@@ -89,8 +89,14 @@ test("photo price review shows approved and rejected audit columns", () => {
 
 test("photo price review table headers expose help tooltips for AI and match score", () => {
   assert.match(workbench, /function HeaderHelp/);
-  assert.match(workbench, /AI<HeaderHelp title=\{aiConfidenceHelp\} \/>/);
-  assert.match(workbench, /\{copy\.table\.match\}<HeaderHelp title=\{matchScoreHelp\} \/>/);
+  assert.match(workbench, /type HeaderHelpState = \{ title: string; body: string \} \| null/);
+  assert.match(workbench, /const \[headerHelp, setHeaderHelp\] = useState<HeaderHelpState>\(null\)/);
+  assert.match(workbench, /<button[\s\S]+aria-label=\{title\}[\s\S]+onClick=\{\(event\) => \{[\s\S]+onOpen\(\{ title, body \}\)/);
+  assert.match(workbench, /<HeaderHelpDialog help=\{headerHelp\} closeLabel=\{copy\.close\} onClose=\{\(\) => setHeaderHelp\(null\)\} \/>/);
+  assert.match(workbench, /AI<HeaderHelp title=\{copy\.table\.aiConfidence\} body=\{aiConfidenceHelp\} onOpen=\{setHeaderHelp\} \/>/);
+  assert.match(workbench, /\{copy\.table\.match\}<HeaderHelp title=\{copy\.table\.match\} body=\{matchScoreHelp\} onOpen=\{setHeaderHelp\} \/>/);
+  assert.match(workbench, /function HeaderHelpDialog\(\{ help, closeLabel, onClose \}/);
+  assert.match(workbench, /role="dialog" aria-modal="true"/);
   assert.match(workbench, /AI 置信度 = AI 对品牌、商品、价格识别结果的整体把握/);
   assert.match(workbench, /商品命中度 = 自动匹配商品的算法分数/);
 });

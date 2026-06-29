@@ -23,6 +23,7 @@ type MatchDialogState = { candidate: AiPriceCandidate } | null;
 type ReviewInput = { price: string; pieces: string; promoType: string };
 type ReviewOverride = { price_idr: number; net_price_idr: number; piece_count: number; promo_type: string | null };
 type WorkbenchCopy = ReturnType<typeof getWorkbenchCopy>;
+type HeaderHelpState = { title: string; body: string } | null;
 type VisitEvidenceImage = {
   id?: string;
   path: string;
@@ -38,15 +39,38 @@ function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-function HeaderHelp({ title }: { title: string }) {
+function HeaderHelp({ title, body, onOpen }: { title: string; body: string; onOpen: (help: NonNullable<HeaderHelpState>) => void }) {
   return (
-    <span
+    <button
+      type="button"
       title={title}
-      className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[10px] font-semibold text-slate-500"
       aria-label={title}
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpen({ title, body });
+      }}
+      className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 bg-white text-[10px] font-semibold text-slate-500 hover:border-slate-400 hover:text-slate-700"
     >
       ?
-    </span>
+    </button>
+  );
+}
+
+function HeaderHelpDialog({ help, closeLabel, onClose }: { help: HeaderHelpState; closeLabel: string; onClose: () => void }) {
+  if (!help) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4" role="dialog" aria-modal="true" onClick={onClose}>
+      <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl" onClick={stopReviewRowClick}>
+        <div className="flex items-start justify-between gap-3">
+          <h3 className="text-base font-semibold text-slate-900">{help.title}</h3>
+          <button type="button" onClick={onClose} className="rounded-md border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-50">
+            {closeLabel}
+          </button>
+        </div>
+        <p className="mt-3 text-sm leading-6 text-slate-700">{help.body}</p>
+      </div>
+    </div>
   );
 }
 
@@ -83,6 +107,7 @@ export function AiPriceCandidatesWorkbench({
   const [ruleModalOpen, setRuleModalOpen] = useState(false);
   const [rejectDialog, setRejectDialog] = useState<RejectDialogState>(null);
   const [matchDialog, setMatchDialog] = useState<MatchDialogState>(null);
+  const [headerHelp, setHeaderHelp] = useState<HeaderHelpState>(null);
   const [reviewInputs, setReviewInputs] = useState<Record<string, ReviewInput>>({});
   const [savedReviewInputs, setSavedReviewInputs] = useState<Record<string, ReviewInput>>({});
   const [savingReviewInputId, setSavingReviewInputId] = useState<string | null>(null);
@@ -331,10 +356,10 @@ export function AiPriceCandidatesWorkbench({
                 <th className="px-3 py-2">{copy.table.pcs}</th>
                 <th className="px-3 py-2">{copy.table.perPiece}</th>
                 <th className="px-3 py-2">
-                  <span className="inline-flex items-center">AI<HeaderHelp title={aiConfidenceHelp} /></span>
+                  <span className="inline-flex items-center">AI<HeaderHelp title={copy.table.aiConfidence} body={aiConfidenceHelp} onOpen={setHeaderHelp} /></span>
                 </th>
                 <th className="px-3 py-2">
-                  <span className="inline-flex items-center">{copy.table.match}<HeaderHelp title={matchScoreHelp} /></span>
+                  <span className="inline-flex items-center">{copy.table.match}<HeaderHelp title={copy.table.match} body={matchScoreHelp} onOpen={setHeaderHelp} /></span>
                 </th>
                 <th className="px-3 py-2">{copy.table.warnings}</th>
                 <th className="px-3 py-2">{copy.table.evidence}</th>
@@ -485,6 +510,7 @@ export function AiPriceCandidatesWorkbench({
       </div>
 
       <ReviewRuleModal open={ruleModalOpen} initialRule={rule} copy={copy} onClose={() => setRuleModalOpen(false)} />
+      <HeaderHelpDialog help={headerHelp} closeLabel={copy.close} onClose={() => setHeaderHelp(null)} />
       <MatchEditorDialog
         key={matchDialog ? `match-${matchDialog.candidate.id}` : "match-closed"}
         state={matchDialog}
