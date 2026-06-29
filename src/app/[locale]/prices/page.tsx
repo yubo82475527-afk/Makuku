@@ -127,19 +127,19 @@ async function PricesContent({
       <Card className="mb-4">
         <form className="space-y-3">
           <div className="grid gap-3 md:grid-cols-[minmax(220px,1.1fr)_minmax(150px,0.7fr)_minmax(130px,0.6fr)_minmax(280px,1.1fr)_minmax(120px,0.45fr)]">
-            <LabeledSelect label={locale === "zh" ? "鍝佺墝/绯诲垪" : "Brand series"}>
+            <LabeledSelect label={locale === "zh" ? "品牌/系列" : "Brand series"}>
               <SelectInput name="brand" defaultValue={params.brand ?? ""} className="h-auto min-w-0 border-0 bg-transparent px-0 py-2 shadow-none focus:border-0">
                 <option value="">{dict.common.allBrands}</option>
               </SelectInput>
             </LabeledSelect>
-            <LabeledSelect label={locale === "zh" ? "绛夌骇" : "Grade"}>
+            <LabeledSelect label={locale === "zh" ? "等级" : "Grade"}>
               <SelectInput name="priceBand" defaultValue={params.priceBand ?? ""} className="h-auto min-w-0 border-0 bg-transparent px-0 py-2 shadow-none focus:border-0">
-                <option value="">{locale === "zh" ? "鍏ㄩ儴鍟嗗搧绛夌骇" : "All grades"}</option>
+                <option value="">{locale === "zh" ? "全部商品等级" : "All grades"}</option>
               </SelectInput>
             </LabeledSelect>
-            <LabeledSelect label={locale === "zh" ? "灏虹爜" : "Size"}>
+            <LabeledSelect label={locale === "zh" ? "尺码" : "Size"}>
               <SelectInput name="size" defaultValue={params.size ?? ""} className="h-auto min-w-0 border-0 bg-transparent px-0 py-2 shadow-none focus:border-0">
-                <option value="">{locale === "zh" ? "鍏ㄩ儴灏虹爜" : "All sizes"}</option>
+                <option value="">{locale === "zh" ? "全部尺码" : "All sizes"}</option>
               </SelectInput>
             </LabeledSelect>
             <PriceDateRangeFilter locale={locale} createdFrom={params.createdFrom ?? ""} createdTo={params.createdTo ?? ""} />
@@ -150,8 +150,8 @@ async function PricesContent({
             <summary className="inline-flex h-8 cursor-pointer list-none items-center gap-2 rounded-md px-1 text-sm font-medium text-slate-600 hover:text-slate-900 [&::-webkit-details-marker]:hidden">
               <SlidersHorizontal className="h-4 w-4" />
               {locale === "zh" ? "更多筛选" : "More filters"}
-              <span className="text-xs text-slate-400 group-open:hidden">{locale === "zh" ? "灞曞紑" : "Expand"}</span>
-              <span className="hidden text-xs text-slate-400 group-open:inline">{locale === "zh" ? "鏀惰捣" : "Collapse"}</span>
+              <span className="text-xs text-slate-400 group-open:hidden">{locale === "zh" ? "展开" : "Expand"}</span>
+              <span className="hidden text-xs text-slate-400 group-open:inline">{locale === "zh" ? "收起" : "Collapse"}</span>
             </summary>
             <div className="mt-3 grid gap-3 border-t border-slate-100 pt-3 md:grid-cols-3 xl:grid-cols-6">
               <InlineTextFilter name="province" label={locale === "zh" ? "省" : "Province"} defaultValue={params.province ?? ""} />
@@ -173,7 +173,7 @@ async function PricesContent({
             className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
             <Download className="h-4 w-4" />
-            {locale === "zh" ? "瀵煎嚭 CSV" : "Export CSV"}
+            {locale === "zh" ? "导出 CSV" : "Export CSV"}
           </a>
         </div>
         <PriceSnapshotsTable snapshots={pricesResult.data} locale={locale} />
