@@ -4,7 +4,7 @@ import { requireAppSession } from "@/lib/auth-session";
 
 const bucketName = "store-visits";
 const maxImages = 6;
-const maxFileSizeBytes = 8 * 1024 * 1024;
+const maxFileSizeBytes = 20 * 1024 * 1024;
 const imageCategories = ["makuku_shelf", "competitor_shelf", "storefront"] as const;
 type StoreVisitImageCategory = (typeof imageCategories)[number];
 
@@ -340,7 +340,7 @@ export async function POST(request: Request) {
     }
     for (const file of files) {
       if (!file.type.startsWith("image/")) return Response.json({ error: "Only image files are supported" }, { status: 400 });
-      if (file.size > maxFileSizeBytes) return Response.json({ error: "Each image must be 8MB or smaller" }, { status: 400 });
+      if (file.size > maxFileSizeBytes) return Response.json({ error: "Each image must be 20MB or smaller" }, { status: 400 });
     }
 
     const { supabase, visit } = await insertVisit({

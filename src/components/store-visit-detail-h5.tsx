@@ -73,6 +73,10 @@ type ReanalyzeConfirmState = {
   label: string;
 };
 
+const maxUploadBytes = 20 * 1024 * 1024;
+const compressionMaxSide = 3000;
+const compressionQuality = 0.9;
+
 function canRetryAnalysis(status: StoreVisitDetail["analysis_status"], visitStatus: StoreVisitDetail["visit_status"]) {
   return status === "failed" || status === "partial" || (visitStatus === "uploaded" && (!status || status === "pending"));
 }
@@ -114,6 +118,55 @@ function formatMoney(value: number | null | undefined) {
 function formatImageShortCode(value: string | null | undefined) {
   const shortCode = formatShortImageId(value);
   return shortCode === "-" ? shortCode : `ID: ${shortCode}`;
+}
+
+function formatMb(bytes: number) {
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+}
+
+function loadImage(file: File) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Unable to read image"));
+    };
+    image.src = url;
+  });
+}
+
+async function prepareImageForUpload(file: File) {
+  if (!file.type.startsWith("image/")) {
+    throw new Error(`${file.name} is not an image.`);
+  }
+  if (file.size <= maxUploadBytes) return file;
+
+  const image = await loadImage(file);
+  const scale = Math.min(1, compressionMaxSide / Math.max(image.naturalWidth, image.naturalHeight));
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Image compression is not available in this browser.");
+  ctx.drawImage(image, 0, 0, width, height);
+
+  const blob = await new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(resolve, "image/jpeg", compressionQuality);
+  });
+  if (!blob) throw new Error("Image compression failed.");
+
+  const safeName = file.name.replace(/\.[^.]+$/, "") || "store-photo";
+  return new File([blob], `${safeName}.jpg`, {
+    type: "image/jpeg",
+    lastModified: Date.now(),
+  });
 }
 
 function textOrFallback(value: string | null | undefined, fallback: string) {
@@ -436,8 +489,13 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
     }));
 
     try {
+      const file = await prepareImageForUpload(params.file);
+      if (file.size > maxUploadBytes) {
+        throw new Error(`Photo is still ${formatMb(file.size)} after compression. Please choose a smaller photo.`);
+      }
+
       const formData = new FormData();
-      formData.set("image", params.file);
+      formData.set("image", file);
       formData.set("image_category", params.category);
       if (params.targetImageId) formData.set("replaces_image_id", params.targetImageId);
 

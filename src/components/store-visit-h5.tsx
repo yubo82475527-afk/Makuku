@@ -10,9 +10,9 @@ import { getMobileCopy, mobileImageCategoryLabel } from "@/lib/mobile-i18n";
 
 const maxImages = 20;
 const uploadConcurrency = 3;
-const maxUploadBytes = 8 * 1024 * 1024;
-const compressionMaxSide = 1600;
-const compressionQuality = 0.78;
+const maxUploadBytes = 20 * 1024 * 1024;
+const compressionMaxSide = 3000;
+const compressionQuality = 0.9;
 const storageKey = "makuku_app_user";
 const imageCategoryOrder = ["makuku_shelf", "competitor_shelf", "storefront"] as const;
 type ImageCategory = (typeof imageCategoryOrder)[number];
@@ -373,10 +373,11 @@ function loadImage(file: File) {
   });
 }
 
-async function compressImage(file: File) {
+async function prepareImageForUpload(file: File) {
   if (!file.type.startsWith("image/")) {
     throw new Error(`${file.name} is not an image.`);
   }
+  if (file.size <= maxUploadBytes) return file;
 
   const image = await loadImage(file);
   const scale = Math.min(1, compressionMaxSide / Math.max(image.naturalWidth, image.naturalHeight));
@@ -399,7 +400,7 @@ async function compressImage(file: File) {
     type: "image/jpeg",
     lastModified: Date.now(),
   });
-  return compressed.size < file.size || file.size > maxUploadBytes ? compressed : file;
+  return compressed;
 }
 
 async function uploadVisitImage({
@@ -413,7 +414,7 @@ async function uploadVisitImage({
   index: number;
   submitFailed: string;
 }) {
-  const file = await compressImage(image.file);
+  const file = await prepareImageForUpload(image.file);
   if (file.size > maxUploadBytes) {
     throw new Error(`Photo ${index + 1} is still ${formatMb(file.size)} after compression. Please choose a smaller photo.`);
   }

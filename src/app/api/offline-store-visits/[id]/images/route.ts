@@ -6,7 +6,7 @@ import type { OfflineImageType } from "@/lib/types";
 
 const imageTypes: OfflineImageType[] = ["own_shelf", "competitor_shelf", "promo_tag", "other"];
 const bucketName = "offline-visit-images";
-const maxFileSizeBytes = 8 * 1024 * 1024;
+const maxFileSizeBytes = 20 * 1024 * 1024;
 
 function isImageType(value: string): value is OfflineImageType {
   return imageTypes.includes(value as OfflineImageType);
@@ -33,7 +33,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/offline-sto
       return Response.json({ error: "Only image files are supported" }, { status: 400 });
     }
     if (file.size > maxFileSizeBytes) {
-      return Response.json({ error: "Image must be 8MB or smaller" }, { status: 400 });
+      return Response.json({ error: "Image must be 20MB or smaller" }, { status: 400 });
     }
 
     const supabase = createSupabaseServiceClient();

@@ -8,6 +8,7 @@ const storeVisitDetailH5 = readFileSync("src/components/store-visit-detail-h5.ts
 const storeVisitApi = readFileSync("src/app/api/store-visit/route.ts", "utf8");
 const storeVisitsApi = readFileSync("src/app/api/store-visits/route.ts", "utf8");
 const storeVisitImagesApi = readFileSync("src/app/api/store-visit/[id]/images/route.ts", "utf8");
+const offlineStoreVisitImagesApi = readFileSync("src/app/api/offline-store-visits/[id]/images/route.ts", "utf8");
 const storeVisitAiDebug = readFileSync("src/lib/store-visit-ai-debug.ts", "utf8");
 const offlineStoresApi = readFileSync("src/app/api/offline-stores/route.ts", "utf8");
 const mobileOfflineApp = readFileSync("src/components/mobile-offline-app.tsx", "utf8");
@@ -222,6 +223,34 @@ test("new H5 store visit submits photos with limited concurrency after creating 
   assert.match(storeVisitH5, /redirectingToList/);
   assert.match(storeVisitH5, /Returning to the visit list|正在返回巡店列表/);
   assert.doesNotMatch(storeVisitH5, /const compressedImages = \[\];[\s\S]+Uploading photo \$\{index \+ 1\}/);
+});
+
+test("store visit photo uploads allow 20MB originals before high quality compression", () => {
+  assert.match(storeVisitH5, /const maxUploadBytes = 20 \* 1024 \* 1024/);
+  assert.match(storeVisitH5, /const compressionMaxSide = 3000/);
+  assert.match(storeVisitH5, /const compressionQuality = 0\.9/);
+  assert.match(storeVisitH5, /async function prepareImageForUpload/);
+  assert.match(storeVisitH5, /if \(file\.size <= maxUploadBytes\) return file/);
+  assert.match(storeVisitH5, /const file = await prepareImageForUpload\(image\.file\)/);
+  assert.doesNotMatch(storeVisitH5, /const maxUploadBytes = 8 \* 1024 \* 1024/);
+  assert.doesNotMatch(storeVisitH5, /const compressionMaxSide = 1600/);
+  assert.doesNotMatch(storeVisitH5, /const compressionQuality = 0\.78/);
+});
+
+test("store visit retake uploads reuse the same image preparation policy as first upload", () => {
+  assert.match(storeVisitDetailH5, /async function prepareImageForUpload/);
+  assert.match(storeVisitDetailH5, /const file = await prepareImageForUpload\(params\.file\)/);
+  assert.match(storeVisitDetailH5, /formData\.set\("image", file\)/);
+  assert.doesNotMatch(storeVisitDetailH5, /formData\.set\("image", params\.file\)/);
+});
+
+test("store visit image APIs allow 20MB photos and no longer mention 8MB", () => {
+  for (const source of [storeVisitApi, storeVisitImagesApi, offlineStoreVisitImagesApi]) {
+    assert.match(source, /const maxFileSizeBytes = 20 \* 1024 \* 1024/);
+    assert.match(source, /20MB or smaller/);
+    assert.doesNotMatch(source, /const maxFileSizeBytes = 8 \* 1024 \* 1024/);
+    assert.doesNotMatch(source, /8MB or smaller/);
+  }
 });
 
 test("mobile visit list login and new-visit entry expose explicit loading states", () => {

@@ -6,7 +6,7 @@ import type { OfflineImageType, OfflineStoreVisit, StoreVisitImageCategory } fro
 
 const bucketName = "offline-visit-images";
 const maxImages = 20;
-const maxFileSizeBytes = 8 * 1024 * 1024;
+const maxFileSizeBytes = 20 * 1024 * 1024;
 const imageCategories: StoreVisitImageCategory[] = ["makuku_shelf", "competitor_shelf", "storefront"];
 
 function isImageCategory(value: string): value is StoreVisitImageCategory {
@@ -66,7 +66,7 @@ export async function POST(request: Request, ctx: RouteContext) {
       return Response.json({ error: "Only image files are supported" }, { status: 400 });
     }
     if (file.size > maxFileSizeBytes) {
-      return Response.json({ error: "Image must be 8MB or smaller" }, { status: 400 });
+      return Response.json({ error: "Image must be 20MB or smaller" }, { status: 400 });
     }
 
     const supabase = createSupabaseServiceClient();
