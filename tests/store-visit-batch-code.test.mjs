@@ -39,7 +39,7 @@ test("store visit APIs and H5 detail expose visit_code", () => {
 });
 
 test("H5 visit detail supports partial success with copyable system errors", () => {
-  assert.match(typesFile, /StoreVisitAnalysisStatus = "pending" \| "analyzing" \| "completed" \| "partial" \| "failed"/);
+  assert.match(typesFile, /StoreVisitAnalysisStatus = "pending" \| "analyzing" \| "completed" \| "partial" \| "action_required" \| "failed"/);
   assert.match(detailH5, /partialSuccess/);
   assert.match(detailH5, /businessAnalysisError/);
   assert.match(detailH5, /systemError/);

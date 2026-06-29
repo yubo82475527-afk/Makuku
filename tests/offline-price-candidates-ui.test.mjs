@@ -137,7 +137,14 @@ test("photo price review filters by source image id and shows it in the list", (
   assert.match(dataFile, /imageId\?: string/);
   assert.match(dataFile, /matchesAiPriceCandidateImageId/);
   assert.match(dataFile, /normalizedSourceImageId\.endsWith\(normalizedQuery\)/);
-  assert.doesNotMatch(dataFile, /\.ilike\("source_image_id"/);
+  assert.match(dataFile, /\.ilike\("source_image_id"/);
+});
+
+test("photo price review image filter no longer falls back to 5000-row client filtering", () => {
+  assert.doesNotMatch(dataFile, /limit:\s*Math\.max\(page \* perPage, 5000\)/);
+  assert.doesNotMatch(dataFile, /const imageFilteredResult = await getAiPriceCandidates\(/);
+  assert.match(dataFile, /if \(filters\.imageId\) query = query\.ilike\("source_image_id",/);
+  assert.match(dataFile, /return \{ data: candidates, total: count \?\? 0, page, perPage/);
 });
 
 test("photo price review keeps Chinese copy keys for table headers and actions", () => {

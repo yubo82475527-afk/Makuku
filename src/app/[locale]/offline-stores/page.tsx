@@ -1,4 +1,4 @@
-import { AppShell } from "@/components/app-shell";
+import { PageShellState } from "@/components/page-shell-state";
 import { StoreMasterTable } from "@/components/store-master-table";
 import { Button, Card, DataNotice, SelectInput } from "@/components/ui";
 import { getOfflineStores, getOrganizations } from "@/lib/data";
@@ -31,7 +31,8 @@ export default async function OfflineStoresPage({
   const currentPath = `/offline-stores${queryParts.length ? `?${queryParts.join("&")}` : ""}`;
 
   return (
-    <AppShell locale={locale} dict={dict} title={isZh ? "\u95e8\u5e97\u5217\u8868" : "Store List"} currentPath={currentPath} isDemo={storesResult.isDemo || organizationsResult.isDemo}>
+    <>
+      <PageShellState locale={locale} dict={dict} title={isZh ? "\u95e8\u5e97\u5217\u8868" : "Store List"} currentPath={currentPath} isDemo={storesResult.isDemo || organizationsResult.isDemo} />
       <DataNotice dict={dict} error={storesResult.error ?? organizationsResult.error} />
 
       <Card className="mb-4">
@@ -61,6 +62,6 @@ export default async function OfflineStoresPage({
           locale={locale}
         />
       </Card>
-    </AppShell>
+    </>
   );
 }

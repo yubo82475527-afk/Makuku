@@ -264,6 +264,7 @@ function candidateKey({
   ].join("|");
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function isExtendedCandidateColumnError(error: { message?: string } | null) {
   const message = error?.message ?? "";
   return [
@@ -443,7 +444,8 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
     ...item,
     piece_count: normalizePieceCountFromCandidates(item.piece_count, item.product),
   })).filter(isPriceCandidate)) ?? sourceItems(input.aiResult);
-  if (items.length === 0) return [];
+  const scopedItems = items.filter((item) => item.sourceImageId);
+  if (scopedItems.length === 0) return [];
 
   if (input.affectedImageIds && input.affectedImageIds.length > 0) {
     await supabase
@@ -478,7 +480,7 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
     supabase.from("competitor_products").select("*, brands(id,name)").limit(5000),
   ]);
 
-  const rows = items.map((item) => {
+  const rows = scopedItems.map((item) => {
     const parsedPrice = parseCandidatePrice(item.price);
     const listPrice = parseCandidatePrice(item.list_price) ?? parsedPrice;
     const packagePrice = parseCandidatePrice(item.package_price) ?? parsedPrice;
@@ -538,30 +540,10 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
 
   if (rows.length === 0) return [];
 
-  let { data, error } = await supabase
+  const { data, error } = await supabase
     .from("ai_price_candidates")
     .insert(rows)
     .select(candidateVisitSelect);
-
-  if (isExtendedCandidateColumnError(error)) {
-    const legacyRows = rows.map((row) => {
-      const legacyRow = { ...row } as Record<string, unknown>;
-      delete legacyRow.list_price_idr;
-      delete legacyRow.package_price_idr;
-      delete legacyRow.net_price_idr;
-      delete legacyRow.promo_type;
-      delete legacyRow.candidate_key;
-      delete legacyRow.source_image_id;
-      delete legacyRow.source_image_path;
-      return legacyRow;
-    });
-    const legacyResult = await supabase
-      .from("ai_price_candidates")
-      .insert(legacyRows)
-      .select(candidateVisitSelect);
-    data = legacyResult.data;
-    error = legacyResult.error;
-  }
 
   if (isMissingCandidateTableError(error)) {
     return [];

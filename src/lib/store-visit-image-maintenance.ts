@@ -24,6 +24,10 @@ function asPriceImageAnalysis(value: unknown): StoreVisitPriceImageAnalysis | nu
   return value as StoreVisitPriceImageAnalysis;
 }
 
+function isRetakeRequiredResult(result: StoreVisitPriceImageAnalysis | null) {
+  return result?.photo_quality?.status === "retake_required";
+}
+
 function toImageCategory(image: OfflineVisitImage): StoreVisitImageCategory {
   if (image.image_type === "own_shelf") return "makuku_shelf";
   if (image.image_type === "competitor_shelf") return "competitor_shelf";
@@ -122,11 +126,14 @@ function missingLifecycleColumns(error: { message?: string | null } | null) {
   return message.includes("h5_lifecycle_status") || message.includes("h5_lifecycle_at") || message.includes("schema cache");
 }
 
-function deriveStoredAnalysisState(images: OfflineVisitImage[]) {
+function deriveStoredAnalysisState(images: OfflineVisitImage[], currentVisitStatus?: OfflineStoreVisit["visit_status"]) {
   const priceImages = images.filter((image) => isPriceCategory(toImageCategory(image)));
   const analyzedResults = priceImages
     .map((image) => ({ image, result: asPriceImageAnalysis(image.vision_result) }))
     .filter((entry): entry is { image: OfflineVisitImage; result: StoreVisitPriceImageAnalysis } => Boolean(entry.result) && entry.image.analysis_status === "analyzed");
+  const retakeRequiredImages = analyzedResults
+    .filter((entry) => isRetakeRequiredResult(entry.result))
+    .map((entry) => entry.image);
   const failedImages = priceImages
     .filter((image) => image.analysis_status === "failed")
     .map((image) => ({
@@ -140,9 +147,11 @@ function deriveStoredAnalysisState(images: OfflineVisitImage[]) {
 
   let analysisStatus: StoreVisitAnalysisStatus;
   if (priceImages.length === 0) {
-    analysisStatus = "completed";
-  } else if (anyPending) {
     analysisStatus = "pending";
+  } else if (anyPending) {
+    analysisStatus = "analyzing";
+  } else if (retakeRequiredImages.length > 0 && analyzedResults.length === retakeRequiredImages.length && failedImages.length === 0) {
+    analysisStatus = "action_required";
   } else if (analyzedResults.length > 0 && failedImages.length > 0) {
     analysisStatus = "partial";
   } else if (analyzedResults.length > 0) {
@@ -155,15 +164,17 @@ function deriveStoredAnalysisState(images: OfflineVisitImage[]) {
 
   const analysisError = analysisStatus === "partial"
     ? "Some photos were not parsed. Parsed prices can be reviewed first; failed photos can be retried later."
+    : analysisStatus === "action_required"
+      ? "price_photo_retake_required: Some price-tag photos must be re-uploaded."
     : analysisStatus === "failed"
       ? (failedImages[0]?.systemErrorMessage ?? "Image analysis failed.")
       : null;
 
-  const visitStatus: OfflineStoreVisit["visit_status"] = analysisStatus === "failed"
-    ? "failed"
-    : analysisStatus === "pending"
-      ? "uploaded"
-      : "analyzed";
+  const visitStatus: OfflineStoreVisit["visit_status"] = analysisStatus === "pending"
+      ? (currentVisitStatus === "draft" && images.length === 0 ? "draft" : "uploaded")
+      : analysisStatus === "analyzing"
+        ? "analyzing"
+        : "analyzed";
 
   return {
     priceImages,
@@ -343,7 +354,7 @@ export async function refreshStoreVisitStoredPriceState(input: {
   const allImages = Array.isArray(typedVisit.offline_visit_images) ? typedVisit.offline_visit_images : [];
   const activeImages = allImages.filter((image) => !isInactiveVisitImage(image));
   const activePriceImages = activeImages.filter((image) => isPriceCategory(toImageCategory(image)));
-  const derived = deriveStoredAnalysisState(activePriceImages);
+  const derived = deriveStoredAnalysisState(activePriceImages, typedVisit.visit_status);
   const summaryBase = isRecord(typedVisit.summary_result) ? typedVisit.summary_result : {};
   const nextAnalysisStatus = input.analysisStatusOverride ?? derived.analysisStatus;
   const nextAnalysisError = input.analysisErrorOverride === undefined ? derived.analysisError : input.analysisErrorOverride;

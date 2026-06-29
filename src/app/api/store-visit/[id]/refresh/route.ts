@@ -68,7 +68,7 @@ export async function POST(request: Request, ctx: RouteContext) {
             visitId: id,
             analysisStatusOverride: "failed",
             analysisErrorOverride: message,
-            visitStatusOverride: "uploaded",
+            visitStatusOverride: "analyzed",
           });
         } catch (refreshError) {
           console.error("[store-visit-refresh] failed to persist async failure state", {

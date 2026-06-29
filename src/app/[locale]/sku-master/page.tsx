@@ -1,4 +1,4 @@
-import { AppShell } from "@/components/app-shell";
+import { PageShellState } from "@/components/page-shell-state";
 import { MaterialMasterTable } from "@/components/material-master-table";
 import { MaterialImportForm } from "@/components/material-import-form";
 import { SkuMasterSegmentTable } from "@/components/sku-master-segment-table";
@@ -18,7 +18,8 @@ export default async function SkuMasterPage({
   const [result, skuResult] = await Promise.all([getMaterialMaster(), getSkuMaster()]);
 
   return (
-    <AppShell locale={locale} dict={dict} title={dict.skuMaster.title} currentPath="/sku-master" isDemo={result.isDemo || skuResult.isDemo}>
+    <>
+      <PageShellState locale={locale} dict={dict} title={dict.skuMaster.title} currentPath="/sku-master" isDemo={result.isDemo || skuResult.isDemo} />
       <DataNotice dict={dict} error={result.error ?? skuResult.error} />
 
       <Card className="mb-4">
@@ -36,6 +37,6 @@ export default async function SkuMasterPage({
 
       <SkuMasterSegmentTable rows={skuResult.data} locale={locale} />
       <MaterialMasterTable dict={dict} rows={result.data} locale={locale} />
-    </AppShell>
+    </>
   );
 }

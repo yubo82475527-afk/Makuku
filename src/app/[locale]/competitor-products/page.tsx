@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AppShell } from "@/components/app-shell";
+import { PageShellState } from "@/components/page-shell-state";
 import { CompetitorProductsTable } from "@/components/competitor-products-table";
 import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
 import { getBrands, getCompetitorProducts } from "@/lib/data";
@@ -40,7 +40,8 @@ export default async function CompetitorProductsPage({
   const exportHref = `/api/competitor-products/export?${exportParams.toString()}`;
 
   return (
-    <AppShell locale={locale} dict={dict} title={copy.title} currentPath="/competitor-products" isDemo={productsResult.isDemo}>
+    <>
+      <PageShellState locale={locale} dict={dict} title={copy.title} currentPath="/competitor-products" isDemo={productsResult.isDemo} />
       <DataNotice dict={dict} error={productsResult.error ?? brandsResult.error} />
       <Card className="mb-4">
         <form className="grid gap-3 md:grid-cols-5">
@@ -82,7 +83,7 @@ export default async function CompetitorProductsPage({
         </div>
         <CompetitorProductsTable products={products} brands={brandOptions} locale={locale} dict={dict} />
       </Card>
-    </AppShell>
+    </>
   );
 }
 

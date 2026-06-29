@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { GenerateAiButton, RecommendationStatusButton } from "@/components/client-actions";
-import { AppShell } from "@/components/app-shell";
+import { PageShellState } from "@/components/page-shell-state";
 import { Badge, Card, DataNotice } from "@/components/ui";
 import { formatJakartaTime, formatPercent, formatPricePerPiece } from "@/lib/format";
 import { getPromoEvent } from "@/lib/data";
@@ -19,7 +19,8 @@ export default async function PromoEventDetailPage({
   if (!event) notFound();
 
   return (
-    <AppShell locale={locale} dict={dict} title={dict.promoEvents.detailTitle} currentPath={`/promo-events/${event.id}`} isDemo={result.isDemo}>
+    <>
+      <PageShellState locale={locale} dict={dict} title={dict.promoEvents.detailTitle} currentPath={`/promo-events/${event.id}`} isDemo={result.isDemo} />
       <DataNotice dict={dict} error={result.error} />
       <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
         <Card>
@@ -76,6 +77,6 @@ export default async function PromoEventDetailPage({
           </div>
         </Card>
       </div>
-    </AppShell>
+    </>
   );
 }

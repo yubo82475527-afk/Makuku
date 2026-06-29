@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AppShell } from "@/components/app-shell";
+import { PageShellState } from "@/components/page-shell-state";
 import { CompetitorSeriesRulesPanel } from "@/components/competitor-series-rules-panel";
 import { Button, Card, DataNotice, SelectInput } from "@/components/ui";
 import { getBrands, getCompetitorProducts, getCompetitorSeriesMappings, getMaterialMaster } from "@/lib/data";
@@ -41,7 +41,8 @@ export default async function CompetitorMappingsPage({
   const copy = getCopy(locale);
 
   return (
-    <AppShell locale={locale} dict={dict} title={copy.title} currentPath="/competitor-mappings" isDemo={productsResult.isDemo || materialResult.isDemo || seriesMappingsResult.isDemo}>
+    <>
+      <PageShellState locale={locale} dict={dict} title={copy.title} currentPath="/competitor-mappings" isDemo={productsResult.isDemo || materialResult.isDemo || seriesMappingsResult.isDemo} />
       <DataNotice dict={dict} error={productsResult.error ?? brandsResult.error ?? materialResult.error ?? seriesMappingsResult.error} />
       <Card className="mb-4">
         <form className="grid gap-3 md:grid-cols-3">
@@ -70,7 +71,7 @@ export default async function CompetitorMappingsPage({
           locale={locale}
         />
       </Card>
-    </AppShell>
+    </>
   );
 }
 

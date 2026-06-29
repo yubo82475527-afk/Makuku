@@ -3,7 +3,7 @@
 import { ArrowLeft, Building2, Camera, CheckCircle2, Loader2, LocateFixed, LogIn, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { LoadingOverlay } from "@/components/loading-overlay";
 import type { Locale } from "@/lib/i18n/config";
 import { getMobileCopy, mobileImageCategoryLabel } from "@/lib/mobile-i18n";
@@ -16,6 +16,19 @@ const compressionQuality = 0.9;
 const storageKey = "makuku_app_user";
 const imageCategoryOrder = ["makuku_shelf", "competitor_shelf", "storefront"] as const;
 type ImageCategory = (typeof imageCategoryOrder)[number];
+
+const photoExampleImages = {
+  correct: [
+    "/store-visit-photo-examples/correct-1.jpeg",
+    "/store-visit-photo-examples/correct-2.jpg",
+    "/store-visit-photo-examples/correct-3.jpg",
+  ],
+  wrong: [
+    "/store-visit-photo-examples/wrong-1.jpg",
+    "/store-visit-photo-examples/wrong-2.jpeg",
+    "/store-visit-photo-examples/wrong-3.jpeg",
+  ],
+} as const;
 
 type AppUser = {
   id: string;
@@ -201,6 +214,15 @@ function uiCopy(locale: Locale) {
         signInBody: "\u65b0\u589e\u5de1\u5e97\u9700\u8981\u7ed1\u5b9a\u5de1\u5e97\u8d26\u53f7\uff0c\u767b\u5f55\u540e\u4f1a\u81ea\u52a8\u5e26\u51fa\u63d0\u4ea4\u4eba\u3002",
         takePhoto: "\u62cd\u7167\u4e0a\u4f20",
         chooseFromAlbum: "\u4ece\u76f8\u518c\u9009\u62e9",
+        photoExample: "\u62cd\u7167\u7528\u4f8b",
+        photoExampleTitle: "\u4ef7\u683c\u6807\u7b7e\u62cd\u7167\u7528\u4f8b",
+        photoExampleGood: "\u5408\u683c\uff1a\u6b63\u5bf9\u4ef7\u683c\u6807\u7b7e\u62cd\uff0c\u9760\u8fd1\u8d27\u67b6\uff0c\u4e00\u5f20\u56fe\u53ea\u62cd\u4e00\u4e2a\u5c0f\u8d27\u67b6\u533a\u57df\uff0c\u4ef7\u683c\u6570\u5b57\u6e05\u695a\u65e0\u906e\u6321\uff0c\u5546\u54c1\u548c\u4ef7\u683c\u6807\u7b7e\u80fd\u5bf9\u5e94\u3002",
+        photoExampleBad: "\u4e0d\u5408\u683c\uff1a\u4e0d\u8981\u6cbf\u8d27\u67b6\u659c\u62cd\u6574\u6392\uff1b\u5982\u679c\u8fdc\u7aef\u4ef7\u7b7e\u56e0\u900f\u89c6\u53d8\u5c0f\u770b\u4e0d\u6e05\uff0c\u8bf7\u9760\u8fd1\u5206\u591a\u5f20\u62cd\u3002",
+        photoExampleCorrectTitle: "\u5408\u683c\u793a\u4f8b",
+        photoExampleWrongTitle: "\u4e0d\u5408\u683c\u793a\u4f8b",
+        photoExampleCorrectCaptions: ["\u6b63\u5bf9\u62cd", "\u6570\u5b57\u6e05\u6670", "\u4e00\u5f20\u4e00\u5c0f\u533a\u57df"],
+        photoExampleWrongCaptions: ["\u659c\u62cd\u8fc7\u5f3a", "\u4ef7\u683c\u4e0d\u6e05\u695a", "\u4ef7\u683c\u88ab\u906e\u6321"],
+
         cancel: "\u53d6\u6d88",
         choosingPhotoSource: "\u6b63\u5728\u6253\u5f00",
         cameraPermissionHint: "\u672a\u80fd\u8c03\u8d77\u76f8\u673a\u6216\u6ca1\u6709\u9009\u4e2d\u7167\u7247\u3002\u8bf7\u5141\u8bb8\u76f8\u673a\u6743\u9650\uff0c\u6216\u6539\u7528\u201c\u4ece\u76f8\u518c\u9009\u62e9\u201d\u3002",
@@ -267,6 +289,14 @@ function uiCopy(locale: Locale) {
         signInBody: "New visits must be tied to a field user. Sign in first and the promoter is filled automatically.",
         takePhoto: "Take Photo",
         chooseFromAlbum: "Choose from Album",
+        photoExample: "Photo Example",
+        photoExampleTitle: "Price-tag Photo Example",
+        photoExampleGood: "Good: Retake directly facing the price tags, close to the shelf, one small shelf area per photo, clear unobstructed price digits, and product-price pairs visible.",
+        photoExampleBad: "Invalid: do not shoot a whole shelf row from the side. If far price tags become too small from perspective, move closer and take multiple photos.",
+        photoExampleCorrectTitle: "Correct Examples",
+        photoExampleWrongTitle: "Wrong Examples",
+        photoExampleCorrectCaptions: ["Front-facing", "Clear digits", "One shelf section"],
+        photoExampleWrongCaptions: ["Too angled", "Price not clear", "Blocked price"],
         cancel: "Cancel",
         choosingPhotoSource: "Opening",
         cameraPermissionHint: "Camera did not return a photo. Allow camera access, or use Choose from Album instead.",
@@ -485,6 +515,7 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
   const [submitStatus, setSubmitStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [photoSourceSheet, setPhotoSourceSheet] = useState<ImageCategory | null>(null);
+  const [photoExampleSheet, setPhotoExampleSheet] = useState<ImageCategory | null>(null);
   const [activePhotoCategory, setActivePhotoCategory] = useState<ImageCategory | null>(null);
   const [pendingPhotoSelection, setPendingPhotoSelection] = useState<PhotoSourceKind | null>(null);
   const [sourceStatus, setSourceStatus] = useState<string | null>(null);
@@ -780,8 +811,17 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
 
           <section className="mt-4 space-y-3">
             <div className="flex items-center justify-between gap-3">
-              <div>
+              <div className="flex min-w-0 items-center gap-2">
                 <h2 className="font-semibold">{copy.shelfPhotos}</h2>
+                <button
+                  type="button"
+                  onClick={() => setPhotoExampleSheet("makuku_shelf")}
+                  className="inline-flex h-5 items-center rounded-full bg-red-50 px-2 text-[10px] font-semibold leading-none tracking-normal text-red-700 ring-1 ring-inset ring-red-200 shadow-sm shadow-red-100/60"
+                >
+                  {labels.photoExample}
+                </button>
+              </div>
+              <div>
                 <p className="mt-1 text-xs text-slate-500">{totalImageCount}/{maxImages} {copy.uploaded}</p>
               </div>
             </div>
@@ -840,6 +880,61 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
           </div>
         </div>
       ) : null}
+      {photoExampleSheet ? (
+        <div className="fixed inset-0 z-50 flex items-end bg-slate-950/40" role="dialog" aria-modal="true" onClick={() => setPhotoExampleSheet(null)}>
+          <div className="mx-auto flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl bg-white shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 pb-4 pt-5">
+              <div className="min-w-0">
+                <h2 className="text-base font-bold text-slate-950">{labels.photoExampleTitle}</h2>
+                <p className="mt-1 text-xs font-medium leading-5 text-slate-500">{labels.photoExampleGood}</p>
+              </div>
+              <button type="button" onClick={() => setPhotoExampleSheet(null)} className="rounded-full p-1 text-slate-500" aria-label={labels.cancel}>
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+            <div className="space-y-5">
+              <div>
+                <div className="mb-2 text-sm font-semibold text-emerald-700">{labels.photoExampleCorrectTitle}</div>
+                <div className="grid grid-cols-2 gap-3">
+                  {photoExampleImages.correct.map((src, index) => (
+                    <div key={src} className="overflow-hidden rounded-xl border border-emerald-200 bg-emerald-50">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={src} alt={`${labels.photoExampleCorrectTitle} ${index + 1}`} className="aspect-[4/3] w-full object-cover" />
+                      <div className="px-2.5 py-2 text-center text-[11px] font-semibold text-emerald-800">
+                        {labels.photoExampleCorrectCaptions?.[index] ?? labels.photoExampleCorrectTitle}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="mb-2 text-sm font-semibold text-amber-700">{labels.photoExampleWrongTitle}</div>
+                <div className="mb-2 text-xs leading-5 text-slate-500">{labels.photoExampleBad}</div>
+                <div className="grid grid-cols-2 gap-3">
+                  {photoExampleImages.wrong.map((src, index) => (
+                    <div key={src} className="overflow-hidden rounded-xl border border-amber-200 bg-amber-50">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={src} alt={`${labels.photoExampleWrongTitle} ${index + 1}`} className="aspect-[4/3] w-full object-cover" />
+                      <div className="px-2.5 py-2 text-center text-[11px] font-semibold text-amber-800">
+                        {labels.photoExampleWrongCaptions?.[index] ?? labels.photoExampleWrongTitle}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPhotoExampleSheet(null)}
+              className="mx-5 mb-5 mt-4 flex h-11 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-sm font-semibold text-white"
+            >
+              {labels.cancel}
+            </button>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -870,7 +965,7 @@ function StoreSearchStep({ locale, user, onSelect }: { locale: Locale; user: App
     };
   }
 
-  async function loadHistoryStores(keyword: string) {
+  const loadHistoryStores = useCallback(async (keyword: string) => {
     setHistoryStoresLoading(true);
     setHistoryStoresError(null);
     try {
@@ -892,7 +987,7 @@ function StoreSearchStep({ locale, user, onSelect }: { locale: Locale; user: App
     } finally {
       setHistoryStoresLoading(false);
     }
-  }
+  }, [labels.historyStoresError, user.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -905,7 +1000,7 @@ function StoreSearchStep({ locale, user, onSelect }: { locale: Locale; user: App
     return () => {
       cancelled = true;
     };
-  }, [debouncedHistoryQuery, searchMode, user.id, labels.historyStoresError]);
+  }, [debouncedHistoryQuery, loadHistoryStores, searchMode]);
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -981,7 +1076,7 @@ function StoreSearchStep({ locale, user, onSelect }: { locale: Locale; user: App
           </div>
         </>
       ) : (
-        <NewStoreSearchFlow locale={locale} user={user} query={query} setQuery={setQuery} onSelect={onSelect} />
+        <NewStoreSearchFlow locale={locale} user={user} query={query} onSelect={onSelect} />
       )}
     </section>
   );
@@ -991,13 +1086,11 @@ function NewStoreSearchFlow({
   locale,
   user,
   query,
-  setQuery,
   onSelect,
 }: {
   locale: Locale;
   user: AppUser;
   query: string;
-  setQuery: (value: string) => void;
   onSelect: (store: OfflineStoreOption) => void;
 }) {
   const labels = uiCopy(locale);
@@ -1528,7 +1621,9 @@ function ImageUploadSection({
             {title}
             {required ? <span className="ml-1 text-red-500">*</span> : null}
           </h3>
-          <p className="mt-1 text-xs text-slate-500">{images.length} {uploadedLabel}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <p className="text-xs text-slate-500">{images.length} {uploadedLabel}</p>
+          </div>
         </div>
         <button
           type="button"

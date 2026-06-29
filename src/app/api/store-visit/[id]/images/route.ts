@@ -85,37 +85,33 @@ export async function POST(request: Request, ctx: RouteContext) {
     if (legacyImageCount + tableImageCount >= maxImages) {
       return Response.json({ error: "Upload up to 20 images" }, { status: 400 });
     }
-    if (!replacesImageId) {
-      return Response.json(
-        { error: "Adding new photos to an existing visit is no longer supported. Create a new visit instead." },
-        { status: 400 },
-      );
-    }
 
     let replacedImage: ReplacedImageRow | null = null;
-    let { data: existingImage, error: existingImageError } = await supabase
-      .from("offline_visit_images")
-      .select("id, image_type, vision_result, visit_id, replaced_by_image_id")
-      .eq("id", replacesImageId)
-      .single();
-    if (isMissingReplacementColumnsError(existingImageError)) {
-      const legacyExistingImage = await supabase
+    if (replacesImageId) {
+      let { data: existingImage, error: existingImageError } = await supabase
         .from("offline_visit_images")
-        .select("id, image_type, vision_result, visit_id")
+        .select("id, image_type, vision_result, visit_id, replaced_by_image_id")
         .eq("id", replacesImageId)
         .single();
-      existingImage = legacyExistingImage.data
-        ? { ...legacyExistingImage.data, replaced_by_image_id: null }
-        : null;
-      existingImageError = legacyExistingImage.error;
+      if (isMissingReplacementColumnsError(existingImageError)) {
+        const legacyExistingImage = await supabase
+          .from("offline_visit_images")
+          .select("id, image_type, vision_result, visit_id")
+          .eq("id", replacesImageId)
+          .single();
+        existingImage = legacyExistingImage.data
+          ? { ...legacyExistingImage.data, replaced_by_image_id: null }
+          : null;
+        existingImageError = legacyExistingImage.error;
+      }
+      if (existingImageError || !existingImage || existingImage.visit_id !== id) {
+        return Response.json({ error: existingImageError?.message ?? "Original image not found" }, { status: 404 });
+      }
+      if (existingImage.replaced_by_image_id) {
+        return Response.json({ error: "Original image has already been replaced" }, { status: 400 });
+      }
+      replacedImage = existingImage as ReplacedImageRow;
     }
-    if (existingImageError || !existingImage || existingImage.visit_id !== id) {
-      return Response.json({ error: existingImageError?.message ?? "Original image not found" }, { status: 404 });
-    }
-    if (existingImage.replaced_by_image_id) {
-      return Response.json({ error: "Original image has already been replaced" }, { status: 400 });
-    }
-    replacedImage = existingImage as ReplacedImageRow;
 
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
     const imageType = toOfflineImageType(category);

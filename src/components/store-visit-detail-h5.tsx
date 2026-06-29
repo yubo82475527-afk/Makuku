@@ -32,7 +32,7 @@ type StoreVisitDetail = {
   promoter?: string | null;
   visit_date: string;
   visit_status?: string | null;
-  analysis_status?: "pending" | "analyzing" | "completed" | "partial" | "failed" | null;
+  analysis_status?: "pending" | "analyzing" | "completed" | "partial" | "action_required" | "failed" | null;
   analysis_error?: string | null;
   summary_result?: Record<string, unknown> | null;
   offline_visit_images?: OfflineVisitImage[];
@@ -76,10 +76,6 @@ type ReanalyzeConfirmState = {
 const maxUploadBytes = 20 * 1024 * 1024;
 const compressionMaxSide = 3000;
 const compressionQuality = 0.9;
-
-function canRetryAnalysis(status: StoreVisitDetail["analysis_status"], visitStatus: StoreVisitDetail["visit_status"]) {
-  return status === "failed" || status === "partial" || (visitStatus === "uploaded" && (!status || status === "pending"));
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -179,6 +175,20 @@ function isUpdatedImage(image: OfflineVisitImage) {
   return (image.vision_result as Record<string, unknown>).is_retake === true;
 }
 
+function isRetakeRequiredPriceImage(image: OfflineVisitImage) {
+  if (!isRecord(image.vision_result)) return false;
+  const photoQuality = (image.vision_result as Record<string, unknown>).photo_quality;
+  return isRecord(photoQuality) && photoQuality.status === "retake_required";
+}
+
+function retakeRequiredMessage(image: OfflineVisitImage, fallback: string) {
+  if (!isRecord(image.vision_result)) return fallback;
+  const photoQuality = (image.vision_result as Record<string, unknown>).photo_quality;
+  if (!isRecord(photoQuality)) return fallback;
+  const message = String(photoQuality.message ?? "").trim();
+  return message || fallback;
+}
+
 function detailText(locale: Locale) {
   return locale === "zh"
     ? {
@@ -215,6 +225,9 @@ function detailText(locale: Locale) {
         previewPhoto: "预览照片",
         expandPhoto: "放大照片",
         failedNeedsUpdate: "识别失败，请更新这张照片",
+        retakeRequired: "请重新上传该图片",
+        retakeRequiredSummary: "有价格标签照片需重传，请进入照片操作重新拍照或从相册替换。",
+        retakeRequiredFallback: "请正对价格标签靠近拍摄，确保价格数字清楚无遮挡。",
       }
     : {
         batchCode: "Batch code",
@@ -266,6 +279,9 @@ function detailText(locale: Locale) {
         previewPhoto: "Preview photo",
         expandPhoto: "Preview photo",
         failedNeedsUpdate: "Analysis failed. Update this photo to continue.",
+        retakeRequired: "Please re-upload this photo",
+        retakeRequiredSummary: "Price-tag photo needs retake. Use photo actions to retake or replace it.",
+        retakeRequiredFallback: "Retake directly facing the price tags, closer to the shelf, with clear unobstructed price digits.",
       };
 }
 
@@ -360,9 +376,9 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   }
 
   const status = visit?.analysis_status ?? "pending";
-  const retryable = canRetryAnalysis(status, visit?.visit_status);
-  const failedImages = (visit?.offline_visit_images ?? []).filter((image) => image.analysis_status === "failed" && (image.analysis_error || image.error_message));
-  const canRunAnalysis = status === "pending" || (retryable && failedImages.length === 0);
+  const businessRetakeImages = (visit?.offline_visit_images ?? []).filter(isRetakeRequiredPriceImage);
+  const systemFailedImages = (visit?.offline_visit_images ?? []).filter((image) => image.analysis_status === "failed" && !isRetakeRequiredPriceImage(image) && (image.analysis_error || image.error_message));
+  const canRunWholeVisitAnalysis = status === "pending" && visit?.visit_status === "uploaded";
   const updateLocked = analysisPhase !== "idle";
   const signedImagesByPath = useMemo(
     () => new Map((visit?.signed_images ?? []).map((image) => [image.path, image] as const)),
@@ -653,10 +669,10 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   <div className="mt-1 text-lg font-bold">{mobileAnalysisStatusLabel(locale, status)}</div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {canRunAnalysis ? (
-                    <button type="button" onClick={analyze} disabled={analyzing || status === "analyzing"} className="inline-flex h-10 items-center gap-2 rounded-lg bg-blue-600 px-3 text-sm font-bold text-white disabled:opacity-60">
-                      {analyzing || status === "analyzing" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                      {retryable ? copy.retryAnalyze : copy.analyzeStore}
+                  {canRunWholeVisitAnalysis ? (
+                    <button type="button" onClick={analyze} disabled={analyzing} className="inline-flex h-10 items-center gap-2 rounded-lg bg-blue-600 px-3 text-sm font-bold text-white disabled:opacity-60">
+                      {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      {copy.analyzeStore}
                     </button>
                   ) : null}
                 </div>
@@ -667,10 +683,16 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   <div className="mt-1">{text.businessAnalysisError}</div>
                 </div>
               ) : null}
-              {visit.analysis_error && status !== "partial" ? <p className="mt-3 text-sm text-red-600">{copy.aiAnalysisFailed}: {visit.analysis_error}</p> : null}
-              {failedImages.length > 0 ? (
+              {businessRetakeImages.length > 0 ? (
+                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  <div className="font-semibold">{text.retakeRequired}</div>
+                  <div className="mt-1">{text.retakeRequiredSummary}</div>
+                </div>
+              ) : null}
+              {visit.analysis_error && status !== "partial" && status !== "action_required" ? <p className="mt-3 text-sm text-red-600">{copy.aiAnalysisFailed}: {visit.analysis_error}</p> : null}
+              {systemFailedImages.length > 0 ? (
                 <div className="mt-3 space-y-2">
-                  {failedImages.map((image, index) => {
+                  {systemFailedImages.map((image, index) => {
                     const systemError = image.analysis_error ?? image.error_message ?? "";
                     return (
                       <details key={image.id} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
@@ -1033,6 +1055,7 @@ function PriceSectionGroup({
             const previewUrl = sectionLocalUpload?.previewUrl ?? section.signedImage?.url ?? null;
             const isProcessingRetake = sectionLocalUpload?.mode === "retake";
             const isAnalyzingImage = section.image.analysis_status === "analyzing";
+            const needsRetake = isRetakeRequiredPriceImage(section.image);
             const isActionDisabled = updateLocked || retryingImageIds.includes(section.image.id) || deletingImageIds.includes(section.image.id);
 
             return (
@@ -1102,7 +1125,12 @@ function PriceSectionGroup({
                     {text.analyzingOne}
                   </span>
                 ) : null}
-                {section.image.analysis_status === "failed" && !isProcessingRetake ? (
+                {needsRetake && !isProcessingRetake ? (
+                  <span className="rounded-full bg-red-100 px-2 py-[1px] text-[10px] font-semibold leading-5 text-red-700">
+                    {text.retakeRequired}
+                  </span>
+                ) : null}
+                {section.image.analysis_status === "failed" && !needsRetake && !isProcessingRetake ? (
                   <span className="rounded-full bg-amber-100 px-2 py-[1px] text-[10px] font-semibold leading-5 text-amber-700">
                     {text.analysisFailed}
                   </span>
@@ -1132,6 +1160,12 @@ function PriceSectionGroup({
             <div className="mt-3 inline-flex items-center gap-2 text-xs font-medium text-slate-700">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
               {sectionLocalUpload.status === "uploading" ? text.uploading : text.analyzingOne}
+            </div>
+          ) : null}
+          {needsRetake && !isProcessingRetake ? (
+            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <div className="font-semibold">{text.retakeRequired}</div>
+              <div className="mt-1 text-xs leading-5">{retakeRequiredMessage(section.image, text.retakeRequiredFallback)}</div>
             </div>
           ) : null}
 

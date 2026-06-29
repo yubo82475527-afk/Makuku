@@ -1,6 +1,6 @@
-import { AppShell } from "@/components/app-shell";
 import { AppUserCreateDialog } from "@/components/app-user-create-dialog";
 import { AppUserManagementTable } from "@/components/app-user-management-table";
+import { PageShellState } from "@/components/page-shell-state";
 import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
 import { getFilteredAppUsers } from "@/lib/data";
 import { getPageI18n } from "@/lib/i18n/server";
@@ -40,7 +40,8 @@ export default async function UsersPage({
   const currentPath = `/users${queryParts.length ? `?${queryParts.join("&")}` : ""}`;
 
   return (
-    <AppShell locale={locale} dict={dict} title={isZh ? zh.title : "User Management"} currentPath={currentPath} isDemo={result.isDemo}>
+    <>
+      <PageShellState locale={locale} dict={dict} title={isZh ? zh.title : "User Management"} currentPath={currentPath} isDemo={result.isDemo} />
       <DataNotice dict={dict} error={result.error} />
 
       <Card className="mb-4">
@@ -67,6 +68,6 @@ export default async function UsersPage({
         </div>
         <AppUserManagementTable users={result.data} locale={locale} />
       </Card>
-    </AppShell>
+    </>
   );
 }

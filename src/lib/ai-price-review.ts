@@ -110,6 +110,9 @@ export async function approveAiPriceCandidate({
   } | null;
   const sourceVisitId = candidateRow.visit_id;
   const sourceImageId = candidateRow.source_image_id ?? null;
+  if (!sourceImageId) {
+    throw new Error("AI price candidate is missing source_image_id and cannot create a price snapshot");
+  }
   const sourceOfflineStoreId = visit?.store_id ?? null;
   const sourceMatchedEntityType = candidateRow.matched_entity_type;
   const sourceMatchedEntityId = candidateRow.matched_entity_type === "material_master"

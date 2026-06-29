@@ -113,13 +113,16 @@ test("AI candidate price range filter keeps single IDR package prices", () => {
   assert.equal(priceRangePattern.test("52000 sampai 53000"), true);
 });
 
-test("AI candidate generation falls back when three-price columns are not migrated", () => {
+test("AI candidate generation scopes inserts to image-backed rows without legacy three-price fallback", () => {
   assert.match(candidateService, /function isExtendedCandidateColumnError/);
   assert.match(candidateService, /list_price_idr/);
   assert.match(candidateService, /package_price_idr/);
   assert.match(candidateService, /net_price_idr/);
   assert.match(candidateService, /promo_type/);
-  assert.match(candidateService, /const legacyRows = rows\.map/);
-  assert.match(candidateService, /legacyRow/);
+  assert.match(candidateService, /const scopedItems = items\.filter\(\(item\) => item\.sourceImageId\)/);
+  assert.match(candidateService, /if \(scopedItems\.length === 0\) return \[\]/);
+  assert.match(candidateService, /const rows = scopedItems\.map/);
+  assert.doesNotMatch(candidateService, /const legacyRows = rows\.map/);
+  assert.doesNotMatch(candidateService, /legacyRow/);
   assert.doesNotMatch(candidateService, /error\?\.message\.includes\("ai_price_candidates"\)\)\s*\{\s*return \[\]/);
 });

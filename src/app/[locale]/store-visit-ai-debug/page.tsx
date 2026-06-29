@@ -1,4 +1,4 @@
-import { AppShell } from "@/components/app-shell";
+import { PageShellState } from "@/components/page-shell-state";
 import { StoreVisitAiDebugClient } from "@/components/store-visit-ai-debug-client";
 import { Card, DataNotice, EmptyState } from "@/components/ui";
 import { getOfflineStoreVisits } from "@/lib/data";
@@ -19,7 +19,8 @@ export default async function StoreVisitAiDebugPage({
   ]);
 
   return (
-    <AppShell locale={locale} dict={dict} title="Store Visit AI Debug" currentPath="/store-visit-ai-debug" isDemo={visitsResult.isDemo || configResult.isDemo}>
+    <>
+      <PageShellState locale={locale} dict={dict} title="Store Visit AI Debug" currentPath="/store-visit-ai-debug" isDemo={visitsResult.isDemo || configResult.isDemo} />
       <DataNotice dict={dict} error={visitsResult.error ?? configResult.error} />
       <div className="mb-4">
         <Card>
@@ -41,6 +42,6 @@ export default async function StoreVisitAiDebugPage({
       ) : (
         <StoreVisitAiDebugClient visits={visitsResult.data} activeConfig={configResult.active} history={configResult.history} />
       )}
-    </AppShell>
+    </>
   );
 }

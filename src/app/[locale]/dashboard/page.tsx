@@ -1,5 +1,5 @@
-import Link from "next/link";
-import { AppShell } from "@/components/app-shell";
+﻿import Link from "next/link";
+import { PageShellState } from "@/components/page-shell-state";
 import { PriceIndexTreeTable } from "@/components/price-index-tree-table";
 import { periodLabelForDate } from "@/lib/periods";
 import { QueryForm, QuerySubmitButton } from "@/components/query-form";
@@ -70,7 +70,8 @@ export default async function DashboardPage({
 
   const executionFilters: OfflineStoreVisitFilters = {
     dateFrom: executionDateFrom(query.executionMonth),
-    limit: 5000,
+    limit: 500,
+    includeImageUrls: false,
   };
 
   const [priceResult, exceptionResult, alertsResult, visitsResult] = await Promise.all([
@@ -89,13 +90,14 @@ export default async function DashboardPage({
   });
 
   return (
-    <AppShell
-      locale={locale}
-      dict={dict}
-      title={isZh ? "首页" : "Dashboard"}
-      currentPath={`/dashboard${toQueryString(query)}`}
-      isDemo={priceResult.isDemo || exceptionResult.isDemo || alertsResult.isDemo || visitsResult.isDemo}
-    >
+    <>
+      <PageShellState
+        locale={locale}
+        dict={dict}
+        title={isZh ? "首页" : "Dashboard"}
+        currentPath={`/dashboard${toQueryString(query)}`}
+        isDemo={priceResult.isDemo || exceptionResult.isDemo || alertsResult.isDemo || visitsResult.isDemo}
+      />
       <DataNotice
         dict={dict}
         error={priceResult.error ?? exceptionResult.error ?? alertsResult.error ?? visitsResult.error}
@@ -113,7 +115,7 @@ export default async function DashboardPage({
         />
         <ExecutionSection isZh={isZh} board={executionBoard} query={query} />
       </section>
-    </AppShell>
+    </>
   );
 }
 
@@ -131,7 +133,7 @@ function PriceIndexSection({
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="text-xs font-semibold uppercase tracking-normal text-slate-500">
-            {isZh ? "价格指数" : "Price Index"}
+            {isZh ? "浠锋牸鎸囨暟" : "Price Index"}
           </div>
           <h2 className="mt-1 text-2xl font-semibold tracking-normal text-slate-950">{board.title}</h2>
           <p className="mt-1 text-sm text-slate-600">
@@ -141,7 +143,7 @@ function PriceIndexSection({
           </p>
         </div>
         <Link href={`/${locale}/competitor-mappings`} className="text-sm font-medium text-slate-700 hover:underline">
-          {isZh ? "维护竞品映射" : "Maintain competitor mapping"}
+          {isZh ? "缁存姢绔炲搧鏄犲皠" : "Maintain competitor mapping"}
         </Link>
       </div>
       <WeeklyPriceCoefficientFilters board={board} isZh={isZh} />
@@ -173,10 +175,10 @@ function ExceptionSection({
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="text-xs font-semibold uppercase tracking-normal text-slate-500">
-            {isZh ? "异常跟进" : "Exception Follow-up"}
+            {isZh ? "寮傚父璺熻繘" : "Exception Follow-up"}
           </div>
           <h2 className="mt-1 text-2xl font-semibold tracking-normal text-slate-950">
-            {isZh ? "价格异常跟进" : "Price Exception Follow-up"}
+            {isZh ? "浠锋牸寮傚父璺熻繘" : "Price Exception Follow-up"}
           </h2>
           <p className="mt-1 text-sm text-slate-600">
             {isZh
@@ -186,8 +188,8 @@ function ExceptionSection({
         </div>
         <div className="flex flex-wrap gap-2 text-sm text-slate-600">
           <SummaryPill label={isZh ? "低指数分组" : "Low index groups"} value={summary.lowIndexSegmentCount} />
-          <SummaryPill label={isZh ? "问题门店" : "Problem stores"} value={summary.problemStoreCount} />
-          <SummaryPill label={isZh ? "缺失标杆" : "Missing benchmark"} value={summary.missingBenchmarkSegmentCount} />
+          <SummaryPill label={isZh ? "闂闂ㄥ簵" : "Problem stores"} value={summary.problemStoreCount} />
+          <SummaryPill label={isZh ? "缂哄け鏍囨潌" : "Missing benchmark"} value={summary.missingBenchmarkSegmentCount} />
         </div>
       </div>
 
@@ -204,7 +206,7 @@ function ExceptionSection({
                 <th className="px-3 py-2">{isZh ? "Makuku 标杆价" : "Makuku benchmark"}</th>
                 <th className="px-3 py-2">{isZh ? "竞品最低价" : "Competitor lowest"}</th>
                 <th className="px-3 py-2">{isZh ? "状态" : "Status"}</th>
-                <th className="px-3 py-2">{isZh ? "最近证据" : "Latest evidence"}</th>
+                <th className="px-3 py-2">{isZh ? "最新证据" : "Latest evidence"}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -336,7 +338,7 @@ function WeeklyPriceCoefficientFilters({
     <QueryForm className="mb-4 grid gap-3 md:grid-cols-3 xl:grid-cols-4">
       <TextInput name="month" type="month" defaultValue={board.month} />
       <SelectInput name="organization" defaultValue={board.selectedOrganization ?? ""}>
-        <option value="">{isZh ? "全部组织" : "All organizations"}</option>
+        <option value="">{isZh ? "鍏ㄩ儴缁勭粐" : "All organizations"}</option>
         {board.organizationOptions.map((item) => (
           <option key={item} value={item}>
             {item}
@@ -344,14 +346,14 @@ function WeeklyPriceCoefficientFilters({
         ))}
       </SelectInput>
       <SelectInput name="ownSeries" defaultValue={board.selectedOwnSeries ?? ""}>
-        <option value="">{isZh ? "全部自有系列" : "All own series"}</option>
+        <option value="">{isZh ? "鍏ㄩ儴鑷湁绯诲垪" : "All own series"}</option>
         {board.ownSeriesOptions.map((series) => (
           <option key={series} value={series}>
             {series}
           </option>
         ))}
       </SelectInput>
-      <QuerySubmitButton idleLabel={isZh ? "查询" : "Filter"} pendingLabel={isZh ? "加载中..." : "Loading..."} />
+      <QuerySubmitButton idleLabel={isZh ? "鏌ヨ" : "Filter"} pendingLabel={isZh ? "鍔犺浇涓?.." : "Loading..."} />
     </QueryForm>
   );
 }
@@ -383,8 +385,8 @@ function ExceptionFilters({
       <SelectInput name="exceptionStatus" defaultValue={query.exceptionStatus ?? ""}>
         <option value="">{isZh ? "全部状态" : "All status"}</option>
         <option value="low_index">{isZh ? "低指数" : "Low index"}</option>
-        <option value="near_index">{isZh ? "接近指数" : "Near index"}</option>
-        <option value="missing_benchmark">{isZh ? "缺失标杆" : "Missing benchmark"}</option>
+        <option value="near_index">{isZh ? "鎺ヨ繎鎸囨暟" : "Near index"}</option>
+        <option value="missing_benchmark">{isZh ? "缂哄け鏍囨潌" : "Missing benchmark"}</option>
       </SelectInput>
       <div className="flex gap-2">
         <QuerySubmitButton idleLabel={isZh ? "查询" : "Filter"} pendingLabel={isZh ? "加载中..." : "Loading..."} />
@@ -392,7 +394,7 @@ function ExceptionFilters({
           href={`/${locale}/prices`}
           className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
         >
-          {isZh ? "查看价格明细" : "Open prices"}
+          {isZh ? "鏌ョ湅浠锋牸鏄庣粏" : "Open prices"}
         </Link>
       </div>
     </QueryForm>
@@ -412,7 +414,7 @@ function ExecutionFilters({
     <QueryForm className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
       <TextInput name="executionMonth" type="month" defaultValue={board.selectedMonth} />
       <SelectInput name="executionWeek" defaultValue={query.executionWeek ?? ""}>
-        <option value="">{isZh ? "全部周次" : "All weeks"}</option>
+        <option value="">{isZh ? "鍏ㄩ儴鍛ㄦ" : "All weeks"}</option>
         {board.availableWeeks.map((week) => (
           <option key={week} value={week}>
             {week}
@@ -420,7 +422,7 @@ function ExecutionFilters({
         ))}
       </SelectInput>
       <SelectInput name="executionOrg" defaultValue={query.executionOrg ?? ""}>
-        <option value="">{isZh ? "全部组织" : "All organizations"}</option>
+        <option value="">{isZh ? "鍏ㄩ儴缁勭粐" : "All organizations"}</option>
         {board.organizationOptions.map((item) => (
           <option key={item} value={item}>
             {item}
@@ -428,14 +430,14 @@ function ExecutionFilters({
         ))}
       </SelectInput>
       <SelectInput name="executionUser" defaultValue={query.executionUser ?? ""}>
-        <option value="">{isZh ? "全部导购" : "All promoters"}</option>
+        <option value="">{isZh ? "鍏ㄩ儴瀵艰喘" : "All promoters"}</option>
         {board.promoterOptions.map((item) => (
           <option key={item} value={item}>
             {item}
           </option>
         ))}
       </SelectInput>
-      <QuerySubmitButton idleLabel={isZh ? "查询" : "Filter"} pendingLabel={isZh ? "加载中..." : "Loading..."} />
+      <QuerySubmitButton idleLabel={isZh ? "鏌ヨ" : "Filter"} pendingLabel={isZh ? "鍔犺浇涓?.." : "Loading..."} />
     </QueryForm>
   );
 }
@@ -468,11 +470,11 @@ function flattenProblemStoreRows(battles: ProductSegmentBattle[], isZh: boolean)
 
       const statusLabel =
         battle.floorGapPct !== null && battle.floorGapPct < 0
-          ? isZh ? "价格低于底线" : "Below floor"
+          ? isZh ? "浠锋牸浣庝簬搴曠嚎" : "Below floor"
           : battle.priceIndex !== null && battle.priceIndex < 95
-            ? isZh ? "价格指数偏低" : "Low index"
+            ? isZh ? "浠锋牸鎸囨暟鍋忎綆" : "Low index"
             : battle.benchmarkPricePerPiece === null
-              ? isZh ? "缺失标杆" : "Missing benchmark"
+              ? isZh ? "缂哄け鏍囨潌" : "Missing benchmark"
               : isZh ? "待跟进" : "Follow up";
 
       return {
@@ -630,7 +632,7 @@ function formatLooseRegionText(value: string | null | undefined) {
   const text = cleanText(value);
   if (!text) return null;
   const lower = text.toLowerCase();
-  if (text.includes("上海") || lower.includes("shanghai") || lower.includes("shang hai")) return "Shanghai";
+  if (text.includes("涓婃捣") || lower.includes("shanghai") || lower.includes("shang hai")) return "Shanghai";
   if (lower === "qingpu district" || text === "青浦区") return "Qingpu District";
   if (lower === "daerah khusus ibukota jakarta") return "Jakarta";
   if (/^[A-Z\s]+$/.test(text)) {

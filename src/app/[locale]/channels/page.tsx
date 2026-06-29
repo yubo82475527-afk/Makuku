@@ -1,4 +1,4 @@
-import { AppShell } from "@/components/app-shell";
+import { PageShellState } from "@/components/page-shell-state";
 import { Badge, Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
 import { getChannels } from "@/lib/data";
 import { getPageI18n } from "@/lib/i18n/server";
@@ -15,7 +15,8 @@ export default async function ChannelsPage({
   const isZh = locale === "zh";
 
   return (
-    <AppShell locale={locale} dict={dict} title={isZh ? "\u6e20\u9053\u5217\u8868" : "Channel List"} currentPath="/channels" isDemo={result.isDemo}>
+    <>
+      <PageShellState locale={locale} dict={dict} title={isZh ? "\u6e20\u9053\u5217\u8868" : "Channel List"} currentPath="/channels" isDemo={result.isDemo} />
       <DataNotice dict={dict} error={result.error} />
 
       <Card className="mb-4">
@@ -59,6 +60,6 @@ export default async function ChannelsPage({
           </table>
         </div>
       </Card>
-    </AppShell>
+    </>
   );
 }

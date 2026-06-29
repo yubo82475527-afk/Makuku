@@ -15,7 +15,7 @@ export type PromoEventType =
 export type OfflineVisitStatus = "draft" | "uploaded" | "analyzing" | "analyzed" | "reviewed" | "failed";
 export type OfflineImageType = "own_shelf" | "competitor_shelf" | "promo_tag" | "other";
 export type OfflineImageAnalysisStatus = "pending" | "analyzing" | "analyzed" | "failed" | "reviewed";
-export type StoreVisitAnalysisStatus = "pending" | "analyzing" | "completed" | "partial" | "failed";
+export type StoreVisitAnalysisStatus = "pending" | "analyzing" | "completed" | "partial" | "action_required" | "failed";
 export type StoreVisitImageCategory = "makuku_shelf" | "competitor_shelf" | "storefront";
 export type StockRiskLevel = "Normal" | "Low Stock" | "Out of Stock Risk";
 export type PromotionType = "Discount" | "Buy 1 Get 1" | "Buy 2 Get 1" | "Promo Tag" | "Special Offer";
@@ -117,9 +117,21 @@ export type StoreVisitPriceImageRow = {
   price_per_piece_idr: number | null;
 };
 
+export type StoreVisitPhotoQualityReason =
+  | "price_unclear"
+  | "angled_affects_reading"
+  | "price_obstructed";
+
+export type StoreVisitPhotoQuality = {
+  status: "pass" | "retake_required";
+  reasons: StoreVisitPhotoQualityReason[];
+  message: string;
+};
+
 export type StoreVisitPriceImageAnalysis = {
   schema_version: "store_visit_price_image_v1";
   upload_category: StoreVisitImageCategory;
+  photo_quality: StoreVisitPhotoQuality;
   rows: StoreVisitPriceImageRow[];
   summary: string;
   warnings: {

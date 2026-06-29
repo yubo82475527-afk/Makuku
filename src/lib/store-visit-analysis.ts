@@ -54,7 +54,9 @@ export async function runStoreVisitAnalysis(input: {
     });
   }
   const aiAnalysis = await runStoreVisitAiAnalysisForVisit({ visitId: input.visitId });
-  if (aiAnalysis.allPriceImagesFailed) {
+  const hasRetakeRequiredImages = (aiAnalysis.price_image_retake_required ?? []).length > 0;
+  const allFailuresAreRetakeRequired = Boolean(aiAnalysis.allPriceImagesFailed && hasRetakeRequiredImages && (aiAnalysis.price_image_failures ?? []).length === 0);
+  if (aiAnalysis.allPriceImagesFailed && !allFailuresAreRetakeRequired) {
     throw new Error("AI 暂时没有返回可用的价格解析结果，请稍后重试失败照片。");
   }
 
@@ -70,10 +72,19 @@ export async function runStoreVisitAnalysis(input: {
     visitId: input.visitId,
     candidates,
   });
-  const analysisStatus = aiAnalysis.partialFailure ? "partial" : "completed";
+  const analysisStatus = allFailuresAreRetakeRequired
+    ? "action_required"
+    : aiAnalysis.partialFailure
+      ? "partial"
+      : "completed";
   const partialAnalysisError = aiAnalysis.partialFailure
-    ? "部分图片未解析成功，已成功解析的价格可以先复核；失败图片可稍后重试。"
+    ? hasRetakeRequiredImages
+      ? "price_photo_retake_required: 部分价格标签照片需重新上传，已成功解析的价格可以先复核。"
+      : "部分图片未解析成功，已成功解析的价格可以先复核；失败图片可稍后重试。"
     : null;
+  const analysisError = allFailuresAreRetakeRequired
+    ? "price_photo_retake_required: 有价格标签照片需重传。"
+    : partialAnalysisError;
 
   const { data: updated, error: updateError } = await supabase
     .from("offline_store_visits")
@@ -85,6 +96,7 @@ export async function runStoreVisitAnalysis(input: {
         raw_ai_parsed: aiAnalysis.parsed,
         price_image_results: aiAnalysis.price_image_results ?? [],
         analysis_partial_failures: aiAnalysis.price_image_failures ?? [],
+        price_image_retake_required: aiAnalysis.price_image_retake_required ?? [],
         display_analysis: null,
         display_analysis_error: null,
         ai_provider_metadata: aiAnalysis.metadata,
@@ -105,7 +117,7 @@ export async function runStoreVisitAnalysis(input: {
       },
       analysis_status: analysisStatus,
       visit_status: "analyzed",
-      analysis_error: partialAnalysisError,
+      analysis_error: analysisError,
     })
     .eq("id", input.visitId)
     .select("*")

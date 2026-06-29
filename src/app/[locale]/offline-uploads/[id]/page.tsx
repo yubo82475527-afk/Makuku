@@ -1,6 +1,6 @@
 import { ImageIcon, Smartphone } from "lucide-react";
 import Link from "next/link";
-import { AppShell } from "@/components/app-shell";
+import { PageShellState } from "@/components/page-shell-state";
 import { StoreVisitResultCard } from "@/components/store-visit-result-card";
 import { Badge, Button, Card, DataNotice, EmptyState } from "@/components/ui";
 import { formatJakartaTime } from "@/lib/format";
@@ -28,7 +28,8 @@ export default async function OfflineVisitDetailPage({
   const visit = result.data;
 
   return (
-    <AppShell locale={locale} dict={dict} title={dict.offlineUploads.visitDetail} currentPath={`/offline-uploads/${resolvedParams.id}`} isDemo={result.isDemo}>
+    <>
+      <PageShellState locale={locale} dict={dict} title={dict.offlineUploads.visitDetail} currentPath={`/offline-uploads/${resolvedParams.id}`} isDemo={result.isDemo} />
       <DataNotice dict={dict} error={result.error} />
       {!visit ? (
         <EmptyState text="Visit not found" />
@@ -108,6 +109,6 @@ export default async function OfflineVisitDetailPage({
           )}
         </div>
       )}
-    </AppShell>
+    </>
   );
 }

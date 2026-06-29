@@ -202,7 +202,7 @@ test("new H5 store visit add-photo action sheet separates camera and album selec
   assert.match(storeVisitH5, /multiple\s+className="sr-only"/);
   assert.match(storeVisitH5, /window\.setTimeout/);
   assert.ok(storeVisitH5.indexOf("cameraInputRef") < storeVisitH5.indexOf('capture="environment"'), "camera input should still use capture");
-  assert.ok(storeVisitH5.indexOf("albumInputRef") < storeVisitH5.indexOf("multiple"), "album input should support multiple selection");
+  assert.match(storeVisitH5, /ref=\{albumInputRef\}[\s\S]*multiple/);
 });
 
 test("new H5 store visit submits photos with limited concurrency after creating the visit", () => {
@@ -304,20 +304,14 @@ test("mobile visit list uses top settings menu for language and logout", () => {
   assert.doesNotMatch(storeVisitsListH5, /\{copy\.new\}/);
 });
 
-test("mobile visit list and detail expose retry analysis for failed or uploaded visits", () => {
-  assert.match(storeVisitsListH5, /function canRetryAnalysis/);
-  assert.match(storeVisitsListH5, /retryAnalyze/);
-  assert.match(storeVisitsListH5, /reanalyzeVisit/);
-  assert.match(storeVisitsListH5, /withMinimumDelay/);
+test("mobile visit list and detail keep whole-visit analysis limited to the initial run", () => {
+  assert.doesNotMatch(storeVisitsListH5, /function canRetryAnalysis/);
+  assert.doesNotMatch(storeVisitsListH5, /retryAnalyze/);
+  assert.doesNotMatch(storeVisitsListH5, /reanalyzeVisit/);
   assert.match(storeVisitsListH5, /fetch\("\/api\/store-visit\/analyze"/);
   assert.match(storeVisitsListH5, /analysis_status.*failed|failed.*analysis_status/s);
-  assert.match(storeVisitDetailH5, /canRetryAnalysis/);
-  assert.match(storeVisitDetailH5, /withMinimumDelay/);
   assert.match(storeVisitDetailH5, /LoadingOverlay/);
   assert.match(storeVisitDetailH5, /const \[analysisPhase, setAnalysisPhase\]/);
-  assert.match(storeVisitDetailH5, /Re-analyzing the visit|正在重新分析巡店/);
-  assert.match(storeVisitDetailH5, /This visit record could not be found|没有找到这条巡店记录/);
-  assert.match(storeVisitDetailH5, /copy\.retryAnalyze/);
   assert.match(storeVisitDetailH5, /analysis_status\?:/);
   assert.match(storeVisitDetailH5, /visit_status\?:/);
 });
@@ -413,9 +407,20 @@ test("store visits list API counts photo rows even when legacy image_urls is emp
 test("mobile visit list summarizes parsed brands by sku count", () => {
   assert.match(storeVisitsListH5, /function summarizeVisitBrandCounts/);
   assert.match(storeVisitsListH5, /price_insights\?\.key_sku_prices/);
-  assert.match(storeVisitsListH5, /new Map<string, \{ label: string; skus: Set<string> \}>/);
-  assert.match(storeVisitsListH5, /skus\.size/);
-  assert.match(storeVisitsListH5, /toLowerCase\(\)/);
-  assert.match(storeVisitsListH5, /isAllUpperCase/);
+  assert.match(storeVisitsListH5, /summarizeBrandSkuCounts\(priceRows, locale\)/);
   assert.match(storeVisitsListH5, /const summary = summarizeVisitBrandCounts\(visit\.ai_result, locale\)/);
+});
+
+test("mobile visit list completion state is not derived from analysis_status alone", () => {
+  assert.match(storeVisitsListH5, /visit_status/);
+  assert.match(storeVisitsListH5, /photo_count/);
+  assert.match(storeVisitsListH5, /function visitDisplayStatus/);
+  assert.match(storeVisitsListH5, /const status = visitDisplayStatus\(visit\)/);
+});
+
+test("offline uploads dashboard uses analysis_status for analysis outcomes instead of visit_status result shortcuts", () => {
+  assert.match(offlineUploadsPage, /visit\.analysis_status === "completed"/);
+  assert.match(offlineUploadsPage, /visit\.analysis_status === "failed"/);
+  assert.doesNotMatch(offlineUploadsPage, /visit\.visit_status === "analyzed"/);
+  assert.doesNotMatch(offlineUploadsPage, /visit\.visit_status === "failed"/);
 });

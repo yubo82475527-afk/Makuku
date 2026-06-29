@@ -2,6 +2,7 @@ import type {
   CategoryCoverage,
   StoreVisitDisplayAnalysis,
   StoreVisitImageCategory,
+  StoreVisitPhotoQuality,
   StoreVisitPriceImageAnalysis,
   PriceInsightTag,
   PromoPressureLevel,
@@ -30,6 +31,7 @@ const promotionVisibilities: PromotionVisibility[] = ["LOW", "MEDIUM", "HIGH"];
 const promoPressureLevels: PromoPressureLevel[] = ["LOW", "MEDIUM", "HIGH"];
 const rawExtractionTypes: RawExtractionType[] = ["SKU", "PROMO", "SHELF_SIGNAL"];
 const validationWarningTypes: ValidationWarningType[] = ["MISSING_DATA", "LOW_CONFIDENCE", "PARSE_RISK"];
+const photoQualityReasonValues = ["price_unclear", "angled_affects_reading", "price_obstructed"] as const;
 const PROMOTION_PROMPT_REQUIREMENT = [
   "Promotion insight requirement: promotion_insights.competitor_promotions must include EVERY distinct visible promotion detected across ALL images. Do not return only the top promotions. Do not cap this array at 3. Do not drop a promotion because brand, product, price, or mechanic is partially unclear; keep the visible evidence in description and add a validation warning when needed.",
   "A distinct promotion means a visible promo tag, discount, bundle, buy-more-save offer, special price, gondola/display offer, gift/cashback offer, or any shelf material communicating a promotional mechanic. If the same physical promotion appears in multiple images, merge it once; if different brands/products/mechanics/prices are visible, output each one separately.",
@@ -74,18 +76,38 @@ export const STORE_VISIT_AI_PROMPT = [
 const STORE_VISIT_PRICE_IMAGE_PROMPT = [
   "You are a retail price-tag extraction system.",
   "You receive exactly ONE price-tag image from a store visit.",
-  "Extract every readable sellable SKU row in the image.",
-  "Return rows only when a product or SKU is visible together with a real selling price.",
-  "sku should be the most specific readable product label in the image.",
-  "list_price_idr is the normal shelf price when visible.",
-  "package_price_idr is the visible package shelf price and the business display price called list price.",
-  "net_price_idr is the final paid price when visible.",
+  "Workflow: first evaluate photo quality for price-tag review. If the photo fails, stop extraction and return rows as []. If it passes, extract all valid product-price rows.",
+  "The photo quality gate has only two outcomes: pass or retake_required.",
+  "The image must be a usable price-tag evidence photo. The primary subject must be shelf price tags, not a wide shelf overview.",
+  "Define the target area as the price tags or promo price cards the photo is clearly trying to capture: large/central tags, foreground shelf-edge labels, or a close front-facing shelf section. Do not make small background labels, cropped peripheral labels, or labels outside the clear target area decide the gate.",
+  "Use pass when the target price evidence is front-facing or close enough, the main price digits are readable, and the product-to-price relationships for the target tags can be reviewed reliably.",
+  "A close, front-facing shelf section with readable large promo cards or shelf-edge labels must pass even if some small background/peripheral shelf-edge tags are too small, cropped, partly covered, or affected by timestamp/location overlays.",
+  "Use retake_required when the image is a wide shelf overview with no clear target price evidence, taken from a strong side angle, or distorted by perspective so that only one or two nearby price tags are readable while the intended shelf row/section is too small, compressed, blurred, or hard to match to products.",
+  "Use retake_required when price digits are unreadable, price tags are blocked, glare or blur prevents reliable reading, or product-price relationships cannot be confirmed.",
+  "Do not pass a wide shelf-row or shelf-overview image only because one or two nearby price tags are readable. If the intended target is a whole shelf row or multiple shelf sections, most visible target price tags within that intended area must be readable and matchable.",
+  "Do not require every incidental label in the image to be readable. Ignore background, peripheral, cropped, or non-target labels when the main target price evidence is readable and matchable.",
+  "Do not reject for slight tilt, minor glare, or minor blur if the target price tags remain readable and product-price relationships are clear.",
+  "photo_quality.reasons may contain only: price_unclear, angled_affects_reading, price_obstructed.",
+  "If status is pass, reasons must be []. If status is retake_required, include at least one allowed reason and rows must be [].",
+  "photo_quality.message must be short and user-facing. For retake_required, tell the user to retake facing the shelf directly, closer to the price tags, with clear and unobstructed price digits.",
+  "Valid price tags include printed shelf labels, electronic shelf labels, shelf strips, hanging shelf price cards, and promotional shelf price labels.",
+  "Ignore posters, aisle banners, advertisements, package printing, and marketing materials unless they function as the actual shelf price tag.",
+  "Extract every readable sellable SKU row only when photo_quality.status is pass.",
+  "Return a row only when both product/SKU and selling price are visible.",
+  "Associate each price tag only with the nearest product according to standard retail shelf layout: directly above, directly below, or immediately adjacent. Never match across shelf columns, shelf levels, or distant products. If the match is ambiguous, skip that row and add a PARSE_RISK warning.",
+  "Never invent or infer hidden digits, cropped prices, partially visible SKU names, covered package counts, or missing promotion mechanics.",
+  "brand should be normalized when clearly visible. sku should use the most complete visible product name, including series, size, and variant when visible.",
+  "Return all monetary values as integer Indonesian Rupiah. Never include Rp, commas, periods, or spaces. Example: Rp129.900 -> 129900.",
+  "list_price_idr is the original shelf price when visible.",
+  "package_price_idr is the visible package selling price and the business display price called list price.",
+  "net_price_idr is the final payable price after discount when visible.",
   "If only one price is visible, use that same value for list_price_idr, package_price_idr, and net_price_idr.",
-  "promo_type should be a short mechanic such as Discount, Buy 2 Get 1, Buy 1 Get 1, Special Offer, or null when no clear activity is visible.",
-  "piece_count is the total pack piece count. When you see bonus notation, calculate the total: '28+6' means 28 base + 6 bonus = 34 total; '30+' without a number after + means 30 base pieces; '48+10' means 58 total. Examples: 28+6 -> 34, 30+ -> 30, 44+10 -> 54, 36+6 -> 42, 34+6 -> 40. Return the calculated total as piece_count. Never guess when no pack count is visible.",
+  "If multiple prices exist but their roles cannot be determined, use the lowest clearly payable price as net_price_idr and add a PARSE_RISK warning.",
+  "promo_type should be a short mechanic such as Discount, Buy 2 Get 1, Buy 1 Get 1, Bundle, Cashback, Special Offer, or null when no clear activity is visible. Never invent promotions.",
+  "piece_count is the total pack piece count. When bonus notation exists, calculate the total: 28+6 -> 34, 30+ -> 30, 44+10 -> 54, 36+6 -> 42, 34+6 -> 40. Never guess piece_count.",
   "Do not calculate per-piece price. The system will calculate it.",
-  "Return ONLY valid compact JSON. No markdown. No extra text.",
-  '{"rows":[{"brand":"string","sku":"string","list_price_idr":120000,"package_price_idr":110000,"net_price_idr":105000,"promo_type":"Discount","piece_count":44}],"summary":"string","warnings":[{"type":"MISSING_DATA|LOW_CONFIDENCE|PARSE_RISK","message":"string"}]}',
+  "Return ONLY valid compact JSON. No markdown. No explanation. No extra text.",
+  '{"photo_quality":{"status":"pass|retake_required","reasons":["price_unclear|angled_affects_reading|price_obstructed"],"message":"string"},"rows":[{"brand":"string","sku":"string","list_price_idr":129900,"package_price_idr":129900,"net_price_idr":119900,"promo_type":"Discount","piece_count":44}],"summary":"string","warnings":[{"type":"MISSING_DATA|LOW_CONFIDENCE|PARSE_RISK","message":"string"}]}',
 ].join("\n");
 
 const STORE_VISIT_DISPLAY_PROMPT = [
@@ -425,12 +447,32 @@ function normalizePriceImageWarnings(value: unknown) {
     });
 }
 
+function normalizePhotoQuality(value: unknown): StoreVisitPhotoQuality {
+  const record = asRecord(value);
+  const rawReasons = Array.isArray(record.reasons) ? record.reasons : [];
+  const reasons = rawReasons.filter((reason): reason is (typeof photoQualityReasonValues)[number] => (
+    typeof reason === "string" && photoQualityReasonValues.includes(reason as (typeof photoQualityReasonValues)[number])
+  ));
+  const status = record.status === "retake_required" && reasons.length > 0
+    ? "retake_required"
+    : "pass";
+  const fallbackMessage = status === "retake_required"
+    ? "Please retake or replace this photo with a clear, front-facing price-tag image."
+    : "Photo quality passed.";
+  return {
+    status,
+    reasons: status === "retake_required" ? reasons : [],
+    message: asString(record.message, fallbackMessage),
+  };
+}
+
 export function normalizeStoreVisitPriceImageAnalysis(
   value: unknown,
   category: StoreVisitImageCategory,
 ): StoreVisitPriceImageAnalysis {
   const record = asRecord(value);
-  const rows = (Array.isArray(record.rows) ? record.rows : [])
+  const photoQuality = normalizePhotoQuality(record.photo_quality);
+  const rows = photoQuality.status === "retake_required" ? [] : (Array.isArray(record.rows) ? record.rows : [])
     .slice(0, 30)
     .map((item) => {
       const row = asRecord(item);
@@ -455,8 +497,9 @@ export function normalizeStoreVisitPriceImageAnalysis(
   return {
     schema_version: "store_visit_price_image_v1",
     upload_category: category,
+    photo_quality: photoQuality,
     rows,
-    summary: asString(record.summary, rows.length > 0 ? `${rows.length} SKU rows detected.` : "No readable SKU price rows detected."),
+    summary: asString(record.summary, photoQuality.status === "retake_required" ? photoQuality.message : rows.length > 0 ? `${rows.length} SKU rows detected.` : "No readable SKU price rows detected."),
     warnings: normalizePriceImageWarnings(record.warnings),
   };
 }

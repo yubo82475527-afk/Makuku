@@ -2,9 +2,12 @@ import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 
+const nextConfig = readFileSync("next.config.ts", "utf8");
 const appShell = readFileSync("src/components/app-shell.tsx", "utf8");
+const localeShellLayout = readFileSync("src/components/locale-shell-layout.tsx", "utf8");
 const dashboardPage = readFileSync("src/app/[locale]/dashboard/page.tsx", "utf8");
 const pricesPage = readFileSync("src/app/[locale]/prices/page.tsx", "utf8");
+const photoReviewPage = readFileSync("src/app/[locale]/offline-price-candidates/page.tsx", "utf8");
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const typesFile = readFileSync("src/lib/types.ts", "utf8");
 const reverseRoute = readFileSync("src/app/api/location/reverse/route.ts", "utf8");
@@ -114,6 +117,9 @@ test("dashboard exception and execution sections reuse current data sources befo
   assert.match(dashboardPage, /normalizeExecutionOrganization/);
   assert.match(dashboardPage, /formatExecutionRegionLabel/);
   assert.match(dashboardPage, /formatLooseRegionText/);
+  assert.match(dashboardPage, /includeImageUrls:\s*false/);
+  assert.match(dataFile, /includeImageUrls\?: boolean/);
+  assert.match(dataFile, /if \(filters\.includeImageUrls === false\)/);
 });
 
 test("dashboard region filters use structured store regions and ignore numeric legacy city values", () => {
@@ -170,4 +176,51 @@ test("real market price filters use primary and collapsible advanced groups", ()
   for (const name of ["brand", "priceBand", "size", "createdFrom", "createdTo", "province", "cityName", "district", "store", "sku", "visitCode"]) {
     assert.match(pricesPage, new RegExp(`name="${name}"`));
   }
+});
+
+test("real market price pagination and filters are pushed down to the data layer", () => {
+  assert.match(pricesPage, /getPriceSnapshotsPage\(/);
+  assert.doesNotMatch(pricesPage, /limit:\s*5000/);
+  assert.doesNotMatch(pricesPage, /pricesResult\.data\.filter/);
+  assert.doesNotMatch(pricesPage, /prices\.slice\(/);
+  assert.match(dataFile, /export async function getPriceSnapshotsPage/);
+  assert.equal((dataFile.match(/export async function getPriceSnapshotsPage/g) ?? []).length, 1);
+  assert.match(dataFile, /count:\s*"exact"/);
+  assert.match(dataFile, /if \(filters\.brand\)/);
+  assert.match(dataFile, /if \(filters\.province\)/);
+  assert.match(dataFile, /if \(filters\.cityName\)/);
+  assert.match(dataFile, /if \(filters\.district\)/);
+  assert.match(dataFile, /if \(filters\.store\)/);
+  assert.match(dataFile, /if \(filters\.sku\)/);
+  assert.match(dataFile, /if \(filters\.visitCode\)/);
+  assert.match(dataFile, /return \{ data: candidates, total: count \?\? 0/);
+});
+
+test("next config keeps instant navigation tooling without enabling cacheComponents on dynamic routes", () => {
+  assert.match(nextConfig, /instantNavigationDevToolsToggle:\s*true/);
+  assert.doesNotMatch(nextConfig, /cacheComponents:\s*true/);
+});
+
+test("backend shell no longer fetches header session on the client", () => {
+  assert.doesNotMatch(appShell, /fetch\("\/api\/auth\/session"\)/);
+  assert.match(appShell, /headerUser\?: HeaderUser \| null/);
+  assert.match(appShell, /headerUser=\{/);
+});
+
+test("dashboard and prices expose streaming loading states for fast shell transitions", () => {
+  assert.equal(existsSync("src/app/[locale]/dashboard/loading.tsx"), true);
+  assert.equal(existsSync("src/app/[locale]/prices/loading.tsx"), true);
+  assert.equal(existsSync("src/app/[locale]/offline-price-candidates/loading.tsx"), true);
+});
+
+test("photo price review uses the same client-side shell navigation path as the other backend pages", () => {
+  assert.doesNotMatch(photoReviewPage, /export const dynamic = "force-dynamic"/);
+  assert.doesNotMatch(dashboardPage, /export const dynamic = "force-dynamic"/);
+  assert.match(appShell, /href=\{`\/\$\{locale\}\$\{item\.href\}`\}/);
+});
+
+test("locale shell keeps backend pages inside the shared shell and bypasses login and mobile capture", () => {
+  assert.match(localeShellLayout, /shouldBypassShell/);
+  assert.match(localeShellLayout, /login\|mobile\\\/offline-capture/);
+  assert.match(localeShellLayout, /<AppShell/);
 });

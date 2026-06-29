@@ -1,12 +1,10 @@
 import { Download } from "lucide-react";
-import { AppShell } from "@/components/app-shell";
 import { AiPriceCandidatesWorkbench } from "@/components/ai-price-candidates-workbench";
+import { PageShellState } from "@/components/page-shell-state";
 import { Button, Card, DataNotice } from "@/components/ui";
 import { getAiPriceCandidatesPage, getAiPriceReviewRule } from "@/lib/data";
 import { getPageI18n } from "@/lib/i18n/server";
 import type { AiPriceCandidateStatus } from "@/lib/types";
-
-export const dynamic = "force-dynamic";
 
 export default async function OfflinePriceCandidatesPage({
   params,
@@ -58,7 +56,14 @@ export default async function OfflinePriceCandidatesPage({
   const pageTitle = locale === "zh" ? "照片价格复核" : "Photo Price Review";
 
   return (
-    <AppShell locale={locale} dict={dict} title={pageTitle} currentPath="/offline-price-candidates" isDemo={candidatesResult.isDemo || ruleResult.isDemo}>
+    <>
+      <PageShellState
+        locale={locale}
+        dict={dict}
+        title={pageTitle}
+        currentPath="/offline-price-candidates"
+        isDemo={candidatesResult.isDemo || ruleResult.isDemo}
+      />
       <DataNotice error={candidatesResult.error ?? ruleResult.error} dict={dict} />
 
       <Card className="mb-4">
@@ -96,7 +101,7 @@ export default async function OfflinePriceCandidatesPage({
           rule={ruleResult.data}
         />
       </Card>
-    </AppShell>
+    </>
   );
 }
 

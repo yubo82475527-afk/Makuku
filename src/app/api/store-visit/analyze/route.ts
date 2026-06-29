@@ -10,7 +10,7 @@ async function failVisit(visitId: string, message: string) {
     .from("offline_store_visits")
     .update({
       analysis_status: "failed",
-      visit_status: "uploaded",
+      visit_status: "analyzed",
       analysis_error: message,
     })
     .eq("id", visitId);
@@ -40,6 +40,14 @@ export async function POST(request: Request) {
     const typedVisit = visit as OfflineStoreVisit;
     visitId = typedVisit.id;
     const visitCode = typedVisit.visit_code ?? requestedVisitCode;
+    const isInitialWholeVisitAnalysis = typedVisit.visit_status === "uploaded"
+      && (!typedVisit.analysis_status || typedVisit.analysis_status === "pending");
+    if (!isInitialWholeVisitAnalysis) {
+      return Response.json(
+        { error: "Please open the visit details and handle photos one by one with single-photo retake, replacement, or re-analysis." },
+        { status: 400 },
+      );
+    }
     const legacyImageCount = Array.isArray(typedVisit.image_urls) ? typedVisit.image_urls.length : 0;
     const tableImageCount = Array.isArray(typedVisit.offline_visit_images) ? typedVisit.offline_visit_images.length : 0;
     if (legacyImageCount + tableImageCount === 0) {

@@ -49,7 +49,14 @@ function isPriceImageResult(value: unknown): value is StoreVisitPriceImageAnalys
   return isRecord(value)
     && value.schema_version === "store_visit_price_image_v1"
     && Array.isArray(value.rows)
-    && value.rows.length > 0;
+    && (
+      value.rows.length > 0
+      || (isRecord(value.photo_quality) && value.photo_quality.status === "retake_required")
+    );
+}
+
+function isRetakeRequiredPriceImageResult(value: StoreVisitPriceImageAnalysis) {
+  return value.photo_quality?.status === "retake_required";
 }
 
 function collectPromotionInsights(rows: StoreVisitPriceImageAnalysis["rows"]) {
@@ -275,11 +282,19 @@ export async function runStoreVisitAiAnalysisForVisit(input: {
   const displayAnalysisError: string | null = null;
   const displayImageFailures: { imageId: string; imagePath: string; systemErrorMessage: string }[] = [];
 
-  const aggregatedRows = priceImageResults.flatMap((item) => item.result.rows);
+  const acceptedPriceImageResults = priceImageResults.filter((item) => item.result.photo_quality?.status !== "retake_required");
+  const priceImageRetakeRequired = priceImageResults
+    .filter((item) => isRetakeRequiredPriceImageResult(item.result))
+    .map((item) => ({
+      imageId: item.imageId,
+      message: item.result.photo_quality.message,
+      reasons: item.result.photo_quality.reasons,
+    }));
+  const aggregatedRows = acceptedPriceImageResults.flatMap((item) => item.result.rows);
   const aiAnalysis = {
     normalized: composeStoreVisitAiResult({
       rows: aggregatedRows,
-      partialFailure: priceImageFailures.length > 0 && priceImageResults.length > 0,
+      partialFailure: (priceImageFailures.length > 0 || priceImageRetakeRequired.length > 0) && acceptedPriceImageResults.length > 0,
     }),
     rawText: "",
     parsed: {},
@@ -300,8 +315,9 @@ export async function runStoreVisitAiAnalysisForVisit(input: {
     image_input_mode: "signed_url",
     price_image_results: priceImageResults,
     price_image_failures: priceImageFailures,
-    partialFailure: priceImageFailures.length > 0 && priceImageResults.length > 0,
-    allPriceImagesFailed: priceImageFailures.length > 0 && priceImageResults.length === 0,
+    price_image_retake_required: priceImageRetakeRequired,
+    partialFailure: (priceImageFailures.length > 0 || priceImageRetakeRequired.length > 0) && acceptedPriceImageResults.length > 0,
+    allPriceImagesFailed: (priceImageFailures.length > 0 || priceImageRetakeRequired.length > 0) && acceptedPriceImageResults.length === 0,
     display_analysis: null,
     display_analysis_error: displayAnalysisError,
     display_image_failures: displayImageFailures,

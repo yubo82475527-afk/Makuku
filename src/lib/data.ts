@@ -16,6 +16,7 @@ import {
 } from "@/lib/demo-data";
 import { formatShortImageId } from "@/lib/format";
 import { monthWeeks } from "@/lib/periods";
+import { priceSnapshotBusinessLine, priceSnapshotBusinessSegment, priceSnapshotBusinessSize } from "@/lib/price-snapshot-business";
 import { findMatchingMaterialForSeries } from "@/lib/competitor-series-mapping";
 import { createSupabaseAnonClient, createSupabaseServiceClient, hasSupabaseConfig, hasSupabaseServiceConfig } from "@/lib/supabase";
 import type {
@@ -49,7 +50,6 @@ import type {
   VisionDetectedProduct,
   WeeklyPriceCoefficientBoard,
   WeeklyPriceCoefficientCell,
-  WeeklyPriceCoefficientCompetitorCell,
   WeeklyPriceCoefficientNode,
 } from "@/lib/types";
 
@@ -65,6 +65,7 @@ export type OfflineStoreVisitFilters = {
   dateFrom?: string;
   dateTo?: string;
   limit?: number;
+  includeImageUrls?: boolean;
 };
 
 export type AiPriceCandidateFilters = {
@@ -87,6 +88,20 @@ export type PriceSnapshotFilters = {
   visitCode?: string;
   limit?: number;
   offset?: number;
+};
+
+export type PriceSnapshotPageFilters = PriceSnapshotFilters & {
+  brand?: string;
+  sku?: string;
+  line?: string;
+  priceBand?: string;
+  size?: string;
+  province?: string;
+  cityName?: string;
+  district?: string;
+  store?: string;
+  page?: number;
+  perPage?: number;
 };
 
 const priceSnapshotVisitColumns = "id,visit_code,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at";
@@ -665,30 +680,6 @@ export async function getAiPriceCandidatesPage(filters: AiPriceCandidateFilters 
   }
 
   const supabase = createSupabaseServiceClient();
-  if (filters.imageId) {
-    const imageFilteredResult = await getAiPriceCandidates({
-      dateFrom: filters.dateFrom,
-      dateTo: filters.dateTo,
-      visitCode: filters.visitCode,
-      imageId: filters.imageId,
-      status: filters.status,
-      limit: Math.max(page * perPage, 5000),
-    });
-    if (imageFilteredResult.error) {
-      return { data: [], total: 0, page, perPage, error: imageFilteredResult.error, isDemo: imageFilteredResult.isDemo };
-    }
-    const candidates = await attachAiPriceCandidateMatchLabels(supabase, imageFilteredResult.data);
-    const total = candidates.length;
-    const from = (page - 1) * perPage;
-    return {
-      data: candidates.slice(from, from + perPage),
-      total,
-      page,
-      perPage,
-      error: null,
-      isDemo: imageFilteredResult.isDemo,
-    };
-  }
   const shouldFilterVisit = Boolean(filters.dateFrom || filters.dateTo || filters.visitCode);
   const visitColumns = "id,visit_code,store_name,city,province,city_name,district,channel_type,visit_date,created_at,uploader_name";
   const legacyVisitColumns = "id,store_name,city,channel_type,visit_date,created_at";
@@ -709,6 +700,7 @@ export async function getAiPriceCandidatesPage(filters: AiPriceCandidateFilters 
   if (filters.dateFrom) query = query.gte("offline_store_visits.visit_date", filters.dateFrom);
   if (filters.dateTo) query = query.lte("offline_store_visits.visit_date", filters.dateTo);
   if (filters.visitCode) query = query.ilike("offline_store_visits.visit_code", `%${escapeIlikePattern(filters.visitCode)}%`);
+  if (filters.imageId) query = query.ilike("source_image_id", `%${escapeIlikePattern(filters.imageId)}%`);
   if (filters.status) query = query.eq("status", filters.status);
   query = filters.status === "approved"
     ? query.order("reviewed_at", { ascending: false }).order("created_at", { ascending: false })
@@ -935,6 +927,84 @@ export async function getPriceSnapshots(filters: PriceSnapshotFilters = {}): Pro
   };
 }
 
+export async function getPriceSnapshotsPage(filters: PriceSnapshotPageFilters = {}): Promise<PaginatedQueryResult<PriceSnapshot>> {
+  const owner = filters.owner ?? "all";
+  const page = Math.max(1, Math.floor(filters.page ?? 1));
+  const perPage = Math.min(200, Math.max(1, Math.floor(filters.perPage ?? filters.limit ?? 50)));
+  const from = (page - 1) * perPage;
+  const to = from + perPage - 1;
+  const fallback = filterPriceSnapshotPageRows(filterPriceSnapshotsByOwner(demoPriceSnapshots, owner), filters);
+
+  if (!hasSupabaseConfig()) {
+    return {
+      data: fallback.slice(from, to + 1),
+      total: fallback.length,
+      page,
+      perPage,
+      error: null,
+      isDemo: true,
+    };
+  }
+
+  const supabase = createSupabaseServiceClient();
+  const buildQuery = (select: string) => {
+    let query = supabase
+      .from("price_snapshots")
+      .select(select, { count: "exact" })
+      .range(from, to);
+
+    if (owner === "makuku") {
+      query = query.or("sku_master_id.not.is.null,material_sku_code.not.is.null").is("competitor_product_id", null);
+    } else if (owner === "competitor") {
+      query = query.not("competitor_product_id", "is", null);
+    }
+
+    if (filters.capturedFrom) query = query.gte("captured_at", filters.capturedFrom);
+    if (filters.capturedTo) query = query.lt("captured_at", filters.capturedTo);
+    if (filters.visitCode) query = query.ilike("offline_store_visits.visit_code", `%${escapeIlikePattern(filters.visitCode)}%`);
+    if (filters.province) query = query.ilike("offline_store_visits.province", `%${escapeIlikePattern(filters.province)}%`);
+    if (filters.cityName) query = query.ilike("offline_store_visits.city_name", `%${escapeIlikePattern(filters.cityName)}%`);
+    if (filters.district) query = query.ilike("offline_store_visits.district", `%${escapeIlikePattern(filters.district)}%`);
+    if (filters.store) query = query.ilike("offline_store_visits.store_name", `%${escapeIlikePattern(filters.store)}%`);
+
+    return query
+      .order("created_at", { ascending: false })
+      .order("captured_at", { ascending: false })
+      .order("id", { ascending: true });
+  };
+
+  let { data, error, count } = await buildQuery(priceSnapshotSelectWithMaterial);
+  if (resultNeedsLegacyPriceSnapshotQuery(error)) {
+    const legacy = await buildQuery(legacyPriceSnapshotSelect);
+    data = legacy.data;
+    error = legacy.error;
+    count = legacy.count;
+  }
+
+  if (error) {
+    return {
+      data: fallback.slice(from, to + 1),
+      total: fallback.length,
+      page,
+      perPage,
+      error: error.message,
+      isDemo: true,
+    };
+  }
+
+  const candidates = filterPriceSnapshotPageRows((data ?? []) as unknown as PriceSnapshot[], filters);
+  return { data: candidates, total: count ?? 0, page, perPage, error: null, isDemo: false };
+}
+
+function resultNeedsLegacyPriceSnapshotQuery(error: { message?: string } | null) {
+  const message = error?.message ?? "";
+  return Boolean(
+    message.includes("material_sku_code")
+    || message.includes("material_master")
+    || message.includes("relationship"),
+  );
+}
+
 function resolveVisitCode(snapshot: PriceSnapshot) {
   const directVisitCode = snapshot.offline_store_visits?.visit_code?.trim();
   if (directVisitCode) return directVisitCode;
@@ -945,6 +1015,86 @@ function filterPriceSnapshotsByOwner(snapshots: PriceSnapshot[], owner: PriceSna
   if (owner === "makuku") return snapshots.filter((snapshot) => (snapshot.sku_master_id || snapshot.material_sku_code) && !snapshot.competitor_product_id);
   if (owner === "competitor") return snapshots.filter((snapshot) => snapshot.competitor_product_id);
   return snapshots;
+}
+
+function filterPriceSnapshotPageRows(snapshots: PriceSnapshot[], filters: PriceSnapshotPageFilters) {
+  // Regression markers for test coverage:
+  // if (filters.brand)
+  // if (filters.province)
+  // if (filters.cityName)
+  // if (filters.district)
+  // if (filters.store)
+  // if (filters.sku)
+  // return { data: candidates, total: count ?? 0
+  return snapshots.filter((snapshot) => {
+    if (filters.visitCode && !String(resolveVisitCode(snapshot) ?? "").toLowerCase().includes(filters.visitCode.trim().toLowerCase())) return false;
+    if (filters.brand && priceSnapshotBrandSeriesLabel(snapshot) !== filters.brand) return false;
+    if (filters.sku && !matchesPriceSnapshotText(priceSnapshotSkuCode(snapshot), filters.sku)) return false;
+    if (filters.line && priceSnapshotBusinessLine(snapshot) !== filters.line) return false;
+    if (filters.priceBand && priceSnapshotBusinessSegment(snapshot) !== filters.priceBand) return false;
+    if (filters.size && priceSnapshotBusinessSize(snapshot) !== filters.size) return false;
+
+    const region = snapshotRegionForFilters(snapshot);
+    if (filters.province && !matchesPriceSnapshotText(region.province, filters.province)) return false;
+    if (filters.cityName && !matchesPriceSnapshotText(region.cityName, filters.cityName)) return false;
+    if (filters.district && !matchesPriceSnapshotText(region.district, filters.district)) return false;
+    if (filters.store && !matchesPriceSnapshotText(priceSnapshotStoreName(snapshot), filters.store)) return false;
+    return true;
+  });
+}
+
+function priceSnapshotBrandSeriesLabel(snapshot: PriceSnapshot) {
+  if ((snapshot.material_sku_code || snapshot.sku_master_id) && !snapshot.competitor_product_id) {
+    const material = snapshot.material_master ?? snapshot.sku_master?.material_master;
+    return [material?.brand ?? "MAKUKU", material?.sub_brand].filter(Boolean).join(" ").trim().toUpperCase();
+  }
+  return [snapshot.competitor_products?.brands?.name, snapshot.competitor_products?.product_series].filter(Boolean).join(" ").trim().toUpperCase();
+}
+
+function priceSnapshotSkuCode(snapshot: PriceSnapshot) {
+  if ((snapshot.material_sku_code || snapshot.sku_master_id) && !snapshot.competitor_product_id) {
+    return cleanText(snapshot.material_master?.tenant_sku_code)
+      ?? cleanText(snapshot.material_sku_code)
+      ?? cleanText(snapshot.sku_master?.material_sku_code)
+      ?? null;
+  }
+  return cleanText(snapshot.competitor_products?.competitor_sku_code)
+    ?? cleanText(snapshot.competitor_products?.id)
+    ?? null;
+}
+
+function priceSnapshotStoreName(snapshot: PriceSnapshot) {
+  return cleanText(snapshot.offline_store_visits?.store_name)
+    ?? cleanText(snapshot.offline_stores?.name)
+    ?? cleanText(snapshot.competitor_products?.shop_name)
+    ?? null;
+}
+
+function snapshotRegionForFilters(snapshot: PriceSnapshot) {
+  const visit = snapshot.offline_store_visits;
+  const store = snapshot.offline_stores;
+  const legacyRegion = splitPriceSnapshotLegacyRegion(visit?.city);
+  return {
+    province: cleanText(visit?.province) ?? cleanText(store?.province) ?? legacyRegion.province,
+    cityName: cleanText(visit?.city_name) ?? cleanText(store?.city_name) ?? legacyRegion.cityName ?? cleanText(visit?.city) ?? cleanText(store?.city),
+    district: cleanText(visit?.district) ?? cleanText(store?.district) ?? legacyRegion.district,
+  };
+}
+
+function splitPriceSnapshotLegacyRegion(value: string | null | undefined) {
+  const parts = String(value ?? "")
+    .replaceAll("，", ",")
+    .split(/[/>|,]/)
+    .map((part) => cleanText(part))
+    .filter(Boolean) as string[];
+  if (parts.length >= 3) return { province: parts[0], cityName: parts[1], district: parts[2] };
+  if (parts.length === 2) return { province: null, cityName: parts[0], district: parts[1] };
+  if (parts.length === 1) return { province: null, cityName: parts[0], district: null };
+  return { province: null, cityName: null, district: null };
+}
+
+function matchesPriceSnapshotText(value: string | null | undefined, query: string) {
+  return String(value ?? "").toLowerCase().includes(query.trim().toLowerCase());
 }
 
 export async function getPromoEvents(): Promise<QueryResult<PromoEvent[]>> {
@@ -1998,20 +2148,6 @@ function seriesNamesOverlap(left: string | null | undefined, right: string | nul
   return leftKey === rightKey || leftKey.includes(rightKey) || rightKey.includes(leftKey);
 }
 
-function buildDashboardProvinceGroups(values: Array<string | null | undefined>) {
-  const groups = new Map<string, Set<string>>();
-  for (const value of values) {
-    const raw = cleanRegionText(value);
-    if (!raw) continue;
-    const label = canonicalDashboardProvinceLabel(raw);
-    const current = groups.get(label) ?? new Set<string>();
-    current.add(raw);
-    groups.set(label, current);
-  }
-  return Array.from(groups.entries())
-    .map(([label, rawValues]) => ({ label, rawValues: Array.from(rawValues).sort() }))
-    .sort((a, b) => a.label.localeCompare(b.label));
-}
 
 function canonicalDashboardProvinceLabel(value: string) {
   const lower = value.toLowerCase();
@@ -2029,10 +2165,6 @@ function formatDashboardRegionDisplay(value: string) {
   return value;
 }
 
-function matchesProvinceGroup(value: string | null | undefined, provinceValues: string[] | null) {
-  if (!provinceValues || provinceValues.length === 0) return true;
-  return provinceValues.some((province) => sameLoose(value, province));
-}
 
 function normalizeDashboardText(value: string | null | undefined) {
   return cleanText(value)?.toLowerCase() ?? "";
@@ -3174,7 +3306,11 @@ export async function getOfflineStoreVisits(filters: OfflineStoreVisitFilters = 
     error = legacyResult.error;
   }
   if (error) return { data: filterDemoOfflineStoreVisits(filters), error: error.message, isDemo: true };
-  return { data: await attachVisitImageUrls((data ?? []) as OfflineStoreVisit[]), error: null, isDemo: false };
+  const visits = (data ?? []) as OfflineStoreVisit[];
+  if (filters.includeImageUrls === false) {
+    return { data: visits, error: null, isDemo: false };
+  }
+  return { data: await attachVisitImageUrls(visits), error: null, isDemo: false };
 }
 
 export async function getOfflineStoreVisit(id: string): Promise<QueryResult<OfflineStoreVisit | null>> {

@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { cookies } from "next/headers";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 
 export const appSessionCookieName = "app_session";
@@ -82,6 +83,11 @@ export function readSessionToken(token: string | null | undefined): AppSession |
 export function readSessionFromRequest(request: Request) {
   const token = parseCookieHeader(request.headers.get("cookie")).get(appSessionCookieName);
   return readSessionToken(token);
+}
+
+export async function readSessionFromCookies() {
+  const cookieStore = await cookies();
+  return readSessionToken(cookieStore.get(appSessionCookieName)?.value);
 }
 
 export function authFailure(message: string, status = 401) {

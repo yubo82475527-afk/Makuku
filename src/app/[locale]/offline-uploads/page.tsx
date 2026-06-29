@@ -1,6 +1,6 @@
 import { CalendarDays, ExternalLink, Smartphone } from "lucide-react";
 import Link from "next/link";
-import { AppShell } from "@/components/app-shell";
+import { PageShellState } from "@/components/page-shell-state";
 import { Badge, Button, Card, DataNotice, EmptyState, SelectInput, TextInput } from "@/components/ui";
 import { formatJakartaTime } from "@/lib/format";
 import { getOfflineStoreVisits } from "@/lib/data";
@@ -50,11 +50,12 @@ export default async function OfflineUploadsPage({
   });
   const visits = result.data;
   const totalImages = visits.reduce((sum, visit) => sum + getVisitImageCount(visit), 0);
-  const analyzedCount = visits.filter((visit) => visit.ai_result || visit.analysis_status === "completed" || visit.visit_status === "analyzed").length;
-  const failedCount = visits.filter((visit) => visit.analysis_status === "failed" || visit.visit_status === "failed").length;
+  const analyzedCount = visits.filter((visit) => visit.ai_result || visit.analysis_status === "completed").length;
+  const failedCount = visits.filter((visit) => visit.analysis_status === "failed").length;
 
   return (
-    <AppShell locale={locale} dict={dict} title={dict.offlineUploads.title} currentPath="/offline-uploads" isDemo={result.isDemo}>
+    <>
+      <PageShellState locale={locale} dict={dict} title={dict.offlineUploads.title} currentPath="/offline-uploads" isDemo={result.isDemo} />
       <DataNotice dict={dict} error={result.error} />
 
       <Card className="mb-4">
@@ -157,6 +158,6 @@ export default async function OfflineUploadsPage({
           );
         })}
       </div>
-    </AppShell>
+    </>
   );
 }

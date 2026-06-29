@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import {
   BarChart3,
@@ -6,55 +6,75 @@ import {
   ClipboardCheck,
   Database,
   Gauge,
+  LogOut,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
   Store,
   Tags,
   Users,
-  LogOut,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import { localeLabels, replacePathLocale, type Locale } from "@/lib/i18n/config";
 import type { Dictionary } from "@/lib/i18n/get-dictionary";
 import { writeLocalePreferenceCookie } from "@/lib/locale-preference";
 
 const sidebarStorageKey = "makuku_sidebar_collapsed";
 
-type HeaderUser = {
+export type HeaderUser = {
   displayName: string;
   role: string;
 };
+
+type ShellState = {
+  title: string;
+  currentPath: string;
+  isDemo?: boolean;
+  headerUser?: HeaderUser | null;
+};
+
+type AppShellContextValue = {
+  setShellState: (state: ShellState) => void;
+};
+
+const AppShellContext = createContext<AppShellContextValue | null>(null);
 
 const navGroups = [
   {
     label: null,
     items: [
-      { href: "/dashboard", label: { zh: "\u4eea\u8868\u76d8", en: "Dashboard" }, icon: Gauge },
+      { href: "/dashboard", label: { zh: "仪表盘", en: "Dashboard" }, icon: Gauge },
     ],
   },
   {
-    label: { zh: "\u4ef7\u683c\u76d1\u63a7", en: "Price Monitoring" },
+    label: { zh: "价格监控", en: "Price Monitoring" },
     items: [
-      { href: "/prices", label: { zh: "\u771f\u5b9e\u5e02\u573a\u4ef7\u683c", en: "Real Market Price" }, icon: BarChart3 },
-      { href: "/offline-price-candidates", label: { zh: "\u7167\u7247\u4ef7\u683c\u590d\u6838", en: "Photo Price Review" }, icon: ClipboardCheck },
+      { href: "/prices", label: { zh: "真实市场价格", en: "Real Market Price" }, icon: BarChart3 },
+      { href: "/offline-price-candidates", label: { zh: "照片价格复核", en: "Photo Price Review" }, icon: ClipboardCheck },
     ],
   },
   {
-    label: { zh: "\u4ef7\u683c\u5b9a\u4f4d\u7ba1\u7406", en: "Price Positioning" },
+    label: { zh: "价格定位管理", en: "Price Positioning" },
     items: [
-      { href: "/competitor-mappings", label: { zh: "\u7ade\u54c1\u6620\u5c04", en: "Competitor Mapping" }, icon: Tags },
+      { href: "/competitor-mappings", label: { zh: "竞品映射", en: "Competitor Mapping" }, icon: Tags },
     ],
   },
   {
-    label: { zh: "\u4e3b\u6570\u636e", en: "Master Data" },
+    label: { zh: "主数据", en: "Master Data" },
     items: [
-      { href: "/sku-master", label: { zh: "\u4ea7\u54c1\u4e3b\u6570\u636e", en: "Product Master" }, icon: Database },
-      { href: "/competitor-products", label: { zh: "\u7ade\u54c1\u4e3b\u6570\u636e", en: "Competitor Product Master" }, icon: Tags },
-      { href: "/offline-stores", label: { zh: "\u95e8\u5e97\u4e3b\u6570\u636e", en: "Store Master" }, icon: Store },
-      { href: "/organizations", label: { zh: "\u7ec4\u7ec7\u7ba1\u7406", en: "Organization Management" }, icon: Building2 },
-      { href: "/users", label: { zh: "\u7528\u6237\u7ba1\u7406", en: "User Management" }, icon: Users },
+      { href: "/sku-master", label: { zh: "产品主数据", en: "Product Master" }, icon: Database },
+      { href: "/competitor-products", label: { zh: "竞品主数据", en: "Competitor Product Master" }, icon: Tags },
+      { href: "/offline-stores", label: { zh: "门店主数据", en: "Store Master" }, icon: Store },
+      { href: "/organizations", label: { zh: "组织管理", en: "Organization Management" }, icon: Building2 },
+      { href: "/users", label: { zh: "用户管理", en: "User Management" }, icon: Users },
     ],
   },
 ] as const;
@@ -104,51 +124,33 @@ function NavLinks({
   );
 }
 
-export function AppShell({
+function AppShellFrame({
   locale,
   dict,
-  title,
-  currentPath,
+  state,
   children,
-  isDemo,
 }: {
   locale: Locale;
   dict: Dictionary;
-  title: string;
-  currentPath: string;
+  state: ShellState;
   children: ReactNode;
-  isDemo?: boolean;
 }) {
   const otherLocale: Locale = locale === "en" ? "zh" : "en";
-  const appSubtitle = locale === "zh" ? "AI \u7ec8\u7aef\u589e\u957f\u95ed\u73af\u6837\u677f" : "AI Terminal Growth Loop";
-  const sampleBadge = locale === "zh" ? "7\u5929\u6837\u677f\u6570\u636e" : "7-day pilot data";
-  const timezonePricing = locale === "zh" ? "Asia/Jakarta \u65f6\u533a / IDR \u4ef7\u683c" : "Asia/Jakarta timezone / IDR pricing";
-  const languageLabel = locale === "zh" ? "\u8bed\u8a00" : "Language";
-  const mobileNavLabel = locale === "zh" ? "\u76ee\u5f55" : "Menu";
+  const appSubtitle = locale === "zh" ? "AI 终端增长闭环样板" : "AI Terminal Growth Loop";
+  const sampleBadge = locale === "zh" ? "7天样板数据" : "7-day pilot data";
+  const timezonePricing = locale === "zh" ? "Asia/Jakarta 时区 / IDR 价格" : "Asia/Jakarta timezone / IDR pricing";
+  const languageLabel = locale === "zh" ? "语言" : "Language";
+  const mobileNavLabel = locale === "zh" ? "目录" : "Menu";
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [headerUser, setHeaderUser] = useState<HeaderUser | null>(null);
   const sidebarToggleLabel = sidebarCollapsed
-    ? (locale === "zh" ? "灞曞紑鑿滃崟" : "Expand sidebar")
-    : (locale === "zh" ? "缂╁皬鑿滃崟" : "Collapse sidebar");
+    ? (locale === "zh" ? "展开菜单" : "Expand sidebar")
+    : (locale === "zh" ? "缩小菜单" : "Collapse sidebar");
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       setSidebarCollapsed(localStorage.getItem(sidebarStorageKey) === "true");
     });
     return () => window.cancelAnimationFrame(frame);
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/auth/session")
-      .then((response) => response.json())
-      .then((data) => {
-        if (!cancelled && data.user) setHeaderUser(data.user as HeaderUser);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   function toggleSidebar() {
@@ -185,7 +187,7 @@ export function AppShell({
             {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
           </button>
         </div>
-        <NavLinks locale={locale} currentPath={currentPath} collapsed={sidebarCollapsed} className={sidebarCollapsed ? "px-2 py-3" : "px-3 py-4"} />
+        <NavLinks locale={locale} currentPath={state.currentPath} collapsed={sidebarCollapsed} className={sidebarCollapsed ? "px-2 py-3" : "px-3 py-4"} />
       </aside>
       <main className={sidebarCollapsed ? "lg:pl-[64px]" : "lg:pl-64"}>
         <header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 lg:px-8">
@@ -203,31 +205,31 @@ export function AppShell({
                   <div className="text-sm font-semibold">{dict.app.name}</div>
                   <div className="text-xs text-slate-500">{appSubtitle}</div>
                 </div>
-                <NavLinks locale={locale} currentPath={currentPath} className="pt-2" />
+                <NavLinks locale={locale} currentPath={state.currentPath} className="pt-2" />
               </div>
             </details>
             <div className="min-w-0">
-              <h1 className="truncate text-xl font-semibold tracking-normal">{title}</h1>
+              <h1 className="truncate text-xl font-semibold tracking-normal">{state.title}</h1>
               <p className="text-xs text-slate-500">{timezonePricing}</p>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {headerUser ? (
+            {state.headerUser ? (
               <div className="hidden items-center gap-2 text-xs text-slate-600 sm:flex">
-                <span className="max-w-32 truncate font-medium text-slate-800">{headerUser.displayName}</span>
-                <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-500">{headerUser.role}</span>
+                <span className="max-w-32 truncate font-medium text-slate-800">{state.headerUser.displayName}</span>
+                <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-500">{state.headerUser.role}</span>
                 <button
                   type="button"
                   onClick={logout}
                   className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 font-medium text-slate-700 hover:bg-slate-50"
                 >
                   <LogOut className="h-3.5 w-3.5" />
-                  {locale === "zh" ? "\u9000\u51fa" : "Logout"}
+                  {locale === "zh" ? "退出" : "Logout"}
                 </button>
               </div>
             ) : null}
             <Link
-              href={replacePathLocale(`/${locale}${currentPath}`, otherLocale)}
+              href={replacePathLocale(`/${locale}${state.currentPath}`, otherLocale)}
               onClick={() => {
                 document.cookie = writeLocalePreferenceCookie(otherLocale);
               }}
@@ -236,7 +238,7 @@ export function AppShell({
             >
               {localeLabels[otherLocale]}
             </Link>
-            {isDemo ? (
+            {state.isDemo ? (
               <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800 ring-1 ring-amber-200">
                 {sampleBadge}
               </span>
@@ -249,3 +251,64 @@ export function AppShell({
   );
 }
 
+function AppShellStateSync({
+  title,
+  currentPath,
+  isDemo,
+  headerUser,
+  setShellState,
+}: ShellState & AppShellContextValue) {
+  useLayoutEffect(() => {
+    setShellState({ title, currentPath, isDemo, headerUser });
+  }, [currentPath, headerUser, isDemo, setShellState, title]);
+  return null;
+}
+
+export function AppShell({
+  locale,
+  dict,
+  title,
+  currentPath,
+  children,
+  isDemo,
+  headerUser = null,
+}: {
+  locale: Locale;
+  dict: Dictionary;
+  title: string;
+  currentPath: string;
+  children: ReactNode;
+  isDemo?: boolean;
+  headerUser?: HeaderUser | null;
+}) {
+  const shellContext = useContext(AppShellContext);
+  const [shellState, setShellState] = useState<ShellState>({
+    title,
+    currentPath,
+    isDemo,
+    headerUser,
+  });
+
+  if (shellContext) {
+    return (
+      <>
+        <AppShellStateSync
+          title={title}
+          currentPath={currentPath}
+          isDemo={isDemo}
+          headerUser={headerUser}
+          setShellState={shellContext.setShellState}
+        />
+        {children}
+      </>
+    );
+  }
+
+  return (
+    <AppShellContext.Provider value={{ setShellState }}>
+      <AppShellFrame locale={locale} dict={dict} state={shellState}>
+        {children}
+      </AppShellFrame>
+    </AppShellContext.Provider>
+  );
+}

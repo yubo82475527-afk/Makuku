@@ -67,15 +67,13 @@ function statusClass(status: StoreVisitAnalysisStatus | null | undefined) {
       return "bg-emerald-50 text-emerald-700 ring-emerald-200";
     case "partial":
       return "bg-amber-50 text-amber-700 ring-amber-200";
+    case "action_required":
+      return "bg-amber-50 text-amber-700 ring-amber-200";
     case "failed":
       return "bg-red-50 text-red-700 ring-red-200";
     default:
       return "bg-amber-50 text-amber-700 ring-amber-200";
   }
-}
-
-function canRetryAnalysis(status: StoreVisitAnalysisStatus | null | undefined, visitStatus: string | null | undefined) {
-  return status === "failed" || status === "partial" || (visitStatus === "uploaded" && (!status || status === "pending"));
 }
 
 function formatVisitDate(value: string, locale: Locale) {
@@ -91,6 +89,17 @@ function summarizeVisitBrandCounts(aiResult: StoreVisitAiResult | null | undefin
   const priceRows = aiResult?.price_insights?.key_sku_prices ?? [];
   if (!priceRows.length) return aiResult?.store_summary ?? null;
   return summarizeBrandSkuCounts(priceRows, locale) ?? aiResult?.store_summary ?? null;
+}
+
+function visitDisplayStatus(visit: VisitListItem): StoreVisitAnalysisStatus {
+  const status = visit.analysis_status ?? "pending";
+  const photoCount = visit.photo_count ?? 0;
+  if (visit.visit_status === "draft" && photoCount === 0) return "pending";
+  if (status === "partial" || status === "action_required" || status === "failed" || status === "analyzing") return status;
+  if (status === "completed") {
+    return visit.visit_status === "analyzed" && photoCount > 0 ? "completed" : "pending";
+  }
+  return status;
 }
 
 function Badge({ children, className }: { children: ReactNode; className: string }) {
@@ -202,7 +211,6 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
   const [todayCount, setTodayCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [reanalyzingVisitId, setReanalyzingVisitId] = useState<string | null>(null);
   const [autoAnalyzingVisitIds, setAutoAnalyzingVisitIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [username, setUsername] = useState("");
@@ -225,6 +233,7 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
         submitting: "\u767b\u5f55\u4e2d...",
         required: "\u8bf7\u8f93\u5165\u7528\u6237\u540d\u548c\u5bc6\u7801\u3002",
         failed: "\u767b\u5f55\u5931\u8d25",
+        pricePhotoRetakeRequired: "有价格标签照片需重传，进入详情重新拍照或替换。",
       }
     : {
         title: "Mobile Visit Login",
@@ -236,6 +245,7 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
         submitting: "Signing in...",
         required: "Enter username and password.",
         failed: "Sign-in failed",
+        pricePhotoRetakeRequired: "Price-tag photo needs retake. Open details to retake or replace it.",
       };
 
   const loadingText = locale === "zh"
@@ -342,29 +352,6 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
     document.cookie = writeLocalePreferenceCookie(nextLocale);
     if (nextLocale === locale) return;
     router.push(replacePathLocale(`/${locale}/mobile/offline-capture`, nextLocale));
-  }
-
-  async function reanalyzeVisit(visitId: string) {
-    if (!user?.id) return;
-    setReanalyzingVisitId(visitId);
-    setError(null);
-    try {
-      const res = await fetch("/api/store-visit/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ visit_id: visitId }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(data.error ?? copy.aiAnalysisFailed);
-      }
-      await loadVisits(1, false, user);
-    } catch {
-      setError(copy.aiAnalysisFailed);
-      await loadVisits(1, false, user);
-    } finally {
-      setReanalyzingVisitId(null);
-    }
   }
 
   const autoAnalyzeVisit = useCallback(async (visitId: string, currentUser: AppUser) => {
@@ -538,9 +525,10 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
           </div>
         ) : null}
         {visits.map((visit) => {
-          const status = visit.analysis_status ?? "pending";
-          const retryable = canRetryAnalysis(status, visit.visit_status);
+          const status = visitDisplayStatus(visit);
           const summary = summarizeVisitBrandCounts(visit.ai_result, locale);
+          const priceRetakeRequired = status === "action_required";
+          const openVisitToHandlePhotos = status === "partial" || status === "action_required" || status === "failed";
           return (
             <article key={visit.id} className="rounded-xl border border-slate-200 bg-white shadow-sm">
               <Link
@@ -559,7 +547,15 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
                   <Badge className={statusClass(status)}>{mobileAnalysisStatusLabel(locale, status)}</Badge>
                 </div>
 
-                {summary ? (
+                {priceRetakeRequired ? (
+                  <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium leading-5 text-amber-800">
+                    {loginText.pricePhotoRetakeRequired}
+                  </p>
+                ) : openVisitToHandlePhotos ? (
+                  <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium leading-5 text-amber-800">
+                    {locale === "zh" ? "进入详情处理单张图片。" : "Open details to handle individual photos."}
+                  </p>
+                ) : summary ? (
                   <p
                     className="mt-3 overflow-hidden text-sm leading-5 text-slate-700"
                     style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}
@@ -581,19 +577,6 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
                   </span>
                 </div>
               </Link>
-              {retryable ? (
-                <div className="border-t border-slate-100 px-4 py-3">
-                  <button
-                    type="button"
-                    onClick={() => reanalyzeVisit(visit.id)}
-                    disabled={reanalyzingVisitId === visit.id}
-                    className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-blue-600 text-sm font-bold text-white disabled:opacity-60"
-                  >
-                    {reanalyzingVisitId === visit.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                    {copy.retryAnalyze}
-                  </button>
-                </div>
-              ) : null}
             </article>
           );
         })}

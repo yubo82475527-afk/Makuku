@@ -1,5 +1,5 @@
-import { AppShell } from "@/components/app-shell";
 import { OpportunityQueueTabs, OpportunityTaskCard } from "@/components/opportunity-actions";
+import { PageShellState } from "@/components/page-shell-state";
 import { Button, Card, DataNotice, EmptyState, SelectInput, TextInput } from "@/components/ui";
 import { getBrands, getChannels, getOpportunityActions } from "@/lib/data";
 import { getPageI18n } from "@/lib/i18n/server";
@@ -37,13 +37,14 @@ export default async function PromoEventsPage({
   };
 
   return (
-    <AppShell
-      locale={locale}
-      dict={dict}
-      title={locale === "zh" ? "\u673a\u4f1a\u5904\u7406\u53f0" : "Operating Queue"}
-      currentPath="/promo-events"
-      isDemo={actionsResult.isDemo || brandsResult.isDemo || channelsResult.isDemo}
-    >
+    <>
+      <PageShellState
+        locale={locale}
+        dict={dict}
+        title={locale === "zh" ? "\u673a\u4f1a\u5904\u7406\u53f0" : "Operating Queue"}
+        currentPath="/promo-events"
+        isDemo={actionsResult.isDemo || brandsResult.isDemo || channelsResult.isDemo}
+      />
       <DataNotice dict={dict} error={actionsResult.error ?? brandsResult.error ?? channelsResult.error} />
 
       <OpportunityQueueTabs
@@ -104,6 +105,6 @@ export default async function PromoEventsPage({
         ) : null}
         {actions.map((action) => <OpportunityTaskCard key={action.id} action={action} locale={locale} />)}
       </div>
-    </AppShell>
+    </>
   );
 }

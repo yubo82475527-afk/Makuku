@@ -1,4 +1,4 @@
-import { AppShell } from "@/components/app-shell";
+import { PageShellState } from "@/components/page-shell-state";
 import { OrganizationManagement } from "@/components/organization-management";
 import { Card, DataNotice } from "@/components/ui";
 import { getAppUsers, getOrganizations } from "@/lib/data";
@@ -16,7 +16,8 @@ export default async function OrganizationsPage({
   const isZh = locale === "zh";
 
   return (
-    <AppShell locale={locale} dict={dict} title={isZh ? "\u7ec4\u7ec7\u7ba1\u7406" : "Organization Management"} currentPath="/organizations" isDemo={organizationsResult.isDemo || usersResult.isDemo}>
+    <>
+      <PageShellState locale={locale} dict={dict} title={isZh ? "\u7ec4\u7ec7\u7ba1\u7406" : "Organization Management"} currentPath="/organizations" isDemo={organizationsResult.isDemo || usersResult.isDemo} />
       <DataNotice dict={dict} error={organizationsResult.error ?? usersResult.error} />
 
       <Card>
@@ -30,6 +31,6 @@ export default async function OrganizationsPage({
         </div>
         <OrganizationManagement organizations={organizationsResult.data} users={usersResult.data} locale={locale} />
       </Card>
-    </AppShell>
+    </>
   );
 }

@@ -1,5 +1,5 @@
 import { MarkAlertReadButton } from "@/components/client-actions";
-import { AppShell } from "@/components/app-shell";
+import { PageShellState } from "@/components/page-shell-state";
 import { Badge, Card, DataNotice, SelectInput } from "@/components/ui";
 import { formatJakartaTime } from "@/lib/format";
 import { getAlerts } from "@/lib/data";
@@ -19,7 +19,8 @@ export default async function AlertsPage({
   const alerts = result.data.filter((alert) => !params.severity || alert.severity === params.severity);
 
   return (
-    <AppShell locale={locale} dict={dict} title={dict.alerts.title} currentPath="/alerts" isDemo={result.isDemo}>
+    <>
+      <PageShellState locale={locale} dict={dict} title={dict.alerts.title} currentPath="/alerts" isDemo={result.isDemo} />
       <DataNotice dict={dict} error={result.error} />
       <Card className="mb-4">
         <form className="max-w-xs">
@@ -50,6 +51,6 @@ export default async function AlertsPage({
           </Card>
         ))}
       </div>
-    </AppShell>
+    </>
   );
 }
