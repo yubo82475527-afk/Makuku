@@ -387,6 +387,29 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
   }, [loadVisits]);
 
   useEffect(() => {
+    if (!user?.id) return;
+
+    function refreshVisits() {
+      void loadVisits(1, false, user);
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        void loadVisits(1, false, user);
+      }
+    }
+
+    window.addEventListener("focus", refreshVisits);
+    window.addEventListener("pageshow", refreshVisits);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("focus", refreshVisits);
+      window.removeEventListener("pageshow", refreshVisits);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [loadVisits, user]);
+
+  useEffect(() => {
     if (!user?.id || loading || loadingMore) return;
     const pendingVisit = visits.find((visit) => (
       visit.visit_status === "uploaded"

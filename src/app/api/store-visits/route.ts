@@ -20,6 +20,95 @@ function todayRange() {
   return { start: start.toISOString(), end: end.toISOString() };
 }
 
+function todayVisitDateValue(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+function isVisitOnToday(visit: OfflineStoreVisit, todayVisitDate: string, start: string, end: string) {
+  if (visit.visit_date) return visit.visit_date === todayVisitDate;
+  return visit.created_at >= start && visit.created_at < end;
+}
+
+function storeDedupKey(visit: Pick<OfflineStoreVisit, "store_id" | "store_name" | "region" | "channel" | "city" | "channel_type">) {
+  if (visit.store_id) return `store:${visit.store_id}`;
+  return [
+    "fallback",
+    visit.store_name?.trim().toLowerCase() ?? "",
+    visit.region?.trim().toLowerCase() ?? "",
+    visit.channel?.trim().toLowerCase() ?? "",
+    visit.city?.trim().toLowerCase() ?? "",
+    visit.channel_type?.trim().toLowerCase() ?? "",
+  ].join("|");
+}
+
+async function loadTodayRowsWithVisitDate(params: {
+  supabase: ReturnType<typeof createSupabaseServiceClient>;
+  userId: string;
+  todayVisitDate: string;
+}) {
+  const uploaderResult = await params.supabase
+    .from("offline_store_visits")
+    .select("store_id,store_name,region,channel,city,channel_type")
+    .eq("uploader_user_id", params.userId)
+    .eq("visit_date", params.todayVisitDate);
+
+  const legacyUserResult = await params.supabase
+    .from("offline_store_visits")
+    .select("store_id,store_name,region,channel,city,channel_type")
+    .eq("user_id", params.userId)
+    .is("uploader_user_id", null)
+    .eq("visit_date", params.todayVisitDate);
+
+  return {
+    uploaderResult,
+    legacyUserResult,
+    rows: [
+      ...((uploaderResult.data ?? []) as OfflineStoreVisit[]),
+      ...(legacyUserResult.error ? [] : ((legacyUserResult.data ?? []) as OfflineStoreVisit[])),
+    ],
+  };
+}
+
+async function loadLegacyTodayRowsWithoutVisitDate(params: {
+  supabase: ReturnType<typeof createSupabaseServiceClient>;
+  userId: string;
+  start: string;
+  end: string;
+}) {
+  const uploaderResult = await params.supabase
+    .from("offline_store_visits")
+    .select("store_id,store_name,region,channel,city,channel_type")
+    .eq("uploader_user_id", params.userId)
+    .is("visit_date", null)
+    .gte("created_at", params.start)
+    .lt("created_at", params.end);
+
+  const legacyUserResult = await params.supabase
+    .from("offline_store_visits")
+    .select("store_id,store_name,region,channel,city,channel_type")
+    .eq("user_id", params.userId)
+    .is("uploader_user_id", null)
+    .is("visit_date", null)
+    .gte("created_at", params.start)
+    .lt("created_at", params.end);
+
+  return {
+    uploaderResult,
+    legacyUserResult,
+    rows: [
+      ...((uploaderResult.data ?? []) as OfflineStoreVisit[]),
+      ...(legacyUserResult.error ? [] : ((legacyUserResult.data ?? []) as OfflineStoreVisit[])),
+    ],
+  };
+}
+
 function photoCount(visit: OfflineStoreVisit) {
   const legacyCount = Array.isArray(visit.image_urls) ? visit.image_urls.length : 0;
   const rowCount = visit.offline_visit_images?.length ?? 0;
@@ -92,8 +181,9 @@ export async function GET(request: Request) {
     if (!hasSupabaseServiceConfig()) {
       const visits = filterDemoVisits(userId);
       const paged = visits.slice(from, from + pageSize);
+      const todayVisitDate = todayVisitDateValue();
       const { start, end } = todayRange();
-      const todayCount = visits.filter((visit) => visit.created_at >= start && visit.created_at < end).length;
+      const todayRows = visits.filter((visit) => isVisitOnToday(visit, todayVisitDate, start, end));
       return Response.json({
         visits: paged.map(serializeVisit),
         pagination: {
@@ -102,7 +192,7 @@ export async function GET(request: Request) {
           total: visits.length,
           has_next: from + pageSize < visits.length,
         },
-        today_count: todayCount,
+        today_count: new Set(todayRows.map(storeDedupKey)).size,
         demo: true,
       });
     }
@@ -110,7 +200,7 @@ export async function GET(request: Request) {
     const supabase = createSupabaseServiceClient();
     let visitsResult = await supabase
       .from("offline_store_visits")
-      .select("id,store_name,region,channel,city,province,city_name,district,channel_type,visit_date,visit_status,analysis_status,analysis_error,ai_result,created_at,image_urls,offline_visit_images(id)", { count: "exact" })
+      .select("id,store_id,store_name,region,channel,city,province,city_name,district,channel_type,visit_date,visit_status,analysis_status,analysis_error,ai_result,created_at,image_urls,offline_visit_images(id)", { count: "exact" })
       .or(`user_id.eq.${userId},uploader_user_id.eq.${userId}`)
       .order("created_at", { ascending: false })
       .range(from, fetchTo);
@@ -118,7 +208,7 @@ export async function GET(request: Request) {
     if (visitsResult.error?.message.includes("user_id")) {
       visitsResult = await supabase
         .from("offline_store_visits")
-        .select("id,store_name,region,channel,city,province,city_name,district,channel_type,visit_date,visit_status,analysis_status,analysis_error,ai_result,created_at,image_urls,offline_visit_images(id)", { count: "exact" })
+        .select("id,store_id,store_name,region,channel,city,province,city_name,district,channel_type,visit_date,visit_status,analysis_status,analysis_error,ai_result,created_at,image_urls,offline_visit_images(id)", { count: "exact" })
         .eq("uploader_user_id", userId)
         .order("created_at", { ascending: false })
         .range(from, fetchTo);
@@ -128,22 +218,20 @@ export async function GET(request: Request) {
       return Response.json({ error: visitsResult.error.message }, { status: 400 });
     }
 
+    const todayVisitDate = todayVisitDateValue();
     const { start, end } = todayRange();
-    let countResult = await supabase
-      .from("offline_store_visits")
-      .select("id", { count: "exact", head: true })
-      .or(`user_id.eq.${userId},uploader_user_id.eq.${userId}`)
-      .gte("created_at", start)
-      .lt("created_at", end);
-
-    if (countResult.error?.message.includes("user_id")) {
-      countResult = await supabase
-        .from("offline_store_visits")
-        .select("id", { count: "exact", head: true })
-        .eq("uploader_user_id", userId)
-        .gte("created_at", start)
-        .lt("created_at", end);
-    }
+    const visitDateRowsResult = await loadTodayRowsWithVisitDate({
+      supabase,
+      userId,
+      todayVisitDate,
+    });
+    const legacyRowsResult = await loadLegacyTodayRowsWithoutVisitDate({
+      supabase,
+      userId,
+      start,
+      end,
+    });
+    const todayRows = [...visitDateRowsResult.rows, ...legacyRowsResult.rows];
 
     const rows = (visitsResult.data ?? []) as OfflineStoreVisit[];
     const hasNext = rows.length > pageSize;
@@ -157,7 +245,7 @@ export async function GET(request: Request) {
         total: visitsResult.count ?? from + pagedRows.length,
         has_next: hasNext,
       },
-      today_count: countResult.count ?? 0,
+      today_count: new Set(todayRows.map(storeDedupKey)).size,
     });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });

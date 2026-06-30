@@ -418,6 +418,24 @@ test("mobile visit list completion state is not derived from analysis_status alo
   assert.match(storeVisitsListH5, /const status = visitDisplayStatus\(visit\)/);
 });
 
+test("store visits API counts today's unique stores instead of raw visit rows", () => {
+  assert.match(storeVisitsApi, /function storeDedupKey/);
+  assert.match(storeVisitsApi, /visit\.store_id/);
+  assert.match(storeVisitsApi, /new Set/);
+  assert.match(storeVisitsApi, /todayRows\.map\(storeDedupKey\)/);
+  assert.match(storeVisitsApi, /today_count: new Set\(todayRows\.map\(storeDedupKey\)\)\.size/);
+  assert.doesNotMatch(storeVisitsApi, /today_count: visitDateCountResult\.count \+ legacyCountResult\.count/);
+  assert.doesNotMatch(storeVisitsApi, /todayCount = visits\.filter\(\(visit\) => visit\.created_at >= start && visit\.created_at < end\)\.length/);
+});
+
+test("mobile visit list refreshes counts when the page becomes active again", () => {
+  assert.match(storeVisitsListH5, /window\.addEventListener\("focus"/);
+  assert.match(storeVisitsListH5, /window\.addEventListener\("pageshow"/);
+  assert.match(storeVisitsListH5, /document\.addEventListener\("visibilitychange"/);
+  assert.match(storeVisitsListH5, /document\.visibilityState === "visible"/);
+  assert.match(storeVisitsListH5, /void loadVisits\(1, false, user\)/);
+});
+
 test("offline uploads dashboard uses analysis_status for analysis outcomes instead of visit_status result shortcuts", () => {
   assert.match(offlineUploadsPage, /visit\.analysis_status === "completed"/);
   assert.match(offlineUploadsPage, /visit\.analysis_status === "failed"/);
