@@ -219,7 +219,6 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginPhase, setLoginPhase] = useState<"idle" | "submitting" | "redirecting">("idle");
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [startingVisit, setStartingVisit] = useState(false);
   const autoAnalysisAttemptedIds = useRef<Set<string>>(new Set());
   const newVisitHref = `/${locale}/mobile/offline-capture/new`;
 
@@ -253,14 +252,10 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
     ? {
         loggingIn: "\u6b63\u5728\u9a8c\u8bc1\u8d26\u53f7...",
         redirecting: "\u767b\u5f55\u6210\u529f\uff0c\u6b63\u5728\u8fdb\u5165\u7cfb\u7edf...",
-        openingVisit: "\u6b63\u5728\u6253\u5f00\u5de1\u5e97\u8868\u5355...",
-        openingVisitHint: "\u8bf7\u7a0d\u5019\uff0c\u4e0d\u8981\u91cd\u590d\u70b9\u51fb\u3002",
       }
     : {
         loggingIn: "Verifying account...",
         redirecting: "Signed in. Entering the app...",
-        openingVisit: "Opening the visit form...",
-        openingVisitHint: "Please wait and avoid tapping repeatedly.",
       };
 
   const loadVisits = useCallback(async (nextPage = 1, append = false, currentUser: AppUser | null = null) => {
@@ -341,12 +336,6 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
     setPassword("");
     setLoginError(null);
     setLoading(false);
-  }
-
-  function startNewVisit() {
-    if (startingVisit) return;
-    setStartingVisit(true);
-    router.push(newVisitHref);
   }
 
   function switchLocale(nextLocale: Locale) {
@@ -494,11 +483,6 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
 
   return (
     <>
-      <LoadingOverlay
-        open={startingVisit}
-        title={loadingText.openingVisit}
-        description={loadingText.openingVisitHint}
-      />
       <main className="mx-auto min-h-screen max-w-md bg-slate-50 px-4 py-5 text-slate-950">
         <header className="sticky top-0 z-10 -mx-4 border-b border-slate-200 bg-slate-50/95 px-4 pb-4 pt-1 backdrop-blur">
           <div className="flex items-center justify-between gap-3">
@@ -545,10 +529,10 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
         {!loading && visits.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
             <div>{copy.noVisitsYet}</div>
-            <button type="button" onClick={startNewVisit} disabled={startingVisit} className="mt-4 inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white disabled:opacity-60">
+            <Link href={newVisitHref} className="mt-4 inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white">
               <Plus className="h-4 w-4" />
               {copy.newVisit}
-            </button>
+            </Link>
           </div>
         ) : null}
         {visits.map((visit) => {
@@ -622,10 +606,10 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
       ) : null}
       {visits.length > 0 ? (
         <div className="sticky bottom-0 -mx-4 border-t border-slate-200 bg-slate-50/95 px-4 py-3 backdrop-blur">
-          <button type="button" onClick={startNewVisit} disabled={startingVisit} className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-slate-900 text-sm font-bold text-white shadow-sm disabled:opacity-60">
+          <Link href={newVisitHref} className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-slate-900 text-sm font-bold text-white shadow-sm">
             <Plus className="h-4 w-4" />
             {copy.newVisit}
-          </button>
+          </Link>
         </div>
       ) : null}
       </main>

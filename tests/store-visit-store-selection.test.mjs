@@ -278,12 +278,14 @@ test("store visit image APIs allow 20MB photos and no longer mention 8MB", () =>
   }
 });
 
-test("mobile visit list login and new-visit entry expose explicit loading states", () => {
+test("mobile visit list login stays explicit while new-visit navigation avoids extra overlay flash", () => {
   assert.match(storeVisitsListH5, /LoadingOverlay/);
   assert.match(storeVisitsListH5, /const \[loginPhase, setLoginPhase\]/);
-  assert.match(storeVisitsListH5, /const \[startingVisit, setStartingVisit\]/);
-  assert.match(storeVisitsListH5, /startNewVisit/);
-  assert.match(storeVisitsListH5, /Opening the visit form|正在打开巡店表单/);
+  assert.match(storeVisitsListH5, /href=\{newVisitHref\}/);
+  assert.doesNotMatch(storeVisitsListH5, /startNewVisit/);
+  assert.doesNotMatch(storeVisitsListH5, /const \[startingVisit, setStartingVisit\]/);
+  assert.doesNotMatch(storeVisitsListH5, /Opening the visit form|正在打开巡店表单/);
+  assert.doesNotMatch(storeVisitsListH5, /setStartingVisit\(true\)/);
   assert.match(storeVisitsListH5, /Verifying account|正在验证账号/);
   assert.match(storeVisitsListH5, /Entering the app|正在进入系统/);
 });
@@ -373,6 +375,17 @@ test("offline stores API and types preserve location-capable store master data",
   assert.match(typesFile, /google_place_id\?: string \| null/);
   assert.match(typesFile, /external_store_id\?: string \| null/);
   assert.match(typesFile, /external_md_name\?: string \| null/);
+});
+
+test("external md store creation uses a channel type allowed by offline store constraints", () => {
+  assert.match(offlineStoresApi, /const externalMdFallbackChannelType = "BABY SHOP"/);
+  assert.match(offlineStoresApi, /function resolveOfflineStoreChannelType/);
+  assert.match(offlineStoresApi, /return channelType && channelType !== "other" \? channelType : externalMdFallbackChannelType/);
+  assert.match(offlineStoresApi, /const channelType = resolveOfflineStoreChannelType\(channelTypeFromBody\)/);
+  assert.match(googleStoreSelectApi, /const externalMdFallbackChannelType = "BABY SHOP"/);
+  assert.match(googleStoreSelectApi, /const channelType = externalMdFallbackChannelType/);
+  assert.match(competitorExcelMigration, /'BABY SHOP'/);
+  assert.match(competitorExcelMigration, /offline_stores_channel_type_check/);
 });
 
 test("google store APIs search places and materialize selected place into local offline stores", () => {

@@ -14,6 +14,13 @@ function clean(value: unknown) {
   return String(value ?? "").trim();
 }
 
+const externalMdFallbackChannelType = "BABY SHOP";
+
+function resolveOfflineStoreChannelType(value: unknown) {
+  const channelType = clean(value);
+  return channelType && channelType !== "other" ? channelType : externalMdFallbackChannelType;
+}
+
 function splitRegionText(value: string) {
   if (!value.includes("/")) return null;
   const parts = value.split("/").map((part) => part.trim()).filter(Boolean).slice(0, 3);
@@ -266,7 +273,7 @@ export async function POST(request: Request) {
     }
 
     const supabase = createSupabaseServiceClient();
-    const channelType = channelTypeFromBody || "other";
+    const channelType = resolveOfflineStoreChannelType(channelTypeFromBody);
 
     if (externalSource && externalStoreId) {
       const existing = await supabase

@@ -136,7 +136,11 @@ export function MobileFeishuAutoLogin({ locale }: { locale: Locale }) {
   }, [copy.sdkInitFailed, feishuReady, feishuSdkLoaded, isFeishuContainer]);
 
   const startFeishuLogin = useCallback(() => {
-    if (!feishuAppId || !feishuReady || !window.tt?.requestAccess || status !== "idle") return;
+    if (status !== "idle") return;
+    if (!feishuAppId || !window.tt?.requestAccess) {
+      setError(copy.sdkInitFailed);
+      return;
+    }
 
     setStatus("requesting");
     setError(null);
@@ -185,7 +189,7 @@ export function MobileFeishuAutoLogin({ locale }: { locale: Locale }) {
         setError(copy.authFailed);
       },
     });
-  }, [copy.authFailed, copy.loginFailed, copy.missingCode, copy.networkFailed, feishuAppId, feishuReady, locale, status]);
+  }, [copy.authFailed, copy.loginFailed, copy.missingCode, copy.networkFailed, copy.sdkInitFailed, feishuAppId, locale, status]);
 
   useEffect(() => {
     if (!isFeishuContainer) return;
@@ -225,8 +229,8 @@ export function MobileFeishuAutoLogin({ locale }: { locale: Locale }) {
       <button
         type="button"
         onClick={startFeishuLogin}
-        disabled={!feishuReady || status !== "idle"}
-        className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-60"
+        disabled={status !== "idle"}
+        className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-60"
       >
         {status !== "idle" ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
         {status !== "idle" ? copy.buttonLoading : copy.buttonIdle}

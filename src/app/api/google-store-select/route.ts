@@ -13,6 +13,8 @@ function clean(value: unknown) {
   return String(value ?? "").trim();
 }
 
+const externalMdFallbackChannelType = "BABY SHOP";
+
 function cleanOptionalNumber(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
@@ -118,7 +120,7 @@ export async function POST(request: Request) {
     if (externalExisting.data) {
       return Response.json({ store: externalExisting.data });
     }
-    const channelType = "other";
+    const channelType = externalMdFallbackChannelType;
     const channelIdToSave = null;
 
     const insertResult = await supabase

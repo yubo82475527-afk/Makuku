@@ -75,6 +75,9 @@ test("H5 capture entry auto-attempts Feishu login and still uses the shared sess
   assert.match(mobileFeishuAutoLogin, /h5sdk/);
   assert.match(mobileFeishuAutoLogin, /ready/);
   assert.match(mobileFeishuAutoLogin, /onClick=\{startFeishuLogin\}/);
+  assert.match(mobileFeishuAutoLogin, /className="flex h-11 w-full/);
+  assert.match(mobileFeishuAutoLogin, /disabled=\{status !== "idle"\}/);
+  assert.doesNotMatch(mobileFeishuAutoLogin, /disabled=\{!feishuReady \|\| status !== "idle"\}/);
   assert.match(mobileFeishuAutoLogin, /Sign in with Feishu|使用飞书登录/);
   assert.match(mobileFeishuAutoLogin, /scopeList:\s*\[\]/);
   assert.match(mobileFeishuAutoLogin, /\/api\/auth\/feishu-login/);
