@@ -5,9 +5,9 @@ import { createSupabaseServiceClient } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
-const storeSelectFields = "id,name,city,province,city_name,district,google_place_id,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,created_at,channels(id,code,name,type)";
-const storeSelectFieldsWithoutGooglePlaceId = "id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,created_at,channels(id,code,name,type)";
-const storeSelectFieldsWithoutGooglePlaceIdOrChannels = "id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,created_at";
+const storeSelectFields = "id,name,city,province,city_name,district,google_place_id,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,external_store_id,external_org_id,external_org_name,external_md_id,external_md_name,external_source,external_synced_at,created_at,channels(id,code,name,type)";
+const storeSelectFieldsWithoutGooglePlaceId = "id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,external_store_id,external_org_id,external_org_name,external_md_id,external_md_name,external_source,external_synced_at,created_at,channels(id,code,name,type)";
+const storeSelectFieldsWithoutGooglePlaceIdOrChannels = "id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,external_store_id,external_org_id,external_org_name,external_md_id,external_md_name,external_source,external_synced_at,created_at";
 
 function clean(value: unknown) {
   return String(value ?? "").trim();
@@ -52,11 +52,14 @@ export async function POST(request: Request) {
     const address = clean(body.address) || null;
     const latitude = cleanOptionalNumber(body.latitude);
     const longitude = cleanOptionalNumber(body.longitude);
-    const channelId = clean(body.channel_id) || null;
-    const channelTypeFromBody = clean(body.channel_type) || null;
+    const externalStoreId = clean(body.external_store_id);
+    const externalOrgId = clean(body.external_org_id) || null;
+    const externalOrgName = clean(body.external_org_name) || null;
+    const externalMdId = clean(body.external_md_id) || null;
+    const externalMdName = clean(body.external_md_name) || null;
 
-    if (!googlePlaceId || !name || !cityName) {
-      return Response.json({ error: "Missing required fields: google_place_id, name, city_name" }, { status: 400 });
+    if (!googlePlaceId || !name || !cityName || !externalStoreId || !externalMdId) {
+      return Response.json({ error: "Missing required fields: google_place_id, name, city_name, external_store_id, external_md_id" }, { status: 400 });
     }
 
     const supabase = createSupabaseServiceClient();
@@ -86,30 +89,37 @@ export async function POST(request: Request) {
     if (existing.data) {
       return Response.json({ store: existing.data });
     }
-    if (!channelId && !channelTypeFromBody) {
-      return Response.json({ error: "Missing required fields: channel_id or channel_type" }, { status: 400 });
+
+    const externalExisting = await supabase
+      .from("offline_stores")
+      .select(storeSelectFields)
+      .eq("external_source", "external_md")
+      .eq("external_store_id", externalStoreId)
+      .maybeSingle();
+
+    if (isChannelRelationError(externalExisting.error)) {
+      const externalExistingWithoutChannels = await supabase
+        .from("offline_stores")
+        .select(storeSelectFieldsWithoutGooglePlaceId)
+        .eq("external_source", "external_md")
+        .eq("external_store_id", externalStoreId)
+        .maybeSingle();
+      if (externalExistingWithoutChannels.error) {
+        return Response.json({ error: externalExistingWithoutChannels.error.message }, { status: 400 });
+      }
+      if (externalExistingWithoutChannels.data) {
+        return Response.json({ store: externalExistingWithoutChannels.data });
+      }
     }
 
-    const channelIdToSave = channelId;
-    let channelType = channelTypeFromBody;
-    if (channelIdToSave) {
-      const { data: channel, error: channelError } = await supabase
-        .from("channels")
-        .select("id,code,type")
-        .eq("id", channelIdToSave)
-        .eq("type", "offline")
-        .maybeSingle();
-      if (channelError) {
-        return Response.json({ error: channelError.message }, { status: 400 });
-      }
-      if (!channel) {
-        return Response.json({ error: "Offline channel not found" }, { status: 404 });
-      }
-      channelType = channel.code;
+    if (externalExisting.error) {
+      return Response.json({ error: externalExisting.error.message }, { status: 400 });
     }
-    if (!channelType) {
-      return Response.json({ error: "Missing required fields: channel_id or channel_type" }, { status: 400 });
+    if (externalExisting.data) {
+      return Response.json({ store: externalExisting.data });
     }
+    const channelType = "other";
+    const channelIdToSave = null;
 
     const insertResult = await supabase
       .from("offline_stores")
@@ -122,6 +132,13 @@ export async function POST(request: Request) {
         google_place_id: googlePlaceId,
         channel_type: channelType,
         channel_id: channelIdToSave,
+        external_store_id: externalStoreId,
+        external_org_id: externalOrgId,
+        external_org_name: externalOrgName,
+        external_md_id: externalMdId,
+        external_md_name: externalMdName,
+        external_source: "external_md",
+        external_synced_at: new Date().toISOString(),
         address,
         latitude,
         longitude,
@@ -146,6 +163,13 @@ export async function POST(request: Request) {
           google_place_id: googlePlaceId,
           channel_type: channelType,
           channel_id: channelIdToSave,
+          external_store_id: externalStoreId,
+          external_org_id: externalOrgId,
+          external_org_name: externalOrgName,
+          external_md_id: externalMdId,
+          external_md_name: externalMdName,
+          external_source: "external_md",
+          external_synced_at: new Date().toISOString(),
           address,
           latitude,
           longitude,
@@ -153,7 +177,7 @@ export async function POST(request: Request) {
           created_by_user_id: auth.session.id,
           created_by_name: auth.session.displayName,
         })
-        .select("id,name,city,province,city_name,district,google_place_id,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,created_at")
+        .select("id,name,city,province,city_name,district,google_place_id,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,external_store_id,external_org_id,external_org_name,external_md_id,external_md_name,external_source,external_synced_at,created_at")
         .single();
       data = noChannelRelation.data as Record<string, unknown> | null;
       error = noChannelRelation.error;
@@ -170,6 +194,13 @@ export async function POST(request: Request) {
           district,
           channel_type: channelType,
           channel_id: channelIdToSave,
+          external_store_id: externalStoreId,
+          external_org_id: externalOrgId,
+          external_org_name: externalOrgName,
+          external_md_id: externalMdId,
+          external_md_name: externalMdName,
+          external_source: "external_md",
+          external_synced_at: new Date().toISOString(),
           address,
           latitude,
           longitude,

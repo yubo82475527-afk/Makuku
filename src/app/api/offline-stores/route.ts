@@ -241,11 +241,17 @@ export async function POST(request: Request) {
     const auth = await requireAppSession(request);
     if (auth.response) return auth.response;
     const { body, isForm } = await readRequestBody(request);
-    const name = String(body.name ?? "").trim();
+    const name = String(body.name ?? body.external_store_name ?? "").trim();
     const { province, cityName, district } = resolveStoreRegion(body);
     const legacyCity = cityName;
     const channelId = String(body.channel_id ?? "").trim() || null;
     const channelTypeFromBody = String(body.channel_type ?? "").trim();
+    const externalStoreId = String(body.external_store_id ?? "").trim() || null;
+    const externalOrgId = String(body.external_org_id ?? "").trim() || null;
+    const externalOrgName = String(body.external_org_name ?? "").trim() || null;
+    const externalMdId = String(body.external_md_id ?? "").trim() || null;
+    const externalMdName = String(body.external_md_name ?? "").trim() || null;
+    const externalSource = "external_md";
     const address = String(body.address ?? "").trim();
     const latitude = cleanOptionalNumber(body.latitude);
     const longitude = cleanOptionalNumber(body.longitude);
@@ -255,21 +261,23 @@ export async function POST(request: Request) {
     const createdByName = String(body.created_by_name ?? body.createdByName ?? auth.session.displayName).trim() || null;
     const createdBy = String(body.created_by ?? createdByName ?? auth.session.displayName).trim() || null;
 
-    if (!name || !cityName || (!channelId && !channelTypeFromBody)) {
-      return Response.json({ error: "Missing required fields: name, city_name, channel_id" }, { status: 400 });
+    if (!name || !cityName || !externalStoreId || !externalMdId) {
+      return Response.json({ error: "Missing required fields: name, city_name, external_store_id, external_md_id" }, { status: 400 });
     }
 
     const supabase = createSupabaseServiceClient();
-    let channelType = channelTypeFromBody;
-    if (channelId) {
-      const { data: channel } = await supabase
-        .from("channels")
-        .select("id,code,type")
-        .eq("id", channelId)
-        .eq("type", "offline")
+    const channelType = channelTypeFromBody || "other";
+
+    if (externalSource && externalStoreId) {
+      const existing = await supabase
+        .from("offline_stores")
+        .select("*, channels(id,code,name,type)")
+        .eq("external_source", externalSource)
+        .eq("external_store_id", externalStoreId)
         .maybeSingle();
-      if (!channel && !channelTypeFromBody) return Response.json({ error: "Offline channel not found" }, { status: 404 });
-      channelType = channelTypeFromBody || channel?.code || "other";
+      if (existing.data) {
+        return Response.json({ store: existing.data });
+      }
     }
 
     let { data, error } = await supabase
@@ -290,6 +298,13 @@ export async function POST(request: Request) {
         created_by: createdBy,
         created_by_user_id: createdByUserId,
         created_by_name: createdByName,
+        external_store_id: externalStoreId,
+        external_org_id: externalOrgId,
+        external_org_name: externalOrgName,
+        external_md_id: externalMdId,
+        external_md_name: externalMdName,
+        external_source: externalSource,
+        external_synced_at: new Date().toISOString(),
       })
       .select("*, channels(id,code,name,type)")
       .single();
@@ -310,6 +325,13 @@ export async function POST(request: Request) {
           longitude,
           location_accuracy_m: locationAccuracyM,
           location_captured_at: locationCapturedAt,
+          external_store_id: externalStoreId,
+          external_org_id: externalOrgId,
+          external_org_name: externalOrgName,
+          external_md_id: externalMdId,
+          external_md_name: externalMdName,
+          external_source: externalSource,
+          external_synced_at: new Date().toISOString(),
         })
         .select("*, channels(id,code,name,type)")
         .single();
@@ -332,6 +354,13 @@ export async function POST(request: Request) {
           created_by: createdBy,
           created_by_user_id: createdByUserId,
           created_by_name: createdByName,
+          external_store_id: externalStoreId,
+          external_org_id: externalOrgId,
+          external_org_name: externalOrgName,
+          external_md_id: externalMdId,
+          external_md_name: externalMdName,
+          external_source: externalSource,
+          external_synced_at: new Date().toISOString(),
         })
         .select("*, channels(id,code,name,type)")
         .single();
@@ -355,6 +384,13 @@ export async function POST(request: Request) {
           created_by: createdBy,
           created_by_user_id: createdByUserId,
           created_by_name: createdByName,
+          external_store_id: externalStoreId,
+          external_org_id: externalOrgId,
+          external_org_name: externalOrgName,
+          external_md_id: externalMdId,
+          external_md_name: externalMdName,
+          external_source: externalSource,
+          external_synced_at: new Date().toISOString(),
         })
         .select("*, channels(id,code,name,type)")
         .single();
@@ -365,7 +401,22 @@ export async function POST(request: Request) {
     if (error?.message.includes("channel_id") || error?.message.includes("channels")) {
       const legacy = await supabase
         .from("offline_stores")
-        .insert({ name, city: legacyCity, province, city_name: cityName, district, channel_type: channelType, address: address || null })
+        .insert({
+          name,
+          city: legacyCity,
+          province,
+          city_name: cityName,
+          district,
+          channel_type: channelType,
+          address: address || null,
+          external_store_id: externalStoreId,
+          external_org_id: externalOrgId,
+          external_org_name: externalOrgName,
+          external_md_id: externalMdId,
+          external_md_name: externalMdName,
+          external_source: externalSource,
+          external_synced_at: new Date().toISOString(),
+        })
         .select("*")
         .single();
       data = legacy.data;
@@ -375,7 +426,23 @@ export async function POST(request: Request) {
     if (isStoreCreatorColumnError(error)) {
       const noCreatorLegacy = await supabase
         .from("offline_stores")
-        .insert({ name, city: legacyCity, province, city_name: cityName, district, channel_type: channelType, channel_id: channelId, address: address || null })
+        .insert({
+          name,
+          city: legacyCity,
+          province,
+          city_name: cityName,
+          district,
+          channel_type: channelType,
+          channel_id: channelId,
+          address: address || null,
+          external_store_id: externalStoreId,
+          external_org_id: externalOrgId,
+          external_org_name: externalOrgName,
+          external_md_id: externalMdId,
+          external_md_name: externalMdName,
+          external_source: externalSource,
+          external_synced_at: new Date().toISOString(),
+        })
         .select("*, channels(id,code,name,type)")
         .single();
       data = noCreatorLegacy.data;
@@ -401,6 +468,13 @@ export async function POST(request: Request) {
           created_by: createdBy,
           created_by_user_id: createdByUserId,
           created_by_name: createdByName,
+          external_store_id: externalStoreId,
+          external_org_id: externalOrgId,
+          external_org_name: externalOrgName,
+          external_md_id: externalMdId,
+          external_md_name: externalMdName,
+          external_source: externalSource,
+          external_synced_at: new Date().toISOString(),
         },
         demo: true,
       });

@@ -19,16 +19,14 @@ test("new store sheet reverse geocodes browser location through the server witho
 test("new store sheet puts required store identity fields before the bound location group", () => {
   const createStoreSheetIndex = storeVisitH5.indexOf("function CreateStoreSheet");
   const createStoreSheetSource = storeVisitH5.slice(createStoreSheetIndex);
-  const storeNameIndex = createStoreSheetSource.indexOf("placeholder={labels.storeNameRequired}");
-  const channelTypeIndex = createStoreSheetSource.indexOf("labels.channelTypeRequired");
+  const dealerStepIndex = createStoreSheetSource.indexOf("<DealerStoreSelector");
   const locationGroupIndex = createStoreSheetSource.indexOf("labels.storeLocationGroup");
   const cityIndex = createStoreSheetSource.indexOf("placeholder={labels.cityRequired}");
   const addressIndex = createStoreSheetSource.indexOf("placeholder={labels.addressOptional}");
   const locateIndex = createStoreSheetSource.indexOf("onClick={captureStoreLocation}");
 
-  assert.ok(storeNameIndex >= 0, "store name should be the first required identity field");
-  assert.ok(channelTypeIndex > storeNameIndex, "store type should follow store name");
-  assert.ok(locationGroupIndex > channelTypeIndex, "city, address, and location should be grouped after store identity");
+  assert.ok(dealerStepIndex >= 0, "dealer selection should be the first required identity field");
+  assert.ok(locationGroupIndex > dealerStepIndex, "city, address, and location should be grouped after external store identity");
   assert.ok(cityIndex > locationGroupIndex, "city input should live inside the location group");
   assert.ok(addressIndex > cityIndex, "address input should sit with city input");
   assert.ok(locateIndex > addressIndex, "location action should be bound to the city/address group");

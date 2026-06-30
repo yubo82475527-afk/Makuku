@@ -13,6 +13,7 @@ const mobileCaptureNewPage = existsSync("src/app/[locale]/mobile/offline-capture
 const asyncUiHelper = existsSync("src/lib/async-ui.ts") ? readFileSync("src/lib/async-ui.ts", "utf8") : "";
 const loginRoute = readFileSync("src/app/api/auth/login/route.ts", "utf8");
 const feishuLoginRoute = existsSync("src/app/api/auth/feishu-login/route.ts") ? readFileSync("src/app/api/auth/feishu-login/route.ts", "utf8") : "";
+const authSessionRoute = existsSync("src/app/api/auth/session/route.ts") ? readFileSync("src/app/api/auth/session/route.ts", "utf8") : "";
 const logoutRoute = existsSync("src/app/api/auth/logout/route.ts") ? readFileSync("src/app/api/auth/logout/route.ts", "utf8") : "";
 const appShell = readFileSync("src/components/app-shell.tsx", "utf8");
 
@@ -47,15 +48,20 @@ test("PC login page and auth APIs establish and clear server sessions", () => {
   assert.match(loginClient, /next/);
   assert.match(loginRoute, /createSessionCookie/);
   assert.match(loginRoute, /Set-Cookie/);
+  assert.match(authSessionRoute, /requireAppSession/);
   assert.match(loginRoute, /role: user\.role/);
   assert.match(logoutRoute, /clearSessionCookie/);
-  assert.match(appShell, /\/api\/auth\/session/);
+  assert.doesNotMatch(appShell, /fetch\("\/api\/auth\/session"\)/);
+  assert.match(appShell, /headerUser\?: HeaderUser \| null/);
+  assert.match(appShell, /headerUser=\{/);
   assert.match(appShell, /\/api\/auth\/logout/);
 });
 
 test("PC login page supports Feishu in-app passwordless login", () => {
   assert.match(loginClient, /NEXT_PUBLIC_FEISHU_APP_ID/);
   assert.match(loginClient, /requestAccess/);
+  assert.match(loginClient, /h5sdk/);
+  assert.match(loginClient, /ready/);
   assert.match(loginClient, /scopeList:\s*\[\]/);
   assert.match(loginClient, /appID:\s*feishuAppId/);
   assert.match(loginClient, /\/api\/auth\/feishu-login/);
@@ -65,6 +71,10 @@ test("PC login page supports Feishu in-app passwordless login", () => {
 test("H5 capture entry auto-attempts Feishu login and still uses the shared session API", () => {
   assert.match(mobileFeishuAutoLogin, /NEXT_PUBLIC_FEISHU_APP_ID/);
   assert.match(mobileFeishuAutoLogin, /requestAccess/);
+  assert.match(mobileFeishuAutoLogin, /h5sdk/);
+  assert.match(mobileFeishuAutoLogin, /ready/);
+  assert.match(mobileFeishuAutoLogin, /onClick=\{startFeishuLogin\}/);
+  assert.match(mobileFeishuAutoLogin, /Sign in with Feishu|使用飞书登录/);
   assert.match(mobileFeishuAutoLogin, /scopeList:\s*\[\]/);
   assert.match(mobileFeishuAutoLogin, /\/api\/auth\/feishu-login/);
   assert.match(mobileFeishuAutoLogin, /mobile_h5/);

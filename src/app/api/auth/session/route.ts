@@ -1,8 +1,9 @@
-import { readSessionFromRequest } from "@/lib/auth-session";
+import { requireAppSession } from "@/lib/auth-session";
 
 export async function GET(request: Request) {
-  const session = readSessionFromRequest(request);
-  if (!session) return Response.json({ user: null });
+  const auth = await requireAppSession(request);
+  if (auth.response) return Response.json({ user: null });
+  const session = auth.session;
   return Response.json({
     user: {
       id: session.id,

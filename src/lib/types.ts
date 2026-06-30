@@ -335,6 +335,13 @@ export type OfflineStore = {
   created_by_user_id?: string | null;
   created_by_name?: string | null;
   created_by_user?: string | null;
+  external_store_id?: string | null;
+  external_org_id?: string | null;
+  external_org_name?: string | null;
+  external_md_id?: string | null;
+  external_md_name?: string | null;
+  external_source?: string | null;
+  external_synced_at?: string | null;
   organization_id?: string | null;
   organization_assignment_method?: OrganizationAssignmentMethod | null;
   organization_assigned_at?: string | null;

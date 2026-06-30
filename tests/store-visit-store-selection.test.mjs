@@ -19,10 +19,13 @@ const storeVisitHistoryStoresApiPath = "src/app/api/store-visit-history-stores/r
 const storeVisitHistoryStoresApi = existsSync(storeVisitHistoryStoresApiPath) ? readFileSync(storeVisitHistoryStoresApiPath, "utf8") : "";
 const googleStoreSearchApiPath = "src/app/api/google-store-search/route.ts";
 const googleStoreSelectApiPath = "src/app/api/google-store-select/route.ts";
+const externalMdDealersApiPath = "src/app/api/external-md/dealers/route.ts";
+const externalMdStoresApiPath = "src/app/api/external-md/stores/route.ts";
 const googleStoreSearchApi = existsSync(googleStoreSearchApiPath) ? readFileSync(googleStoreSearchApiPath, "utf8") : "";
 const googleStoreSelectApi = existsSync(googleStoreSelectApiPath) ? readFileSync(googleStoreSelectApiPath, "utf8") : "";
+const externalMdDealersApi = existsSync(externalMdDealersApiPath) ? readFileSync(externalMdDealersApiPath, "utf8") : "";
+const externalMdStoresApi = existsSync(externalMdStoresApiPath) ? readFileSync(externalMdStoresApiPath, "utf8") : "";
 const typesFile = readFileSync("src/lib/types.ts", "utf8");
-const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const demoData = readFileSync("src/lib/demo-data.ts", "utf8");
 const competitorExcelMigration = readFileSync("supabase/migrations/202606130001_competitor_master_excel_import.sql", "utf8");
 const visitChannelMigration = readFileSync("supabase/migrations/202606170003_relax_store_visit_channel_type.sql", "utf8");
@@ -72,18 +75,36 @@ test("new H5 store visit keeps browser location inside create-store master data"
   assert.doesNotMatch(storeVisitH5, /labels\.locationTitle/);
 });
 
-test("new store sheet loads offline channel master data for store type", () => {
-  assert.match(storeVisitH5, /\/api\/channels/);
-  assert.match(storeVisitH5, /\.filter\(\(channel\) => channel\.type === "offline"\)/);
-  assert.match(dataFile, /\.eq\("active", true\)/);
-  assert.match(storeVisitH5, /setChannels/);
-  assert.match(storeVisitH5, /channel_id: selectedChannel\?\.id/);
-  assert.match(storeVisitH5, /channel_type: selectedChannel\?\.code/);
-  assert.doesNotMatch(storeVisitH5, /<option value="modern_trade">Modern Trade<\/option>/);
-  assert.doesNotMatch(storeVisitH5, /<option value="baby_store">Baby Store<\/option>/);
+test("new store sheet uses external md dealer and store selection instead of store type", () => {
+  assert.match(storeVisitH5, /\/api\/external-md\/dealers/);
+  assert.match(storeVisitH5, /\/api\/external-md\/stores/);
+  assert.match(storeVisitH5, /dealerUserId/);
+  assert.match(storeVisitH5, /external_md_id/);
+  assert.match(storeVisitH5, /external_store_id/);
+  assert.match(storeVisitH5, /external_org_name/);
+  assert.match(storeVisitH5, /const dealerSearchKey = dealerPickerOpen \? debouncedDealerQuery\.trim\(\) : ""/);
+  assert.match(storeVisitH5, /const storeSearchKey = selectedDealer && storePickerOpen \? debouncedStoreQuery\.trim\(\) : ""/);
+  assert.match(storeVisitH5, /const showDealerResults = dealerPickerOpen/);
+  assert.match(storeVisitH5, /const showStoreResults = selectedDealer !== null && storePickerOpen/);
+  assert.match(storeVisitH5, /const visibleDealers = dealerPickerOpen \? dealers : \[\]/);
+  assert.match(storeVisitH5, /const visibleStores = selectedDealer && storePickerOpen \? stores : \[\]/);
+  assert.match(storeVisitH5, /onFocus=\{\(\) => setDealerPickerOpen\(true\)\}/);
+  assert.match(storeVisitH5, /onFocus=\{\(\) => \{\s*if \(!selectedDealer\) return;\s*setStorePickerOpen\(true\);/s);
+  assert.match(storeVisitH5, /if \(!dealerPickerOpen\) \{/);
+  assert.match(storeVisitH5, /if \(!selectedDealer \|\| !storePickerOpen\) \{/);
+  assert.match(storeVisitH5, /\}, \[dealerPickerOpen, dealerSearchKey, labels\.createFailed, onAuthFailure\]\)/);
+  assert.match(storeVisitH5, /\}, \[labels\.createFailed, onAuthFailure, selectedDealer, storePickerOpen, storeSearchKey\]\)/);
+  assert.doesNotMatch(storeVisitH5, /\}, \[debouncedDealerQuery, labels\.createFailed, onAuthFailure, selectedDealer, showDealerResults\]\)/);
+  assert.doesNotMatch(storeVisitH5, /\}, \[debouncedStoreQuery, labels\.createFailed, onAuthFailure, selectedDealer, selectedExternalStore, showStoreResults\]\)/);
+  assert.match(storeVisitH5, /showDealerResults \? \(/);
+  assert.match(storeVisitH5, /showStoreResults \? \(/);
+  assert.match(storeVisitH5, /selectedDealer && !showDealerResults \?/);
+  assert.match(storeVisitH5, /selectedExternalStore && !showStoreResults \?/);
+  assert.doesNotMatch(storeVisitH5, /\/api\/channels/);
+  assert.doesNotMatch(storeVisitH5, /channelTypeRequired/);
+  assert.doesNotMatch(storeVisitH5, /setChannels/);
+  assert.doesNotMatch(storeVisitH5, /selectedChannelId/);
   assert.match(demoData, /"BABY SHOP"/);
-  assert.match(demoData, /"MT-LKA-SUPERMARKET"/);
-  assert.match(competitorExcelMigration, /update public\.channels[\s\S]*set active = false[\s\S]*where type = 'offline'/);
   assert.match(competitorExcelMigration, /'MT-LKA-SUPERMARKET'/);
 });
 
@@ -115,16 +136,20 @@ test("history-first store search loads current user's visited stores before offe
   assert.doesNotMatch(storeVisitH5, /useEffect\(\(\) => \{\s*locateStores\(\);/s);
 });
 
-test("google store first-time selection uses the same offline store type dropdown before materializing", () => {
+test("google store first-time selection uses external md dealer and store selection before materializing", () => {
   assert.match(storeVisitH5, /confirmGoogleStoreTypeTitle/);
   assert.match(storeVisitH5, /confirmGoogleStoreTypeHint/);
   assert.match(storeVisitH5, /function GoogleStoreTypeSheet/);
-  assert.match(storeVisitH5, /value=\{selectedChannelId\}/);
   assert.match(storeVisitH5, /pendingGoogleStore && !pendingGoogleStore\.local_store/);
   assert.match(storeVisitH5, /<GoogleStoreTypeSheet/);
-  assert.match(storeVisitH5, /disabled=\{loading \|\| channelsLoading \|\| !selectedChannel \|\| !store\}/);
-  assert.match(storeVisitH5, /channel_id: selectedChannel\.id/);
-  assert.match(storeVisitH5, /channel_type: selectedChannel\.code/);
+  assert.match(storeVisitH5, /selectedDealer/);
+  assert.match(storeVisitH5, /selectedExternalStore/);
+  assert.match(storeVisitH5, /\/api\/external-md\/dealers/);
+  assert.match(storeVisitH5, /\/api\/external-md\/stores/);
+  assert.match(storeVisitH5, /external_md_id: selectedExternalStore\.dealerUserId/);
+  assert.match(storeVisitH5, /external_store_id: selectedExternalStore\.code/);
+  assert.doesNotMatch(storeVisitH5, /channel_id: selectedChannel\.id/);
+  assert.doesNotMatch(storeVisitH5, /channel_type: selectedChannel\.code/);
   assert.match(storeVisitH5, /onClick=\{\(\) => chooseGoogleStore\(store\)\}/);
   assert.doesNotMatch(storeVisitH5, /onClick=\{\(\) => materializeSelectedGoogleStore\(store\)\}/);
 });
@@ -340,9 +365,14 @@ test("offline stores API and types preserve location-capable store master data",
   assert.match(offlineStoresApi, /scope.*master/s);
   assert.match(offlineStoresApi, /readStoreMasterOptions/);
   assert.match(offlineStoresApi, /\.limit\(limit\)/);
+  assert.match(offlineStoresApi, /external_store_id/);
+  assert.match(offlineStoresApi, /external_md_id/);
+  assert.match(offlineStoresApi, /external_org_name/);
   assert.match(typesFile, /latitude\?: number \| null/);
   assert.match(typesFile, /location_accuracy_m\?: number \| null/);
   assert.match(typesFile, /google_place_id\?: string \| null/);
+  assert.match(typesFile, /external_store_id\?: string \| null/);
+  assert.match(typesFile, /external_md_name\?: string \| null/);
 });
 
 test("google store APIs search places and materialize selected place into local offline stores", () => {
@@ -361,16 +391,38 @@ test("google store APIs search places and materialize selected place into local 
   assert.match(googleStoreSearchApi, /return stores\.map\(\(store\) => \(\{ \.\.\.store, local_store: null \}\)\)/);
 
   assert.match(googleStoreSelectApi, /\.from\("offline_stores"\)/);
-  assert.match(googleStoreSelectApi, /\.from\("channels"\)/);
   assert.match(googleStoreSelectApi, /google_place_id/);
-  assert.match(googleStoreSelectApi, /channel_id/);
+  assert.match(googleStoreSelectApi, /external_store_id/);
+  assert.match(googleStoreSelectApi, /external_md_id/);
+  assert.match(googleStoreSelectApi, /external_org_name/);
   assert.match(googleStoreSelectApi, /created_by_user_id/);
   assert.match(googleStoreSelectApi, /created_by_name/);
-  assert.match(googleStoreSelectApi, /\.eq\("type", "offline"\)/);
   assert.match(googleStoreSelectApi, /eq\("google_place_id"/);
+  assert.match(googleStoreSelectApi, /eq\("external_source",\s*"external_md"\)/);
+  assert.match(googleStoreSelectApi, /eq\("external_store_id",\s*externalStoreId\)/);
+  assert.match(googleStoreSelectApi, /externalExisting\.data/);
   assert.match(googleStoreSelectApi, /isGooglePlaceColumnError/);
   assert.match(googleStoreSelectApi, /legacy/i);
-  assert.doesNotMatch(googleStoreSelectApi, /channel_type:\s*"other"/);
+  assert.doesNotMatch(googleStoreSelectApi, /\.from\("channels"\)/);
+});
+
+test("external md APIs proxy dealer and md customer store queries", () => {
+  assert.equal(existsSync(externalMdDealersApiPath), true, "external md dealers route should exist");
+  assert.equal(existsSync(externalMdStoresApiPath), true, "external md stores route should exist");
+  assert.match(externalMdDealersApi, /proxyExternalMdJson/);
+  assert.match(externalMdDealersApi, /dealersInfo\/page/);
+  assert.match(externalMdDealersApi, /if \(code\) params\.set\("code", code\);/);
+  assert.match(externalMdDealersApi, /else if \(q\) params\.set\("name", q\);/);
+  assert.doesNotMatch(externalMdDealersApi, /if \(!code && q\) params\.set\("code", q\);/);
+  assert.match(externalMdDealersApi, /pageNo/);
+  assert.match(externalMdDealersApi, /pageSize/);
+  assert.match(externalMdStoresApi, /getMdCustomerPage\/page/);
+  assert.match(externalMdStoresApi, /dealerUserId/);
+  assert.match(externalMdStoresApi, /const code = searchParams\.get\("code"\)\?\.trim\(\) \?\? ""/);
+  assert.match(externalMdStoresApi, /if \(code\) params\.set\("code", code\);/);
+  assert.match(externalMdStoresApi, /else if \(q\) params\.set\("name", q\);/);
+  assert.doesNotMatch(externalMdStoresApi, /params\.set\("code", q\);/);
+  assert.match(externalMdStoresApi, /Missing required fields: dealerUserId/);
 });
 
 test("store search shows manual create only after google search returns no reliable place", () => {
@@ -441,4 +493,60 @@ test("offline uploads dashboard uses analysis_status for analysis outcomes inste
   assert.match(offlineUploadsPage, /visit\.analysis_status === "failed"/);
   assert.doesNotMatch(offlineUploadsPage, /visit\.visit_status === "analyzed"/);
   assert.doesNotMatch(offlineUploadsPage, /visit\.visit_status === "failed"/);
+});
+
+test("new H5 store visit clears stale local user when server session is gone", () => {
+  assert.match(storeVisitH5, /\/api\/auth\/session/);
+  assert.match(storeVisitH5, /localStorage\.removeItem\(storageKey\)/);
+  assert.match(storeVisitH5, /payload\.user\?\.id/);
+  assert.match(storeVisitH5, /setUser\(null\)/);
+  assert.match(storeVisitH5, /setUserLoaded\(true\)/);
+});
+
+test("new H5 store visit resets to signed-out state when protected APIs return auth failures", () => {
+  assert.match(storeVisitH5, /function handleAuthFailure\(/);
+  assert.match(storeVisitH5, /response\.status !== 401/);
+  assert.match(storeVisitH5, /localStorage\.removeItem\(storageKey\)/);
+  assert.match(storeVisitH5, /setSelectedStore\(null\)/);
+  assert.match(storeVisitH5, /setError\(copy\.signInFirst\)/);
+  assert.match(storeVisitH5, /handleAuthFailure\(res, typeof data\.error === "string" \? data\.error : null\)/);
+});
+
+test("new H5 store search children receive auth failure handling through props", () => {
+  assert.match(storeVisitH5, /<StoreSearchStep locale=\{locale\} user=\{user\} onAuthFailure=\{handleAuthFailure\}/);
+  assert.match(storeVisitH5, /function StoreSearchStep\(\{\s*locale,\s*user,\s*onAuthFailure,/s);
+  assert.match(storeVisitH5, /<NewStoreSearchFlow locale=\{locale\} user=\{user\} query=\{query\} onAuthFailure=\{onAuthFailure\}/);
+  assert.match(storeVisitH5, /function NewStoreSearchFlow\(\{\s*locale,\s*user,\s*query,\s*onAuthFailure,/s);
+  assert.match(storeVisitH5, /function GoogleStoreTypeSheet\(\{\s*locale,\s*store,\s*loading,\s*onClose,\s*onAuthFailure,/s);
+  assert.match(storeVisitH5, /function CreateStoreSheet\(\{\s*locale,\s*user,\s*onClose,\s*onAuthFailure,/s);
+  assert.match(storeVisitH5, /onAuthFailure\(res, typeof data\.error === "string" \? data\.error : null\)/);
+  assert.doesNotMatch(storeVisitH5, /function NewStoreSearchFlow[\s\S]*?function ReadOnlyRow[\s\S]*?handleAuthFailure\(res,/);
+});
+
+test("new store sheet actively checks location permission before allowing manual store creation", () => {
+  assert.match(storeVisitH5, /function CreateStoreSheet/);
+  assert.match(storeVisitH5, /const \[entryLocationReady, setEntryLocationReady\] = useState\(false\)/);
+  assert.match(storeVisitH5, /const \[entryLocationChecking, setEntryLocationChecking\] = useState\(false\)/);
+  assert.match(storeVisitH5, /const \[entryLocationError, setEntryLocationError\] = useState<string \| null>\(null\)/);
+  assert.match(storeVisitH5, /const ensureEntryLocation = useCallback\(\(\) => \{/);
+  assert.match(storeVisitH5, /setEntryLocationError\(labels\.entryLocationUnsupported\)/);
+  assert.match(storeVisitH5, /setEntryLocationError\(labels\.entryLocationDenied\)/);
+  assert.match(storeVisitH5, /useEffect\(\(\) => \{\s*if \(entryLocationReady \|\| entryLocationChecking\) return;/s);
+  assert.match(storeVisitH5, /\}, \[ensureEntryLocation, entryLocationChecking, entryLocationReady\]\)/);
+  assert.match(storeVisitH5, /if \(!entryLocationReady\) \{/);
+  assert.match(storeVisitH5, /labels\.entryLocationRequiredTitle/);
+  assert.match(storeVisitH5, /labels\.entryLocationRequiredBody/);
+  assert.match(storeVisitH5, /labels\.entryLocationRetry/);
+  assert.match(storeVisitH5, /onClick=\{\(\) => setShowCreate\(true\)\}/);
+  assert.doesNotMatch(storeVisitH5, /if \(!user \|\| entryLocationReady \|\| entryLocationChecking\) return/);
+});
+
+test("new store modal stays inside the mobile webview when the keyboard opens", () => {
+  assert.match(storeVisitH5, /max-h-\[100dvh\]/);
+  assert.match(storeVisitH5, /overflow-y-auto overscroll-contain/);
+  assert.match(storeVisitH5, /sticky top-0/);
+  assert.match(storeVisitH5, /sticky bottom-0/);
+  assert.match(storeVisitH5, /pb-\[max\(1rem,env\(safe-area-inset-bottom\)\)\]/);
+  assert.doesNotMatch(storeVisitH5, /function CreateStoreSheet[\s\S]*?return \(\s*<div className="fixed inset-0 z-50 flex items-end/s);
+  assert.doesNotMatch(storeVisitH5, /function GoogleStoreTypeSheet[\s\S]*?function CreateStoreSheet[\s\S]*?mx-auto w-full max-w-md rounded-t-2xl bg-white p-5/);
 });

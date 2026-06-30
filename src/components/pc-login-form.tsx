@@ -8,6 +8,10 @@ import type { Locale } from "@/lib/i18n/config";
 
 declare global {
   interface Window {
+    h5sdk?: {
+      ready?: (callback: () => void) => void;
+      error?: (callback: (error: unknown) => void) => void;
+    };
     tt?: {
       requestAccess?: (options: {
         scopeList: string[];
@@ -19,19 +23,41 @@ declare global {
   }
 }
 
+function isFeishuUserAgent(userAgent: string) {
+  return /feishu|lark|ttwebview/i.test(userAgent);
+}
+
 export function PcLoginForm({ locale }: { locale: Locale }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get("next") || `/${locale}/dashboard`;
   const feishuAppId = process.env.NEXT_PUBLIC_FEISHU_APP_ID;
+  const [isFeishuContainer] = useState(() => (
+    typeof navigator === "undefined" ? false : isFeishuUserAgent(navigator.userAgent)
+  ));
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [feishuLoading, setFeishuLoading] = useState(false);
   const [feishuReady, setFeishuReady] = useState(false);
+  const [feishuSdkLoaded, setFeishuSdkLoaded] = useState(false);
   const autoFeishuAttemptedRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const isZh = locale === "zh";
+
+  const copy = {
+    feishuLoading: isZh ? "飞书免登中..." : "Signing in with Feishu...",
+    feishuCta: isZh ? "使用飞书免登" : "Sign in with Feishu",
+    feishuFailed: isZh ? "飞书免登失败，请重试或使用账号密码登录。" : "Feishu sign-in failed. Retry or use password sign-in.",
+    sdkInitFailed: isZh ? "飞书环境初始化失败，请重试。" : "Feishu environment failed to initialize. Please retry.",
+    credentialsRequired: isZh ? "请输入用户名和密码。" : "Enter username and password.",
+    loginFailed: isZh ? "登录失败。" : "Sign-in failed.",
+    networkRetry: isZh ? "网络异常，请重试。" : "Network error. Please retry.",
+    username: isZh ? "用户名" : "Username",
+    password: isZh ? "密码" : "Password",
+    submitIdle: isZh ? "登录后台" : "Sign in",
+    submitLoading: isZh ? "登录中..." : "Signing in...",
+  };
 
   const redirectAfterLogin = useCallback(() => {
     router.replace(next.startsWith("/") ? next : `/${locale}/dashboard`);
@@ -39,9 +65,9 @@ export function PcLoginForm({ locale }: { locale: Locale }) {
   }, [locale, next, router]);
 
   const startFeishuLogin = useCallback(() => {
-    if (!feishuAppId || !window.tt?.requestAccess) return;
+    if (!feishuAppId || !feishuReady || !window.tt?.requestAccess) return;
     setFeishuLoading(true);
-    setError(isZh ? "飞书免登中..." : "Signing in with Feishu...");
+    setError(copy.feishuLoading);
     window.tt.requestAccess({
       scopeList: [],
       appID: feishuAppId,
@@ -49,7 +75,7 @@ export function PcLoginForm({ locale }: { locale: Locale }) {
         const code = String(result.code ?? "").trim();
         if (!code) {
           setFeishuLoading(false);
-          setError(isZh ? "飞书免登失败，请重试或使用账号密码登录。" : "Feishu sign-in failed. Retry or use password sign-in.");
+          setError(copy.feishuFailed);
           return;
         }
         try {
@@ -60,33 +86,55 @@ export function PcLoginForm({ locale }: { locale: Locale }) {
           });
           const data = await response.json().catch(() => ({}));
           if (!response.ok) {
-            setError(data.error ?? (isZh ? "飞书免登失败，请重试或使用账号密码登录。" : "Feishu sign-in failed. Retry or use password sign-in."));
+            setError(data.error ?? copy.feishuFailed);
             return;
           }
           redirectAfterLogin();
         } catch {
-          setError(isZh ? "飞书免登失败，请重试或使用账号密码登录。" : "Feishu sign-in failed. Retry or use password sign-in.");
+          setError(copy.feishuFailed);
         } finally {
           setFeishuLoading(false);
         }
       },
       fail: () => {
         setFeishuLoading(false);
-        setError(isZh ? "飞书免登失败，请重试或使用账号密码登录。" : "Feishu sign-in failed. Retry or use password sign-in.");
+        setError(copy.feishuFailed);
       },
     });
-  }, [feishuAppId, isZh, next, redirectAfterLogin]);
+  }, [copy.feishuFailed, copy.feishuLoading, feishuAppId, feishuReady, next, redirectAfterLogin]);
 
   useEffect(() => {
+    if (!isFeishuContainer) return;
+    if (!feishuSdkLoaded || feishuReady) return;
+    if (!window.h5sdk?.ready) {
+      const timer = window.setTimeout(() => setFeishuReady(true), 0);
+      return () => window.clearTimeout(timer);
+    }
+
+    let cancelled = false;
+    window.h5sdk.ready(() => {
+      if (!cancelled) setFeishuReady(true);
+    });
+    window.h5sdk.error?.(() => {
+      if (!cancelled) setError(copy.sdkInitFailed);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [copy.sdkInitFailed, feishuReady, feishuSdkLoaded, isFeishuContainer]);
+
+  useEffect(() => {
+    if (!isFeishuContainer) return;
     if (!feishuReady || autoFeishuAttemptedRef.current || !feishuAppId || !window.tt?.requestAccess) return;
     autoFeishuAttemptedRef.current = true;
     startFeishuLogin();
-  }, [feishuAppId, feishuReady, startFeishuLogin]);
+  }, [feishuAppId, feishuReady, isFeishuContainer, startFeishuLogin]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!username.trim() || !password) {
-      setError(isZh ? "请输入用户名和密码。" : "Enter username and password.");
+      setError(copy.credentialsRequired);
       return;
     }
     setLoading(true);
@@ -99,12 +147,12 @@ export function PcLoginForm({ locale }: { locale: Locale }) {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        setError(data.error ?? (isZh ? "登录失败。" : "Sign-in failed."));
+        setError(data.error ?? copy.loginFailed);
         return;
       }
       redirectAfterLogin();
     } catch {
-      setError(isZh ? "网络异常，请重试。" : "Network error. Please retry.");
+      setError(copy.networkRetry);
     } finally {
       setLoading(false);
     }
@@ -112,27 +160,27 @@ export function PcLoginForm({ locale }: { locale: Locale }) {
 
   return (
     <form onSubmit={submit} className="mt-6 space-y-4">
-      {feishuAppId ? (
+      {isFeishuContainer && feishuAppId ? (
         <Script
           src="https://lf-scm-cn.feishucdn.com/lark/op/h5-js-sdk-1.5.30.js"
           strategy="afterInteractive"
-          onLoad={() => setFeishuReady(true)}
+          onLoad={() => setFeishuSdkLoaded(true)}
         />
       ) : null}
       {error ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
-      {feishuAppId ? (
+      {isFeishuContainer && feishuAppId ? (
         <button
           type="button"
           onClick={startFeishuLogin}
-          disabled={feishuLoading || loading}
+          disabled={feishuLoading || loading || !feishuReady}
           className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-60"
         >
           {feishuLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
-          {feishuLoading ? (isZh ? "飞书免登中..." : "Signing in with Feishu...") : (isZh ? "使用飞书免登" : "Sign in with Feishu")}
+          {feishuLoading ? copy.feishuLoading : copy.feishuCta}
         </button>
       ) : null}
       <label className="block text-sm font-medium text-slate-700">
-        {isZh ? "用户名" : "Username"}
+        {copy.username}
         <input
           value={username}
           onChange={(event) => setUsername(event.target.value)}
@@ -141,7 +189,7 @@ export function PcLoginForm({ locale }: { locale: Locale }) {
         />
       </label>
       <label className="block text-sm font-medium text-slate-700">
-        {isZh ? "密码" : "Password"}
+        {copy.password}
         <input
           type="password"
           value={password}
@@ -156,7 +204,7 @@ export function PcLoginForm({ locale }: { locale: Locale }) {
         className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
       >
         {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
-        {loading ? (isZh ? "登录中..." : "Signing in...") : (isZh ? "登录后台" : "Sign in")}
+        {loading ? copy.submitLoading : copy.submitIdle}
       </button>
     </form>
   );

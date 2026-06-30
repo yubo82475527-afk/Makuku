@@ -50,6 +50,11 @@ type OfflineStoreOption = {
   longitude?: number | null;
   location_accuracy_m?: number | null;
   location_captured_at?: string | null;
+  external_store_id?: string | null;
+  external_org_id?: string | null;
+  external_org_name?: string | null;
+  external_md_id?: string | null;
+  external_md_name?: string | null;
   channels?: { id: string; code: string; name: string; type: string } | null;
 };
 
@@ -99,11 +104,21 @@ type ReverseLocationResponse = {
   error?: string;
 };
 
-type ChannelOption = {
-  id: string;
+type ExternalDealerOption = {
+  userId: string;
   code: string;
   name: string;
-  type: string;
+  zoneId?: string | null;
+  zoneName?: string | null;
+};
+
+type ExternalMdStoreOption = {
+  code: string;
+  name: string;
+  zoneId?: string | null;
+  zoneName?: string | null;
+  dealerUserId: string;
+  dealerName?: string | null;
 };
 
 type PendingImage = {
@@ -178,20 +193,24 @@ function uiCopy(locale: Locale) {
         useCurrentLocation: "\u83b7\u53d6\u5b9a\u4f4d",
         choosingStore: "\u6b63\u5728\u751f\u6210\u95e8\u5e97...",
         confirmGoogleStoreTypeTitle: "\u8fd8\u5dee\u4e00\u6b65",
-        confirmGoogleStoreTypeHint: "\u8bf7\u786e\u8ba4\u8fd9\u5bb6\u95e8\u5e97\u7684\u7c7b\u578b\uff0c\u53ea\u9700\u8bbe\u7f6e\u4e00\u6b21\u3002",
+        confirmGoogleStoreTypeHint: "\u8bf7\u5148\u9009\u62e9\u4e09\u65b9 MD\uff0c\u518d\u9009\u62e9\u8be5 MD \u4e0b\u7684\u95e8\u5e97\u3002",
         confirmGoogleStoreTypeAction: "\u786e\u8ba4\u5e76\u7ee7\u7eed",
-        storeNameRequired: "\u95e8\u5e97\u540d\u79f0 *",
-        channelTypeRequired: "\u95e8\u5e97\u7c7b\u578b *",
-        channelTypeLoading: "\u6b63\u5728\u52a0\u8f7d\u95e8\u5e97\u7c7b\u578b...",
-        channelTypeEmpty: "\u6ca1\u6709\u53ef\u7528\u7684\u7ebf\u4e0b\u95e8\u5e97\u7c7b\u578b\uff0c\u8bf7\u5148\u7ef4\u62a4\u6e20\u9053\u4e3b\u6570\u636e\u3002",
+        selectDealerRequired: "\u9009\u62e9 MD *",
+        selectExternalStoreRequired: "\u9009\u62e9\u95e8\u5e97 *",
+        dealerSearchPlaceholder: "\u641c\u7d22 MD \u540d\u79f0\u6216\u7f16\u7801",
+        externalStoreSearchPlaceholder: "\u641c\u7d22\u95e8\u5e97\u540d\u79f0\u6216\u7f16\u7801",
+        externalDealerLoading: "\u6b63\u5728\u52a0\u8f7d MD...",
+        externalStoreLoading: "\u6b63\u5728\u52a0\u8f7d\u95e8\u5e97...",
+        externalDealerEmpty: "\u672a\u627e\u5230 MD\u3002",
+        externalStoreEmpty: "\u672a\u627e\u5230\u8be5 MD \u4e0b\u7684\u95e8\u5e97\u3002",
         cityRequired: "\u7701 / \u5e02 / \u533a *",
         addressOptional: "\u5730\u5740\uff08\u9009\u586b\uff09",
         createFailed: "\u521b\u5efa\u95e8\u5e97\u5931\u8d25",
-        createRequired: "\u8bf7\u586b\u5199\u95e8\u5e97\u540d\u79f0\u3001\u95e8\u5e97\u7c7b\u578b\u548c\u7701 / \u5e02 / \u533a\u3002",
+        createRequired: "\u8bf7\u5148\u9009\u62e9 MD\u3001\u95e8\u5e97\uff0c\u5e76\u586b\u5199\u7701 / \u5e02 / \u533a\u3002",
         selectedStore: "\u5df2\u9009\u95e8\u5e97",
         changeStore: "\u91cd\u65b0\u9009\u62e9\u95e8\u5e97",
         city: "\u7701 / \u5e02 / \u533a",
-        channelType: "\u95e8\u5e97\u7c7b\u578b",
+        channelType: "MD",
         address: "\u5730\u5740",
         creatingVisit: "\u6b63\u5728\u521b\u5efa\u5de1\u5e97...",
         processingPhotos: "\u6b63\u5728\u5904\u7406\u7167\u7247",
@@ -205,8 +224,14 @@ function uiCopy(locale: Locale) {
         locate: "\u5b9a\u4f4d\u5e76\u586b\u5199\u5730\u5740",
         locating: "\u5b9a\u4f4d\u4e2d...",
         located: "\u5df2\u5b9a\u4f4d\u5e76\u586b\u5199",
-        locationUnavailable: "\u5f53\u524d\u6d4f\u89c8\u5668\u4e0d\u652f\u6301\u5b9a\u4f4d\uff0c\u53ef\u7ee7\u7eed\u521b\u5efa\u95e8\u5e97\u3002",
-        locationFailed: "\u5b9a\u4f4d\u5931\u8d25\u6216\u672a\u6388\u6743\uff0c\u53ef\u7ee7\u7eed\u521b\u5efa\u95e8\u5e97\u3002",
+        locationUnavailable: "\u5f53\u524d\u65e0\u6cd5\u8c03\u7528\u5b9a\u4f4d\uff0c\u8bf7\u901a\u8fc7\u5df2\u5f00\u542f\u5b9a\u4f4d\u6743\u9650\u7684\u98de\u4e66 APP \u8fdb\u5165\u3002",
+        locationFailed: "\u672a\u83b7\u5f97\u5b9a\u4f4d\u6743\u9650\uff0c\u8bf7\u5148\u5728\u98de\u4e66 APP \u7684\u5e94\u7528\u6743\u9650\u6216\u624b\u673a\u7cfb\u7edf\u8bbe\u7f6e\u4e2d\u5f00\u542f\u5b9a\u4f4d\u3002",
+        entryLocationRequiredTitle: "\u8bf7\u5148\u5f00\u542f\u5b9a\u4f4d\u6743\u9650",
+        entryLocationRequiredBody: "\u8bf7\u5728\u98de\u4e66 APP \u4e2d\u4e3a Makuku SFA \u5f00\u542f\u5b9a\u4f4d\u6743\u9650\uff0c\u540c\u65f6\u786e\u8ba4\u624b\u673a\u7cfb\u7edf\u5b9a\u4f4d\u5df2\u6253\u5f00\uff0c\u5426\u5219\u65e0\u6cd5\u8fdb\u5165\u672c H5\u3002",
+        entryLocationRetry: "\u5df2\u5f00\u542f\uff0c\u91cd\u8bd5",
+        entryLocationChecking: "\u6b63\u5728\u9a8c\u8bc1\u5b9a\u4f4d\u6743\u9650...",
+        entryLocationUnsupported: "\u5f53\u524d\u73af\u5883\u4e0d\u652f\u6301\u5b9a\u4f4d\uff0c\u8bf7\u4ece\u5df2\u5f00\u542f\u5b9a\u4f4d\u6743\u9650\u7684\u98de\u4e66 APP \u91cd\u65b0\u8fdb\u5165\u3002",
+        entryLocationDenied: "\u672a\u83b7\u5f97\u5b9a\u4f4d\u6743\u9650\uff0c\u8bf7\u5728\u98de\u4e66 APP \u7684\u5e94\u7528\u6743\u9650\u6216\u624b\u673a\u7cfb\u7edf\u8bbe\u7f6e\u4e2d\u5f00\u542f\u5b9a\u4f4d\u540e\u91cd\u8bd5\u3002",
         reverseAddressFailed: "\u5730\u5740\u8bc6\u522b\u5931\u8d25\uff0c\u8bf7\u624b\u52a8\u586b\u5199\u7701 / \u5e02 / \u533a\u548c\u5730\u5740\u3002",
         reverseAddressMissing: "\u5df2\u4fdd\u5b58\u7ecf\u7eac\u5ea6\uff0c\u4f46\u672a\u8bc6\u522b\u51fa\u7701 / \u5e02 / \u533a\u6216\u5730\u5740\uff0c\u8bf7\u624b\u52a8\u586b\u5199\u3002",
         locationAttribution: "Address by LocationIQ",
@@ -253,20 +278,24 @@ function uiCopy(locale: Locale) {
         useCurrentLocation: "Get location",
         choosingStore: "Creating store...",
         confirmGoogleStoreTypeTitle: "One more step",
-        confirmGoogleStoreTypeHint: "Confirm the store type for this place. You only need to do this once.",
+        confirmGoogleStoreTypeHint: "Select the external MD first, then choose the store under that MD.",
         confirmGoogleStoreTypeAction: "Confirm and continue",
-        storeNameRequired: "Store name *",
-        channelTypeRequired: "Store type *",
-        channelTypeLoading: "Loading store types...",
-        channelTypeEmpty: "No offline store types are available. Maintain channel master data first.",
+        selectDealerRequired: "Select MD *",
+        selectExternalStoreRequired: "Select Store *",
+        dealerSearchPlaceholder: "Search MD name or code",
+        externalStoreSearchPlaceholder: "Search store name or code",
+        externalDealerLoading: "Loading MDs...",
+        externalStoreLoading: "Loading stores...",
+        externalDealerEmpty: "No MD found.",
+        externalStoreEmpty: "No store found under this MD.",
         cityRequired: "Province / City / District *",
         addressOptional: "Address (optional)",
         createFailed: "Failed to create store",
-        createRequired: "Enter store name, store type, and province / city / district.",
+        createRequired: "Select the MD, select the store, and enter province / city / district.",
         selectedStore: "Selected Store",
         changeStore: "Change Store",
         city: "Province / City / District",
-        channelType: "Store Type",
+        channelType: "MD",
         address: "Address",
         creatingVisit: "Creating store visit...",
         processingPhotos: "Processing",
@@ -280,8 +309,14 @@ function uiCopy(locale: Locale) {
         locate: "Locate & Fill Address",
         locating: "Locating...",
         located: "Located and filled",
-        locationUnavailable: "Location is not supported in this browser. You can still create the store.",
-        locationFailed: "Location failed or was not allowed. You can still create the store.",
+        locationUnavailable: "Location is unavailable here. Re-enter from the Feishu app with location permission enabled.",
+        locationFailed: "Location permission was not granted. Enable it in Feishu app permissions or system settings first.",
+        entryLocationRequiredTitle: "Enable Location First",
+        entryLocationRequiredBody: "Enable location permission for Makuku SFA inside the Feishu app, and make sure device location is turned on, otherwise this H5 cannot be entered.",
+        entryLocationRetry: "Retry After Enabling",
+        entryLocationChecking: "Checking location permission...",
+        entryLocationUnsupported: "This environment does not support location. Re-enter from the Feishu app with location enabled.",
+        entryLocationDenied: "Location permission was not granted. Enable it in Feishu app permissions or system settings and try again.",
         reverseAddressFailed: "Address lookup failed. Fill province / city / district and address manually.",
         reverseAddressMissing: "Coordinates were saved, but province / city / district or address was not found. Fill manually.",
         locationAttribution: "Address by LocationIQ",
@@ -332,6 +367,15 @@ function formatDistance(distanceM: number | null | undefined) {
   return `${((distanceM ?? 0) / 1000).toFixed(1)}km`;
 }
 
+function loadUser() {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    return raw ? (JSON.parse(raw) as AppUser) : null;
+  } catch {
+    return null;
+  }
+}
+
 function useDebouncedValue<T>(value: T, delayMs: number) {
   const [debounced, setDebounced] = useState(value);
 
@@ -343,48 +387,221 @@ function useDebouncedValue<T>(value: T, delayMs: number) {
   return debounced;
 }
 
-function useOfflineChannelOptions(errorMessage: string) {
-  const [channels, setChannels] = useState<ChannelOption[]>([]);
-  const [selectedChannelId, setSelectedChannelId] = useState("");
-  const [channelsLoading, setChannelsLoading] = useState(true);
-  const [channelStatus, setChannelStatus] = useState("");
+function DealerStoreSelector({
+  locale,
+  loading,
+  onAuthFailure,
+  onSelectionChange,
+}: {
+  locale: Locale;
+  loading?: boolean;
+  onAuthFailure?: (response: Response, message?: string | null) => boolean;
+  onSelectionChange: (selection: { selectedDealer: ExternalDealerOption | null; selectedExternalStore: ExternalMdStoreOption | null }) => void;
+}) {
+  const labels = uiCopy(locale);
+  const [dealerQuery, setDealerQuery] = useState("");
+  const [dealersLoading, setDealersLoading] = useState(false);
+  const [dealers, setDealers] = useState<ExternalDealerOption[]>([]);
+  const [selectedDealer, setSelectedDealer] = useState<ExternalDealerOption | null>(null);
+  const [dealerPickerOpen, setDealerPickerOpen] = useState(false);
+  const [storeQuery, setStoreQuery] = useState("");
+  const [storesLoading, setStoresLoading] = useState(false);
+  const [stores, setStores] = useState<ExternalMdStoreOption[]>([]);
+  const [selectedExternalStore, setSelectedExternalStore] = useState<ExternalMdStoreOption | null>(null);
+  const [storePickerOpen, setStorePickerOpen] = useState(false);
+  const [status, setStatus] = useState("");
+  const debouncedDealerQuery = useDebouncedValue(dealerQuery, 300);
+  const debouncedStoreQuery = useDebouncedValue(storeQuery, 300);
+  const dealerSearchKey = dealerPickerOpen ? debouncedDealerQuery.trim() : "";
+  const storeSearchKey = selectedDealer && storePickerOpen ? debouncedStoreQuery.trim() : "";
+  const showDealerResults = dealerPickerOpen;
+  const showStoreResults = selectedDealer !== null && storePickerOpen;
+  const visibleDealers = dealerPickerOpen ? dealers : [];
+  const visibleStores = selectedDealer && storePickerOpen ? stores : [];
 
   useEffect(() => {
-    let cancelled = false;
+    onSelectionChange({ selectedDealer, selectedExternalStore });
+  }, [onSelectionChange, selectedDealer, selectedExternalStore]);
 
-    async function loadChannels() {
-      setChannelsLoading(true);
-      setChannelStatus("");
-      try {
-        const res = await fetch("/api/channels");
-        const data = (await res.json().catch(() => ({}))) as { channels?: ChannelOption[]; error?: string };
-        const offlineChannels = (data.channels ?? []).filter((channel) => channel.type === "offline");
-        if (cancelled) return;
-        setChannels(offlineChannels);
-        setSelectedChannelId((current) => current || offlineChannels[0]?.id || "");
-        setChannelStatus(!res.ok || data.error ? (data.error ?? errorMessage) : "");
-      } catch {
-        if (!cancelled) setChannelStatus(errorMessage);
-      } finally {
-        if (!cancelled) setChannelsLoading(false);
-      }
+  useEffect(() => {
+    if (!dealerPickerOpen) {
+      return;
     }
 
-    loadChannels();
+    let cancelled = false;
+    async function loadDealers() {
+      setDealersLoading(true);
+      setStatus("");
+      try {
+        const params = new URLSearchParams({ pageNo: "1", pageSize: "10" });
+        if (dealerSearchKey) params.set("q", dealerSearchKey);
+        const res = await fetch(`/api/external-md/dealers?${params.toString()}`);
+        const payload = (await res.json().catch(() => ({}))) as {
+          data?: { records?: ExternalDealerOption[] };
+          error?: string;
+        };
+        if (cancelled) return;
+        if (!res.ok) {
+          if (onAuthFailure?.(res, typeof payload.error === "string" ? payload.error : null)) return;
+          setDealers([]);
+          setStatus(payload.error ?? labels.createFailed);
+          return;
+        }
+        const items = payload.data?.records ?? [];
+        setDealers(items);
+        setSelectedDealer((current) => items.find((item) => item.userId === current?.userId) ?? (current && items.length === 0 ? current : null));
+      } catch {
+        if (!cancelled) {
+          setDealers([]);
+          setStatus(labels.createFailed);
+        }
+      } finally {
+        if (!cancelled) setDealersLoading(false);
+      }
+    }
+    void loadDealers();
     return () => {
       cancelled = true;
     };
-  }, [errorMessage]);
+  }, [dealerPickerOpen, dealerSearchKey, labels.createFailed, onAuthFailure]);
 
-  return {
-    channels,
-    setChannels,
-    selectedChannelId,
-    setSelectedChannelId,
-    channelsLoading,
-    channelStatus,
-    selectedChannel: channels.find((channel) => channel.id === selectedChannelId) ?? null,
-  };
+  useEffect(() => {
+    if (!selectedDealer || !storePickerOpen) {
+      return;
+    }
+    const currentDealer = selectedDealer;
+
+    let cancelled = false;
+    async function loadStores() {
+      setStoresLoading(true);
+      setStatus("");
+      try {
+        const params = new URLSearchParams({
+          dealerUserId: currentDealer.userId,
+          pageNo: "1",
+          pageSize: "10",
+        });
+        if (storeSearchKey) params.set("q", storeSearchKey);
+        const res = await fetch(`/api/external-md/stores?${params.toString()}`);
+        const payload = (await res.json().catch(() => ({}))) as {
+          data?: { records?: ExternalMdStoreOption[] };
+          error?: string;
+        };
+        if (cancelled) return;
+        if (!res.ok) {
+          if (onAuthFailure?.(res, typeof payload.error === "string" ? payload.error : null)) return;
+          setStores([]);
+          setStatus(payload.error ?? labels.createFailed);
+          return;
+        }
+        setStores(payload.data?.records ?? []);
+      } catch {
+        if (!cancelled) {
+          setStores([]);
+          setStatus(labels.createFailed);
+        }
+      } finally {
+        if (!cancelled) setStoresLoading(false);
+      }
+    }
+    void loadStores();
+    return () => {
+      cancelled = true;
+    };
+  }, [labels.createFailed, onAuthFailure, selectedDealer, storePickerOpen, storeSearchKey]);
+
+  return (
+    <div className="space-y-3">
+      <label className="block">
+        <span className="mb-1.5 block text-xs font-bold text-slate-600">{labels.selectDealerRequired}</span>
+        <input
+          value={dealerQuery}
+          onChange={(event) => setDealerQuery(event.target.value)}
+          onFocus={() => setDealerPickerOpen(true)}
+          placeholder={labels.dealerSearchPlaceholder}
+          disabled={loading}
+          className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500"
+        />
+      </label>
+      {showDealerResults ? (
+        <div className="max-h-40 space-y-2 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2">
+          {dealersLoading ? <div className="px-2 py-3 text-sm text-slate-500">{labels.externalDealerLoading}</div> : null}
+          {!dealersLoading && visibleDealers.length === 0 ? <div className="px-2 py-3 text-sm text-slate-500">{labels.externalDealerEmpty}</div> : null}
+          {visibleDealers.map((dealer) => (
+            <button
+              key={dealer.userId}
+              type="button"
+              onClick={() => {
+                setSelectedDealer(dealer);
+                setSelectedExternalStore(null);
+                setStores([]);
+                setStoreQuery("");
+                setDealerQuery(dealer.name);
+                setDealerPickerOpen(false);
+              }}
+              disabled={loading}
+              className={`w-full rounded-lg border px-3 py-2 text-left ${selectedDealer?.userId === dealer.userId ? "border-slate-900 bg-white" : "border-slate-200 bg-white"}`}
+            >
+              <div className="text-sm font-semibold text-slate-900">{dealer.name}</div>
+              <div className="mt-1 text-xs text-slate-500">{dealer.code || dealer.userId}</div>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {selectedDealer && !showDealerResults ? (
+        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+          <div>{selectedDealer.name}</div>
+          <div className="mt-1 text-xs text-slate-500">{selectedDealer.code || selectedDealer.userId}</div>
+        </div>
+      ) : null}
+
+      <label className="block">
+        <span className="mb-1.5 block text-xs font-bold text-slate-600">{labels.selectExternalStoreRequired}</span>
+        <input
+          value={storeQuery}
+          onChange={(event) => setStoreQuery(event.target.value)}
+          onFocus={() => {
+            if (!selectedDealer) return;
+            setStorePickerOpen(true);
+          }}
+          placeholder={labels.externalStoreSearchPlaceholder}
+          disabled={!selectedDealer || loading}
+          className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500 disabled:bg-slate-100 disabled:text-slate-500"
+        />
+      </label>
+      {showStoreResults ? (
+        <div className="max-h-48 space-y-2 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2">
+          {!selectedDealer ? <div className="px-2 py-3 text-sm text-slate-500">{labels.selectDealerRequired}</div> : null}
+          {selectedDealer && storesLoading ? <div className="px-2 py-3 text-sm text-slate-500">{labels.externalStoreLoading}</div> : null}
+          {selectedDealer && !storesLoading && visibleStores.length === 0 ? <div className="px-2 py-3 text-sm text-slate-500">{labels.externalStoreEmpty}</div> : null}
+          {visibleStores.map((store) => (
+            <button
+              key={store.code}
+              type="button"
+              onClick={() => {
+                setSelectedExternalStore(store);
+                setStoreQuery(store.name);
+                setStorePickerOpen(false);
+              }}
+              disabled={loading}
+              className={`w-full rounded-lg border px-3 py-2 text-left ${selectedExternalStore?.code === store.code ? "border-slate-900 bg-white" : "border-slate-200 bg-white"}`}
+            >
+              <div className="text-sm font-semibold text-slate-900">{store.name}</div>
+              <div className="mt-1 text-xs text-slate-500">{store.code}</div>
+              <div className="mt-1 text-[11px] text-slate-400">{store.zoneName ?? selectedDealer?.zoneName ?? "-"}</div>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {selectedExternalStore && !showStoreResults ? (
+        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+          <div>{selectedExternalStore.name}</div>
+          <div className="mt-1 text-xs text-slate-500">{selectedDealer?.name ?? selectedExternalStore.dealerName ?? "-"}</div>
+        </div>
+      ) : null}
+      {status ? <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{status}</div> : null}
+    </div>
+  );
 }
 
 function loadImage(file: File) {
@@ -524,23 +741,58 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
   const photoPickerTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     const timeout = setTimeout(() => {
-      try {
-        const raw = localStorage.getItem(storageKey);
-        if (!raw) return;
-        const stored = JSON.parse(raw) as AppUser;
-        if (stored?.id) setUser(stored);
-      } catch {
-        setUser(null);
-      } finally {
-        setUserLoaded(true);
+      async function syncUserSession() {
+        const stored = loadUser();
+        if (!stored?.id) {
+          if (!cancelled) {
+            setUser(null);
+            setUserLoaded(true);
+          }
+          return;
+        }
+
+        try {
+          const response = await fetch("/api/auth/session", { cache: "no-store" });
+          const payload = await response.json().catch(() => ({}));
+          if (!cancelled) {
+            if (payload.user?.id) {
+              setUser(stored);
+            } else {
+              localStorage.removeItem(storageKey);
+              setUser(null);
+            }
+            setUserLoaded(true);
+          }
+        } catch {
+          if (!cancelled) {
+            localStorage.removeItem(storageKey);
+            setUser(null);
+            setUserLoaded(true);
+          }
+        }
       }
+
+      void syncUserSession();
     }, 0);
-    return () => clearTimeout(timeout);
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
   }, []);
 
   const totalImageCount = imageCategoryOrder.reduce((sum, category) => sum + images[category].length, 0);
   const storeInfoIncomplete = Boolean(selectedStore && (!formatStoreRegionText(selectedStore) || !selectedStore.channel_type?.trim()));
+
+  function handleAuthFailure(response: Response, message?: string | null) {
+    if (response.status !== 401) return false;
+    localStorage.removeItem(storageKey);
+    setUser(null);
+    setSelectedStore(null);
+    setError(message?.trim() || copy.signInFirst);
+    return true;
+  }
 
   function addFiles(category: ImageCategory, files: FileList | null) {
     if (!files) return;
@@ -664,6 +916,7 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (handleAuthFailure(res, typeof data.error === "string" ? data.error : null)) return;
         setError(data.error ?? copy.submitFailed);
         return;
       }
@@ -779,7 +1032,7 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
         {submitStatus ? <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">{submitStatus}</div> : null}
 
         {!selectedStore ? (
-          <StoreSearchStep locale={locale} user={user} onSelect={(store) => { setSelectedStore(store); setError(null); }} />
+          <StoreSearchStep locale={locale} user={user} onAuthFailure={handleAuthFailure} onSelect={(store) => { setSelectedStore(store); setError(null); }} />
         ) : (
           <>
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -939,7 +1192,17 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
   );
 }
 
-function StoreSearchStep({ locale, user, onSelect }: { locale: Locale; user: AppUser; onSelect: (store: OfflineStoreOption) => void }) {
+function StoreSearchStep({
+  locale,
+  user,
+  onAuthFailure,
+  onSelect,
+}: {
+  locale: Locale;
+  user: AppUser;
+  onAuthFailure: (response: Response, message?: string | null) => boolean;
+  onSelect: (store: OfflineStoreOption) => void;
+}) {
   const labels = uiCopy(locale);
   const [query, setQuery] = useState("");
   const [searchMode, setSearchMode] = useState<"history" | "new_store">("history");
@@ -976,6 +1239,7 @@ function StoreSearchStep({ locale, user, onSelect }: { locale: Locale; user: App
       const res = await fetch(`/api/store-visit-history-stores?${params.toString()}`);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (onAuthFailure(res, typeof data.error === "string" ? data.error : null)) return;
         setHistoryStores([]);
         setHistoryStoresError(data.error ?? labels.historyStoresError);
         return;
@@ -987,7 +1251,7 @@ function StoreSearchStep({ locale, user, onSelect }: { locale: Locale; user: App
     } finally {
       setHistoryStoresLoading(false);
     }
-  }, [labels.historyStoresError, user.id]);
+  }, [labels.historyStoresError, onAuthFailure, user.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1076,7 +1340,7 @@ function StoreSearchStep({ locale, user, onSelect }: { locale: Locale; user: App
           </div>
         </>
       ) : (
-        <NewStoreSearchFlow locale={locale} user={user} query={query} onSelect={onSelect} />
+        <NewStoreSearchFlow locale={locale} user={user} query={query} onAuthFailure={onAuthFailure} onSelect={onSelect} />
       )}
     </section>
   );
@@ -1086,11 +1350,13 @@ function NewStoreSearchFlow({
   locale,
   user,
   query,
+  onAuthFailure,
   onSelect,
 }: {
   locale: Locale;
   user: AppUser;
   query: string;
+  onAuthFailure: (response: Response, message?: string | null) => boolean;
   onSelect: (store: OfflineStoreOption) => void;
 }) {
   const labels = uiCopy(locale);
@@ -1169,6 +1435,7 @@ function NewStoreSearchFlow({
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           if (!cancelled) {
+            if (onAuthFailure(res, typeof data.error === "string" ? data.error : null)) return;
             setError(data.error ?? labels.googleSearchFailed);
             setGoogleResults([]);
           }
@@ -1192,7 +1459,7 @@ function NewStoreSearchFlow({
       cancelled = true;
       clearTimeout(timeout);
     };
-  }, [labels.googleSearchFailed, labels.matchedSorted, labels.nearbySorted, query, storeLocation]);
+  }, [labels.googleSearchFailed, labels.matchedSorted, labels.nearbySorted, onAuthFailure, query, storeLocation]);
 
   function chooseGoogleStore(store: GoogleStoreOption) {
     setError(null);
@@ -1203,7 +1470,7 @@ function NewStoreSearchFlow({
     setPendingGoogleStore(store);
   }
 
-  async function materializeSelectedGoogleStore(store: GoogleStoreOption, selectedChannel: ChannelOption) {
+  async function materializeSelectedGoogleStore(store: GoogleStoreOption, selectedExternalStore: ExternalMdStoreOption) {
     setMaterializingStore(store.google_place_id);
     setError(null);
     try {
@@ -1220,12 +1487,17 @@ function NewStoreSearchFlow({
           address: store.address ?? null,
           latitude: store.latitude ?? null,
           longitude: store.longitude ?? null,
-          channel_id: selectedChannel.id,
-          channel_type: selectedChannel.code,
+          external_store_id: selectedExternalStore.code,
+          external_store_name: selectedExternalStore.name,
+          external_org_id: selectedExternalStore.zoneId ?? null,
+          external_org_name: selectedExternalStore.zoneName ?? null,
+          external_md_id: selectedExternalStore.dealerUserId,
+          external_md_name: selectedExternalStore.dealerName ?? null,
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (onAuthFailure(res, typeof data.error === "string" ? data.error : null)) return;
         setError(data.error ?? labels.googleMaterializeFailed);
         return;
       }
@@ -1313,6 +1585,7 @@ function NewStoreSearchFlow({
           locale={locale}
           user={user}
           onClose={() => setShowCreate(false)}
+          onAuthFailure={onAuthFailure}
           onCreated={(store) => {
             setShowCreate(false);
             onSelect(store);
@@ -1328,6 +1601,7 @@ function NewStoreSearchFlow({
             if (materializingStore) return;
             setPendingGoogleStore(null);
           }}
+          onAuthFailure={onAuthFailure}
           onConfirm={(selectedChannel) => materializeSelectedGoogleStore(pendingGoogleStore, selectedChannel)}
         />
       ) : null}
@@ -1340,28 +1614,24 @@ function GoogleStoreTypeSheet({
   store,
   loading,
   onClose,
+  onAuthFailure,
   onConfirm,
 }: {
   locale: Locale;
   store: GoogleStoreOption | null;
   loading: boolean;
   onClose: () => void;
-  onConfirm: (selectedChannel: ChannelOption) => void;
+  onAuthFailure: (response: Response, message?: string | null) => boolean;
+  onConfirm: (selectedExternalStore: ExternalMdStoreOption) => void;
 }) {
   const labels = uiCopy(locale);
-  const {
-    channels,
-    selectedChannelId,
-    setSelectedChannelId,
-    channelsLoading,
-    channelStatus,
-    selectedChannel,
-  } = useOfflineChannelOptions(labels.createFailed);
+  const [selectedDealer, setSelectedDealer] = useState<ExternalDealerOption | null>(null);
+  const [selectedExternalStore, setSelectedExternalStore] = useState<ExternalMdStoreOption | null>(null);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-slate-950/40">
-      <div className="mx-auto w-full max-w-md rounded-t-2xl bg-white p-5 shadow-xl">
-        <div className="flex items-center justify-between gap-3">
+    <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-slate-950/40">
+      <div className="flex max-h-[100dvh] w-full max-w-md flex-col bg-white shadow-xl">
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-100 bg-white px-5 py-4">
           <div className="min-w-0">
             <h2 className="text-lg font-bold">{labels.confirmGoogleStoreTypeTitle}</h2>
             <p className="mt-1 text-sm text-slate-500">{labels.confirmGoogleStoreTypeHint}</p>
@@ -1370,63 +1640,111 @@ function GoogleStoreTypeSheet({
             <X className="h-5 w-5" />
           </button>
         </div>
-        {store ? (
-          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <div className="text-sm font-bold text-slate-900">{store.name}</div>
-            <div className="mt-1 text-xs text-slate-500">{formatStoreRegionText(store) || "-"}</div>
-            {store.address ? <div className="mt-1 text-xs text-slate-400">{store.address}</div> : null}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+          {store ? (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="text-sm font-bold text-slate-900">{store.name}</div>
+              <div className="mt-1 text-xs text-slate-500">{formatStoreRegionText(store) || "-"}</div>
+              {store.address ? <div className="mt-1 text-xs text-slate-400">{store.address}</div> : null}
+            </div>
+          ) : null}
+          <div className="mt-4">
+            <DealerStoreSelector
+              locale={locale}
+              loading={loading}
+              onAuthFailure={onAuthFailure}
+              onSelectionChange={({ selectedDealer: nextDealer, selectedExternalStore: nextStore }) => {
+                setSelectedDealer(nextDealer);
+                setSelectedExternalStore(nextStore);
+              }}
+            />
           </div>
-        ) : null}
-        <label className="mt-4 block">
-          <span className="mb-1.5 block text-xs font-bold text-slate-600">{labels.channelTypeRequired}</span>
-          <select
-            required
-            value={selectedChannelId}
-            onChange={(event) => setSelectedChannelId(event.target.value)}
-            disabled={channelsLoading || channels.length === 0 || loading}
-            className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500 disabled:bg-slate-100 disabled:text-slate-500"
+        </div>
+        <div className="sticky bottom-0 border-t border-slate-100 bg-white px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
+          <button
+            type="button"
+            onClick={() => {
+              if (!selectedExternalStore) return;
+              onConfirm(selectedExternalStore);
+            }}
+            disabled={loading || !selectedDealer || !selectedExternalStore || !store}
+            className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 text-sm font-bold text-white disabled:opacity-60"
           >
-            {channelsLoading ? <option value="">{labels.channelTypeLoading}</option> : null}
-            {!channelsLoading && channels.length === 0 ? <option value="">{labels.channelTypeEmpty}</option> : null}
-            {channels.map((channel) => (
-              <option key={channel.id} value={channel.id}>
-                {channel.name || channel.code}
-              </option>
-            ))}
-          </select>
-          {channelStatus ? <span className="mt-1.5 block text-xs text-amber-700">{channelStatus}</span> : null}
-        </label>
-        <button
-          type="button"
-          onClick={() => {
-            if (!selectedChannel) return;
-            onConfirm(selectedChannel);
-          }}
-          disabled={loading || channelsLoading || !selectedChannel || !store}
-          className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 text-sm font-bold text-white disabled:opacity-60"
-        >
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Building2 className="h-4 w-4" />}
-          {labels.confirmGoogleStoreTypeAction}
-        </button>
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Building2 className="h-4 w-4" />}
+            {labels.confirmGoogleStoreTypeAction}
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-function CreateStoreSheet({ locale, user, onClose, onCreated }: { locale: Locale; user: AppUser; onClose: () => void; onCreated: (store: OfflineStoreOption) => void }) {
+function CreateStoreSheet({
+  locale,
+  user,
+  onClose,
+  onAuthFailure,
+  onCreated,
+}: {
+  locale: Locale;
+  user: AppUser;
+  onClose: () => void;
+  onAuthFailure: (response: Response, message?: string | null) => boolean;
+  onCreated: (store: OfflineStoreOption) => void;
+}) {
   const labels = uiCopy(locale);
-  const [name, setName] = useState("");
   const [city, setCity] = useState("");
   const [province, setProvince] = useState("");
   const [cityName, setCityName] = useState("");
   const [district, setDistrict] = useState("");
   const [address, setAddress] = useState("");
+  const [entryLocationReady, setEntryLocationReady] = useState(false);
+  const [entryLocationChecking, setEntryLocationChecking] = useState(false);
+  const [entryLocationError, setEntryLocationError] = useState<string | null>(null);
   const [storeLocation, setStoreLocation] = useState<StoreLocationEvidence | null>(null);
   const [locationStatus, setLocationStatus] = useState("");
   const [locating, setLocating] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { channels, selectedChannelId, setSelectedChannelId, channelsLoading, channelStatus, selectedChannel } = useOfflineChannelOptions(labels.createFailed);
+  const [selectedDealer, setSelectedDealer] = useState<ExternalDealerOption | null>(null);
+  const [selectedExternalStore, setSelectedExternalStore] = useState<ExternalMdStoreOption | null>(null);
+
+  const ensureEntryLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      setEntryLocationReady(false);
+      setEntryLocationChecking(false);
+      setEntryLocationError(labels.entryLocationUnsupported);
+      return;
+    }
+
+    setEntryLocationChecking(true);
+    setEntryLocationError(null);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setEntryLocationReady(true);
+        setEntryLocationChecking(false);
+        setEntryLocationError(null);
+        setStoreLocation({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          location_accuracy_m: Number.isFinite(position.coords.accuracy) ? Math.round(position.coords.accuracy) : null,
+          location_captured_at: new Date().toISOString(),
+        });
+      },
+      () => {
+        setEntryLocationReady(false);
+        setEntryLocationChecking(false);
+        setEntryLocationError(labels.entryLocationDenied);
+      },
+      { enableHighAccuracy: true, maximumAge: 60_000, timeout: 8_000 },
+    );
+  }, [labels.entryLocationDenied, labels.entryLocationUnsupported]);
+
+  useEffect(() => {
+    if (entryLocationReady || entryLocationChecking) return;
+    const timeout = window.setTimeout(() => ensureEntryLocation(), 0);
+    return () => window.clearTimeout(timeout);
+  }, [ensureEntryLocation, entryLocationChecking, entryLocationReady]);
 
   function captureStoreLocation() {
     if (!navigator.geolocation) {
@@ -1478,7 +1796,7 @@ function CreateStoreSheet({ locale, user, onClose, onCreated }: { locale: Locale
   }
 
   async function createStore() {
-    if (!name.trim() || !selectedChannel || !city.trim()) {
+    if (!selectedDealer || !selectedExternalStore || !city.trim()) {
       setError(labels.createRequired);
       return;
     }
@@ -1490,13 +1808,17 @@ function CreateStoreSheet({ locale, user, onClose, onCreated }: { locale: Locale
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name,
+          name: selectedExternalStore.name,
           city,
           province,
           city_name: cityName,
           district,
-          channel_id: selectedChannel?.id,
-          channel_type: selectedChannel?.code,
+          external_store_id: selectedExternalStore.code,
+          external_store_name: selectedExternalStore.name,
+          external_org_id: selectedExternalStore.zoneId ?? null,
+          external_org_name: selectedExternalStore.zoneName ?? selectedDealer.zoneName ?? null,
+          external_md_id: selectedExternalStore.dealerUserId,
+          external_md_name: selectedExternalStore.dealerName ?? selectedDealer.name,
           address,
           latitude: storeLocation?.latitude ?? null,
           longitude: storeLocation?.longitude ?? null,
@@ -1509,6 +1831,7 @@ function CreateStoreSheet({ locale, user, onClose, onCreated }: { locale: Locale
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (onAuthFailure(res, typeof data.error === "string" ? data.error : null)) return;
         setError(data.error ?? labels.createFailed);
         return;
       }
@@ -1520,64 +1843,100 @@ function CreateStoreSheet({ locale, user, onClose, onCreated }: { locale: Locale
     }
   }
 
+  if (!entryLocationReady) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-slate-950/40">
+        <div className="flex max-h-[100dvh] w-full max-w-md flex-col bg-white shadow-xl">
+          <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-100 bg-white px-5 py-4">
+            <h2 className="text-lg font-bold">{labels.entryLocationRequiredTitle}</h2>
+            <button type="button" onClick={onClose} disabled={entryLocationChecking} className="rounded-full p-1 text-slate-500 disabled:opacity-50">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+            <p className="text-sm text-slate-500">{labels.entryLocationRequiredBody}</p>
+            <section className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+              <div className="flex items-start gap-3 text-amber-900">
+                <LocateFixed className="mt-0.5 h-5 w-5 shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold">{entryLocationChecking ? labels.entryLocationChecking : entryLocationError ?? labels.entryLocationDenied}</div>
+                </div>
+              </div>
+            </section>
+          </div>
+          <div className="sticky bottom-0 border-t border-slate-100 bg-white px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
+            <button
+              type="button"
+              onClick={ensureEntryLocation}
+              disabled={entryLocationChecking}
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 text-sm font-bold text-white disabled:opacity-60"
+            >
+              {entryLocationChecking ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              {labels.entryLocationRetry}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-slate-950/40">
-      <div className="mx-auto w-full max-w-md rounded-t-2xl bg-white p-5 shadow-xl">
-        <div className="flex items-center justify-between gap-3">
+    <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-slate-950/40">
+      <div className="flex max-h-[100dvh] w-full max-w-md flex-col bg-white shadow-xl">
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-100 bg-white px-5 py-4">
           <h2 className="text-lg font-bold">{labels.createStore}</h2>
           <button type="button" onClick={onClose} className="rounded-full p-1 text-slate-500">
             <X className="h-5 w-5" />
           </button>
         </div>
-        {error ? <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
-        <div className="mt-4 space-y-3">
-          <input required value={name} onChange={(event) => setName(event.target.value)} placeholder={labels.storeNameRequired} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-blue-500" />
-          <label className="block">
-            <span className="mb-1.5 block text-xs font-bold text-slate-600">{labels.channelTypeRequired}</span>
-            <select required value={selectedChannelId} onChange={(event) => setSelectedChannelId(event.target.value)} disabled={channelsLoading || channels.length === 0} className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500 disabled:bg-slate-100 disabled:text-slate-500">
-              {channelsLoading ? <option value="">{labels.channelTypeLoading}</option> : null}
-              {!channelsLoading && channels.length === 0 ? <option value="">{labels.channelTypeEmpty}</option> : null}
-              {channels.map((channel) => (
-                <option key={channel.id} value={channel.id}>
-                  {channel.name || channel.code}
-                </option>
-              ))}
-            </select>
-            {channelStatus ? <span className="mt-1.5 block text-xs text-amber-700">{channelStatus}</span> : null}
-          </label>
-        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+          {error ? <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
+          <div className="space-y-3">
+            <DealerStoreSelector
+              locale={locale}
+              loading={loading}
+              onAuthFailure={onAuthFailure}
+              onSelectionChange={({ selectedDealer: nextDealer, selectedExternalStore: nextStore }) => {
+                setSelectedDealer(nextDealer);
+                setSelectedExternalStore(nextStore);
+              }}
+            />
+          </div>
 
-        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <div className="min-w-0">
-            <div className="text-sm font-bold text-slate-900">{labels.storeLocationGroup}</div>
-          </div>
-          <div className="mt-3 space-y-3">
-            <input required value={city} onChange={(event) => setCity(event.target.value)} placeholder={labels.cityRequired} className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500" />
-            <input value={address} onChange={(event) => setAddress(event.target.value)} placeholder={labels.addressOptional} className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500" />
-            <button
-              type="button"
-              onClick={captureStoreLocation}
-              disabled={locating}
-              className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 text-xs font-bold text-white disabled:opacity-60"
-            >
-              {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : <LocateFixed className="h-4 w-4" />}
-              {locating ? labels.locating : labels.locate}
-            </button>
-          </div>
-          {storeLocation ? (
-            <div className="mt-3 flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">
-              <CheckCircle2 className="h-4 w-4" />
-              {labels.located}
-              {storeLocation.location_accuracy_m !== null ? ` / ${storeLocation.location_accuracy_m}m` : null}
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="min-w-0">
+              <div className="text-sm font-bold text-slate-900">{labels.storeLocationGroup}</div>
             </div>
-          ) : null}
-          {locationStatus ? <div className="mt-3 rounded-lg bg-white px-3 py-2 text-sm text-slate-600">{locationStatus}</div> : null}
-          <div className="mt-3 text-[11px] font-medium text-slate-400">{labels.locationAttribution}</div>
+            <div className="mt-3 space-y-3">
+              <input required value={city} onChange={(event) => setCity(event.target.value)} placeholder={labels.cityRequired} className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500" />
+              <input value={address} onChange={(event) => setAddress(event.target.value)} placeholder={labels.addressOptional} className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500" />
+              <button
+                type="button"
+                onClick={captureStoreLocation}
+                disabled={locating}
+                className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 text-xs font-bold text-white disabled:opacity-60"
+              >
+                {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : <LocateFixed className="h-4 w-4" />}
+                {locating ? labels.locating : labels.locate}
+              </button>
+            </div>
+            {storeLocation ? (
+              <div className="mt-3 flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">
+                <CheckCircle2 className="h-4 w-4" />
+                {labels.located}
+                {storeLocation.location_accuracy_m !== null ? ` / ${storeLocation.location_accuracy_m}m` : null}
+              </div>
+            ) : null}
+            {locationStatus ? <div className="mt-3 rounded-lg bg-white px-3 py-2 text-sm text-slate-600">{locationStatus}</div> : null}
+            <div className="mt-3 text-[11px] font-medium text-slate-400">{labels.locationAttribution}</div>
+          </div>
         </div>
-        <button type="button" onClick={createStore} disabled={loading || channelsLoading || !selectedChannel} className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 text-sm font-bold text-white disabled:opacity-60">
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Building2 className="h-4 w-4" />}
-          {labels.createStore}
-        </button>
+        <div className="sticky bottom-0 border-t border-slate-100 bg-white px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
+          <button type="button" onClick={createStore} disabled={loading || !selectedDealer || !selectedExternalStore} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 text-sm font-bold text-white disabled:opacity-60">
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Building2 className="h-4 w-4" />}
+            {labels.createStore}
+          </button>
+        </div>
       </div>
     </div>
   );
