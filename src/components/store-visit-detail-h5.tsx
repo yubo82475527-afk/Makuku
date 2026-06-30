@@ -221,6 +221,7 @@ function detailText(locale: Locale) {
         analyzingOne: "识别中",
         retryUpload: "重试上传",
         retryAnalysis: "重试识别",
+        analysisBusy: "当前有图片正在分析，请等待完成后再操作下一张图片",
         retakeAgain: "再次重拍",
         previewPhoto: "预览照片",
         expandPhoto: "放大照片",
@@ -259,6 +260,7 @@ function detailText(locale: Locale) {
         analyzingOne: "Analyzing",
         retryUpload: "Retry upload",
         retryAnalysis: "Retry analysis",
+        analysisBusy: "Another photo is still analyzing. Please wait before updating the next photo.",
         analysisFailed: "Analysis failed",
         reAnalyze: "Re-analyze",
         confirmReanalyzeTitle: "Re-analyze this photo?",
@@ -439,6 +441,9 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
         body: JSON.stringify({ affected_image_ids: [imageId] }),
       });
       const data = await res.json().catch(() => ({}));
+      if (res.status === 409) {
+        throw new Error(text.analysisBusy ?? data.error ?? copy.aiAnalysisFailed);
+      }
       if (!res.ok) {
         throw new Error(data.error ?? copy.aiAnalysisFailed);
       }
@@ -567,6 +572,9 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
         body: JSON.stringify({ affected_image_ids: [params.uploadedImageId] }),
       });
       const analyzeData = await analyzeRes.json().catch(() => ({}));
+      if (analyzeRes.status === 409) {
+        throw new Error(text.analysisBusy ?? analyzeData.error ?? copy.aiAnalysisFailed);
+      }
       if (!analyzeRes.ok) {
         throw new Error(analyzeData.error ?? copy.aiAnalysisFailed);
       }

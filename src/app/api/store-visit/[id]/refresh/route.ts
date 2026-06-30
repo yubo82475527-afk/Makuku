@@ -26,6 +26,22 @@ export async function POST(request: Request, ctx: RouteContext) {
     }
 
     const supabase = createSupabaseServiceClient();
+    const { data: typedVisit, error: visitError } = await supabase
+      .from("offline_store_visits")
+      .select("analysis_status")
+      .eq("id", id)
+      .single();
+
+    if (visitError) {
+      return Response.json({ error: visitError.message }, { status: 500 });
+    }
+
+    if (typedVisit?.analysis_status === "analyzing") {
+      return Response.json({
+        error: "Another photo in this visit is still analyzing. Please wait for it to finish before updating the next photo.",
+      }, { status: 409 });
+    }
+
     await supabase
       .from("offline_visit_images")
       .update({

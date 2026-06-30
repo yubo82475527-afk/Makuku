@@ -109,11 +109,24 @@ test("single-photo refresh failure keeps analyzed workflow state while marking f
   assert.doesNotMatch(storeVisitRefreshRoute, /visitStatusOverride: "uploaded"/);
 });
 
+test("single-photo refresh rejects concurrent visit analysis with a 409 business error", () => {
+  assert.match(storeVisitRefreshRoute, /select\("analysis_status"\)/);
+  assert.match(storeVisitRefreshRoute, /typedVisit\?\.analysis_status === "analyzing"/);
+  assert.match(storeVisitRefreshRoute, /Another photo in this visit is still analyzing\. Please wait for it to finish before updating the next photo\./);
+  assert.match(storeVisitRefreshRoute, /status: 409/);
+});
+
 test("H5 detail only shows whole-visit analysis before the first run and keeps single-photo actions", () => {
   assert.match(storeVisitDetailH5, /const canRunWholeVisitAnalysis = status === "pending" && visit\?\.visit_status === "uploaded"/);
   assert.doesNotMatch(storeVisitDetailH5, /retryable && systemFailedImages\.length === 0/);
   assert.match(storeVisitDetailH5, /retryExistingImageAnalysis/);
   assert.match(storeVisitDetailH5, /replaces_image_id/);
+});
+
+test("H5 detail turns refresh 409 conflicts into a friendly operator message", () => {
+  assert.match(storeVisitDetailH5, /analysisBusy: "Another photo is still analyzing\. Please wait before updating the next photo\."|analysisBusy: "当前有图片正在分析，请等待完成后再操作下一张图片"/);
+  assert.match(storeVisitDetailH5, /if \(res\.status === 409\)/);
+  assert.match(storeVisitDetailH5, /if \(analyzeRes\.status === 409\)/);
 });
 
 test("store visit analysis supports partial success and image-level failure records", () => {
