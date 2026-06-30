@@ -12,6 +12,9 @@ const storeVisitAi = readFileSync("src/lib/store-visit-ai.ts", "utf8");
 const storeVisitAiDebug = readFileSync("src/lib/store-visit-ai-debug.ts", "utf8");
 const storeVisitAnalysis = readFileSync("src/lib/store-visit-analysis.ts", "utf8");
 const storeVisitImageMaintenance = readFileSync("src/lib/store-visit-image-maintenance.ts", "utf8");
+const appShell = readFileSync("src/components/app-shell.tsx", "utf8");
+const storeVisitMonitorPage = readFileSync("src/app/[locale]/store-visit-monitor/page.tsx", "utf8");
+const dataFile = readFileSync("src/lib/data.ts", "utf8");
 
 test("new H5 store visit returns to the list after uploads without waiting for AI analysis", () => {
   const analyzeIndex = storeVisitH5.indexOf('fetch("/api/store-visit/analyze"');
@@ -117,7 +120,7 @@ test("store visit analysis supports partial success and image-level failure reco
   assert.match(storeVisitAiDebug, /priceImageFailures/);
   assert.match(storeVisitAiDebug, /analysis_status: "failed"/);
   assert.match(storeVisitAiDebug, /analysis_error: systemErrorMessage/);
-  assert.match(storeVisitAnalysis, /analysisStatus = allFailuresAreRetakeRequired[\s\S]*"action_required"[\s\S]*aiAnalysis\.partialFailure[\s\S]*"partial"[\s\S]*"completed"/);
+  assert.match(storeVisitAnalysis, /analysisStatus = hasRetakeRequiredImages[\s\S]*"action_required"[\s\S]*aiAnalysis\.partialFailure[\s\S]*"partial"[\s\S]*"completed"/);
   assert.match(storeVisitAnalysis, /visit_status: "analyzed"/);
   assert.match(storeVisitAnalysis, /analysis_partial_failures/);
 });
@@ -126,6 +129,16 @@ test("retake-required visit analysis is separated from system failure", () => {
   assert.match(storeVisitAnalysis, /price_photo_retake_required/);
   assert.doesNotMatch(storeVisitAnalysis, /analysisStatus = allFailuresAreRetakeRequired \? "failed"/);
   assert.doesNotMatch(storeVisitAnalysis, /visit_status: allFailuresAreRetakeRequired \? "uploaded"/);
+});
+
+test("any retake-required price photo escalates the visit to action_required even when other photos succeeded", () => {
+  assert.match(storeVisitAnalysis, /const analysisStatus = hasRetakeRequiredImages[\s\S]*\? "action_required"/);
+  assert.match(storeVisitImageMaintenance, /} else if \(retakeRequiredImages\.length > 0\) \{\s*analysisStatus = "action_required";/s);
+});
+
+test("partial status is displayed as partial failed for operators", () => {
+  const mobileI18n = readFileSync("src/lib/mobile-i18n.ts", "utf8");
+  assert.match(mobileI18n, /statusPartial: "Partial failed"/);
 });
 
 test("derived visit analysis state does not mark zero price photos as completed", () => {
@@ -149,6 +162,50 @@ test("store visit analysis keeps display failures separate without running displ
   assert.match(storeVisitAiDebug, /display_analysis: null/);
   assert.match(storeVisitAiDebug, /displayAnalysisError: string \| null = null/);
   assert.match(storeVisitAnalysis, /display_analysis: null/);
+});
+
+test("store visit price image analysis uses fixed parallelism of 5 inside a visit", () => {
+  assert.match(storeVisitAiDebug, /const priceImageConcurrency = 5/);
+  assert.match(storeVisitAiDebug, /Array\.from\(\{ length: workerCount \}, \(\) => worker\(\)\)/);
+  assert.match(storeVisitAiDebug, /await Promise\.all\(/);
+  assert.doesNotMatch(storeVisitAiDebug, /for \(const item of priceImageInputs\)/);
+});
+
+test("store visit analysis persists visit-level timing metrics into summary_result", () => {
+  assert.match(analyzeRoute, /const analysisStartedAt = new Date\(\)/);
+  assert.match(storeVisitAnalysis, /visitAnalysisStartedAt/);
+  assert.match(storeVisitAnalysis, /visit_analysis_duration_ms/);
+  assert.match(storeVisitAnalysis, /price_image_parallelism:\s*5/);
+  assert.match(storeVisitAnalysis, /visit_analysis_completed_at/);
+});
+
+test("store visit analysis failure path also persists visit-level timing metrics", () => {
+  assert.match(analyzeRoute, /summary_result:\s*\{[\s\S]*analysis_metrics:/);
+  assert.match(analyzeRoute, /visit_analysis_duration_ms/);
+  assert.match(analyzeRoute, /visit_analysis_completed_at/);
+});
+
+test("store visit monitor has a dedicated backend navigation entry", () => {
+  assert.match(appShell, /href: "\/store-visit-monitor"/);
+  assert.match(appShell, /Store Visit Monitor/);
+});
+
+test("store visit monitor page shows summary cards, visit latency metrics, and a default recent-24-hour filter", () => {
+  assert.match(storeVisitMonitorPage, /PageShellState/);
+  assert.match(storeVisitMonitorPage, /Recent 24 hours|最近24小时/);
+  assert.match(storeVisitMonitorPage, /P50 visit analysis time/);
+  assert.match(storeVisitMonitorPage, /P95 visit analysis time/);
+  assert.match(storeVisitMonitorPage, /Full analysis time/);
+  assert.match(storeVisitMonitorPage, /Started at/);
+  assert.match(storeVisitMonitorPage, /Completed at/);
+});
+
+test("store visit monitor data path reads analysis metrics and computes visit latency percentiles", () => {
+  assert.match(dataFile, /export async function getStoreVisitMonitor/);
+  assert.match(dataFile, /visit_analysis_duration_ms/);
+  assert.match(dataFile, /P50|p50/);
+  assert.match(dataFile, /P95|p95/);
+  assert.match(dataFile, /last 24 hours|24 \* 60 \* 60 \* 1000/);
 });
 
 test("new H5 store visit requires at least one price-tag image, not only Makuku photos", () => {

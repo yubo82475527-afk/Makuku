@@ -68,6 +68,54 @@ export type OfflineStoreVisitFilters = {
   includeImageUrls?: boolean;
 };
 
+export type StoreVisitMonitorFilters = {
+  dateFrom?: string;
+  dateTo?: string;
+  visitCode?: string;
+  storeName?: string;
+  promoter?: string;
+  analysisStatus?: string;
+  limit?: number;
+};
+
+export type StoreVisitMonitorItem = {
+  visitId: string;
+  visitCode: string | null;
+  storeName: string;
+  visitDate: string;
+  promoter: string;
+  analysisStatus: string | null;
+  visitStatus: string;
+  fullAnalysisTimeMs: number | null;
+  imageCount: number;
+  successCount: number;
+  failureCount: number;
+  retakeRequiredCount: number;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+};
+
+export type StoreVisitMonitorSummary = {
+  visitsAnalyzed: number;
+  p50: number | null;
+  p90: number | null;
+  p95: number | null;
+  actionRequiredOrFailedCount: number;
+  averageImagesPerVisit: number | null;
+  averageSuccessfulImagesPerVisit: number | null;
+};
+
+export type StoreVisitMonitorResult = {
+  summary: StoreVisitMonitorSummary;
+  visits: StoreVisitMonitorItem[];
+  filters: {
+    dateFrom: string;
+    dateTo: string;
+    isDefaultRecent24Hours: boolean;
+  };
+};
+
 export type AiPriceCandidateFilters = {
   dateFrom?: string;
   dateTo?: string;
@@ -3269,6 +3317,130 @@ function filterDemoOfflineStoreVisits(filters: OfflineStoreVisitFilters = {}) {
     if (filters.dateTo && visit.visit_date > filters.dateTo) return false;
     return true;
   }).slice(0, filters.limit ?? 100);
+}
+
+function formatLocalDate(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function defaultRecent24HoursRange() {
+  const now = new Date();
+  const start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  return {
+    dateFrom: formatLocalDate(start),
+    dateTo: formatLocalDate(now),
+  };
+}
+
+function percentile(values: number[], ratio: number) {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * ratio) - 1));
+  return sorted[index] ?? null;
+}
+
+function toMonitorItem(visit: OfflineStoreVisit): StoreVisitMonitorItem {
+  const summaryResult = isRecord(visit.summary_result) ? visit.summary_result : {};
+  const analysisMetrics = isRecord(summaryResult.analysis_metrics) ? summaryResult.analysis_metrics : {};
+  const imageCount = isFiniteNumber(analysisMetrics.price_image_count)
+    ? analysisMetrics.price_image_count
+    : (visit.offline_visit_images?.length ?? visit.image_urls?.length ?? 0);
+  return {
+    visitId: visit.id,
+    visitCode: visit.visit_code ?? null,
+    storeName: visit.store_name,
+    visitDate: visit.visit_date,
+    promoter: visit.promoter ?? visit.uploader_name,
+    analysisStatus: visit.analysis_status ?? null,
+    visitStatus: visit.visit_status,
+    fullAnalysisTimeMs: isFiniteNumber(analysisMetrics.visit_analysis_duration_ms)
+      ? analysisMetrics.visit_analysis_duration_ms
+      : null,
+    imageCount,
+    successCount: isFiniteNumber(analysisMetrics.price_image_success_count)
+      ? analysisMetrics.price_image_success_count
+      : 0,
+    failureCount: isFiniteNumber(analysisMetrics.price_image_failure_count)
+      ? analysisMetrics.price_image_failure_count
+      : 0,
+    retakeRequiredCount: isFiniteNumber(analysisMetrics.price_image_retake_required_count)
+      ? analysisMetrics.price_image_retake_required_count
+      : 0,
+    startedAt: typeof analysisMetrics.visit_analysis_started_at === "string"
+      ? analysisMetrics.visit_analysis_started_at
+      : null,
+    completedAt: typeof analysisMetrics.visit_analysis_completed_at === "string"
+      ? analysisMetrics.visit_analysis_completed_at
+      : null,
+    createdAt: visit.created_at,
+  };
+}
+
+export async function getStoreVisitMonitor(
+  filters: StoreVisitMonitorFilters = {},
+): Promise<QueryResult<StoreVisitMonitorResult>> {
+  const recent24Hours = defaultRecent24HoursRange();
+  const dateFrom = filters.dateFrom || recent24Hours.dateFrom;
+  const dateTo = filters.dateTo || recent24Hours.dateTo;
+  const isDefaultRecent24Hours = !filters.dateFrom && !filters.dateTo;
+
+  const visitsResult = await getOfflineStoreVisits({
+    limit: filters.limit ?? 500,
+    includeImageUrls: false,
+  });
+
+  const visits = visitsResult.data
+    .map(toMonitorItem)
+    .filter((visit) => {
+      const completedDate = (visit.completedAt ?? "").slice(0, 10);
+      if (completedDate) {
+        if (completedDate < dateFrom || completedDate > dateTo) return false;
+      } else if (visit.visitDate < dateFrom || visit.visitDate > dateTo) {
+        return false;
+      }
+      if (filters.visitCode && !(visit.visitCode ?? "").toLowerCase().includes(filters.visitCode.toLowerCase())) return false;
+      if (filters.storeName && !visit.storeName.toLowerCase().includes(filters.storeName.toLowerCase())) return false;
+      if (filters.promoter && !visit.promoter.toLowerCase().includes(filters.promoter.toLowerCase())) return false;
+      if (filters.analysisStatus && visit.analysisStatus !== filters.analysisStatus) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const completedDiff = new Date(b.completedAt ?? b.createdAt).getTime() - new Date(a.completedAt ?? a.createdAt).getTime();
+      if (completedDiff !== 0) return completedDiff;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+
+  const durations = visits
+    .map((visit) => visit.fullAnalysisTimeMs)
+    .filter((value): value is number => isFiniteNumber(value));
+
+  const summary: StoreVisitMonitorSummary = {
+    visitsAnalyzed: visits.length,
+    p50: percentile(durations, 0.5),
+    p90: percentile(durations, 0.9),
+    p95: percentile(durations, 0.95),
+    actionRequiredOrFailedCount: visits.filter((visit) => visit.analysisStatus === "action_required" || visit.analysisStatus === "failed").length,
+    averageImagesPerVisit: visits.length > 0
+      ? Math.round((visits.reduce((sum, visit) => sum + visit.imageCount, 0) / visits.length) * 10) / 10
+      : null,
+    averageSuccessfulImagesPerVisit: visits.length > 0
+      ? Math.round((visits.reduce((sum, visit) => sum + visit.successCount, 0) / visits.length) * 10) / 10
+      : null,
+  };
+
+  return {
+    data: {
+      summary,
+      visits,
+      filters: {
+        dateFrom,
+        dateTo,
+        isDefaultRecent24Hours,
+      },
+    },
+    error: visitsResult.error,
+    isDemo: visitsResult.isDemo,
+  };
 }
 
 export async function getOfflineStoreVisits(filters: OfflineStoreVisitFilters = {}): Promise<QueryResult<OfflineStoreVisit[]>> {

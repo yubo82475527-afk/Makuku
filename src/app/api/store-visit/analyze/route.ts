@@ -6,12 +6,20 @@ import type { OfflineStoreVisit } from "@/lib/types";
 
 async function failVisit(visitId: string, message: string) {
   const supabase = createSupabaseServiceClient();
+  const completedAt = new Date().toISOString();
   await supabase
     .from("offline_store_visits")
     .update({
       analysis_status: "failed",
       visit_status: "analyzed",
       analysis_error: message,
+      summary_result: {
+        analysis_metrics: {
+          visit_analysis_completed_at: completedAt,
+          visit_analysis_duration_ms: null,
+          price_image_parallelism: 5,
+        },
+      },
     })
     .eq("id", visitId);
 }
@@ -64,7 +72,8 @@ export async function POST(request: Request) {
       })
       .eq("id", visitId);
 
-    const result = await runStoreVisitAnalysis({ visitId });
+    const analysisStartedAt = new Date();
+    const result = await runStoreVisitAnalysis({ visitId, visitAnalysisStartedAt: analysisStartedAt.toISOString() });
 
     revalidatePath("/zh/mobile/offline-capture");
     revalidatePath(`/zh/mobile/offline-capture/${visitId}`);

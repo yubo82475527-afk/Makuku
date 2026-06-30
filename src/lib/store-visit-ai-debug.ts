@@ -17,6 +17,7 @@ import type {
 } from "@/lib/types";
 
 const maxInlineImageBytes = 8 * 1024 * 1024;
+const priceImageConcurrency = 5;
 
 async function fallbackImageUrlToDataUrl(url: string) {
   const response = await fetch(url);
@@ -213,71 +214,80 @@ export async function runStoreVisitAiAnalysisForVisit(input: {
 
   const priceImageResults: { imageId: string; result: StoreVisitPriceImageAnalysis }[] = [];
   const priceImageFailures: { imageId: string; imagePath: string; systemErrorMessage: string }[] = [];
-  for (const item of priceImageInputs) {
-    const tableImage = item.tableImage;
-    if (!tableImage || !item.imageCategory) continue;
-    if (tableImage.analysis_status === "analyzed" && isPriceImageResult(tableImage.vision_result)) {
-      priceImageResults.push({ imageId: tableImage.id, result: tableImage.vision_result });
-      continue;
-    }
+  let priceImageCursor = 0;
+  const worker = async () => {
+    while (true) {
+      const cursor = priceImageCursor;
+      priceImageCursor += 1;
+      const item = priceImageInputs[cursor];
+      if (!item) return;
+      const tableImage = item.tableImage;
+      if (!tableImage || !item.imageCategory) continue;
+      if (tableImage.analysis_status === "analyzed" && isPriceImageResult(tableImage.vision_result)) {
+        priceImageResults.push({ imageId: tableImage.id, result: tableImage.vision_result });
+        continue;
+      }
 
-    try {
-      const result = await analyzeStoreVisitPriceImage({
-        visitId: input.visitId,
-        imageId: tableImage.id,
-        imageUrl: item.imageUrl,
-        imageCategory: item.imageCategory,
-        storeName: typedVisit.store_name,
-        region,
-        channel,
-        promoter,
-        visitDate: typedVisit.visit_date,
-        config: input.config,
-      });
-      priceImageResults.push({ imageId: tableImage.id, result: result.normalized });
-      await supabase
-        .from("offline_visit_images")
-        .update({
-          analysis_status: "analyzed",
-          vision_result: result.normalized,
-          analysis_error: null,
-          error_message: null,
-        })
-        .eq("id", tableImage.id);
-    } catch (error) {
-      const systemErrorMessage = errorMessage(error);
-      const diagnostic = typeof error === "object" && error !== null
-        ? {
-            http_status: "httpStatus" in error ? (error as { httpStatus?: number }).httpStatus ?? null : null,
-            request_url: "requestUrl" in error ? (error as { requestUrl?: string }).requestUrl ?? null : null,
-            provider_request_id: "providerRequestId" in error ? (error as { providerRequestId?: string }).providerRequestId ?? null : null,
-            provider_error_type: "providerErrorType" in error ? (error as { providerErrorType?: string }).providerErrorType ?? null : null,
-            provider_error_code: "providerErrorCode" in error ? (error as { providerErrorCode?: string }).providerErrorCode ?? null : null,
-          }
-        : null;
-      priceImageFailures.push({ imageId: tableImage.id, imagePath: tableImage.image_path, systemErrorMessage });
-      console.error("[store-visit-ai] price image failed", {
-        visit_id: input.visitId,
-        image_id: tableImage.id,
-        image_path: tableImage.image_path,
-        error: systemErrorMessage,
-        diagnostic,
-      });
-      await supabase
-        .from("offline_visit_images")
-        .update({
-          analysis_status: "failed",
-          vision_result: {
-            ...(isRecord(tableImage.vision_result) ? tableImage.vision_result : {}),
-            upload_category: item.imageCategory,
-            ai_request_diagnostic: diagnostic,
-          },
-          analysis_error: systemErrorMessage,
-          error_message: systemErrorMessage,
-        })
-        .eq("id", tableImage.id);
+      try {
+        const result = await analyzeStoreVisitPriceImage({
+          visitId: input.visitId,
+          imageId: tableImage.id,
+          imageUrl: item.imageUrl,
+          imageCategory: item.imageCategory,
+          storeName: typedVisit.store_name,
+          region,
+          channel,
+          promoter,
+          visitDate: typedVisit.visit_date,
+          config: input.config,
+        });
+        priceImageResults.push({ imageId: tableImage.id, result: result.normalized });
+        await supabase
+          .from("offline_visit_images")
+          .update({
+            analysis_status: "analyzed",
+            vision_result: result.normalized,
+            analysis_error: null,
+            error_message: null,
+          })
+          .eq("id", tableImage.id);
+      } catch (error) {
+        const systemErrorMessage = errorMessage(error);
+        const diagnostic = typeof error === "object" && error !== null
+          ? {
+              http_status: "httpStatus" in error ? (error).httpStatus ?? null : null,
+              request_url: "requestUrl" in error ? (error).requestUrl ?? null : null,
+              provider_request_id: "providerRequestId" in error ? (error).providerRequestId ?? null : null,
+              provider_error_type: "providerErrorType" in error ? (error).providerErrorType ?? null : null,
+              provider_error_code: "providerErrorCode" in error ? (error).providerErrorCode ?? null : null,
+            }
+          : null;
+        priceImageFailures.push({ imageId: tableImage.id, imagePath: tableImage.image_path, systemErrorMessage });
+        console.error("[store-visit-ai] price image failed", {
+          visit_id: input.visitId,
+          image_id: tableImage.id,
+          image_path: tableImage.image_path,
+          error: systemErrorMessage,
+          diagnostic,
+        });
+        await supabase
+          .from("offline_visit_images")
+          .update({
+            analysis_status: "failed",
+            vision_result: {
+              ...(isRecord(tableImage.vision_result) ? tableImage.vision_result : {}),
+              upload_category: item.imageCategory,
+              ai_request_diagnostic: diagnostic,
+            },
+            analysis_error: systemErrorMessage,
+            error_message: systemErrorMessage,
+          })
+          .eq("id", tableImage.id);
+      }
     }
-  }
+  };
+  const workerCount = Math.min(priceImageConcurrency, Math.max(priceImageInputs.length, 1));
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
   const displayAnalysisError: string | null = null;
   const displayImageFailures: { imageId: string; imagePath: string; systemErrorMessage: string }[] = [];

@@ -150,7 +150,7 @@ function deriveStoredAnalysisState(images: OfflineVisitImage[], currentVisitStat
     analysisStatus = "pending";
   } else if (anyPending) {
     analysisStatus = "analyzing";
-  } else if (retakeRequiredImages.length > 0 && analyzedResults.length === retakeRequiredImages.length && failedImages.length === 0) {
+  } else if (retakeRequiredImages.length > 0) {
     analysisStatus = "action_required";
   } else if (analyzedResults.length > 0 && failedImages.length > 0) {
     analysisStatus = "partial";

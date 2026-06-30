@@ -133,7 +133,7 @@ export const mobileCopy: Record<Locale, MobileCopy> = {
     statusPending: "Pending",
     statusAnalyzing: "Analyzing",
     statusCompleted: "Completed",
-    statusPartial: "Partial success",
+    statusPartial: "Partial failed",
     statusActionRequired: "Action required",
     statusFailed: "Failed",
     result: {
@@ -212,7 +212,7 @@ export const mobileCopy: Record<Locale, MobileCopy> = {
     statusPending: "待分析",
     statusAnalyzing: "分析中",
     statusCompleted: "已完成",
-    statusPartial: "部分成功",
+    statusPartial: "Partial failed",
     statusActionRequired: "待处理",
     statusFailed: "失败",
     result: {

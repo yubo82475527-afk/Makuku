@@ -1,6 +1,9 @@
 import { autoApproveAiPriceCandidatesForVisit } from "@/lib/ai-price-review";
 import { generateAiPriceCandidates } from "@/lib/ai-price-candidates";
-import { invalidateStoreVisitImagePriceImpact, invalidateStoreVisitLegacyUnscopedPriceImpact } from "@/lib/store-visit-image-maintenance";
+import {
+  invalidateStoreVisitImagePriceImpact,
+  invalidateStoreVisitLegacyUnscopedPriceImpact,
+} from "@/lib/store-visit-image-maintenance";
 import { runStoreVisitAiAnalysisForVisit } from "@/lib/store-visit-ai-debug";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 
@@ -12,31 +15,38 @@ function buildSourceItems(
   return (aiAnalysis.price_image_results ?? [])
     .filter((imageResult) => !affectedImageIdSet || affectedImageIdSet.has(imageResult.imageId))
     .flatMap((imageResult) => (
-    imageResult.result.rows.map((row, rowIndex) => ({
-      brand: row.brand ?? "Unknown",
-      product: row.sku,
-      price: row.net_price_idr ? String(row.net_price_idr) : "",
-      list_price: row.list_price_idr ? String(row.list_price_idr) : null,
-      package_price: row.package_price_idr ? String(row.package_price_idr) : null,
-      net_price: row.net_price_idr ? String(row.net_price_idr) : null,
-      promo_type: row.promo_type,
-      piece_count: row.piece_count,
-      type: "SKU" as const,
-      tag: "HERO",
-      confidence: 0.9,
-      source: "key_sku" as const,
-      sourceImageId: imageResult.imageId,
-      sourceRowIndex: rowIndex,
-    }))
-  ));
+      imageResult.result.rows.map((row, rowIndex) => ({
+        brand: row.brand ?? "Unknown",
+        product: row.sku,
+        price: row.net_price_idr ? String(row.net_price_idr) : "",
+        list_price: row.list_price_idr ? String(row.list_price_idr) : null,
+        package_price: row.package_price_idr ? String(row.package_price_idr) : null,
+        net_price: row.net_price_idr ? String(row.net_price_idr) : null,
+        promo_type: row.promo_type,
+        piece_count: row.piece_count,
+        type: "SKU" as const,
+        tag: "HERO",
+        confidence: 0.9,
+        source: "key_sku" as const,
+        sourceImageId: imageResult.imageId,
+        sourceRowIndex: rowIndex,
+      }))
+    ));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export async function runStoreVisitAnalysis(input: {
   visitId: string;
   affectedImageIds?: string[];
   invalidateAffectedImageSnapshots?: boolean;
+  visitAnalysisStartedAt?: string;
 }) {
   const supabase = createSupabaseServiceClient();
+  const visitAnalysisStartedAt = input.visitAnalysisStartedAt ?? new Date().toISOString();
+
   if (input.invalidateAffectedImageSnapshots && input.affectedImageIds?.length) {
     await invalidateStoreVisitImagePriceImpact({
       visitId: input.visitId,
@@ -53,11 +63,17 @@ export async function runStoreVisitAnalysis(input: {
       supabase,
     });
   }
+
   const aiAnalysis = await runStoreVisitAiAnalysisForVisit({ visitId: input.visitId });
   const hasRetakeRequiredImages = (aiAnalysis.price_image_retake_required ?? []).length > 0;
-  const allFailuresAreRetakeRequired = Boolean(aiAnalysis.allPriceImagesFailed && hasRetakeRequiredImages && (aiAnalysis.price_image_failures ?? []).length === 0);
+  const allFailuresAreRetakeRequired = Boolean(
+    aiAnalysis.allPriceImagesFailed
+    && hasRetakeRequiredImages
+    && (aiAnalysis.price_image_failures ?? []).length === 0,
+  );
+
   if (aiAnalysis.allPriceImagesFailed && !allFailuresAreRetakeRequired) {
-    throw new Error("AI 暂时没有返回可用的价格解析结果，请稍后重试失败照片。");
+    throw new Error("AI did not return a usable price-tag analysis result. Retry the failed photo later.");
   }
 
   const sourceItems = buildSourceItems(aiAnalysis, input.affectedImageIds);
@@ -72,25 +88,46 @@ export async function runStoreVisitAnalysis(input: {
     visitId: input.visitId,
     candidates,
   });
-  const analysisStatus = allFailuresAreRetakeRequired
+
+  const analysisStatus = hasRetakeRequiredImages
     ? "action_required"
     : aiAnalysis.partialFailure
       ? "partial"
       : "completed";
+
   const partialAnalysisError = aiAnalysis.partialFailure
     ? hasRetakeRequiredImages
-      ? "price_photo_retake_required: 部分价格标签照片需重新上传，已成功解析的价格可以先复核。"
-      : "部分图片未解析成功，已成功解析的价格可以先复核；失败图片可稍后重试。"
+      ? "price_photo_retake_required: Some price-tag photos need to be re-uploaded. Parsed prices from other photos can be reviewed first."
+      : "Some photos failed analysis. Parsed prices from successful photos can be reviewed first, and failed photos can be retried later."
     : null;
-  const analysisError = allFailuresAreRetakeRequired
-    ? "price_photo_retake_required: 有价格标签照片需重传。"
+
+  const analysisError = hasRetakeRequiredImages
+    ? "price_photo_retake_required: Price-tag photos need to be re-uploaded."
     : partialAnalysisError;
+
+  const visitAnalysisCompletedAt = new Date().toISOString();
+  const visitAnalysisDurationMs = Math.max(
+    0,
+    new Date(visitAnalysisCompletedAt).getTime() - new Date(visitAnalysisStartedAt).getTime(),
+  );
+  const priceImageSuccessCount = aiAnalysis.price_image_results.length;
+
+  const { data: visitBeforeUpdate, error: visitBeforeUpdateError } = await supabase
+    .from("offline_store_visits")
+    .select("summary_result")
+    .eq("id", input.visitId)
+    .single();
+
+  if (visitBeforeUpdateError) throw new Error(visitBeforeUpdateError.message);
+
+  const priorSummaryResult = isRecord(visitBeforeUpdate?.summary_result) ? visitBeforeUpdate.summary_result : {};
 
   const { data: updated, error: updateError } = await supabase
     .from("offline_store_visits")
     .update({
       ai_result: aiAnalysis.normalized,
       summary_result: {
+        ...priorSummaryResult,
         ai_result_card: aiAnalysis.normalized,
         raw_ai_text: aiAnalysis.rawText,
         raw_ai_parsed: aiAnalysis.parsed,
@@ -114,6 +151,19 @@ export async function runStoreVisitAnalysis(input: {
         auto_reviewed_count: autoReview.approvedCount,
         auto_review_method: "auto_rule",
         auto_review_failed_count: autoReview.failedCount,
+        analysis_metrics: {
+          ...(isRecord(priorSummaryResult.analysis_metrics)
+            ? priorSummaryResult.analysis_metrics as Record<string, unknown>
+            : {}),
+          visit_analysis_started_at: visitAnalysisStartedAt,
+          visit_analysis_completed_at: visitAnalysisCompletedAt,
+          visit_analysis_duration_ms: visitAnalysisDurationMs,
+          price_image_count: aiAnalysis.price_image_results.length + aiAnalysis.price_image_failures.length,
+          price_image_success_count: priceImageSuccessCount,
+          price_image_failure_count: aiAnalysis.price_image_failures.length,
+          price_image_retake_required_count: aiAnalysis.price_image_retake_required.length,
+          price_image_parallelism: 5,
+        },
       },
       analysis_status: analysisStatus,
       visit_status: "analyzed",
@@ -129,6 +179,7 @@ export async function runStoreVisitAnalysis(input: {
     visit: updated,
     aiResult: aiAnalysis.normalized,
     autoReviewedCount: autoReview.approvedCount,
+    visitAnalysisDurationMs,
     aiAnalysis,
   };
 }

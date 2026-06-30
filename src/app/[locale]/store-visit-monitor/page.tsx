@@ -1,0 +1,160 @@
+import Link from "next/link";
+import { PageShellState } from "@/components/page-shell-state";
+import { Badge, Button, Card, DataNotice, EmptyState, MetricCard, SelectInput, TextInput } from "@/components/ui";
+import { formatJakartaTime } from "@/lib/format";
+import { getPageI18n } from "@/lib/i18n/server";
+import { getStoreVisitMonitor } from "@/lib/data";
+
+export const dynamic = "force-dynamic";
+
+function formatDuration(value: number | null) {
+  if (value === null) return "-";
+  if (value < 1000) return `${value} ms`;
+  const seconds = value / 1000;
+  if (seconds < 60) return `${seconds.toFixed(1)} s`;
+  return `${(seconds / 60).toFixed(1)} min`;
+}
+
+function statusTone(status: string | null) {
+  if (status === "failed" || status === "action_required") return "medium";
+  if (status === "completed") return "low";
+  return "neutral";
+}
+
+export default async function StoreVisitMonitorPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ locale: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const { locale, dict } = await getPageI18n(params);
+  const filters = await searchParams;
+  const getFilter = (key: string) => {
+    const value = filters[key];
+    return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+  };
+
+  const result = await getStoreVisitMonitor({
+    dateFrom: getFilter("date_from") || undefined,
+    dateTo: getFilter("date_to") || undefined,
+    visitCode: getFilter("visit_code") || undefined,
+    storeName: getFilter("store_name") || undefined,
+    promoter: getFilter("promoter") || undefined,
+    analysisStatus: getFilter("analysis_status") || undefined,
+  });
+
+  const monitor = result.data;
+
+  return (
+    <>
+      <PageShellState locale={locale} dict={dict} title="Store Visit Monitor" currentPath="/store-visit-monitor" isDemo={result.isDemo} />
+      <DataNotice dict={dict} error={result.error} />
+
+      <Card className="mb-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-semibold">Store Visit Monitor</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              {monitor.filters.isDefaultRecent24Hours ? "Recent 24 hours" : `${monitor.filters.dateFrom} to ${monitor.filters.dateTo}`}
+            </p>
+          </div>
+        </div>
+      </Card>
+
+      <div className="mb-4 grid gap-3 md:grid-cols-5">
+        <MetricCard label="Visits analyzed" value={monitor.summary.visitsAnalyzed} />
+        <MetricCard label="P50 visit analysis time" value={formatDuration(monitor.summary.p50)} />
+        <MetricCard label="P95 visit analysis time" value={formatDuration(monitor.summary.p95)} />
+        <MetricCard label="Action required / failed count" value={monitor.summary.actionRequiredOrFailedCount} />
+        <MetricCard label="Average images per visit" value={monitor.summary.averageImagesPerVisit ?? "-"} />
+      </div>
+
+      <Card className="mb-4">
+        <form className="grid gap-3 md:grid-cols-7">
+          <TextInput name="visit_code" placeholder="Visit code" defaultValue={getFilter("visit_code")} />
+          <TextInput name="store_name" placeholder="Store name" defaultValue={getFilter("store_name")} />
+          <TextInput name="promoter" placeholder="Promoter" defaultValue={getFilter("promoter")} />
+          <SelectInput name="analysis_status" defaultValue={getFilter("analysis_status")}>
+            <option value="">Analysis status</option>
+            <option value="pending">pending</option>
+            <option value="analyzing">analyzing</option>
+            <option value="completed">completed</option>
+            <option value="partial">partial</option>
+            <option value="action_required">action_required</option>
+            <option value="failed">failed</option>
+          </SelectInput>
+          <TextInput name="date_from" type="date" defaultValue={monitor.filters.dateFrom} />
+          <TextInput name="date_to" type="date" defaultValue={monitor.filters.dateTo} />
+          <div className="flex gap-2">
+            <Button type="submit">Filter</Button>
+            <Link href={`/${locale}/store-visit-monitor`} className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
+              Reset
+            </Link>
+          </div>
+        </form>
+      </Card>
+
+      <Card>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-semibold">Visit analysis list</h2>
+          <div className="text-sm text-slate-500">{monitor.visits.length} visits</div>
+        </div>
+
+        {monitor.visits.length === 0 ? <EmptyState text="No store visits found for this range." /> : null}
+
+        {monitor.visits.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1680px] text-left text-sm [&_th]:whitespace-nowrap">
+              <thead className="border-b border-slate-200 text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="py-2 pr-3">Visit Code</th>
+                  <th className="py-2 pr-3">Store</th>
+                  <th className="py-2 pr-3">Visit date</th>
+                  <th className="py-2 pr-3">Promoter</th>
+                  <th className="py-2 pr-3">Analysis status</th>
+                  <th className="py-2 pr-3">Full analysis time</th>
+                  <th className="py-2 pr-3">Image count</th>
+                  <th className="py-2 pr-3">Success</th>
+                  <th className="py-2 pr-3">Failure</th>
+                  <th className="py-2 pr-3">Retake</th>
+                  <th className="py-2 pr-3">Started at</th>
+                  <th className="py-2 pr-3">Completed at</th>
+                  <th className="py-2 pr-3">Details</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {monitor.visits.map((visit) => (
+                  <tr key={visit.visitId}>
+                    <td className="whitespace-nowrap py-3 pr-3 font-medium">{visit.visitCode ?? visit.visitId}</td>
+                    <td className="py-3 pr-3">{visit.storeName}</td>
+                    <td className="whitespace-nowrap py-3 pr-3">{visit.visitDate}</td>
+                    <td className="whitespace-nowrap py-3 pr-3">{visit.promoter}</td>
+                    <td className="whitespace-nowrap py-3 pr-3">
+                      <Badge tone={statusTone(visit.analysisStatus)}>{visit.analysisStatus ?? visit.visitStatus}</Badge>
+                    </td>
+                    <td className="whitespace-nowrap py-3 pr-3 font-medium">{formatDuration(visit.fullAnalysisTimeMs)}</td>
+                    <td className="whitespace-nowrap py-3 pr-3">{visit.imageCount}</td>
+                    <td className="whitespace-nowrap py-3 pr-3">{visit.successCount}</td>
+                    <td className="whitespace-nowrap py-3 pr-3">{visit.failureCount}</td>
+                    <td className="whitespace-nowrap py-3 pr-3">{visit.retakeRequiredCount}</td>
+                    <td className="whitespace-nowrap py-3 pr-3">{visit.startedAt ? formatJakartaTime(visit.startedAt) : "-"}</td>
+                    <td className="whitespace-nowrap py-3 pr-3">{visit.completedAt ? formatJakartaTime(visit.completedAt) : "-"}</td>
+                    <td className="whitespace-nowrap py-3 pr-3">
+                      <Link
+                        href={`/${locale}/mobile/offline-capture/${visit.visitId}`}
+                        className="font-medium text-blue-700 underline-offset-2 hover:underline"
+                      >
+                        Open details
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </Card>
+    </>
+  );
+}

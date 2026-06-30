@@ -1125,7 +1125,7 @@ function PriceSectionGroup({
                     {text.analyzingOne}
                   </span>
                 ) : null}
-                {needsRetake && !isProcessingRetake ? (
+                {needsRetake && !isProcessingRetake && !isAnalyzingImage ? (
                   <span className="rounded-full bg-red-100 px-2 py-[1px] text-[10px] font-semibold leading-5 text-red-700">
                     {text.retakeRequired}
                   </span>
@@ -1162,7 +1162,7 @@ function PriceSectionGroup({
               {sectionLocalUpload.status === "uploading" ? text.uploading : text.analyzingOne}
             </div>
           ) : null}
-          {needsRetake && !isProcessingRetake ? (
+          {needsRetake && !isProcessingRetake && !isAnalyzingImage ? (
             <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               <div className="font-semibold">{text.retakeRequired}</div>
               <div className="mt-1 text-xs leading-5">{retakeRequiredMessage(section.image, text.retakeRequiredFallback)}</div>

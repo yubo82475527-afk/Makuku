@@ -87,6 +87,7 @@ test("H5 detail separates retake-required business failures from system errors",
   assert.match(storeVisitDetailH5, /replaceFromAlbum/);
   assert.match(storeVisitDetailH5, /businessRetakeImages/);
   assert.match(storeVisitDetailH5, /systemFailedImages/);
+  assert.match(storeVisitDetailH5, /needsRetake && !isProcessingRetake && !isAnalyzingImage/);
 });
 
 test("H5 list guides users into visits that have price-tag photos requiring retake", () => {
