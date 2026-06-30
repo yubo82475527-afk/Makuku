@@ -1,6 +1,5 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { MobileFeishuAutoLogin } from "@/components/mobile-feishu-auto-login";
 import { StoreVisitH5 } from "@/components/store-visit-h5";
 import { defaultLocale, replacePathLocale } from "@/lib/i18n/config";
 import { getPageI18n } from "@/lib/i18n/server";
@@ -19,10 +18,5 @@ export default async function NewMobileOfflineCapturePage({
   if (preferredLocale !== locale) {
     redirect(replacePathLocale(`/${locale}/mobile/offline-capture/new`, preferredLocale));
   }
-  return (
-    <>
-      <MobileFeishuAutoLogin locale={locale} />
-      <StoreVisitH5 locale={locale} />
-    </>
-  );
+  return <StoreVisitH5 locale={locale} />;
 }

@@ -1,4 +1,3 @@
-import { MobileFeishuAutoLogin } from "@/components/mobile-feishu-auto-login";
 import { StoreVisitsListH5 } from "@/components/store-visits-list-h5";
 import { getPageI18n } from "@/lib/i18n/server";
 
@@ -10,10 +9,5 @@ export default async function StoreVisitsListPage({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await getPageI18n(params);
-  return (
-    <>
-      <MobileFeishuAutoLogin locale={locale} />
-      <StoreVisitsListH5 locale={locale} />
-    </>
-  );
+  return <StoreVisitsListH5 locale={locale} />;
 }

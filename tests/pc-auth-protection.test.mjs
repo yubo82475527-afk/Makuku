@@ -7,6 +7,7 @@ const authSession = existsSync("src/lib/auth-session.ts") ? readFileSync("src/li
 const loginPage = existsSync("src/app/[locale]/login/page.tsx") ? readFileSync("src/app/[locale]/login/page.tsx", "utf8") : "";
 const loginClient = existsSync("src/components/pc-login-form.tsx") ? readFileSync("src/components/pc-login-form.tsx", "utf8") : "";
 const mobileFeishuAutoLogin = existsSync("src/components/mobile-feishu-auto-login.tsx") ? readFileSync("src/components/mobile-feishu-auto-login.tsx", "utf8") : "";
+const storeVisitsListH5 = existsSync("src/components/store-visits-list-h5.tsx") ? readFileSync("src/components/store-visits-list-h5.tsx", "utf8") : "";
 const mobileCapturePage = existsSync("src/app/[locale]/mobile/offline-capture/page.tsx") ? readFileSync("src/app/[locale]/mobile/offline-capture/page.tsx", "utf8") : "";
 const mobileCaptureListPage = existsSync("src/app/[locale]/mobile/offline-capture/list/page.tsx") ? readFileSync("src/app/[locale]/mobile/offline-capture/list/page.tsx", "utf8") : "";
 const mobileCaptureNewPage = existsSync("src/app/[locale]/mobile/offline-capture/new/page.tsx") ? readFileSync("src/app/[locale]/mobile/offline-capture/new/page.tsx", "utf8") : "";
@@ -89,9 +90,11 @@ test("H5 capture entry auto-attempts Feishu login and still uses the shared sess
   assert.match(mobileFeishuAutoLogin, /Connecting to Feishu|正在连接飞书/);
   assert.match(mobileFeishuAutoLogin, /Verifying your account|正在验证身份/);
   assert.match(mobileFeishuAutoLogin, /Entering the app|正在进入系统/);
-  assert.match(mobileCapturePage, /MobileFeishuAutoLogin/);
-  assert.match(mobileCaptureListPage, /MobileFeishuAutoLogin/);
-  assert.match(mobileCaptureNewPage, /MobileFeishuAutoLogin/);
+  assert.match(storeVisitsListH5, /MobileFeishuAutoLogin/);
+  assert.match(storeVisitsListH5, /<MobileFeishuAutoLogin locale=\{locale\} \/>/);
+  assert.doesNotMatch(mobileCapturePage, /MobileFeishuAutoLogin/);
+  assert.doesNotMatch(mobileCaptureListPage, /MobileFeishuAutoLogin/);
+  assert.doesNotMatch(mobileCaptureNewPage, /MobileFeishuAutoLogin/);
 });
 
 test("Feishu login API exchanges auth code for user info and creates app session", () => {

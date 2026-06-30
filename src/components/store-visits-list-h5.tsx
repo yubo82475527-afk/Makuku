@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LoadingOverlay } from "@/components/loading-overlay";
+import { MobileFeishuAutoLogin } from "@/components/mobile-feishu-auto-login";
 import { withMinimumDelay } from "@/lib/async-ui";
 import { localeLabels, replacePathLocale, type Locale } from "@/lib/i18n/config";
 import { writeLocalePreferenceCookie } from "@/lib/locale-preference";
@@ -482,6 +483,9 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
               {loginLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
               {loginLoading ? loginText.submitting : loginText.submit}
             </button>
+            <div className="mt-3">
+              <MobileFeishuAutoLogin locale={locale} />
+            </div>
           </section>
         </main>
       </>
