@@ -10,13 +10,20 @@ const idempotencyMigration = readFileSync("supabase/migrations/202606220001_offl
 test("AI candidate generation assigns stable candidate keys for idempotent reanalysis", () => {
   assert.match(candidateService, /function candidateKey/);
   assert.match(candidateService, /candidate_key/);
-  assert.match(candidateService, /approvedCandidateKeys/);
-  assert.match(candidateService, /existingApprovedKeys/);
+  assert.match(candidateService, /activeCandidateKeys/);
+  assert.match(candidateService, /existingActiveKeys/);
   assert.match(candidateService, /candidateKey\(\{[\s\S]*matchedEntityType/);
   assert.match(candidateService, /sourceImageId/);
   assert.match(candidateService, /matchedEntityId/);
   assert.match(candidateService, /netPrice/);
   assert.doesNotMatch(candidateService, /return \["image_row", item\.sourceImageId, item\.sourceRowIndex\]\.join\("\|"\)/);
+});
+
+test("AI candidate generation deduplicates candidate keys before inserting", () => {
+  assert.match(candidateService, /const seenInsertKeys = new Set<string>\(\)/);
+  assert.match(candidateService, /if \(existingActiveKeys\.has\(row\.candidate_key\) \|\| seenInsertKeys\.has\(row\.candidate_key\)\) return false;/);
+  assert.match(candidateService, /seenInsertKeys\.add\(row\.candidate_key\)/);
+  assert.match(candidateService, /\.in\("status", \["pending", "approved"\]\)/);
 });
 
 test("AI price approval reuses existing offline AI snapshots for the same image product and net price", () => {
@@ -121,7 +128,8 @@ test("AI candidate generation scopes inserts to image-backed rows without legacy
   assert.match(candidateService, /promo_type/);
   assert.match(candidateService, /const scopedItems = items\.filter\(\(item\) => item\.sourceImageId\)/);
   assert.match(candidateService, /if \(scopedItems\.length === 0\) return \[\]/);
-  assert.match(candidateService, /const rows = scopedItems\.map/);
+  assert.match(candidateService, /const candidateRows = scopedItems\.map/);
+  assert.match(candidateService, /const rows = candidateRows\.filter/);
   assert.doesNotMatch(candidateService, /const legacyRows = rows\.map/);
   assert.doesNotMatch(candidateService, /legacyRow/);
   assert.doesNotMatch(candidateService, /error\?\.message\.includes\("ai_price_candidates"\)\)\s*\{\s*return \[\]/);

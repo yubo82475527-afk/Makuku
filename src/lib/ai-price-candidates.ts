@@ -462,25 +462,25 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
       .neq("status", "approved");
   }
 
-  const { data: approvedCandidateRows, error: approvedCandidateError } = await supabase
+  const { data: activeCandidateRows, error: activeCandidateError } = await supabase
     .from("ai_price_candidates")
     .select("candidate_key")
     .eq("visit_id", input.visitId)
-    .eq("status", "approved");
-  if (approvedCandidateError && !isCandidateKeyColumnError(approvedCandidateError)) {
-    throw new Error(approvedCandidateError.message);
+    .in("status", ["pending", "approved"]);
+  if (activeCandidateError && !isCandidateKeyColumnError(activeCandidateError)) {
+    throw new Error(activeCandidateError.message);
   }
-  const approvedCandidateKeys = (approvedCandidateRows ?? [])
+  const activeCandidateKeys = (activeCandidateRows ?? [])
     .map((row) => (row as { candidate_key?: string | null }).candidate_key)
     .filter(Boolean) as string[];
-  const existingApprovedKeys = new Set(approvedCandidateKeys);
+  const existingActiveKeys = new Set(activeCandidateKeys);
 
   const [{ data: materials }, { data: products }] = await Promise.all([
     supabase.from("material_master").select("*").limit(5000),
     supabase.from("competitor_products").select("*, brands(id,name)").limit(5000),
   ]);
 
-  const rows = scopedItems.map((item) => {
+  const candidateRows = scopedItems.map((item) => {
     const parsedPrice = parseCandidatePrice(item.price);
     const listPrice = parseCandidatePrice(item.list_price) ?? parsedPrice;
     const packagePrice = parseCandidatePrice(item.package_price) ?? parsedPrice;
@@ -536,7 +536,14 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
       warnings,
       status: "pending",
     };
-  }).filter((row) => !existingApprovedKeys.has(row.candidate_key));
+  });
+
+  const seenInsertKeys = new Set<string>();
+  const rows = candidateRows.filter((row) => {
+    if (existingActiveKeys.has(row.candidate_key) || seenInsertKeys.has(row.candidate_key)) return false;
+    seenInsertKeys.add(row.candidate_key);
+    return true;
+  });
 
   if (rows.length === 0) return [];
 
