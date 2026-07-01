@@ -798,7 +798,7 @@ function filterStoresByOrganization(stores: OfflineStore[], organization: Offlin
   return stores.filter((store) => store.organization_id === organization);
 }
 
-async function attachAiPriceCandidateMatchLabels(supabase: ReturnType<typeof createSupabaseServiceClient>, candidates: AiPriceCandidate[]) {
+export async function attachAiPriceCandidateMatchLabels(supabase: ReturnType<typeof createSupabaseServiceClient>, candidates: AiPriceCandidate[]) {
   const materialCodes = Array.from(new Set(candidates
     .filter((candidate) => candidate.matched_entity_type === "material_master" && candidate.matched_entity_id)
     .map((candidate) => candidate.matched_entity_id as string)));

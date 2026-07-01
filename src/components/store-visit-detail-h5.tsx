@@ -287,7 +287,7 @@ function formatMaterialOptionLabel(item: MaterialMaster | null | undefined) {
 function formatCompetitorOptionLabel(item: CompetitorProduct | null | undefined) {
   const value = competitorOptionValue(item);
   if (!value) return null;
-  return [item?.brands?.name, item?.normalized_name, value].filter(Boolean).join(" / ");
+  return [item?.brands?.name, item?.normalized_name].filter(Boolean).join(" / ");
 }
 
 function filterValidMatchOptions(options: Array<MaterialMaster | CompetitorProduct | null | undefined>) {

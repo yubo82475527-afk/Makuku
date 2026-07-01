@@ -299,6 +299,8 @@ test("photo price review uses row click drawer with compact risk indicators and 
 
 test("store visit detail route returns signed photos from new image table and legacy arrays", () => {
   assert.match(storeVisitRoute, /const aiPriceCandidateSelect = /);
+  assert.match(storeVisitRoute, /attachAiPriceCandidateMatchLabels/);
+  assert.match(storeVisitRoute, /ai_price_candidates: await attachAiPriceCandidateMatchLabels\(supabase, signedVisit\.ai_price_candidates \?\? \[\]\)/);
   assert.match(storeVisitRoute, /const visitSelect = `id,visit_code,[\s\S]+offline_visit_images\(id,visit_id,replaces_image_id,replaced_by_image_id,deleted_at,deletion_reason,image_type,image_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at\),ai_price_candidates\(\$\{aiPriceCandidateSelect\}\)`/);
   assert.match(storeVisitRoute, /const legacyVisitSelect = `id,visit_code,[\s\S]+offline_visit_images\(id,visit_id,image_type,image_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at\),ai_price_candidates\(\$\{aiPriceCandidateSelect\}\)`/);
   assert.match(storeVisitRoute, /offline-visit-images/);
@@ -380,6 +382,13 @@ test("mobile store visit detail displays matched SKU status in each parsed price
   assert.match(storeVisitDetailH5, /\{matchInfo\.matched \? matchInfo\.label : text\.rowUnmatched\}/);
   assert.doesNotMatch(storeVisitDetailH5, /matchSkuPrefix/);
   assert.doesNotMatch(storeVisitDetailH5, /truncate text-\[11px\] font-semibold \$\{matchInfo\.matched/);
+});
+
+test("mobile store visit detail hides competitor product UUIDs from SKU match labels", () => {
+  assert.match(storeVisitDetailH5, /function formatCompetitorOptionLabel/);
+  assert.match(storeVisitDetailH5, /return \[item\?\.brands\?\.name, item\?\.normalized_name\]\.filter\(Boolean\)\.join\(" \/ "\);/);
+  assert.match(storeVisitDetailH5, /const value = competitorOptionValue\(item\);/);
+  assert.doesNotMatch(storeVisitDetailH5, /return \[item\?\.brands\?\.name, item\?\.normalized_name, value\]\.filter\(Boolean\)\.join\(" \/ "\);/);
 });
 
 test("mobile store visit detail loads SKU options only when the user changes SKU match", () => {

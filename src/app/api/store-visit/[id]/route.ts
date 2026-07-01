@@ -1,9 +1,14 @@
 import { createSupabaseServiceClient } from "@/lib/supabase";
-import type { OfflineImageType, OfflineStoreVisit, OfflineVisitImage, StoreVisitImageCategory } from "@/lib/types";
+import { attachAiPriceCandidateMatchLabels } from "@/lib/data";
+import type { AiPriceCandidate, OfflineImageType, OfflineStoreVisit, OfflineVisitImage, StoreVisitImageCategory } from "@/lib/types";
 import { isInactiveVisitImage, refreshStoreVisitStoredPriceState } from "@/lib/store-visit-image-maintenance";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
+};
+
+type StoreVisitWithPriceCandidates = OfflineStoreVisit & {
+  ai_price_candidates?: AiPriceCandidate[];
 };
 
 const aiPriceCandidateSelect = "id,visit_id,candidate_key,source_image_id,source_image_path,raw_brand,raw_product,raw_price,parsed_price_idr,list_price_idr,package_price_idr,net_price_idr,promo_type,piece_count,price_per_piece,candidate_type,ai_confidence,matched_entity_type,matched_entity_id,matched_label,match_score,warnings,status,price_snapshot_id,reviewed_piece_count,reviewed_price_per_piece,created_at,reviewed_at,reviewed_by,rejection_reason,review_method,h5_lifecycle_status,h5_lifecycle_at";
@@ -78,7 +83,7 @@ export async function GET(_request: Request, ctx: RouteContext) {
 
     if (error || !data) return Response.json({ error: error?.message ?? "Visit not found" }, { status: 404 });
 
-    let visit = data as unknown as OfflineStoreVisit;
+    let visit = data as unknown as StoreVisitWithPriceCandidates;
     const staleAnalyzingImages = Array.isArray(visit.offline_visit_images) ? visit.offline_visit_images : [];
     const hasPendingImage = staleAnalyzingImages.some((image) => image.analysis_status === "pending" || image.analysis_status === "analyzing");
     if ((visit.analysis_status === "analyzing" || visit.visit_status === "analyzing") && !hasPendingImage) {
@@ -106,6 +111,7 @@ export async function GET(_request: Request, ctx: RouteContext) {
     return Response.json({
       visit: {
         ...signedVisit,
+        ai_price_candidates: await attachAiPriceCandidateMatchLabels(supabase, signedVisit.ai_price_candidates ?? []),
         replaced_offline_visit_images: replacedImages,
         signed_images: signedVisitWithAllImages.signed_images,
       },
