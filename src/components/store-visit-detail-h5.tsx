@@ -375,6 +375,7 @@ function detailText(locale: Locale) {
         retakeRequired: "请重新上传该图片",
         retakeRequiredSummary: "有价格标签照片需重传，请进入照片操作重新拍照或从相册替换。",
         retakeRequiredFallback: "请正对价格标签靠近拍摄，确保价格数字清楚无遮挡。",
+        refreshVisit: "刷新",
       }
     : {
         batchCode: "Batch code",
@@ -446,6 +447,7 @@ function detailText(locale: Locale) {
         retakeRequired: "Please re-upload this photo",
         retakeRequiredSummary: "Price-tag photo needs retake. Use photo actions to retake or replace it.",
         retakeRequiredFallback: "Retake directly facing the price tags, closer to the shelf, with clear unobstructed price digits.",
+        refreshVisit: "Refresh",
       };
 }
 
@@ -467,6 +469,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   const deleteLabel = textOrFallback(text.delete, locale === "zh" ? "删除" : "Delete");
   const [visit, setVisit] = useState<StoreVisitDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshingVisit, setRefreshingVisit] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisPhase, setAnalysisPhase] = useState<"idle" | "running" | "refreshing">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -518,6 +521,16 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
     }, 0);
     return () => clearTimeout(timeout);
   }, [loadVisit]);
+
+  async function refreshVisitDetail() {
+    if (refreshingVisit || analysisPhase !== "idle") return;
+    setRefreshingVisit(true);
+    try {
+      await loadVisit({ preserveLoading: true });
+    } finally {
+      setRefreshingVisit(false);
+    }
+  }
 
   const loadMatchOptions = useCallback(async () => {
     if (matchOptions.materials.length > 0 || matchOptions.products.length > 0 || matchOptionsLoading) return;
@@ -932,17 +945,27 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
           <div className="space-y-4">
             <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-center justify-between gap-3">
-                <div>
+                <div className="min-w-0">
                   <div className="text-xs font-medium uppercase text-slate-500">{copy.analysisStatus}</div>
                   <div className="mt-1 text-lg font-bold">{mobileAnalysisStatusLabel(locale, status)}</div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex shrink-0 items-center gap-2">
                   {canRunWholeVisitAnalysis ? (
                     <button type="button" onClick={analyze} disabled={analyzing} className="inline-flex h-10 items-center gap-2 rounded-lg bg-blue-600 px-3 text-sm font-bold text-white disabled:opacity-60">
                       {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                       {copy.analyzeStore}
                     </button>
                   ) : null}
+                  <button
+                    type="button"
+                    onClick={refreshVisitDetail}
+                    disabled={refreshingVisit || analysisPhase !== "idle"}
+                    aria-label={text.refreshVisit}
+                    className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm disabled:opacity-60"
+                  >
+                    {refreshingVisit ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    <span>{text.refreshVisit}</span>
+                  </button>
                 </div>
               </div>
               {status === "partial" ? (

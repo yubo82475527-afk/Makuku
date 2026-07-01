@@ -60,6 +60,22 @@ test("candidate review service centralizes approve reject and rule eligibility",
   assert.match(singleRoute, /approveAiPriceCandidate/);
 });
 
+test("auto review processes eligible candidates with bounded concurrency", () => {
+  assert.match(reviewService, /const AUTO_REVIEW_CONCURRENCY\s*=\s*10/);
+  assert.match(reviewService, /eligibleCandidates/);
+  assert.match(reviewService, /autoReviewCursor/);
+  assert.match(reviewService, /Promise\.all\(Array\.from\(\{ length: workerCount \}, \(\) => autoReviewWorker\(\)\)\)/);
+  assert.match(reviewService, /candidateMatchesReviewRule/);
+  assert.match(reviewService, /approveAiPriceCandidate/);
+  const autoApproveIndex = reviewService.indexOf("export async function autoApproveAiPriceCandidatesForVisit");
+  const eligibilityLoopIndex = reviewService.indexOf("for (const candidate of candidateRows)", autoApproveIndex);
+  const workerIndex = reviewService.indexOf("const autoReviewWorker", autoApproveIndex);
+  assert.notEqual(autoApproveIndex, -1);
+  assert.notEqual(eligibilityLoopIndex, -1);
+  assert.notEqual(workerIndex, -1);
+  assert.doesNotMatch(reviewService.slice(eligibilityLoopIndex, workerIndex), /await approveAiPriceCandidate/);
+});
+
 test("single candidate API can save pending review input without approving", () => {
   assert.match(singleRoute, /save_review_input/);
   assert.match(singleRoute, /parsed_price_idr/);

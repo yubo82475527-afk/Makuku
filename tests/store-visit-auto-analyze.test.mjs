@@ -129,6 +129,15 @@ test("H5 detail turns refresh 409 conflicts into a friendly operator message", (
   assert.match(storeVisitDetailH5, /if \(analyzeRes\.status === 409\)/);
 });
 
+test("H5 detail analysis status card exposes a manual detail refresh button", () => {
+  assert.match(storeVisitDetailH5, /const \[refreshingVisit, setRefreshingVisit\] = useState\(false\)/);
+  assert.match(storeVisitDetailH5, /async function refreshVisitDetail\(\)/);
+  assert.match(storeVisitDetailH5, /await loadVisit\(\{ preserveLoading: true \}\)/);
+  assert.match(storeVisitDetailH5, /aria-label=\{text\.refreshVisit\}/);
+  assert.match(storeVisitDetailH5, /\{refreshingVisit \? <Loader2 className="h-4 w-4 animate-spin" \/> : <RefreshCw className="h-4 w-4" \/>\}/);
+  assert.match(storeVisitDetailH5, /\{text\.refreshVisit\}/);
+});
+
 test("store visit analysis supports partial success and image-level failure records", () => {
   assert.match(storeVisitAiDebug, /priceImageFailures/);
   assert.match(storeVisitAiDebug, /analysis_status: "failed"/);

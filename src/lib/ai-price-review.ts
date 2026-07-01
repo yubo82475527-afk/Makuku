@@ -4,6 +4,9 @@ import { ensureSkuMasterFromMaterial } from "@/lib/sku-master-bridge";
 import type { AiPriceCandidate, AiPriceCandidateReviewMethod, AiPriceReviewRule, CompetitorProduct } from "@/lib/types";
 
 type SupabaseServiceClient = ReturnType<typeof import("@/lib/supabase").createSupabaseServiceClient>;
+
+const AUTO_REVIEW_CONCURRENCY = 10;
+
 type CandidateUpdatePayload = {
   status: "approved" | "rejected";
   parsed_price_idr?: number;
@@ -266,6 +269,7 @@ export async function autoApproveAiPriceCandidatesForVisit({
   let skippedCount = 0;
   let failedCount = 0;
   const errors: string[] = [];
+  const eligibleCandidates: AiPriceCandidate[] = [];
 
   for (const candidate of candidateRows) {
     const eligibility = candidateMatchesReviewRule(candidate, ruleResult.data);
@@ -273,22 +277,36 @@ export async function autoApproveAiPriceCandidatesForVisit({
       skippedCount += 1;
       continue;
     }
-
-    try {
-      await approveAiPriceCandidate({
-        supabase,
-        candidateId: candidate.id,
-        priceIdr: candidate.parsed_price_idr,
-        pieceCount: candidate.piece_count,
-        reviewer: "auto_rule",
-        reviewMethod: "auto_rule",
-      });
-      approvedCount += 1;
-    } catch (error) {
-      failedCount += 1;
-      errors.push(error instanceof Error ? error.message : "Unknown auto review error");
-    }
+    eligibleCandidates.push(candidate);
   }
+
+  let autoReviewCursor = 0;
+  const autoReviewWorker = async () => {
+    while (true) {
+      const cursor = autoReviewCursor;
+      autoReviewCursor += 1;
+      const candidate = eligibleCandidates[cursor];
+      if (!candidate) return;
+
+      try {
+        await approveAiPriceCandidate({
+          supabase,
+          candidateId: candidate.id,
+          priceIdr: candidate.parsed_price_idr,
+          pieceCount: candidate.piece_count,
+          reviewer: "auto_rule",
+          reviewMethod: "auto_rule",
+        });
+        approvedCount += 1;
+      } catch (error) {
+        failedCount += 1;
+        errors.push(error instanceof Error ? error.message : "Unknown auto review error");
+      }
+    }
+  };
+
+  const workerCount = Math.min(AUTO_REVIEW_CONCURRENCY, Math.max(eligibleCandidates.length, 1));
+  await Promise.all(Array.from({ length: workerCount }, () => autoReviewWorker()));
 
   return { approvedCount, failedCount, skippedCount, errors };
 }
