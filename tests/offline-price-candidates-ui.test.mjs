@@ -8,12 +8,14 @@ const workbench = readFileSync(workbenchPath, "utf8");
 const storeVisitRoute = readFileSync("src/app/api/store-visit/[id]/route.ts", "utf8");
 const storeVisitDetailH5 = readFileSync("src/components/store-visit-detail-h5.tsx", "utf8");
 const candidateRoute = readFileSync("src/app/api/ai-price-candidates/[id]/route.ts", "utf8");
+const storeVisitCandidateRoute = readFileSync("src/app/api/store-visit/price-candidates/[id]/route.ts", "utf8");
 const candidateListRoute = readFileSync("src/app/api/ai-price-candidates/route.ts", "utf8");
 const aiPriceReview = readFileSync("src/lib/ai-price-review.ts", "utf8");
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const typesFile = readFileSync("src/lib/types.ts", "utf8");
 const materialMasterRoute = readFileSync("src/app/api/material-master/route.ts", "utf8");
 const competitorsRoute = readFileSync("src/app/api/competitors/route.ts", "utf8");
+const storeVisitMatchOptionsRoute = readFileSync("src/app/api/store-visit/match-options/route.ts", "utf8");
 const candidateExportRoute = readFileSync("src/app/api/ai-price-candidates/export/route.ts", "utf8");
 
 test("photo price review keeps compact date filter and export action", () => {
@@ -137,13 +139,16 @@ test("photo price review filters by source image id and shows it in the list", (
   assert.match(dataFile, /imageId\?: string/);
   assert.match(dataFile, /matchesAiPriceCandidateImageId/);
   assert.match(dataFile, /normalizedSourceImageId\.endsWith\(normalizedQuery\)/);
-  assert.match(dataFile, /\.ilike\("source_image_id"/);
+  assert.match(dataFile, /formatShortImageId\(candidate\.source_image_id\) === normalizedQuery/);
 });
 
 test("photo price review image filter no longer falls back to 5000-row client filtering", () => {
   assert.doesNotMatch(dataFile, /limit:\s*Math\.max\(page \* perPage, 5000\)/);
   assert.doesNotMatch(dataFile, /const imageFilteredResult = await getAiPriceCandidates\(/);
-  assert.match(dataFile, /if \(filters\.imageId\) query = query\.ilike\("source_image_id",/);
+  assert.doesNotMatch(dataFile, /if \(filters\.imageId\) query = query\.ilike\("source_image_id",/);
+  assert.match(dataFile, /const pageRows = \(data \?\? \[\]\) as AiPriceCandidate\[\];/);
+  assert.match(dataFile, /const imageFilteredRows = filters\.imageId\s*\?\s*pageRows\.filter\(\(candidate\) => matchesAiPriceCandidateImageId\(candidate, filters\.imageId!\)\)\s*:\s*pageRows;/);
+  assert.match(dataFile, /const candidates = await attachAiPriceCandidateMatchLabels\(supabase, imageFilteredRows\);/);
   assert.match(dataFile, /return \{ data: candidates, total: count \?\? 0, page, perPage/);
 });
 
@@ -293,8 +298,9 @@ test("photo price review uses row click drawer with compact risk indicators and 
 });
 
 test("store visit detail route returns signed photos from new image table and legacy arrays", () => {
-  assert.match(storeVisitRoute, /const visitSelect = "id,visit_code,[\s\S]+offline_visit_images\(id,visit_id,replaces_image_id,replaced_by_image_id,deleted_at,deletion_reason,image_type,image_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at\)"/);
-  assert.match(storeVisitRoute, /const legacyVisitSelect = "id,visit_code,[\s\S]+offline_visit_images\(id,visit_id,image_type,image_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at\)"/);
+  assert.match(storeVisitRoute, /const aiPriceCandidateSelect = /);
+  assert.match(storeVisitRoute, /const visitSelect = `id,visit_code,[\s\S]+offline_visit_images\(id,visit_id,replaces_image_id,replaced_by_image_id,deleted_at,deletion_reason,image_type,image_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at\),ai_price_candidates\(\$\{aiPriceCandidateSelect\}\)`/);
+  assert.match(storeVisitRoute, /const legacyVisitSelect = `id,visit_code,[\s\S]+offline_visit_images\(id,visit_id,image_type,image_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at\),ai_price_candidates\(\$\{aiPriceCandidateSelect\}\)`/);
   assert.match(storeVisitRoute, /offline-visit-images/);
   assert.match(storeVisitRoute, /store-visits/);
   assert.match(storeVisitRoute, /signed_images/);
@@ -334,4 +340,156 @@ test("mobile store visit detail keeps each parsed SKU row compact", () => {
   assert.match(storeVisitDetailH5, /grid-cols-\[minmax\(0,1fr\)_auto\]/);
   assert.match(storeVisitDetailH5, /truncate text-\[11px\]/);
   assert.doesNotMatch(storeVisitDetailH5, /<Metric label=\{text\.listPrice\}/);
+});
+
+test("mobile store visit detail uses Edit entry instead of activity type and pcs badge", () => {
+  assert.match(storeVisitDetailH5, /editRow: "Edit"/);
+  assert.match(storeVisitDetailH5, /text-blue-600/);
+  assert.match(storeVisitDetailH5, /<button/);
+  assert.match(storeVisitDetailH5, /\{text\.editRow\}/);
+  assert.match(storeVisitDetailH5, /onClick=\{\(\) => onOpenRowEditor\(/);
+  assert.match(storeVisitDetailH5, /pieceCount: "Pcs"/);
+  assert.match(storeVisitDetailH5, /<PriceMetricRow label=\{text\.pieceCount\} value=\{displayPieceCount/);
+  assert.doesNotMatch(storeVisitDetailH5, /<PriceMetricRow label=\{text\.promoType\}/);
+});
+
+test("mobile store visit detail loads candidate review data and H5 match options", () => {
+  assert.match(storeVisitRoute, /ai_price_candidates/);
+  assert.match(storeVisitDetailH5, /matchCandidateForRow/);
+  assert.match(storeVisitDetailH5, /candidateDisplayPieceCount/);
+  assert.match(storeVisitDetailH5, /candidateDisplayPricePerPiece/);
+  assert.match(storeVisitDetailH5, /RowEditSheet/);
+  assert.match(storeVisitDetailH5, /matchedEntityType: candidate\?\.matched_entity_type \?\? "unmatched"/);
+  assert.match(storeVisitDetailH5, /matchedEntityId: candidate\?\.matched_entity_id \?\? ""/);
+  assert.match(storeVisitDetailH5, /selectedMatchLabel: candidate\?\.matched_sku_label \?\? candidate\?\.matched_label \?\? ""/);
+  assert.match(storeVisitDetailH5, /fetch\("\/api\/store-visit\/match-options"\)/);
+  assert.match(storeVisitMatchOptionsRoute, /requireAppSession/);
+  assert.match(storeVisitMatchOptionsRoute, /\.from\("material_master"\)/);
+  assert.match(storeVisitMatchOptionsRoute, /\.from\("competitor_products"\)/);
+});
+
+test("mobile store visit detail loads SKU options only when the user changes SKU match", () => {
+  assert.match(storeVisitDetailH5, /originalMatchedEntityType: candidate\?\.matched_entity_type \?\? "unmatched"/);
+  assert.match(storeVisitDetailH5, /originalMatchedEntityId: candidate\?\.matched_entity_id \?\? ""/);
+  assert.match(storeVisitDetailH5, /const loadMatchOptions = useCallback/);
+  assert.match(storeVisitDetailH5, /onRequestMatchOptions=\{\(\) => void loadMatchOptions\(\)\}/);
+  assert.doesNotMatch(storeVisitDetailH5, /useEffect\(\(\) => \{\s*if \(!rowEdit \|\| matchOptions\.materials\.length/);
+});
+
+test("mobile store visit detail no longer sends a second match update from H5 save", () => {
+  assert.match(storeVisitDetailH5, /action: "save_h5_row"/);
+  assert.doesNotMatch(storeVisitDetailH5, /const matchChanged = rowEdit\.matchedEntityType !== rowEdit\.originalMatchedEntityType/);
+  assert.doesNotMatch(storeVisitDetailH5, /if \(matchChanged\) \{/);
+  assert.doesNotMatch(storeVisitDetailH5, /action: "update_match"/);
+});
+
+test("mobile store visit detail saves H5 row edits through one request", () => {
+  assert.match(storeVisitDetailH5, /action: "save_h5_row"/);
+  assert.match(storeVisitDetailH5, /matched_entity_type: rowEdit\.matchedEntityType/);
+  assert.match(storeVisitDetailH5, /matched_entity_id: rowEdit\.matchedEntityType === "unmatched" \? null : rowEdit\.matchedEntityId/);
+  assert.match(storeVisitDetailH5, /matched_label: resolveMatchLabel\(rowEdit, matchOptions\)/);
+  assert.doesNotMatch(storeVisitDetailH5, /action: "save_review_input"/);
+  assert.doesNotMatch(storeVisitDetailH5, /const matchChanged = rowEdit\.matchedEntityType !== rowEdit\.originalMatchedEntityType/);
+  assert.doesNotMatch(storeVisitDetailH5, /action: "update_match"/);
+});
+
+test("mobile store visit detail closes row editor before refreshing full visit data", () => {
+  assert.match(storeVisitDetailH5, /applySavedRowCandidate\(candidate as AiPriceCandidate\)/);
+  assert.match(storeVisitDetailH5, /setRowEdit\(null\)/);
+  assert.match(storeVisitDetailH5, /void loadVisit\(\{ preserveLoading: true \}\)/);
+  assert.doesNotMatch(storeVisitDetailH5, /await loadVisit\(\{ preserveLoading: true \}\);\s*setRowEdit\(null\)/);
+});
+
+test("mobile store visit detail does not crash when selected SKU option is missing", () => {
+  assert.match(storeVisitDetailH5, /function formatMaterialOptionLabel\(item: MaterialMaster \| null \| undefined\)/);
+  assert.match(storeVisitDetailH5, /String\(item\?\.tenant_sku_code \?\? ""\)\.trim\(\)/);
+  assert.match(storeVisitDetailH5, /return value \|\| null;/);
+  assert.match(storeVisitDetailH5, /function resolveMatchLabel/);
+  assert.match(storeVisitDetailH5, /rowEdit\.selectedMatchLabel \|\| null/);
+  assert.match(storeVisitDetailH5, /const options = filterValidMatchOptions\(/);
+  assert.match(storeVisitDetailH5, /matched_label: resolveMatchLabel\(rowEdit, matchOptions\)/);
+  assert.doesNotMatch(storeVisitDetailH5, /"tenant_sku_code" in item/);
+});
+
+test("mobile store visit detail shows loading text before match options fail", () => {
+  assert.match(storeVisitDetailH5, /loadingMatchOptions: "Loading SKU match options"/);
+  assert.match(storeVisitDetailH5, /matchOptionsError/);
+  assert.match(storeVisitDetailH5, /matchOptionsError \?\? \(matchOptionsLoading \? text\.loadingMatchOptions : text\.searchMatch\)/);
+  assert.doesNotMatch(storeVisitDetailH5, /matchOptionsLoading \? text\.loadMatchOptionsFailed : text\.searchMatch/);
+});
+
+test("mobile store visit detail shows current matched SKU before options finish loading", () => {
+  assert.match(storeVisitDetailH5, /const selectedMatchOptionLabel = rowEdit\.matchedEntityId/);
+  assert.match(storeVisitDetailH5, /rowEdit\.selectedMatchLabel \|\| rowEdit\.matchedEntityId/);
+  assert.match(storeVisitDetailH5, /const selectedMatchOption = selectedMatchOptionLabel/);
+  assert.match(storeVisitDetailH5, /const hasSelectedMatchOption = selectedMatchOption/);
+  assert.match(storeVisitDetailH5, /const selectedMatchOption = selectedMatchOptionLabel/);
+  assert.match(storeVisitDetailH5, /selectedMatchOption && !hasSelectedMatchOption \? \[selectedMatchOption, \.\.\.optionItems\] : optionItems/);
+});
+
+test("mobile store visit detail keeps selected SKU separate from clearable search text", () => {
+  assert.match(storeVisitDetailH5, /matchSearchQuery: ""/);
+  assert.match(storeVisitDetailH5, /selectedMatchLabel: candidate\?\.matched_sku_label \?\? candidate\?\.matched_label \?\? ""/);
+  assert.match(storeVisitDetailH5, /const matchQueryValue = rowEdit\.matchSearchQuery;/);
+  assert.match(storeVisitDetailH5, /Current SKU/);
+  assert.match(storeVisitDetailH5, /selectedMatchLabel: item\.label/);
+  assert.match(storeVisitDetailH5, /matchSearchQuery: ""/);
+  assert.doesNotMatch(storeVisitDetailH5, /const matchQueryValue = rowEdit\.matchQuery \|\| selectedMatchOptionLabel \|\| ""/);
+  assert.doesNotMatch(storeVisitDetailH5, /onChange=\{\(event\) => onChange\(\(current\) => current \? \{ \.\.\.current, matchQuery: event\.target\.value \} : current\)\}/);
+});
+
+test("mobile store visit detail uses fuzzy searchable SKU match picker", () => {
+  assert.match(storeVisitDetailH5, /function normalizeSkuSearchText/);
+  assert.match(storeVisitDetailH5, /function fuzzyMatchSkuOption/);
+  assert.match(storeVisitDetailH5, /const visibleMatchOptions =/);
+  assert.match(storeVisitDetailH5, /matchQueryValue/);
+  assert.match(storeVisitDetailH5, /role="listbox"/);
+  assert.match(storeVisitDetailH5, /role="option"/);
+  assert.doesNotMatch(storeVisitDetailH5, /<select\s+value=\{rowEdit\.matchedEntityId\}/);
+});
+
+test("mobile store visit detail keeps SKU search usable above mobile keyboard", () => {
+  assert.match(storeVisitDetailH5, /max-h-\[calc\(100dvh-24px\)\]/);
+  assert.match(storeVisitDetailH5, /overflow-y-auto/);
+  assert.match(storeVisitDetailH5, /max-h-\[32dvh\]/);
+  assert.match(storeVisitDetailH5, /sticky bottom-0/);
+});
+
+test("mobile store visit detail matches approved candidate rows before falling back to unmatched", () => {
+  assert.doesNotMatch(storeVisitDetailH5, /candidate\.status === "pending"/);
+  assert.match(storeVisitDetailH5, /candidate\.source_image_id === imageId/);
+  assert.match(storeVisitDetailH5, /normalizeMatchText\(candidate\.raw_product\) === normalizedSku/);
+  assert.match(storeVisitDetailH5, /const aPieceMatch = candidateDisplayPieceCount\(a, row\.piece_count\) === rowPieceCount \? 1 : 0;/);
+  assert.match(storeVisitDetailH5, /const rowNetPrice = row\.net_price_idr \?\? null;/);
+  assert.match(storeVisitDetailH5, /const aPriceMatch = \(a\.net_price_idr \?\? a\.parsed_price_idr \?\? null\) === rowNetPrice \? 1 : 0;/);
+  assert.match(storeVisitDetailH5, /sort\(\(a, b\) =>/);
+});
+
+test("H5 price candidate API updates approved matches and syncs linked snapshots", () => {
+  assert.match(storeVisitCandidateRoute, /action === "update_match"/);
+  assert.match(storeVisitCandidateRoute, /action === "save_review_input"/);
+  assert.match(storeVisitCandidateRoute, /\.in\("status", \["pending", "approved"\]\)/);
+  assert.match(storeVisitCandidateRoute, /syncCandidateMatchToPriceSnapshot/);
+  assert.match(storeVisitCandidateRoute, /syncCandidateReviewInputToPriceSnapshot/);
+  assert.match(storeVisitCandidateRoute, /if \(candidate\.price_snapshot_id\) \{/);
+  assert.match(aiPriceReview, /export async function syncCandidateMatchToPriceSnapshot/);
+  assert.match(aiPriceReview, /export async function syncCandidateReviewInputToPriceSnapshot/);
+  assert.match(aiPriceReview, /Price snapshot not found/);
+  assert.match(aiPriceReview, /source_matched_entity_type/);
+  assert.match(aiPriceReview, /source_matched_entity_id/);
+  assert.match(aiPriceReview, /competitor_product_id: null/);
+  assert.match(aiPriceReview, /sku_master_id: skuMasterId/);
+  assert.match(aiPriceReview, /material_sku_code: materialSkuCode/);
+  assert.match(aiPriceReview, /competitor_product_id: competitorProduct\.id/);
+  assert.match(aiPriceReview, /sku_master_id: null/);
+  assert.match(aiPriceReview, /material_sku_code: null/);
+});
+
+test("H5 price candidate API combines H5 row price and match save into one action", () => {
+  assert.match(storeVisitCandidateRoute, /action === "save_h5_row"/);
+  assert.match(storeVisitCandidateRoute, /const h5RowPatch = buildReviewInputPatch/);
+  assert.match(storeVisitCandidateRoute, /buildMatchPatch/);
+  assert.match(storeVisitCandidateRoute, /syncCandidateReviewInputToPriceSnapshot/);
+  assert.match(storeVisitCandidateRoute, /syncCandidateMatchToPriceSnapshot/);
+  assert.match(storeVisitCandidateRoute, /return Response\.json\(\{ candidate \}\)/);
 });

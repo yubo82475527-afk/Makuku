@@ -748,7 +748,6 @@ export async function getAiPriceCandidatesPage(filters: AiPriceCandidateFilters 
   if (filters.dateFrom) query = query.gte("offline_store_visits.visit_date", filters.dateFrom);
   if (filters.dateTo) query = query.lte("offline_store_visits.visit_date", filters.dateTo);
   if (filters.visitCode) query = query.ilike("offline_store_visits.visit_code", `%${escapeIlikePattern(filters.visitCode)}%`);
-  if (filters.imageId) query = query.ilike("source_image_id", `%${escapeIlikePattern(filters.imageId)}%`);
   if (filters.status) query = query.eq("status", filters.status);
   query = filters.status === "approved"
     ? query.order("reviewed_at", { ascending: false }).order("created_at", { ascending: false })
@@ -777,7 +776,11 @@ export async function getAiPriceCandidatesPage(filters: AiPriceCandidateFilters 
     return { data: [], total: 0, page, perPage, error: "Run migration 202605280005_ai_price_candidates.sql", isDemo: false };
   }
   if (error) return { data: [], total: 0, page, perPage, error: error.message, isDemo: false };
-  const candidates = await attachAiPriceCandidateMatchLabels(supabase, (data ?? []) as AiPriceCandidate[]);
+  const pageRows = (data ?? []) as AiPriceCandidate[];
+  const imageFilteredRows = filters.imageId
+    ? pageRows.filter((candidate) => matchesAiPriceCandidateImageId(candidate, filters.imageId!))
+    : pageRows;
+  const candidates = await attachAiPriceCandidateMatchLabels(supabase, imageFilteredRows);
   return { data: candidates, total: count ?? 0, page, perPage, error: null, isDemo: false };
 }
 

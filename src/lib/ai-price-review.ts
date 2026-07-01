@@ -382,6 +382,93 @@ function inferCompetitorSize(productName: string) {
   return match ? match[1].toUpperCase() : null;
 }
 
+export async function syncCandidateMatchToPriceSnapshot(
+  supabase: SupabaseServiceClient,
+  candidate: AiPriceCandidate,
+) {
+  if (!candidate.price_snapshot_id) return null;
+
+  const snapshotPayload = await buildSnapshotOwnerPayload(supabase, candidate, candidate.reviewed_piece_count ?? candidate.piece_count);
+  const { data: snapshot, error } = await supabase
+    .from("price_snapshots")
+    .update(snapshotPayload)
+    .eq("id", candidate.price_snapshot_id)
+    .select("*")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!snapshot) throw new Error("Price snapshot not found");
+  return snapshot;
+}
+
+export async function syncCandidateReviewInputToPriceSnapshot(
+  supabase: SupabaseServiceClient,
+  candidate: AiPriceCandidate,
+) {
+  if (!candidate.price_snapshot_id) return null;
+
+  const netPrice = Number(candidate.net_price_idr ?? candidate.parsed_price_idr);
+  const packagePrice = positiveNumberOrFallback(candidate.package_price_idr, netPrice);
+  const pieceCount = Number(candidate.reviewed_piece_count ?? candidate.piece_count);
+  if (!Number.isFinite(netPrice) || netPrice <= 0) throw new Error("Valid price is required");
+  if (!Number.isFinite(pieceCount) || pieceCount <= 0) throw new Error("Valid piece count is required");
+
+  const normalized = normalizePriceSnapshot({
+    promo_price_idr: packagePrice,
+    voucher_value_idr: 0,
+    shipping_subsidy_idr: 0,
+    net_price_idr: netPrice,
+    piece_count: Math.floor(pieceCount),
+  });
+  const { data: snapshot, error } = await supabase
+    .from("price_snapshots")
+    .update({
+      list_price_idr: positiveNumberOrFallback(candidate.list_price_idr, packagePrice),
+      package_price_idr: packagePrice,
+      promo_price_idr: packagePrice,
+      net_price_idr: normalized.net_price_idr,
+      price_per_piece: normalized.price_per_piece,
+      promo_type: normalizeCandidatePromoType(candidate.promo_type),
+    })
+    .eq("id", candidate.price_snapshot_id)
+    .select("*")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!snapshot) throw new Error("Price snapshot not found");
+  return snapshot;
+}
+
+async function buildSnapshotOwnerPayload(
+  supabase: SupabaseServiceClient,
+  candidate: AiPriceCandidate,
+  pieceCount: number | null | undefined,
+) {
+  const normalizedPieceCount = Number(pieceCount ?? 0);
+  if (candidate.matched_entity_type === "material_master" && candidate.matched_entity_id) {
+    const materialSkuCode = candidate.matched_entity_id;
+    const skuMasterId = await ensureSkuMasterFromMaterial(supabase, materialSkuCode);
+    return {
+      competitor_product_id: null,
+      sku_master_id: skuMasterId,
+      material_sku_code: materialSkuCode,
+      source_matched_entity_type: candidate.matched_entity_type,
+      source_matched_entity_id: materialSkuCode,
+    };
+  }
+
+  if (candidate.matched_entity_type === "competitor_product") {
+    const competitorProduct = await ensureCompetitorProduct(supabase, candidate, Math.floor(normalizedPieceCount || 1));
+    return {
+      competitor_product_id: competitorProduct.id,
+      sku_master_id: null,
+      material_sku_code: null,
+      source_matched_entity_type: candidate.matched_entity_type,
+      source_matched_entity_id: competitorProduct.id,
+    };
+  }
+
+  throw new Error("Please match a product before approving this candidate");
+}
+
 function positiveNumberOrFallback(value: unknown, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
