@@ -961,10 +961,10 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                     onClick={refreshVisitDetail}
                     disabled={refreshingVisit || analysisPhase !== "idle"}
                     aria-label={text.refreshVisit}
-                    className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm disabled:opacity-60"
+                    title={text.refreshVisit}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-slate-50/70 text-slate-500 shadow-sm transition hover:border-slate-300 hover:bg-white hover:text-slate-700 disabled:opacity-60"
                   >
-                    {refreshingVisit ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                    <span>{text.refreshVisit}</span>
+                    {refreshingVisit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                   </button>
                 </div>
               </div>

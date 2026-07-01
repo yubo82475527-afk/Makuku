@@ -16,6 +16,14 @@ test("new store sheet reverse geocodes browser location through the server witho
   assert.doesNotMatch(storeVisitH5, /GOOGLE_MAPS_API_KEY/);
 });
 
+test("new store location evidence is required separately from reverse address fill", () => {
+  assert.match(storeVisitH5, /const \[storeLocation, setStoreLocation\] = useState<StoreLocationEvidence \| null>\(initialLocation\)/);
+  assert.match(storeVisitH5, /if \(!storeLocation\) \{\s*setError\(labels\.entryLocationDenied\);/s);
+  assert.match(storeVisitH5, /disabled=\{loading \|\| !selectedDealer \|\| !selectedExternalStore \|\| !storeLocation\}/);
+  assert.match(storeVisitH5, /setLocationStatus\(labels\.reverseAddressFailed\)/);
+  assert.match(storeVisitH5, /setLocationStatus\(data\.city \|\| data\.address \? "" : labels\.reverseAddressMissing\)/);
+});
+
 test("new store sheet puts required store identity fields before the bound location group", () => {
   const createStoreSheetIndex = storeVisitH5.indexOf("function CreateStoreSheet");
   const createStoreSheetSource = storeVisitH5.slice(createStoreSheetIndex);

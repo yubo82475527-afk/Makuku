@@ -530,7 +530,7 @@ test("new H5 store search children receive auth failure handling through props",
   assert.match(storeVisitH5, /function StoreSearchStep\(\{\s*locale,\s*user,\s*onAuthFailure,/s);
   assert.match(storeVisitH5, /<NewStoreSearchFlow locale=\{locale\} user=\{user\} query=\{query\} onAuthFailure=\{onAuthFailure\}/);
   assert.match(storeVisitH5, /function NewStoreSearchFlow\(\{\s*locale,\s*user,\s*query,\s*onAuthFailure,/s);
-  assert.match(storeVisitH5, /function GoogleStoreTypeSheet\(\{\s*locale,\s*store,\s*loading,\s*onClose,\s*onAuthFailure,/s);
+  assert.match(storeVisitH5, /function GoogleStoreTypeSheet\(\{\s*locale,\s*store,\s*locationReady,\s*loading,\s*onClose,\s*onAuthFailure,/s);
   assert.match(storeVisitH5, /function CreateStoreSheet\(\{\s*locale,\s*user,\s*onClose,\s*onAuthFailure,/s);
   assert.match(storeVisitH5, /onAuthFailure\(res, typeof data\.error === "string" \? data\.error : null\)/);
   assert.doesNotMatch(storeVisitH5, /function NewStoreSearchFlow[\s\S]*?function ReadOnlyRow[\s\S]*?handleAuthFailure\(res,/);
@@ -538,20 +538,38 @@ test("new H5 store search children receive auth failure handling through props",
 
 test("new store sheet actively checks location permission before allowing manual store creation", () => {
   assert.match(storeVisitH5, /function CreateStoreSheet/);
-  assert.match(storeVisitH5, /const \[entryLocationReady, setEntryLocationReady\] = useState\(false\)/);
+  assert.match(storeVisitH5, /const \[entryLocationReady, setEntryLocationReady\] = useState\(Boolean\(initialLocation\)\)/);
   assert.match(storeVisitH5, /const \[entryLocationChecking, setEntryLocationChecking\] = useState\(false\)/);
+  assert.match(storeVisitH5, /const \[entryLocationAttempted, setEntryLocationAttempted\] = useState\(Boolean\(initialLocation\)\)/);
   assert.match(storeVisitH5, /const \[entryLocationError, setEntryLocationError\] = useState<string \| null>\(null\)/);
   assert.match(storeVisitH5, /const ensureEntryLocation = useCallback\(\(\) => \{/);
+  assert.match(storeVisitH5, /setEntryLocationAttempted\(true\)/);
   assert.match(storeVisitH5, /setEntryLocationError\(labels\.entryLocationUnsupported\)/);
   assert.match(storeVisitH5, /setEntryLocationError\(labels\.entryLocationDenied\)/);
-  assert.match(storeVisitH5, /useEffect\(\(\) => \{\s*if \(entryLocationReady \|\| entryLocationChecking\) return;/s);
-  assert.match(storeVisitH5, /\}, \[ensureEntryLocation, entryLocationChecking, entryLocationReady\]\)/);
+  assert.match(storeVisitH5, /useEffect\(\(\) => \{\s*if \(entryLocationReady \|\| entryLocationChecking \|\| entryLocationAttempted\) return;/s);
+  assert.match(storeVisitH5, /\}, \[ensureEntryLocation, entryLocationAttempted, entryLocationChecking, entryLocationReady\]\)/);
   assert.match(storeVisitH5, /if \(!entryLocationReady\) \{/);
   assert.match(storeVisitH5, /labels\.entryLocationRequiredTitle/);
   assert.match(storeVisitH5, /labels\.entryLocationRequiredBody/);
   assert.match(storeVisitH5, /labels\.entryLocationRetry/);
   assert.match(storeVisitH5, /onClick=\{\(\) => setShowCreate\(true\)\}/);
+  assert.match(storeVisitH5, /if \(!storeLocation\) \{\s*setError\(labels\.entryLocationDenied\);/s);
+  assert.match(storeVisitH5, /disabled=\{loading \|\| !selectedDealer \|\| !selectedExternalStore \|\| !storeLocation\}/);
   assert.doesNotMatch(storeVisitH5, /if \(!user \|\| entryLocationReady \|\| entryLocationChecking\) return/);
+});
+
+test("H5 google store creation requires and saves current H5 location evidence", () => {
+  assert.match(storeVisitH5, /function NewStoreSearchFlow/);
+  assert.match(storeVisitH5, /function requireCurrentLocation\(\) \{\s*setError\(labels\.locationFailed\);\s*setLocationStatus\(labels\.locationFailed\);/s);
+  assert.match(storeVisitH5, /if \(!storeLocation\) \{\s*requireCurrentLocation\(\);[\s\S]*?return;\s*\}/);
+  assert.match(storeVisitH5, /latitude: storeLocation\.latitude/);
+  assert.match(storeVisitH5, /longitude: storeLocation\.longitude/);
+  assert.match(storeVisitH5, /location_accuracy_m: storeLocation\.location_accuracy_m/);
+  assert.match(storeVisitH5, /location_captured_at: storeLocation\.location_captured_at/);
+  assert.doesNotMatch(storeVisitH5, /function materializeSelectedGoogleStore[\s\S]*?latitude: store\.latitude \?\? null/);
+  assert.match(storeVisitH5, /initialLocation=\{storeLocation\}/);
+  assert.match(storeVisitH5, /locationReady=\{Boolean\(storeLocation\)\}/);
+  assert.match(storeVisitH5, /onNeedLocation=\{\(\) => \{\s*requireCurrentLocation\(\);/s);
 });
 
 test("new store modal stays inside the mobile webview when the keyboard opens", () => {

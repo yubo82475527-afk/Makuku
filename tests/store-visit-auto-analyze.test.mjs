@@ -134,8 +134,10 @@ test("H5 detail analysis status card exposes a manual detail refresh button", ()
   assert.match(storeVisitDetailH5, /async function refreshVisitDetail\(\)/);
   assert.match(storeVisitDetailH5, /await loadVisit\(\{ preserveLoading: true \}\)/);
   assert.match(storeVisitDetailH5, /aria-label=\{text\.refreshVisit\}/);
-  assert.match(storeVisitDetailH5, /\{refreshingVisit \? <Loader2 className="h-4 w-4 animate-spin" \/> : <RefreshCw className="h-4 w-4" \/>\}/);
-  assert.match(storeVisitDetailH5, /\{text\.refreshVisit\}/);
+  assert.match(storeVisitDetailH5, /title=\{text\.refreshVisit\}/);
+  assert.match(storeVisitDetailH5, /className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-slate-50\/70 text-slate-500 shadow-sm transition hover:border-slate-300 hover:bg-white hover:text-slate-700 disabled:opacity-60"/);
+  assert.match(storeVisitDetailH5, /\{refreshingVisit \? <Loader2 className="h-3\.5 w-3\.5 animate-spin" \/> : <RefreshCw className="h-3\.5 w-3\.5" \/>\}/);
+  assert.doesNotMatch(storeVisitDetailH5, /<span>\{text\.refreshVisit\}<\/span>/);
 });
 
 test("store visit analysis supports partial success and image-level failure records", () => {

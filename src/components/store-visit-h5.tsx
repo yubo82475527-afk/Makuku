@@ -1472,6 +1472,11 @@ function NewStoreSearchFlow({
   const [pendingGoogleStore, setPendingGoogleStore] = useState<GoogleStoreOption | null>(null);
   const googleSearchEmpty = !loading && googleResults.length === 0;
 
+  function requireCurrentLocation() {
+    setError(labels.locationFailed);
+    setLocationStatus(labels.locationFailed);
+  }
+
   function locateStores() {
     if (!navigator.geolocation) {
       setLocationStatus(labels.locationUnavailable);
@@ -1573,6 +1578,11 @@ function NewStoreSearchFlow({
   }
 
   async function materializeSelectedGoogleStore(store: GoogleStoreOption, selectedExternalStore: ExternalMdStoreOption) {
+    if (!storeLocation) {
+      requireCurrentLocation();
+      return;
+    }
+
     setMaterializingStore(store.google_place_id);
     setError(null);
     try {
@@ -1587,8 +1597,10 @@ function NewStoreSearchFlow({
           cityName: store.cityName ?? null,
           district: store.district ?? null,
           address: store.address ?? null,
-          latitude: store.latitude ?? null,
-          longitude: store.longitude ?? null,
+          latitude: storeLocation.latitude,
+          longitude: storeLocation.longitude,
+          location_accuracy_m: storeLocation.location_accuracy_m,
+          location_captured_at: storeLocation.location_captured_at,
           external_store_id: selectedExternalStore.code,
           external_store_name: selectedExternalStore.name,
           external_org_id: selectedExternalStore.zoneId ?? null,
@@ -1692,18 +1704,24 @@ function NewStoreSearchFlow({
             setShowCreate(false);
             onSelect(store);
           }}
+          initialLocation={storeLocation}
         />
       ) : null}
       {pendingGoogleStore && !pendingGoogleStore.local_store ? (
         <GoogleStoreTypeSheet
           locale={locale}
           store={pendingGoogleStore}
+          locationReady={Boolean(storeLocation)}
           loading={materializingStore === pendingGoogleStore.google_place_id}
           onClose={() => {
             if (materializingStore) return;
             setPendingGoogleStore(null);
           }}
           onAuthFailure={onAuthFailure}
+          onNeedLocation={() => {
+            requireCurrentLocation();
+            setPendingGoogleStore(null);
+          }}
           onConfirm={(selectedChannel) => materializeSelectedGoogleStore(pendingGoogleStore, selectedChannel)}
         />
       ) : null}
@@ -1714,16 +1732,20 @@ function NewStoreSearchFlow({
 function GoogleStoreTypeSheet({
   locale,
   store,
+  locationReady,
   loading,
   onClose,
   onAuthFailure,
+  onNeedLocation,
   onConfirm,
 }: {
   locale: Locale;
   store: GoogleStoreOption | null;
+  locationReady: boolean;
   loading: boolean;
   onClose: () => void;
   onAuthFailure: (response: Response, message?: string | null) => boolean;
+  onNeedLocation: () => void;
   onConfirm: (selectedExternalStore: ExternalMdStoreOption) => void;
 }) {
   const labels = uiCopy(locale);
@@ -1767,6 +1789,10 @@ function GoogleStoreTypeSheet({
             type="button"
             onClick={() => {
               if (!selectedExternalStore) return;
+              if (!locationReady) {
+                onNeedLocation();
+                return;
+              }
               onConfirm(selectedExternalStore);
             }}
             disabled={loading || !selectedDealer || !selectedExternalStore || !store}
@@ -1787,12 +1813,14 @@ function CreateStoreSheet({
   onClose,
   onAuthFailure,
   onCreated,
+  initialLocation,
 }: {
   locale: Locale;
   user: AppUser;
   onClose: () => void;
   onAuthFailure: (response: Response, message?: string | null) => boolean;
   onCreated: (store: OfflineStoreOption) => void;
+  initialLocation: StoreLocationEvidence | null;
 }) {
   const labels = uiCopy(locale);
   const [city, setCity] = useState("");
@@ -1800,10 +1828,11 @@ function CreateStoreSheet({
   const [cityName, setCityName] = useState("");
   const [district, setDistrict] = useState("");
   const [address, setAddress] = useState("");
-  const [entryLocationReady, setEntryLocationReady] = useState(false);
+  const [entryLocationReady, setEntryLocationReady] = useState(Boolean(initialLocation));
   const [entryLocationChecking, setEntryLocationChecking] = useState(false);
+  const [entryLocationAttempted, setEntryLocationAttempted] = useState(Boolean(initialLocation));
   const [entryLocationError, setEntryLocationError] = useState<string | null>(null);
-  const [storeLocation, setStoreLocation] = useState<StoreLocationEvidence | null>(null);
+  const [storeLocation, setStoreLocation] = useState<StoreLocationEvidence | null>(initialLocation);
   const [locationStatus, setLocationStatus] = useState("");
   const [locating, setLocating] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -1812,6 +1841,8 @@ function CreateStoreSheet({
   const [selectedExternalStore, setSelectedExternalStore] = useState<ExternalMdStoreOption | null>(null);
 
   const ensureEntryLocation = useCallback(() => {
+    setEntryLocationAttempted(true);
+
     if (!navigator.geolocation) {
       setEntryLocationReady(false);
       setEntryLocationChecking(false);
@@ -1843,10 +1874,10 @@ function CreateStoreSheet({
   }, [labels.entryLocationDenied, labels.entryLocationUnsupported]);
 
   useEffect(() => {
-    if (entryLocationReady || entryLocationChecking) return;
+    if (entryLocationReady || entryLocationChecking || entryLocationAttempted) return;
     const timeout = window.setTimeout(() => ensureEntryLocation(), 0);
     return () => window.clearTimeout(timeout);
-  }, [ensureEntryLocation, entryLocationChecking, entryLocationReady]);
+  }, [ensureEntryLocation, entryLocationAttempted, entryLocationChecking, entryLocationReady]);
 
   function captureStoreLocation() {
     if (!navigator.geolocation) {
@@ -1898,6 +1929,11 @@ function CreateStoreSheet({
   }
 
   async function createStore() {
+    if (!storeLocation) {
+      setError(labels.entryLocationDenied);
+      return;
+    }
+
     if (!selectedDealer || !selectedExternalStore || !city.trim()) {
       setError(labels.createRequired);
       return;
@@ -2034,7 +2070,7 @@ function CreateStoreSheet({
           </div>
         </div>
         <div className="sticky bottom-0 border-t border-slate-100 bg-white px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
-          <button type="button" onClick={createStore} disabled={loading || !selectedDealer || !selectedExternalStore} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 text-sm font-bold text-white disabled:opacity-60">
+          <button type="button" onClick={createStore} disabled={loading || !selectedDealer || !selectedExternalStore || !storeLocation} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 text-sm font-bold text-white disabled:opacity-60">
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Building2 className="h-4 w-4" />}
             {labels.createStore}
           </button>

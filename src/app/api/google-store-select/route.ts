@@ -54,6 +54,8 @@ export async function POST(request: Request) {
     const address = clean(body.address) || null;
     const latitude = cleanOptionalNumber(body.latitude);
     const longitude = cleanOptionalNumber(body.longitude);
+    const locationAccuracyM = cleanOptionalNumber(body.location_accuracy_m);
+    const locationCapturedAt = clean(body.location_captured_at) || null;
     const externalStoreId = clean(body.external_store_id);
     const externalOrgId = clean(body.external_org_id) || null;
     const externalOrgName = clean(body.external_org_name) || null;
@@ -144,6 +146,8 @@ export async function POST(request: Request) {
         address,
         latitude,
         longitude,
+        location_accuracy_m: locationAccuracyM,
+        location_captured_at: locationCapturedAt,
         created_by: auth.session.displayName,
         created_by_user_id: auth.session.id,
         created_by_name: auth.session.displayName,
@@ -175,6 +179,8 @@ export async function POST(request: Request) {
           address,
           latitude,
           longitude,
+          location_accuracy_m: locationAccuracyM,
+          location_captured_at: locationCapturedAt,
           created_by: auth.session.displayName,
           created_by_user_id: auth.session.id,
           created_by_name: auth.session.displayName,
@@ -206,6 +212,8 @@ export async function POST(request: Request) {
           address,
           latitude,
           longitude,
+          location_accuracy_m: locationAccuracyM,
+          location_captured_at: locationCapturedAt,
           created_by: auth.session.displayName,
           created_by_user_id: auth.session.id,
           created_by_name: auth.session.displayName,
