@@ -457,16 +457,23 @@ test("mobile store visit detail uses fuzzy searchable SKU match picker", () => {
   assert.match(storeVisitDetailH5, /function fuzzyMatchSkuOption/);
   assert.match(storeVisitDetailH5, /const visibleMatchOptions =/);
   assert.match(storeVisitDetailH5, /matchQueryValue/);
-  assert.match(storeVisitDetailH5, /role="listbox"/);
+  assert.match(storeVisitDetailH5, /function H5SkuMatchSearchSheet/);
+  assert.match(storeVisitDetailH5, /window\.visualViewport/);
+  assert.match(storeVisitDetailH5, /100dvh/);
+  assert.match(storeVisitDetailH5, /min-h-0 flex-1 overflow-y-auto overscroll-contain/);
+  assert.match(storeVisitDetailH5, /autoFocus/);
+  assert.match(storeVisitDetailH5, /const \[matchPickerOpen, setMatchPickerOpen\] = useState\(false\)/);
+  assert.match(storeVisitDetailH5, /setMatchPickerOpen\(true\)/);
   assert.match(storeVisitDetailH5, /role="option"/);
+  assert.doesNotMatch(storeVisitDetailH5, /role="listbox"/);
   assert.doesNotMatch(storeVisitDetailH5, /<select\s+value=\{rowEdit\.matchedEntityId\}/);
 });
 
 test("mobile store visit detail keeps SKU search usable above mobile keyboard", () => {
   assert.match(storeVisitDetailH5, /max-h-\[calc\(100dvh-24px\)\]/);
   assert.match(storeVisitDetailH5, /overflow-y-auto/);
-  assert.match(storeVisitDetailH5, /max-h-\[32dvh\]/);
   assert.match(storeVisitDetailH5, /sticky bottom-0/);
+  assert.doesNotMatch(storeVisitDetailH5, /max-h-\[32dvh\]/);
 });
 
 test("mobile store visit detail matches approved candidate rows before falling back to unmatched", () => {

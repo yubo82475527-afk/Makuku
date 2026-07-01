@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Camera, Check, ChevronDown, ChevronRight, Copy, Ellipsis, Image as ImageIcon, Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowLeft, Camera, Check, ChevronDown, ChevronRight, Copy, Ellipsis, Image as ImageIcon, Loader2, RefreshCw, Search, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
@@ -1516,6 +1516,103 @@ function PriceMetricRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function H5SkuMatchSearchSheet({
+  open,
+  query,
+  placeholder,
+  loading,
+  error,
+  emptyText,
+  selectedValue,
+  options,
+  onQueryChange,
+  onClose,
+  onSelect,
+}: {
+  open: boolean;
+  query: string;
+  placeholder: string;
+  loading: boolean;
+  error: string | null;
+  emptyText: string;
+  selectedValue: string;
+  options: { value: string; label: string }[];
+  onQueryChange: (value: string) => void;
+  onClose: () => void;
+  onSelect: (item: { value: string; label: string }) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    function syncViewportHeight() {
+      const visualViewport = window.visualViewport;
+      setViewportHeight(visualViewport ? Math.round(visualViewport.height) : null);
+    }
+
+    syncViewportHeight();
+    window.visualViewport?.addEventListener("resize", syncViewportHeight);
+    window.visualViewport?.addEventListener("scroll", syncViewportHeight);
+    const focusTimeout = window.setTimeout(() => inputRef.current?.focus(), 0);
+
+    return () => {
+      window.clearTimeout(focusTimeout);
+      window.visualViewport?.removeEventListener("resize", syncViewportHeight);
+      window.visualViewport?.removeEventListener("scroll", syncViewportHeight);
+    };
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[70] flex justify-center bg-white" style={{ height: viewportHeight ? `${viewportHeight}px` : "100dvh" }}>
+      <div className="flex h-full w-full max-w-md flex-col bg-white">
+        <div className="shrink-0 border-b border-slate-100 bg-white px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+          <div className="flex h-11 items-center gap-2">
+            <button type="button" onClick={onClose} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-600" aria-label={placeholder}>
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <label className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 focus-within:border-blue-500">
+              <Search className="h-4 w-4 shrink-0 text-slate-400" />
+              <input
+                ref={inputRef}
+                autoFocus
+                value={query}
+                onChange={(event) => onQueryChange(event.target.value)}
+                placeholder={placeholder}
+                className="h-10 min-w-0 flex-1 bg-transparent text-sm outline-none"
+              />
+            </label>
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-slate-50 px-4 py-3">
+          {loading ? <div className="rounded-xl bg-white px-3 py-3 text-sm text-slate-500">{placeholder}</div> : null}
+          {!loading && error ? <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700">{error}</div> : null}
+          {!loading && !error && options.length === 0 ? <div className="rounded-xl bg-white px-3 py-3 text-sm text-slate-500">{emptyText}</div> : null}
+          {!loading && !error && options.length > 0 ? (
+            <div className="space-y-2">
+              {options.map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  role="option"
+                  aria-selected={selectedValue === item.value}
+                  onClick={() => onSelect(item)}
+                  className={`block w-full rounded-xl border px-3 py-3 text-left text-sm ${selectedValue === item.value ? "border-blue-200 bg-blue-50 font-semibold text-blue-700" : "border-slate-200 bg-white text-slate-700"}`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RowEditSheet({
   rowEdit,
   rowEditSaving,
@@ -1539,6 +1636,7 @@ function RowEditSheet({
   onRequestMatchOptions: () => void;
   onSave: () => void;
 }) {
+  const [matchPickerOpen, setMatchPickerOpen] = useState(false);
   const options = filterValidMatchOptions(rowEdit.matchedEntityType === "material_master" ? matchOptions.materials : matchOptions.products);
   const selectedMatchOptionLabel = rowEdit.matchedEntityId
     ? rowEdit.selectedMatchLabel || rowEdit.matchedEntityId
@@ -1618,7 +1716,7 @@ function RowEditSheet({
           </label>
 
           {rowEdit.matchedEntityType !== "unmatched" ? (
-            <label className="block">
+            <div>
               <div className="mb-2 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2">
                 <div className="text-[11px] font-medium uppercase tracking-wide text-blue-500">Current SKU</div>
                 <div className="mt-0.5 truncate text-sm font-semibold text-blue-900">
@@ -1626,39 +1724,39 @@ function RowEditSheet({
                 </div>
               </div>
               <div className="mb-1 text-xs font-medium text-slate-500">{text.searchMatch}</div>
-              <input
-                value={matchQueryValue}
-                onFocus={onRequestMatchOptions}
-                onChange={(event) => onChange((current) => current ? { ...current, matchSearchQuery: event.target.value } : current)}
+              <button
+                type="button"
+                onClick={() => {
+                  onRequestMatchOptions();
+                  setMatchPickerOpen(true);
+                }}
+                className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-slate-300 bg-white px-3 py-2 text-left text-sm"
+              >
+                <span className="min-w-0 flex-1 truncate text-slate-400">{matchOptionsError ?? (matchOptionsLoading ? text.loadingMatchOptions : text.searchMatch)}</span>
+                <Search className="h-4 w-4 shrink-0 text-slate-400" />
+              </button>
+              <H5SkuMatchSearchSheet
+                open={matchPickerOpen}
+                query={matchQueryValue}
                 placeholder={matchOptionsError ?? (matchOptionsLoading ? text.loadingMatchOptions : text.searchMatch)}
-                className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-blue-500"
+                loading={matchOptionsLoading}
+                error={matchOptionsError}
+                emptyText={text.searchMatch}
+                selectedValue={rowEdit.matchedEntityId}
+                options={visibleMatchOptions}
+                onQueryChange={(value) => onChange((current) => current ? { ...current, matchSearchQuery: value } : current)}
+                onClose={() => setMatchPickerOpen(false)}
+                onSelect={(item) => {
+                  onChange((current) => current ? {
+                    ...current,
+                    matchedEntityId: item.value,
+                    selectedMatchLabel: item.label,
+                    matchSearchQuery: "",
+                  } : current);
+                  setMatchPickerOpen(false);
+                }}
               />
-              <div className="mt-2 max-h-[32dvh] overflow-y-auto rounded-xl border border-slate-200 bg-white" role="listbox">
-                {matchOptionsLoading ? (
-                  <div className="px-3 py-2 text-xs text-slate-500">{text.loadingMatchOptions}</div>
-                ) : matchOptionsError ? (
-                  <div className="px-3 py-2 text-xs text-red-600">{matchOptionsError}</div>
-                ) : visibleMatchOptions.length ? visibleMatchOptions.map((item) => (
-                  <button
-                    key={item.value}
-                    type="button"
-                    role="option"
-                    aria-selected={rowEdit.matchedEntityId === item.value}
-                    onClick={() => onChange((current) => current ? {
-                      ...current,
-                      matchedEntityId: item.value,
-                      selectedMatchLabel: item.label,
-                      matchSearchQuery: "",
-                    } : current)}
-                    className={`block w-full px-3 py-2 text-left text-sm ${rowEdit.matchedEntityId === item.value ? "bg-blue-50 font-semibold text-blue-700" : "text-slate-700"}`}
-                  >
-                    {item.label}
-                  </button>
-                )) : (
-                  <div className="px-3 py-2 text-xs text-slate-500">{text.searchMatch}</div>
-                )}
-              </div>
-            </label>
+            </div>
           ) : null}
         </div>
 

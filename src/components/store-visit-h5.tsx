@@ -4,6 +4,7 @@ import { ArrowLeft, Building2, Camera, CheckCircle2, Loader2, LocateFixed, LogIn
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { LoadingOverlay } from "@/components/loading-overlay";
 import type { Locale } from "@/lib/i18n/config";
 import { getMobileCopy, mobileImageCategoryLabel } from "@/lib/mobile-i18n";
@@ -387,6 +388,88 @@ function useDebouncedValue<T>(value: T, delayMs: number) {
   return debounced;
 }
 
+function H5SearchEntrySheet<T>({
+  open,
+  title,
+  value,
+  placeholder,
+  loading,
+  items,
+  emptyText,
+  status,
+  onQueryChange,
+  onClose,
+  renderItem,
+}: {
+  open: boolean;
+  title: string;
+  value: string;
+  placeholder: string;
+  loading: boolean;
+  items: T[];
+  emptyText: string;
+  status?: string;
+  onQueryChange: (value: string) => void;
+  onClose: () => void;
+  renderItem: (item: T) => ReactNode;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    function syncViewportHeight() {
+      const visualViewport = window.visualViewport;
+      setViewportHeight(visualViewport ? Math.round(visualViewport.height) : null);
+    }
+
+    syncViewportHeight();
+    window.visualViewport?.addEventListener("resize", syncViewportHeight);
+    window.visualViewport?.addEventListener("scroll", syncViewportHeight);
+    const focusTimeout = window.setTimeout(() => inputRef.current?.focus(), 0);
+
+    return () => {
+      window.clearTimeout(focusTimeout);
+      window.visualViewport?.removeEventListener("resize", syncViewportHeight);
+      window.visualViewport?.removeEventListener("scroll", syncViewportHeight);
+    };
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex justify-center bg-white" style={{ height: viewportHeight ? `${viewportHeight}px` : "100dvh" }}>
+      <div className="flex h-full w-full max-w-md flex-col bg-white">
+        <div className="shrink-0 border-b border-slate-100 bg-white px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+          <div className="flex h-11 items-center gap-2">
+            <button type="button" onClick={onClose} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-600" aria-label={title}>
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <label className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 focus-within:border-blue-500">
+              <Search className="h-4 w-4 shrink-0 text-slate-400" />
+              <input
+                ref={inputRef}
+                autoFocus
+                value={value}
+                onChange={(event) => onQueryChange(event.target.value)}
+                placeholder={placeholder}
+                className="h-10 min-w-0 flex-1 bg-transparent text-sm outline-none"
+              />
+            </label>
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-slate-50 px-4 py-3">
+          {status ? <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700">{status}</div> : null}
+          {!status && loading ? <div className="rounded-xl bg-white px-3 py-3 text-sm text-slate-500">{title}</div> : null}
+          {!status && !loading && items.length === 0 ? <div className="rounded-xl bg-white px-3 py-3 text-sm text-slate-500">{emptyText}</div> : null}
+          {!status && items.length > 0 ? <div className="space-y-2">{items.map((item) => renderItem(item))}</div> : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DealerStoreSelector({
   locale,
   loading,
@@ -403,28 +486,23 @@ function DealerStoreSelector({
   const [dealersLoading, setDealersLoading] = useState(false);
   const [dealers, setDealers] = useState<ExternalDealerOption[]>([]);
   const [selectedDealer, setSelectedDealer] = useState<ExternalDealerOption | null>(null);
-  const [dealerPickerOpen, setDealerPickerOpen] = useState(false);
   const [storeQuery, setStoreQuery] = useState("");
   const [storesLoading, setStoresLoading] = useState(false);
   const [stores, setStores] = useState<ExternalMdStoreOption[]>([]);
   const [selectedExternalStore, setSelectedExternalStore] = useState<ExternalMdStoreOption | null>(null);
-  const [storePickerOpen, setStorePickerOpen] = useState(false);
+  const [activePicker, setActivePicker] = useState<"dealer" | "store" | null>(null);
   const [status, setStatus] = useState("");
   const debouncedDealerQuery = useDebouncedValue(dealerQuery, 300);
   const debouncedStoreQuery = useDebouncedValue(storeQuery, 300);
-  const dealerSearchKey = dealerPickerOpen ? debouncedDealerQuery.trim() : "";
-  const storeSearchKey = selectedDealer && storePickerOpen ? debouncedStoreQuery.trim() : "";
-  const showDealerResults = dealerPickerOpen;
-  const showStoreResults = selectedDealer !== null && storePickerOpen;
-  const visibleDealers = dealerPickerOpen ? dealers : [];
-  const visibleStores = selectedDealer && storePickerOpen ? stores : [];
+  const dealerSearchKey = activePicker === "dealer" ? debouncedDealerQuery.trim() : "";
+  const storeSearchKey = selectedDealer && activePicker === "store" ? debouncedStoreQuery.trim() : "";
 
   useEffect(() => {
     onSelectionChange({ selectedDealer, selectedExternalStore });
   }, [onSelectionChange, selectedDealer, selectedExternalStore]);
 
   useEffect(() => {
-    if (!dealerPickerOpen) {
+    if (activePicker !== "dealer") {
       return;
     }
 
@@ -449,7 +527,6 @@ function DealerStoreSelector({
         }
         const items = payload.data?.records ?? [];
         setDealers(items);
-        setSelectedDealer((current) => items.find((item) => item.userId === current?.userId) ?? (current && items.length === 0 ? current : null));
       } catch {
         if (!cancelled) {
           setDealers([]);
@@ -463,10 +540,10 @@ function DealerStoreSelector({
     return () => {
       cancelled = true;
     };
-  }, [dealerPickerOpen, dealerSearchKey, labels.createFailed, onAuthFailure]);
+  }, [activePicker, dealerSearchKey, labels.createFailed, onAuthFailure]);
 
   useEffect(() => {
-    if (!selectedDealer || !storePickerOpen) {
+    if (!selectedDealer || activePicker !== "store") {
       return;
     }
     const currentDealer = selectedDealer;
@@ -508,98 +585,123 @@ function DealerStoreSelector({
     return () => {
       cancelled = true;
     };
-  }, [labels.createFailed, onAuthFailure, selectedDealer, storePickerOpen, storeSearchKey]);
+  }, [activePicker, labels.createFailed, onAuthFailure, selectedDealer, storeSearchKey]);
 
   return (
     <div className="space-y-3">
-      <label className="block">
+      <div>
         <span className="mb-1.5 block text-xs font-bold text-slate-600">{labels.selectDealerRequired}</span>
-        <input
-          value={dealerQuery}
-          onChange={(event) => setDealerQuery(event.target.value)}
-          onFocus={() => setDealerPickerOpen(true)}
-          placeholder={labels.dealerSearchPlaceholder}
+        <button
+          type="button"
+          onClick={() => {
+            setStatus("");
+            setActivePicker("dealer");
+          }}
           disabled={loading}
-          className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500"
-        />
-      </label>
-      {showDealerResults ? (
-        <div className="max-h-40 space-y-2 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2">
-          {dealersLoading ? <div className="px-2 py-3 text-sm text-slate-500">{labels.externalDealerLoading}</div> : null}
-          {!dealersLoading && visibleDealers.length === 0 ? <div className="px-2 py-3 text-sm text-slate-500">{labels.externalDealerEmpty}</div> : null}
-          {visibleDealers.map((dealer) => (
-            <button
-              key={dealer.userId}
-              type="button"
-              onClick={() => {
-                setSelectedDealer(dealer);
-                setSelectedExternalStore(null);
-                setStores([]);
-                setStoreQuery("");
-                setDealerQuery(dealer.name);
-                setDealerPickerOpen(false);
-              }}
-              disabled={loading}
-              className={`w-full rounded-lg border px-3 py-2 text-left ${selectedDealer?.userId === dealer.userId ? "border-slate-900 bg-white" : "border-slate-200 bg-white"}`}
-            >
-              <div className="text-sm font-semibold text-slate-900">{dealer.name}</div>
-              <div className="mt-1 text-xs text-slate-500">{dealer.code || dealer.userId}</div>
-            </button>
-          ))}
-        </div>
-      ) : null}
-      {selectedDealer && !showDealerResults ? (
+          className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-sm disabled:bg-slate-100 disabled:text-slate-500"
+        >
+          <span className={selectedDealer ? "min-w-0 flex-1 truncate font-semibold text-slate-900" : "min-w-0 flex-1 truncate text-slate-400"}>{selectedDealer?.name ?? labels.dealerSearchPlaceholder}</span>
+          <Search className="h-4 w-4 shrink-0 text-slate-400" />
+        </button>
+      </div>
+      {selectedDealer ? (
         <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
           <div>{selectedDealer.name}</div>
           <div className="mt-1 text-xs text-slate-500">{selectedDealer.code || selectedDealer.userId}</div>
         </div>
       ) : null}
 
-      <label className="block">
+      <div>
         <span className="mb-1.5 block text-xs font-bold text-slate-600">{labels.selectExternalStoreRequired}</span>
-        <input
-          value={storeQuery}
-          onChange={(event) => setStoreQuery(event.target.value)}
-          onFocus={() => {
+        <button
+          type="button"
+          onClick={() => {
             if (!selectedDealer) return;
-            setStorePickerOpen(true);
+            setStatus("");
+            setActivePicker("store");
           }}
-          placeholder={labels.externalStoreSearchPlaceholder}
           disabled={!selectedDealer || loading}
-          className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500 disabled:bg-slate-100 disabled:text-slate-500"
-        />
-      </label>
-      {showStoreResults ? (
-        <div className="max-h-48 space-y-2 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2">
-          {!selectedDealer ? <div className="px-2 py-3 text-sm text-slate-500">{labels.selectDealerRequired}</div> : null}
-          {selectedDealer && storesLoading ? <div className="px-2 py-3 text-sm text-slate-500">{labels.externalStoreLoading}</div> : null}
-          {selectedDealer && !storesLoading && visibleStores.length === 0 ? <div className="px-2 py-3 text-sm text-slate-500">{labels.externalStoreEmpty}</div> : null}
-          {visibleStores.map((store) => (
-            <button
-              key={store.code}
-              type="button"
-              onClick={() => {
-                setSelectedExternalStore(store);
-                setStoreQuery(store.name);
-                setStorePickerOpen(false);
-              }}
-              disabled={loading}
-              className={`w-full rounded-lg border px-3 py-2 text-left ${selectedExternalStore?.code === store.code ? "border-slate-900 bg-white" : "border-slate-200 bg-white"}`}
-            >
-              <div className="text-sm font-semibold text-slate-900">{store.name}</div>
-              <div className="mt-1 text-xs text-slate-500">{store.code}</div>
-              <div className="mt-1 text-[11px] text-slate-400">{store.zoneName ?? selectedDealer?.zoneName ?? "-"}</div>
-            </button>
-          ))}
-        </div>
-      ) : null}
-      {selectedExternalStore && !showStoreResults ? (
+          className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-sm disabled:bg-slate-100 disabled:text-slate-500"
+        >
+          <span className={selectedExternalStore ? "min-w-0 flex-1 truncate font-semibold text-slate-900" : "min-w-0 flex-1 truncate text-slate-400"}>{selectedExternalStore?.name ?? labels.externalStoreSearchPlaceholder}</span>
+          <Search className="h-4 w-4 shrink-0 text-slate-400" />
+        </button>
+      </div>
+      {selectedExternalStore ? (
         <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
           <div>{selectedExternalStore.name}</div>
           <div className="mt-1 text-xs text-slate-500">{selectedDealer?.name ?? selectedExternalStore.dealerName ?? "-"}</div>
         </div>
       ) : null}
       {status ? <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{status}</div> : null}
+      <H5SearchEntrySheet
+        open={activePicker === "dealer"}
+        title={labels.externalDealerLoading}
+        value={dealerQuery}
+        placeholder={labels.dealerSearchPlaceholder}
+        loading={dealersLoading}
+        items={dealers}
+        emptyText={labels.externalDealerEmpty}
+        status={status}
+        onQueryChange={setDealerQuery}
+        onClose={() => {
+          setStatus("");
+          setActivePicker(null);
+        }}
+        renderItem={(dealer) => (
+          <button
+            key={dealer.userId}
+            type="button"
+            onClick={() => {
+              setSelectedDealer(dealer);
+              setSelectedExternalStore(null);
+              setStores([]);
+              setStoreQuery("");
+              setDealerQuery(dealer.name);
+              setStatus("");
+              setActivePicker(null);
+            }}
+            disabled={loading}
+            className={`w-full rounded-xl border px-3 py-3 text-left ${selectedDealer?.userId === dealer.userId ? "border-slate-900 bg-white" : "border-slate-200 bg-white"}`}
+          >
+            <div className="text-sm font-semibold text-slate-900">{dealer.name}</div>
+            <div className="mt-1 text-xs text-slate-500">{dealer.code || dealer.userId}</div>
+          </button>
+        )}
+      />
+      <H5SearchEntrySheet
+        open={activePicker === "store"}
+        title={labels.externalStoreLoading}
+        value={storeQuery}
+        placeholder={labels.externalStoreSearchPlaceholder}
+        loading={storesLoading}
+        items={selectedDealer ? stores : []}
+        emptyText={selectedDealer ? labels.externalStoreEmpty : labels.selectDealerRequired}
+        status={status}
+        onQueryChange={setStoreQuery}
+        onClose={() => {
+          setStatus("");
+          setActivePicker(null);
+        }}
+        renderItem={(store) => (
+          <button
+            key={store.code}
+            type="button"
+            onClick={() => {
+              setSelectedExternalStore(store);
+              setStoreQuery(store.name);
+              setStatus("");
+              setActivePicker(null);
+            }}
+            disabled={loading}
+            className={`w-full rounded-xl border px-3 py-3 text-left ${selectedExternalStore?.code === store.code ? "border-slate-900 bg-white" : "border-slate-200 bg-white"}`}
+          >
+            <div className="text-sm font-semibold text-slate-900">{store.name}</div>
+            <div className="mt-1 text-xs text-slate-500">{store.code}</div>
+            <div className="mt-1 text-[11px] text-slate-400">{store.zoneName ?? selectedDealer?.zoneName ?? "-"}</div>
+          </button>
+        )}
+      />
     </div>
   );
 }
