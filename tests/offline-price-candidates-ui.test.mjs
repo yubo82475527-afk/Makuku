@@ -368,6 +368,20 @@ test("mobile store visit detail loads candidate review data and H5 match options
   assert.match(storeVisitMatchOptionsRoute, /\.from\("competitor_products"\)/);
 });
 
+test("mobile store visit detail displays matched SKU status in each parsed price row", () => {
+  assert.match(storeVisitDetailH5, /function candidateMatchDisplay/);
+  assert.match(storeVisitDetailH5, /candidate\?\.matched_sku_label \?\? candidate\?\.matched_label \?\? candidate\?\.matched_entity_id/);
+  assert.match(storeVisitDetailH5, /candidate\.matched_entity_type !== "unmatched"/);
+  assert.match(storeVisitDetailH5, /rowUnmatched: "未匹配"/);
+  assert.match(storeVisitDetailH5, /matchInfo\.matched/);
+  assert.match(storeVisitDetailH5, /text-\[10px\]/);
+  assert.match(storeVisitDetailH5, /break-words text-\[10px\] leading-4/);
+  assert.match(storeVisitDetailH5, /matchInfo\.matched \? "text-slate-500" : "font-semibold text-red-600"/);
+  assert.match(storeVisitDetailH5, /\{matchInfo\.matched \? matchInfo\.label : text\.rowUnmatched\}/);
+  assert.doesNotMatch(storeVisitDetailH5, /matchSkuPrefix/);
+  assert.doesNotMatch(storeVisitDetailH5, /truncate text-\[11px\] font-semibold \$\{matchInfo\.matched/);
+});
+
 test("mobile store visit detail loads SKU options only when the user changes SKU match", () => {
   assert.match(storeVisitDetailH5, /originalMatchedEntityType: candidate\?\.matched_entity_type \?\? "unmatched"/);
   assert.match(storeVisitDetailH5, /originalMatchedEntityId: candidate\?\.matched_entity_id \?\? ""/);

@@ -226,6 +226,12 @@ function candidateDisplayPricePerPiece(candidate: AiPriceCandidate | null, fallb
   return candidate?.reviewed_price_per_piece ?? candidate?.price_per_piece ?? fallback ?? null;
 }
 
+function candidateMatchDisplay(candidate: AiPriceCandidate | null) {
+  const label = String(candidate?.matched_sku_label ?? candidate?.matched_label ?? candidate?.matched_entity_id ?? "").trim();
+  const matched = Boolean(candidate && candidate.matched_entity_type !== "unmatched" && candidate.matched_entity_id && label);
+  return { matched, label };
+}
+
 function matchCandidateForRow(
   candidates: AiPriceCandidate[],
   imageId: string,
@@ -325,6 +331,7 @@ function detailText(locale: Locale) {
         pricePerPiece: "单片价",
         pieceCount: "Pcs",
         editRow: "Edit",
+        rowUnmatched: "未匹配",
         rowEditorTitle: "修改价格",
         skuMatch: "SKU Match",
         save: "保存",
@@ -379,6 +386,7 @@ function detailText(locale: Locale) {
         pricePerPiece: "Per Piece",
         pieceCount: "Pcs",
         editRow: "Edit",
+        rowUnmatched: "Unmatched",
         rowEditorTitle: "Edit Price",
         skuMatch: "SKU Match",
         save: "Save",
@@ -1457,6 +1465,7 @@ function PriceSectionGroup({
               const candidate = matchCandidateForRow(candidates, section.image.id, row);
               const displayPieceCount = candidateDisplayPieceCount(candidate, row.piece_count);
               const displayPricePerPiece = candidateDisplayPricePerPiece(candidate, row.price_per_piece_idr);
+              const matchInfo = candidateMatchDisplay(candidate);
               const {
                 package_price_idr: packagePrice,
                 net_price_idr: netPrice,
@@ -1472,6 +1481,9 @@ function PriceSectionGroup({
                     >
                       {text.editRow}
                     </button>
+                  </div>
+                  <div className={`mt-1 break-words text-[10px] leading-4 ${matchInfo.matched ? "text-slate-500" : "font-semibold text-red-600"}`}>
+                    {matchInfo.matched ? matchInfo.label : text.rowUnmatched}
                   </div>
                   <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1">
                     <PriceMetricRow label={text.listPrice} value={formatMoney(packagePrice)} />
