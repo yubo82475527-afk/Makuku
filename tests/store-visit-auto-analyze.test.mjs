@@ -203,6 +203,16 @@ test("store visit analysis persists visit-level timing metrics into summary_resu
   assert.match(storeVisitAnalysis, /visit_analysis_completed_at/);
 });
 
+test("single-photo refresh preserves the first whole-visit analysis timing metrics", () => {
+  assert.doesNotMatch(storeVisitRefreshRoute, /visitAnalysisStartedAt:/);
+  assert.match(storeVisitAnalysis, /firstVisitAnalysisStartedAt/);
+  assert.match(storeVisitAnalysis, /firstVisitAnalysisCompletedAt/);
+  assert.match(storeVisitAnalysis, /firstVisitAnalysisDurationMs/);
+  assert.match(storeVisitAnalysis, /visit_analysis_started_at: firstVisitAnalysisStartedAt/);
+  assert.match(storeVisitAnalysis, /visit_analysis_completed_at: firstVisitAnalysisCompletedAt/);
+  assert.match(storeVisitAnalysis, /visit_analysis_duration_ms: firstVisitAnalysisDurationMs/);
+});
+
 test("store visit analysis failure path also persists visit-level timing metrics", () => {
   assert.match(analyzeRoute, /summary_result:\s*\{[\s\S]*analysis_metrics:/);
   assert.match(analyzeRoute, /visit_analysis_duration_ms/);

@@ -38,6 +38,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
 export async function runStoreVisitAnalysis(input: {
   visitId: string;
   affectedImageIds?: string[];
@@ -121,6 +125,21 @@ export async function runStoreVisitAnalysis(input: {
   if (visitBeforeUpdateError) throw new Error(visitBeforeUpdateError.message);
 
   const priorSummaryResult = isRecord(visitBeforeUpdate?.summary_result) ? visitBeforeUpdate.summary_result : {};
+  const priorAnalysisMetrics = isRecord(priorSummaryResult.analysis_metrics)
+    ? priorSummaryResult.analysis_metrics as Record<string, unknown>
+    : {};
+  const firstVisitAnalysisStartedAt = typeof priorAnalysisMetrics.visit_analysis_started_at === "string"
+    ? priorAnalysisMetrics.visit_analysis_started_at
+    : visitAnalysisStartedAt;
+  const firstVisitAnalysisCompletedAt = typeof priorAnalysisMetrics.visit_analysis_completed_at === "string"
+    ? priorAnalysisMetrics.visit_analysis_completed_at
+    : visitAnalysisCompletedAt;
+  const firstVisitAnalysisDurationMs = isFiniteNumber(priorAnalysisMetrics.visit_analysis_duration_ms)
+    ? priorAnalysisMetrics.visit_analysis_duration_ms
+    : Math.max(
+        0,
+        new Date(firstVisitAnalysisCompletedAt).getTime() - new Date(firstVisitAnalysisStartedAt).getTime(),
+      );
 
   const { data: updated, error: updateError } = await supabase
     .from("offline_store_visits")
@@ -152,12 +171,10 @@ export async function runStoreVisitAnalysis(input: {
         auto_review_method: "auto_rule",
         auto_review_failed_count: autoReview.failedCount,
         analysis_metrics: {
-          ...(isRecord(priorSummaryResult.analysis_metrics)
-            ? priorSummaryResult.analysis_metrics as Record<string, unknown>
-            : {}),
-          visit_analysis_started_at: visitAnalysisStartedAt,
-          visit_analysis_completed_at: visitAnalysisCompletedAt,
-          visit_analysis_duration_ms: visitAnalysisDurationMs,
+          ...priorAnalysisMetrics,
+          visit_analysis_started_at: firstVisitAnalysisStartedAt,
+          visit_analysis_completed_at: firstVisitAnalysisCompletedAt,
+          visit_analysis_duration_ms: firstVisitAnalysisDurationMs,
           price_image_count: aiAnalysis.price_image_results.length + aiAnalysis.price_image_failures.length,
           price_image_success_count: priceImageSuccessCount,
           price_image_failure_count: aiAnalysis.price_image_failures.length,
