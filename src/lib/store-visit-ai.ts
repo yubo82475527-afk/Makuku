@@ -677,7 +677,7 @@ export async function analyzeStoreVisitPriceImage(input: {
       },
     ],
     temperature: config.temperature,
-    maxTokens: Math.min(config.max_tokens, 2500),
+    maxTokens: Math.min(config.max_tokens, 5000),
   });
 
   console.info("[store-visit-ai] price image analyzed", {
