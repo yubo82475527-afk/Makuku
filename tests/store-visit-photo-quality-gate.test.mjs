@@ -30,6 +30,15 @@ test("price image prompt forces package-level amounts and forbids per-piece outp
   assert.match(storeVisitAi, /Do not output 1400, 3210, or any other per-piece value in list_price_idr, package_price_idr, or net_price_idr/i);
 });
 
+test("price image prompt forces same-row Pcs bonus extraction instead of truncating to base quantity", () => {
+  assert.match(storeVisitAi, /read piece_count from the Pcs column of the SAME row/i);
+  assert.match(storeVisitAi, /60\+6 -> 66/i);
+  assert.match(storeVisitAi, /42\+4 -> 46/i);
+  assert.match(storeVisitAi, /80\+10 -> 90/i);
+  assert.match(storeVisitAi, /60\+6 must not become 60/i);
+  assert.match(storeVisitAi, /set piece_count to null and add a PARSE_RISK warning/i);
+});
+
 test("price image analysis type carries photo_quality two-state result", () => {
   assert.match(typesFile, /photo_quality: StoreVisitPhotoQuality/);
   assert.match(typesFile, /status: "pass" \| "retake_required"/);
