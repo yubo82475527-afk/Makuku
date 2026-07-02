@@ -256,6 +256,13 @@ export type ChannelMaster = {
 
 export type AppUserStatus = "enabled" | "disabled";
 export type AppUserRole = "field_agent" | "manager" | "admin";
+export type AgentReportFamily = "daily" | "weekly" | "monthly";
+export type AgentReportType = AgentReportFamily;
+export type AgentReportScopeType = "global" | "organization" | "user";
+export type AgentReportStatus = "draft" | "generated" | "sent" | "failed";
+export type AgentReportRecipientStatus = "pending" | "sent" | "failed";
+export type AgentReportDeliveryChannel = "user" | "chat";
+export type AgentReportRecipientType = "user" | "chat";
 
 export type AppUser = {
   id: string;
@@ -310,6 +317,133 @@ export type OrganizationRegionRule = {
   created_at: string;
   updated_at?: string | null;
   organizations?: Pick<Organization, "id" | "name" | "status"> | null;
+};
+
+export type AgentReportMetricSummary = {
+  visited_store_count: number;
+  visiting_employee_count: number;
+  makuku_price_record_count: number;
+  competitor_price_record_count: number;
+};
+
+export type AgentReportMetricRow = {
+  scope_name: string;
+  visited_store_count: number;
+  visiting_employee_count: number;
+  makuku_price_record_count: number;
+  competitor_price_record_count: number;
+};
+
+export type AgentReportPeriod = {
+  reportFamily: AgentReportFamily;
+  reportDefinitionCode: string;
+  anchor: string;
+  startDate: string;
+  endDate: string;
+  label: string;
+  timezone: string;
+};
+
+export type AgentReportDefinition = {
+  code: string;
+  family: AgentReportFamily;
+  name: string;
+  description: string;
+  enabled: boolean;
+  supported_scope_types: AgentReportScopeType[];
+  default_schedule_rule: {
+    send_time_local: string;
+    send_weekday?: number | null;
+    send_day_of_month?: number | null;
+  };
+  template_version: number;
+};
+
+export type AgentReportMetricsJson = {
+  summary: AgentReportMetricSummary;
+  table_rows: AgentReportMetricRow[];
+  period: AgentReportPeriod;
+  scope: {
+    scope_type: AgentReportScopeType;
+    scope_id: string | null;
+    scope_name: string;
+  };
+  warnings: string[];
+};
+
+export type AgentReportContentJson = {
+  title: string;
+  key_translations: string;
+  ai_insight: string;
+  highlights: string[];
+  warnings: string[];
+};
+
+export type AgentReportDeliverySummary = {
+  recipient_count: number;
+  pending_count: number;
+  sent_count: number;
+  failed_count: number;
+};
+
+export type AgentReport = {
+  id: string;
+  report_type: AgentReportType;
+  report_definition_code: string;
+  report_family: AgentReportFamily;
+  definition_name: string;
+  template_version: number;
+  period_start: string;
+  period_end: string;
+  timezone: string;
+  scope_type: AgentReportScopeType;
+  scope_id: string | null;
+  scope_name: string;
+  metrics_json: AgentReportMetricsJson;
+  content_json: AgentReportContentJson;
+  feishu_card_json: Record<string, unknown>;
+  status: AgentReportStatus;
+  generated_at: string;
+  created_at: string;
+  updated_at?: string | null;
+  delivery_summary?: AgentReportDeliverySummary;
+  matched_subscriptions_count?: number;
+  recipients?: AgentReportRecipient[];
+};
+
+export type AgentReportRecipient = {
+  id: string;
+  report_id: string;
+  app_user_id?: string | null;
+  feishu_user_id?: string | null;
+  feishu_chat_id?: string | null;
+  delivery_channel: AgentReportDeliveryChannel;
+  send_status: AgentReportRecipientStatus;
+  feishu_message_id?: string | null;
+  sent_at?: string | null;
+  error_message?: string | null;
+  created_at: string;
+  updated_at?: string | null;
+};
+
+export type AgentReportSubscription = {
+  id: string;
+  report_type?: AgentReportType;
+  report_definition_code: string;
+  report_family: AgentReportFamily;
+  scope_type: AgentReportScopeType;
+  scope_id?: string | null;
+  recipient_type: AgentReportRecipientType;
+  app_user_id?: string | null;
+  feishu_user_id?: string | null;
+  feishu_chat_id?: string | null;
+  send_time_local: string;
+  send_weekday?: number | null;
+  send_day_of_month?: number | null;
+  timezone: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at?: string | null;
 };
 
 export type OfflineStore = {

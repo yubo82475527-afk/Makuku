@@ -17,7 +17,7 @@ import type {
   ValidationWarningType,
 } from "@/lib/types";
 import { createJsonChatCompletion, imageUrlPart, textPart } from "@/lib/ai-client";
-import { calculatePricePerPiece, parseIdrPrice } from "@/lib/price-utils";
+import { calculatePricePerPiece, parseIdrPrice, reconcilePackagePriceMetrics } from "@/lib/price-utils";
 import { normalizePieceCountFromCandidates } from "@/lib/piece-count";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
 
@@ -101,8 +101,14 @@ const STORE_VISIT_PRICE_IMAGE_PROMPT = [
   "list_price_idr is the original shelf price when visible.",
   "package_price_idr is the visible package selling price and the business display price called list price.",
   "net_price_idr is the final payable price after discount when visible.",
+  "list_price_idr, package_price_idr, and net_price_idr must all be whole-package IDR amounts. They must never be per-piece amounts.",
   "If only one price is visible, use that same value for list_price_idr, package_price_idr, and net_price_idr.",
   "If multiple prices exist but their roles cannot be determined, use the lowest clearly payable price as net_price_idr and add a PARSE_RISK warning.",
+  "Never divide a package price by piece_count. Do not calculate or output package_price_idr / piece_count into any price field.",
+  "If the board shows both a whole-package price and a per-piece average, output only the whole-package price in list_price_idr, package_price_idr, and net_price_idr.",
+  "Example: Rp56.000, 40 pcs -> net_price_idr=56000, piece_count=40.",
+  "Example: Rp89.900, 28 pcs -> net_price_idr=89900, piece_count=28.",
+  "Do not output 1400, 3210, or any other per-piece value in list_price_idr, package_price_idr, or net_price_idr when the visible package prices are Rp56.000 or Rp89.900.",
   "promo_type should be a short mechanic such as Discount, Buy 2 Get 1, Buy 1 Get 1, Bundle, Cashback, Special Offer, or null when no clear activity is visible. Never invent promotions.",
   "piece_count is the total pack piece count. When bonus notation exists, calculate the total: 28+6 -> 34, 30+ -> 30, 44+10 -> 54, 36+6 -> 42, 34+6 -> 40. Never guess piece_count.",
   "Do not calculate per-piece price. The system will calculate it.",
@@ -472,15 +478,31 @@ export function normalizeStoreVisitPriceImageAnalysis(
 ): StoreVisitPriceImageAnalysis {
   const record = asRecord(value);
   const photoQuality = normalizePhotoQuality(record.photo_quality);
+  const normalizationWarnings = normalizePriceImageWarnings(record.warnings);
   const rows = photoQuality.status === "retake_required" ? [] : (Array.isArray(record.rows) ? record.rows : [])
     .slice(0, 30)
     .map((item) => {
       const row = asRecord(item);
-      const listPrice = asNullablePriceNumber(row.list_price_idr);
-      const packagePrice = asNullablePriceNumber(row.package_price_idr) ?? listPrice;
-      const netPrice = asNullablePriceNumber(row.net_price_idr) ?? packagePrice ?? listPrice;
+      const rawListPrice = asNullablePriceNumber(row.list_price_idr);
+      const rawPackagePrice = asNullablePriceNumber(row.package_price_idr) ?? rawListPrice;
+      const rawNetPrice = asNullablePriceNumber(row.net_price_idr) ?? rawPackagePrice ?? rawListPrice;
       const sku = asString(row.sku, "Unknown SKU");
       const pieceCount = normalizePieceCountFromCandidates(row.piece_count, sku);
+      const reconciledPrices = reconcilePackagePriceMetrics({
+        listPriceIdr: rawListPrice,
+        packagePriceIdr: rawPackagePrice,
+        netPriceIdr: rawNetPrice,
+        pieceCount,
+      });
+      const listPrice = reconciledPrices.listPriceIdr ?? rawNetPrice;
+      const packagePrice = reconciledPrices.packagePriceIdr ?? listPrice;
+      const netPrice = reconciledPrices.netPriceIdr ?? packagePrice ?? listPrice;
+      if (reconciledPrices.correctedFromPerPiece && reconciledPrices.warningMessage) {
+        normalizationWarnings.push({
+          type: "PARSE_RISK",
+          message: reconciledPrices.warningMessage,
+        });
+      }
       return {
         brand: asOptionalString(row.brand),
         sku,
@@ -500,7 +522,7 @@ export function normalizeStoreVisitPriceImageAnalysis(
     photo_quality: photoQuality,
     rows,
     summary: asString(record.summary, photoQuality.status === "retake_required" ? photoQuality.message : rows.length > 0 ? `${rows.length} SKU rows detected.` : "No readable SKU price rows detected."),
-    warnings: normalizePriceImageWarnings(record.warnings),
+    warnings: normalizationWarnings,
   };
 }
 

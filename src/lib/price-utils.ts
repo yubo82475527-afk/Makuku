@@ -36,6 +36,53 @@ export function parseIdrPrice(value: string | number | null | undefined) {
   return parsed;
 }
 
+function isNearPackageAmount(perPieceNetPrice: number, pieceCount: number, packagePrice: number) {
+  const reconstructedPackagePrice = perPieceNetPrice * pieceCount;
+  const tolerance = Math.max(500, Math.round(packagePrice * 0.1));
+  return Math.abs(reconstructedPackagePrice - packagePrice) <= tolerance;
+}
+
+export function reconcilePackagePriceMetrics({
+  listPriceIdr,
+  packagePriceIdr,
+  netPriceIdr,
+  pieceCount,
+}: {
+  listPriceIdr: number | null;
+  packagePriceIdr: number | null;
+  netPriceIdr: number | null;
+  pieceCount: number | null;
+}) {
+  const resolvedPackagePrice = packagePriceIdr ?? listPriceIdr ?? netPriceIdr;
+  const resolvedListPrice = listPriceIdr ?? resolvedPackagePrice ?? netPriceIdr;
+  const resolvedNetPrice = netPriceIdr ?? resolvedPackagePrice ?? resolvedListPrice;
+
+  if (
+    resolvedPackagePrice
+    && resolvedNetPrice
+    && pieceCount
+    && pieceCount > 1
+    && resolvedNetPrice < resolvedPackagePrice
+    && isNearPackageAmount(resolvedNetPrice, pieceCount, resolvedPackagePrice)
+  ) {
+    return {
+      listPriceIdr: resolvedListPrice ?? resolvedPackagePrice,
+      packagePriceIdr: resolvedPackagePrice,
+      netPriceIdr: resolvedPackagePrice,
+      correctedFromPerPiece: true,
+      warningMessage: "AI likely divided a whole-package price by piece count. Restored whole-package IDR amount fields.",
+    };
+  }
+
+  return {
+    listPriceIdr: resolvedListPrice,
+    packagePriceIdr: resolvedPackagePrice,
+    netPriceIdr: resolvedNetPrice,
+    correctedFromPerPiece: false,
+    warningMessage: null,
+  };
+}
+
 export function calculatePricePerPiece(packagePrice: number | null, pieceCount: number | null) {
   if (!packagePrice || !pieceCount || pieceCount <= 0) return null;
   return Number((packagePrice / pieceCount).toFixed(2));

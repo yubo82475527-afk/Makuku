@@ -22,6 +22,14 @@ test("price image prompt includes the two-state photo quality gate without addin
   assert.doesNotMatch(storeVisitAi, /\/api\/.*precheck|photo-quality|quality-gate/i);
 });
 
+test("price image prompt forces package-level amounts and forbids per-piece outputs in price fields", () => {
+  assert.match(storeVisitAi, /list_price_idr, package_price_idr, and net_price_idr must all be whole-package IDR amounts/i);
+  assert.match(storeVisitAi, /Never divide a package price by piece_count/i);
+  assert.match(storeVisitAi, /Rp56\.000, 40 pcs -> net_price_idr=56000/i);
+  assert.match(storeVisitAi, /Rp89\.900, 28 pcs -> net_price_idr=89900/i);
+  assert.match(storeVisitAi, /Do not output 1400, 3210, or any other per-piece value in list_price_idr, package_price_idr, or net_price_idr/i);
+});
+
 test("price image analysis type carries photo_quality two-state result", () => {
   assert.match(typesFile, /photo_quality: StoreVisitPhotoQuality/);
   assert.match(typesFile, /status: "pass" \| "retake_required"/);

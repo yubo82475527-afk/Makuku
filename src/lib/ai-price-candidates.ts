@@ -1,5 +1,5 @@
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
-import { calculatePricePerPiece, parseIdrPrice } from "@/lib/price-utils";
+import { calculatePricePerPiece, parseIdrPrice, reconcilePackagePriceMetrics } from "@/lib/price-utils";
 import { normalizePieceCount, normalizePieceCountFromCandidates, parsePieceCountText } from "@/lib/piece-count";
 import type { AiPriceCandidate, CompetitorProduct, MaterialMaster, StoreVisitAiResult } from "@/lib/types";
 
@@ -482,10 +482,16 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
 
   const candidateRows = scopedItems.map((item) => {
     const parsedPrice = parseCandidatePrice(item.price);
-    const listPrice = parseCandidatePrice(item.list_price) ?? parsedPrice;
-    const packagePrice = parseCandidatePrice(item.package_price) ?? parsedPrice;
-    const netPrice = parseCandidatePrice(item.net_price) ?? parsedPrice;
     const pieceCount = normalizePieceCount(item.piece_count);
+    const reconciledPrices = reconcilePackagePriceMetrics({
+      listPriceIdr: parseCandidatePrice(item.list_price) ?? parsedPrice,
+      packagePriceIdr: parseCandidatePrice(item.package_price) ?? parsedPrice,
+      netPriceIdr: parseCandidatePrice(item.net_price) ?? parsedPrice,
+      pieceCount,
+    });
+    const listPrice = reconciledPrices.listPriceIdr ?? parsedPrice;
+    const packagePrice = reconciledPrices.packagePriceIdr ?? parsedPrice;
+    const netPrice = reconciledPrices.netPriceIdr ?? parsedPrice;
     const pricePerPiece = calculatePricePerPiece(netPrice, pieceCount);
     const warnings: Warning[] = [];
     if (!item.brand) warnings.push({ type: "MISSING_DATA", message: "AI did not extract a brand." });
@@ -493,6 +499,9 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
     if (!parsedPrice) warnings.push({ type: "MISSING_DATA", message: "AI price could not be parsed into a number." });
     if (!pieceCount) warnings.push({ type: "MISSING_DATA", message: "Missing piece count; per-piece price cannot be calculated." });
     if (item.confidence < 0.5) warnings.push({ type: "LOW_CONFIDENCE", message: "AI extraction confidence is below 50%." });
+    if (reconciledPrices.correctedFromPerPiece && reconciledPrices.warningMessage) {
+      warnings.push({ type: "PARSE_RISK", message: reconciledPrices.warningMessage });
+    }
 
     const isOwnBrandCandidate = isMakukuBrand(item.brand);
     const materialMatch = isOwnBrandCandidate

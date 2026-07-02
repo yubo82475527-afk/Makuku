@@ -5,6 +5,7 @@ import {
   Building2,
   ClipboardCheck,
   Database,
+  FileSpreadsheet,
   Gauge,
   LogOut,
   Menu,
@@ -76,6 +77,12 @@ const navGroups = [
       { href: "/offline-stores", label: { zh: "门店主数据", en: "Store Master" }, icon: Store },
       { href: "/organizations", label: { zh: "组织管理", en: "Organization Management" }, icon: Building2 },
       { href: "/users", label: { zh: "用户管理", en: "User Management" }, icon: Users },
+    ],
+  },
+  {
+    label: { zh: "报表", en: "Reports" },
+    items: [
+      { href: "/report-center", label: { zh: "日报周报月报", en: "Reports" }, icon: FileSpreadsheet },
     ],
   },
 ] as const;

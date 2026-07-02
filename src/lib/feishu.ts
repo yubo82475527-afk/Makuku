@@ -4,6 +4,14 @@ type FeishuTenantTokenResponse = {
   tenant_access_token?: string;
 };
 
+type FeishuSendMessageResponse = {
+  code?: number;
+  msg?: string;
+  data?: {
+    message_id?: string;
+  };
+};
+
 type FeishuDirectoryUserGetResponse = {
   code?: number;
   msg?: string;
@@ -94,6 +102,50 @@ async function getTenantAccessToken() {
     throw new Error(payload.msg || "Failed to get Feishu tenant access token");
   }
   return payload.tenant_access_token;
+}
+
+export type FeishuReceiveIdType = "open_id" | "chat_id";
+
+export async function sendFeishuCardMessage(input: {
+  receiveIdType: FeishuReceiveIdType;
+  receiveId: string;
+  card: Record<string, unknown>;
+}) {
+  const receiveId = input.receiveId.trim();
+  if (!receiveId) throw new Error("Missing Feishu receive id");
+
+  const content = JSON.stringify(input.card);
+  const token = await getTenantAccessToken();
+  const response = await fetch(`https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${input.receiveIdType}`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json; charset=utf-8",
+    },
+    body: JSON.stringify({
+      receive_id: receiveId,
+      msg_type: "interactive",
+      content,
+    }),
+  });
+  const payload = await response.json().catch(() => ({})) as FeishuSendMessageResponse;
+  if (!response.ok || payload.code !== 0 || !payload.data?.message_id) {
+    console.error("sendFeishuCardMessage failed", {
+      receiveIdType: input.receiveIdType,
+      receiveId,
+      content,
+      httpStatus: response.status,
+      feishuCode: payload.code ?? null,
+      feishuMsg: payload.msg ?? null,
+    });
+    const details = [
+      `http_status=${response.status}`,
+      `feishu_code=${String(payload.code ?? "unknown")}`,
+      `feishu_msg=${payload.msg ?? "unknown"}`,
+    ];
+    throw new Error(`Failed to send Feishu card message; ${details.join("; ")}`);
+  }
+  return payload.data.message_id;
 }
 
 function chunk<T>(items: T[], size: number) {
