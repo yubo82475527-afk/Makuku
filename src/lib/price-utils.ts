@@ -42,6 +42,15 @@ function isNearPackageAmount(perPieceNetPrice: number, pieceCount: number, packa
   return Math.abs(reconstructedPackagePrice - packagePrice) <= tolerance;
 }
 
+function roundedWholePackageAmount(perPieceNetPrice: number, pieceCount: number) {
+  return Math.round((perPieceNetPrice * pieceCount) / 100) * 100;
+}
+
+function looksLikeDiscountedWholePackageAmount(reconstructedPackagePrice: number, referencePrice: number) {
+  const ratio = reconstructedPackagePrice / referencePrice;
+  return ratio >= 0.6 && ratio <= 0.95;
+}
+
 export function reconcilePackagePriceMetrics({
   listPriceIdr,
   packagePriceIdr,
@@ -56,6 +65,9 @@ export function reconcilePackagePriceMetrics({
   const resolvedPackagePrice = packagePriceIdr ?? listPriceIdr ?? netPriceIdr;
   const resolvedListPrice = listPriceIdr ?? resolvedPackagePrice ?? netPriceIdr;
   const resolvedNetPrice = netPriceIdr ?? resolvedPackagePrice ?? resolvedListPrice;
+  const reconstructedPackagePrice = resolvedNetPrice && pieceCount && pieceCount > 1
+    ? roundedWholePackageAmount(resolvedNetPrice, pieceCount)
+    : null;
 
   if (
     resolvedPackagePrice
@@ -71,6 +83,25 @@ export function reconcilePackagePriceMetrics({
       netPriceIdr: resolvedPackagePrice,
       correctedFromPerPiece: true,
       warningMessage: "AI likely divided a whole-package price by piece count. Restored whole-package IDR amount fields.",
+    };
+  }
+
+  if (
+    resolvedListPrice
+    && resolvedNetPrice
+    && pieceCount
+    && pieceCount > 1
+    && resolvedNetPrice < 10000
+    && reconstructedPackagePrice
+    && reconstructedPackagePrice > resolvedNetPrice
+    && looksLikeDiscountedWholePackageAmount(reconstructedPackagePrice, resolvedListPrice)
+  ) {
+    return {
+      listPriceIdr: resolvedListPrice,
+      packagePriceIdr: reconstructedPackagePrice,
+      netPriceIdr: reconstructedPackagePrice,
+      correctedFromPerPiece: true,
+      warningMessage: "AI likely used a per-piece value for a discounted whole-package price. Reconstructed the discounted whole-package IDR amount.",
     };
   }
 

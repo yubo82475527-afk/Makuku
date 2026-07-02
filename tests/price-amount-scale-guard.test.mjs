@@ -98,6 +98,21 @@ test("price amount-scale guard leaves legitimate discount prices unchanged", () 
   assert.equal(result.warningMessage, null);
 });
 
+test("price amount-scale guard reconstructs discounted package price from per-piece net values", () => {
+  const result = priceUtils.reconcilePackagePriceMetrics({
+    listPriceIdr: 197500,
+    packagePriceIdr: 197500,
+    netPriceIdr: 4580,
+    pieceCount: 36,
+  });
+
+  assert.equal(result.listPriceIdr, 197500);
+  assert.equal(result.packagePriceIdr, 164900);
+  assert.equal(result.netPriceIdr, 164900);
+  assert.equal(result.correctedFromPerPiece, true);
+  assert.match(result.warningMessage ?? "", /discounted whole-package/i);
+});
+
 test("store visit price image normalization applies the package-amount guard and appends a parse risk warning", () => {
   const normalized = storeVisitAi.normalizeStoreVisitPriceImageAnalysis({
     photo_quality: { status: "pass", reasons: [], message: "Photo quality passed." },
@@ -118,6 +133,30 @@ test("store visit price image normalization applies the package-amount guard and
   assert.equal(normalized.rows[0].net_price_idr, 56000);
   assert.equal(normalized.rows[0].price_per_piece_idr, 1400);
   assert.match(normalized.warnings.at(-1)?.message ?? "", /whole-package/i);
+});
+
+test("store visit price image normalization reconstructs discounted package totals when list price stays at regular price", () => {
+  const normalized = storeVisitAi.normalizeStoreVisitPriceImageAnalysis({
+    photo_quality: { status: "pass", reasons: [], message: "Photo quality passed." },
+    rows: [
+      {
+        brand: "Makuku",
+        sku: "Pro Care Pants M 6-11KG 36 pcs",
+        list_price_idr: 197500,
+        package_price_idr: 197500,
+        net_price_idr: 4580,
+        piece_count: 36,
+      },
+    ],
+    warnings: [],
+  }, "makuku_shelf");
+
+  assert.equal(normalized.rows.length, 1);
+  assert.equal(normalized.rows[0].list_price_idr, 197500);
+  assert.equal(normalized.rows[0].package_price_idr, 164900);
+  assert.equal(normalized.rows[0].net_price_idr, 164900);
+  assert.equal(normalized.rows[0].price_per_piece_idr, 4580.56);
+  assert.match(normalized.warnings.at(-1)?.message ?? "", /discounted whole-package/i);
 });
 
 test("candidate generation source integrates the amount-scale guard before per-piece math", () => {
