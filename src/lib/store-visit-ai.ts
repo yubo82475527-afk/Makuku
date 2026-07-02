@@ -18,7 +18,7 @@ import type {
 } from "@/lib/types";
 import { createJsonChatCompletion, imageUrlPart, textPart } from "@/lib/ai-client";
 import { calculatePricePerPiece, parseIdrPrice, reconcilePackagePriceMetrics } from "@/lib/price-utils";
-import { normalizePieceCountFromCandidates } from "@/lib/piece-count";
+import { normalizePieceCountFromCandidates, normalizePieceCountFromEvidence } from "@/lib/piece-count";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
 
 const stockRiskLevels: StockRiskLevel[] = ["Normal", "Low Stock", "Out of Stock Risk"];
@@ -31,6 +31,7 @@ const promotionVisibilities: PromotionVisibility[] = ["LOW", "MEDIUM", "HIGH"];
 const promoPressureLevels: PromoPressureLevel[] = ["LOW", "MEDIUM", "HIGH"];
 const rawExtractionTypes: RawExtractionType[] = ["SKU", "PROMO", "SHELF_SIGNAL"];
 const validationWarningTypes: ValidationWarningType[] = ["MISSING_DATA", "LOW_CONFIDENCE", "PARSE_RISK"];
+const priceBasisValues = ["VISIBLE_PACKAGE_PRICE", "VISIBLE_PROMO_PACKAGE_PRICE", "VISIBLE_PRICE_PER_PIECE", "RECONCILED_PACKAGE_PRICE"] as const;
 const photoQualityReasonValues = ["price_unclear", "angled_affects_reading", "price_obstructed"] as const;
 const PROMOTION_PROMPT_REQUIREMENT = [
   "Promotion insight requirement: promotion_insights.competitor_promotions must include EVERY distinct visible promotion detected across ALL images. Do not return only the top promotions. Do not cap this array at 3. Do not drop a promotion because brand, product, price, or mechanic is partially unclear; keep the visible evidence in description and add a validation warning when needed.",
@@ -97,6 +98,8 @@ const STORE_VISIT_PRICE_IMAGE_PROMPT = [
   "Associate each price tag only with the nearest product according to standard retail shelf layout: directly above, directly below, or immediately adjacent. Never match across shelf columns, shelf levels, or distant products. If the match is ambiguous, skip that row and add a PARSE_RISK warning.",
   "Never invent or infer hidden digits, cropped prices, partially visible SKU names, covered package counts, or missing promotion mechanics.",
   "brand should be normalized when clearly visible. sku should use the most complete visible product name, including series, size, and variant when visible.",
+  "For each price-board table row, return row-level evidence text from the SAME row: piece_count_text from the Pcs cell, list_price_text from HARGA NORMAL/PACK, package_price_text from the visible whole-package selling price, net_price_text from HARGA PROMO/PACK, and visible_price_per_piece_text from HARGA/PCS.",
+  "Indonesian handwritten digit 7 may include a middle horizontal stroke. Do not confuse that handwritten 7 with digit 2. Example: visible HARGA/PCS 2.678 means visible_price_per_piece_text=\"2.678\" and visible_price_per_piece_idr=2678, not 2628, 2278, or 2224.",
   "Return all monetary values as integer Indonesian Rupiah. Never include Rp, commas, periods, or spaces. Example: Rp129.900 -> 129900.",
   "list_price_idr is the original shelf price when visible.",
   "package_price_idr is the visible package selling price and the business display price called list price.",
@@ -118,9 +121,10 @@ const STORE_VISIT_PRICE_IMAGE_PROMPT = [
   "Example: Comfort Fit Super Jumbo M 6-11 KG with Pcs cell 60+6 -> piece_count=66.",
   "Example: Comfort Fit Jumbo M 6-11 KG with Pcs cell 42+4 -> piece_count=46.",
   "Example: Comfort Fit Mega Pack XL 12-17 KG with Pcs cell 60+6 -> piece_count=66.",
-  "Do not calculate per-piece price. The system will calculate it.",
+  "If visible_price_per_piece_text and piece_count_text are both clear, net_price_idr may be reconstructed from visible_price_per_piece_idr * piece_count. Still keep package/list/net text evidence from the visible row.",
+  "Do not calculate per-piece price unless it is visibly printed in HARGA/PCS. The system will calculate final price_per_piece_idr.",
   "Return ONLY valid compact JSON. No markdown. No explanation. No extra text.",
-  '{"photo_quality":{"status":"pass|retake_required","reasons":["price_unclear|angled_affects_reading|price_obstructed"],"message":"string"},"rows":[{"brand":"string","sku":"string","list_price_idr":129900,"package_price_idr":129900,"net_price_idr":119900,"promo_type":"Discount","piece_count":44}],"summary":"string","warnings":[{"type":"MISSING_DATA|LOW_CONFIDENCE|PARSE_RISK","message":"string"}]}',
+  '{"photo_quality":{"status":"pass|retake_required","reasons":["price_unclear|angled_affects_reading|price_obstructed"],"message":"string"},"rows":[{"brand":"string","sku":"string","piece_count_text":"44","list_price_text":"129.900","package_price_text":"129.900","net_price_text":"119.900","visible_price_per_piece_text":"2.725","list_price_idr":129900,"package_price_idr":129900,"net_price_idr":119900,"visible_price_per_piece_idr":2725,"promo_type":"Discount","piece_count":44}],"summary":"string","warnings":[{"type":"MISSING_DATA|LOW_CONFIDENCE|PARSE_RISK","message":"string"}]}',
 ].join("\n");
 
 const STORE_VISIT_DISPLAY_PROMPT = [
@@ -233,6 +237,10 @@ function asEnum<T extends string>(value: unknown, options: readonly T[], fallbac
   return options.includes(value as T) ? value as T : fallback;
 }
 
+function asOptionalPriceBasis(value: unknown) {
+  return priceBasisValues.includes(value as (typeof priceBasisValues)[number]) ? value as (typeof priceBasisValues)[number] : null;
+}
+
 function normalizeValidationWarnings(warnings: { type: ValidationWarningType; message: string }[]) {
   const priority: ValidationWarningType[] = ["PARSE_RISK", "LOW_CONFIDENCE", "MISSING_DATA"];
   const grouped = new Map<ValidationWarningType, string[]>();
@@ -330,6 +338,11 @@ export function normalizeStoreVisitAiResult(value: unknown): StoreVisitAiResult 
   const normalizedKeySkuPrices = keySkuPrices.map((item) => {
     const price = asRecord(item);
     const visiblePrice = asString(price.price, "Price unclear");
+    const pieceCountText = asOptionalString(price.piece_count_text);
+    const listPriceText = asOptionalString(price.list_price_text);
+    const packagePriceText = asOptionalString(price.package_price_text);
+    const netPriceText = asOptionalString(price.net_price_text);
+    const visiblePricePerPieceText = asOptionalString(price.visible_price_per_piece_text);
     return {
       brand: asString(price.brand, "Unknown"),
       product: asString(price.product, "Unknown product"),
@@ -338,7 +351,14 @@ export function normalizeStoreVisitAiResult(value: unknown): StoreVisitAiResult 
       package_price: asOptionalString(price.package_price) ?? visiblePrice,
       net_price: asOptionalString(price.net_price) ?? visiblePrice,
       promo_type: asOptionalString(price.promo_type),
-      piece_count: normalizePieceCountFromCandidates(price.piece_count, asOptionalString(price.product)),
+      piece_count: normalizePieceCountFromEvidence(price.piece_count, pieceCountText, asOptionalString(price.product)),
+      piece_count_text: pieceCountText,
+      list_price_text: listPriceText,
+      package_price_text: packagePriceText,
+      net_price_text: netPriceText,
+      visible_price_per_piece_text: visiblePricePerPieceText,
+      visible_price_per_piece_idr: asNullablePriceNumber(price.visible_price_per_piece_idr) ?? asNullablePriceNumber(visiblePricePerPieceText),
+      price_basis: asOptionalPriceBasis(price.price_basis),
       tag: asEnum(price.tag, priceInsightTags, "HERO"),
       confidence: Math.min(Math.max(asNumber(price.confidence, 0.7), 0), 1),
     };
@@ -490,35 +510,59 @@ export function normalizeStoreVisitPriceImageAnalysis(
     .slice(0, 30)
     .map((item) => {
       const row = asRecord(item);
-      const rawListPrice = asNullablePriceNumber(row.list_price_idr);
-      const rawPackagePrice = asNullablePriceNumber(row.package_price_idr) ?? rawListPrice;
-      const rawNetPrice = asNullablePriceNumber(row.net_price_idr) ?? rawPackagePrice ?? rawListPrice;
+      const pieceCountText = asOptionalString(row.piece_count_text);
+      const listPriceText = asOptionalString(row.list_price_text);
+      const packagePriceText = asOptionalString(row.package_price_text);
+      const netPriceText = asOptionalString(row.net_price_text);
+      const visiblePricePerPieceText = asOptionalString(row.visible_price_per_piece_text);
+      const rawListPrice = asNullablePriceNumber(listPriceText) ?? asNullablePriceNumber(row.list_price_idr);
+      const rawPackagePrice = asNullablePriceNumber(packagePriceText) ?? asNullablePriceNumber(row.package_price_idr) ?? rawListPrice;
+      const rawNetPrice = asNullablePriceNumber(netPriceText) ?? asNullablePriceNumber(row.net_price_idr) ?? rawPackagePrice ?? rawListPrice;
+      const visiblePricePerPiece = asNullablePriceNumber(row.visible_price_per_piece_idr) ?? asNullablePriceNumber(visiblePricePerPieceText);
       const sku = asString(row.sku, "Unknown SKU");
-      const pieceCount = normalizePieceCountFromCandidates(row.piece_count, sku);
+      const modelPieceCount = normalizePieceCountFromCandidates(row.piece_count, sku);
+      const pieceCount = normalizePieceCountFromEvidence(row.piece_count, pieceCountText, sku);
       const reconciledPrices = reconcilePackagePriceMetrics({
         listPriceIdr: rawListPrice,
         packagePriceIdr: rawPackagePrice,
         netPriceIdr: rawNetPrice,
         pieceCount,
+        visiblePricePerPieceIdr: visiblePricePerPiece,
       });
       const listPrice = reconciledPrices.listPriceIdr ?? rawNetPrice;
       const packagePrice = reconciledPrices.packagePriceIdr ?? listPrice;
       const netPrice = reconciledPrices.netPriceIdr ?? packagePrice ?? listPrice;
+      if (pieceCountText && modelPieceCount && pieceCount && modelPieceCount !== pieceCount) {
+        normalizationWarnings.push({
+          type: "PARSE_RISK",
+          message: "Corrected piece count from visible same-row Pcs text evidence.",
+        });
+      }
       if (reconciledPrices.correctedFromPerPiece && reconciledPrices.warningMessage) {
         normalizationWarnings.push({
           type: "PARSE_RISK",
           message: reconciledPrices.warningMessage,
         });
       }
+      const pricePerPiece = reconciledPrices.priceBasis === "VISIBLE_PRICE_PER_PIECE" && reconciledPrices.visiblePricePerPieceIdr
+        ? reconciledPrices.visiblePricePerPieceIdr
+        : calculatePricePerPiece(netPrice, pieceCount);
       return {
         brand: asOptionalString(row.brand),
         sku,
+        piece_count_text: pieceCountText,
+        list_price_text: listPriceText,
+        package_price_text: packagePriceText,
+        net_price_text: netPriceText,
+        visible_price_per_piece_text: visiblePricePerPieceText,
         list_price_idr: listPrice ?? netPrice,
         package_price_idr: packagePrice ?? netPrice,
         net_price_idr: netPrice,
+        visible_price_per_piece_idr: reconciledPrices.visiblePricePerPieceIdr,
+        price_basis: reconciledPrices.priceBasis,
         promo_type: asOptionalString(row.promo_type),
         piece_count: pieceCount,
-        price_per_piece_idr: calculatePricePerPiece(netPrice, pieceCount),
+        price_per_piece_idr: pricePerPiece,
       };
     })
     .filter((row) => row.net_price_idr !== null);

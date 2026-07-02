@@ -39,6 +39,18 @@ test("price image prompt forces same-row Pcs bonus extraction instead of truncat
   assert.match(storeVisitAi, /set piece_count to null and add a PARSE_RISK warning/i);
 });
 
+test("price image prompt requires row-level evidence and Indonesian handwritten 7 handling", () => {
+  assert.match(storeVisitAi, /piece_count_text/);
+  assert.match(storeVisitAi, /list_price_text/);
+  assert.match(storeVisitAi, /package_price_text/);
+  assert.match(storeVisitAi, /net_price_text/);
+  assert.match(storeVisitAi, /visible_price_per_piece_text/);
+  assert.match(storeVisitAi, /SAME row/);
+  assert.match(storeVisitAi, /handwritten digit 7 may include a middle horizontal stroke/i);
+  assert.match(storeVisitAi, /2\.678 means visible_price_per_piece_text=/i);
+  assert.match(storeVisitAi, /visible_price_per_piece_idr=2678/i);
+});
+
 test("price image analysis type carries photo_quality two-state result", () => {
   assert.match(typesFile, /photo_quality: StoreVisitPhotoQuality/);
   assert.match(typesFile, /status: "pass" \| "retake_required"/);

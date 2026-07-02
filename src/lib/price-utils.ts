@@ -46,6 +46,11 @@ function roundedWholePackageAmount(perPieceNetPrice: number, pieceCount: number)
   return Math.round((perPieceNetPrice * pieceCount) / 100) * 100;
 }
 
+function isNearVisiblePackageAmount(reconstructedPackagePrice: number, referencePrice: number) {
+  const tolerance = Math.max(1000, Math.round(referencePrice * 0.015));
+  return Math.abs(reconstructedPackagePrice - referencePrice) <= tolerance;
+}
+
 function looksLikeDiscountedWholePackageAmount(reconstructedPackagePrice: number, referencePrice: number) {
   const ratio = reconstructedPackagePrice / referencePrice;
   return ratio >= 0.6 && ratio <= 0.95;
@@ -56,18 +61,48 @@ export function reconcilePackagePriceMetrics({
   packagePriceIdr,
   netPriceIdr,
   pieceCount,
+  visiblePricePerPieceIdr,
 }: {
   listPriceIdr: number | null;
   packagePriceIdr: number | null;
   netPriceIdr: number | null;
   pieceCount: number | null;
+  visiblePricePerPieceIdr?: number | null;
 }) {
   const resolvedPackagePrice = packagePriceIdr ?? listPriceIdr ?? netPriceIdr;
   const resolvedListPrice = listPriceIdr ?? resolvedPackagePrice ?? netPriceIdr;
   const resolvedNetPrice = netPriceIdr ?? resolvedPackagePrice ?? resolvedListPrice;
+  const visiblePerPiecePackagePrice = visiblePricePerPieceIdr && pieceCount && pieceCount > 0
+    ? Math.round(visiblePricePerPieceIdr * pieceCount)
+    : null;
+  const visiblePerPieceReferencePrice = resolvedNetPrice ?? resolvedPackagePrice ?? resolvedListPrice;
   const reconstructedPackagePrice = resolvedNetPrice && pieceCount && pieceCount > 1
     ? roundedWholePackageAmount(resolvedNetPrice, pieceCount)
     : null;
+
+  if (
+    visiblePricePerPieceIdr
+    && visiblePerPiecePackagePrice
+    && (
+      !visiblePerPieceReferencePrice
+      || isNearVisiblePackageAmount(visiblePerPiecePackagePrice, visiblePerPieceReferencePrice)
+      || (
+        resolvedPackagePrice
+        && visiblePerPiecePackagePrice < resolvedPackagePrice
+        && looksLikeDiscountedWholePackageAmount(visiblePerPiecePackagePrice, resolvedPackagePrice)
+      )
+    )
+  ) {
+    return {
+      listPriceIdr: resolvedListPrice ?? resolvedPackagePrice ?? visiblePerPiecePackagePrice,
+      packagePriceIdr: resolvedPackagePrice ?? visiblePerPiecePackagePrice,
+      netPriceIdr: visiblePerPiecePackagePrice,
+      visiblePricePerPieceIdr,
+      priceBasis: "VISIBLE_PRICE_PER_PIECE" as const,
+      correctedFromPerPiece: true,
+      warningMessage: "Final package price was reconstructed from visible per-piece price and piece count.",
+    };
+  }
 
   if (
     resolvedPackagePrice
@@ -81,6 +116,8 @@ export function reconcilePackagePriceMetrics({
       listPriceIdr: resolvedListPrice ?? resolvedPackagePrice,
       packagePriceIdr: resolvedPackagePrice,
       netPriceIdr: resolvedPackagePrice,
+      visiblePricePerPieceIdr: visiblePricePerPieceIdr ?? null,
+      priceBasis: "RECONCILED_PACKAGE_PRICE" as const,
       correctedFromPerPiece: true,
       warningMessage: "AI likely divided a whole-package price by piece count. Restored whole-package IDR amount fields.",
     };
@@ -100,6 +137,8 @@ export function reconcilePackagePriceMetrics({
       listPriceIdr: resolvedListPrice,
       packagePriceIdr: reconstructedPackagePrice,
       netPriceIdr: reconstructedPackagePrice,
+      visiblePricePerPieceIdr: visiblePricePerPieceIdr ?? null,
+      priceBasis: "RECONCILED_PACKAGE_PRICE" as const,
       correctedFromPerPiece: true,
       warningMessage: "AI likely used a per-piece value for a discounted whole-package price. Reconstructed the discounted whole-package IDR amount.",
     };
@@ -109,6 +148,10 @@ export function reconcilePackagePriceMetrics({
     listPriceIdr: resolvedListPrice,
     packagePriceIdr: resolvedPackagePrice,
     netPriceIdr: resolvedNetPrice,
+    visiblePricePerPieceIdr: visiblePricePerPieceIdr ?? null,
+    priceBasis: resolvedNetPrice && resolvedPackagePrice && resolvedNetPrice < resolvedPackagePrice
+      ? "VISIBLE_PROMO_PACKAGE_PRICE" as const
+      : "VISIBLE_PACKAGE_PRICE" as const,
     correctedFromPerPiece: false,
     warningMessage: null,
   };

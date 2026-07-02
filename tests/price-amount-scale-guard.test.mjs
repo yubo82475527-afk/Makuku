@@ -44,6 +44,17 @@ function loadStoreVisitAi(priceUtils) {
       if (id === "@/lib/price-utils") return priceUtils;
       if (id === "@/lib/piece-count") {
         return {
+          normalizePieceCountFromEvidence: (value, pieceCountText, sku) => {
+            const text = String(pieceCountText ?? "");
+            const bonus = text.match(/\b(\d{1,3})\s*\+\s*(\d{1,3})\b/);
+            if (bonus) return Number(bonus[1]) + Number(bonus[2]);
+            const fromText = text.match(/\b(\d{1,3})\b/);
+            if (fromText) return Number(fromText[1]);
+            const numeric = Number(value);
+            if (Number.isFinite(numeric) && numeric > 0) return Math.floor(numeric);
+            const match = String(sku ?? "").match(/\b(\d{1,3})\s*(?:pcs?|pieces?)\b/i);
+            return match ? Number(match[1]) : null;
+          },
           normalizePieceCountFromCandidates: (value, sku) => {
             const numeric = Number(value);
             if (Number.isFinite(numeric) && numeric > 0) return Math.floor(numeric);
@@ -69,6 +80,7 @@ function loadStoreVisitAi(priceUtils) {
 
 const priceUtils = loadPriceUtils();
 const storeVisitAi = loadStoreVisitAi(priceUtils);
+const rowEvidenceMigration = readFileSync("supabase/migrations/202607020002_ai_price_candidate_row_evidence.sql", "utf8");
 
 test("price amount-scale guard repairs package prices that were divided by piece count", () => {
   const result = priceUtils.reconcilePackagePriceMetrics({
@@ -159,10 +171,78 @@ test("store visit price image normalization reconstructs discounted package tota
   assert.match(normalized.warnings.at(-1)?.message ?? "", /discounted whole-package/i);
 });
 
+test("store visit price image normalization prioritizes clear visible per-piece evidence", () => {
+  const normalized = storeVisitAi.normalizeStoreVisitPriceImageAnalysis({
+    photo_quality: { status: "pass", reasons: [], message: "Photo quality passed." },
+    rows: [
+      {
+        brand: "Merries",
+        sku: "Good Skin Jumbo XXL 15-25 kg",
+        list_price_idr: 78000,
+        package_price_idr: 78000,
+        net_price_idr: 62288,
+        piece_count: 28,
+        piece_count_text: "28",
+        list_price_text: "78.000",
+        package_price_text: "78.000",
+        net_price_text: "75.000",
+        visible_price_per_piece_text: "2.678",
+      },
+    ],
+    warnings: [],
+  }, "competitor_shelf");
+
+  assert.equal(normalized.rows.length, 1);
+  assert.equal(normalized.rows[0].piece_count, 28);
+  assert.equal(normalized.rows[0].visible_price_per_piece_idr, 2678);
+  assert.equal(normalized.rows[0].net_price_idr, 74984);
+  assert.equal(normalized.rows[0].price_per_piece_idr, 2678);
+  assert.equal(normalized.rows[0].price_basis, "VISIBLE_PRICE_PER_PIECE");
+  assert.match(normalized.warnings.at(-1)?.message ?? "", /per-piece/i);
+});
+
+test("store visit price image normalization prefers visible bonus piece count text over base quantity", () => {
+  const normalized = storeVisitAi.normalizeStoreVisitPriceImageAnalysis({
+    photo_quality: { status: "pass", reasons: [], message: "Photo quality passed." },
+    rows: [
+      {
+        brand: "Makuku",
+        sku: "Comfort Fit Super Jumbo M 6-11 KG",
+        list_price_idr: 112900,
+        package_price_idr: 112900,
+        net_price_idr: 112900,
+        piece_count: 60,
+        piece_count_text: "60+6",
+      },
+    ],
+    warnings: [],
+  }, "makuku_shelf");
+
+  assert.equal(normalized.rows.length, 1);
+  assert.equal(normalized.rows[0].piece_count, 66);
+  assert.equal(normalized.rows[0].piece_count_text, "60+6");
+  assert.equal(normalized.rows[0].price_per_piece_idr, 1710.61);
+  assert.match(normalized.warnings.at(-1)?.message ?? "", /piece count/i);
+});
+
 test("candidate generation source integrates the amount-scale guard before per-piece math", () => {
   const candidateService = readFileSync("src/lib/ai-price-candidates.ts", "utf8");
   assert.match(candidateService, /reconcilePackagePriceMetrics/);
   assert.match(candidateService, /const reconciledPrices = reconcilePackagePriceMetrics\(/);
   assert.match(candidateService, /const netPrice = reconciledPrices\.netPriceIdr/);
-  assert.match(candidateService, /const pricePerPiece = calculatePricePerPiece\(netPrice, pieceCount\)/);
+  assert.match(candidateService, /reconciledPrices\.priceBasis === "VISIBLE_PRICE_PER_PIECE"/);
+  assert.match(candidateService, /calculatePricePerPiece\(netPrice, pieceCount\)/);
+  assert.match(candidateService, /raw_piece_count_text/);
+  assert.match(candidateService, /raw_price_per_piece_text/);
+  assert.match(candidateService, /visible_price_per_piece_idr/);
+  assert.match(candidateService, /price_basis/);
+});
+
+test("candidate row evidence migration adds raw evidence columns", () => {
+  assert.match(rowEvidenceMigration, /raw_piece_count_text text/i);
+  assert.match(rowEvidenceMigration, /raw_package_price_text text/i);
+  assert.match(rowEvidenceMigration, /raw_net_price_text text/i);
+  assert.match(rowEvidenceMigration, /raw_price_per_piece_text text/i);
+  assert.match(rowEvidenceMigration, /visible_price_per_piece_idr numeric/i);
+  assert.match(rowEvidenceMigration, /price_basis text/i);
 });

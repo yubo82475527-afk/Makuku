@@ -27,6 +27,11 @@ export type PromotionVisibility = "LOW" | "MEDIUM" | "HIGH";
 export type PromoPressureLevel = "LOW" | "MEDIUM" | "HIGH";
 export type RawExtractionType = "SKU" | "PROMO" | "SHELF_SIGNAL";
 export type ValidationWarningType = "MISSING_DATA" | "LOW_CONFIDENCE" | "PARSE_RISK";
+export type PriceBasis =
+  | "VISIBLE_PACKAGE_PRICE"
+  | "VISIBLE_PROMO_PACKAGE_PRICE"
+  | "VISIBLE_PRICE_PER_PIECE"
+  | "RECONCILED_PACKAGE_PRICE";
 
 export type StoreVisitAiResult = {
   raw_extraction: {
@@ -72,6 +77,13 @@ export type StoreVisitAiResult = {
       net_price?: string | null;
       promo_type?: string | null;
       piece_count: number | null;
+      piece_count_text?: string | null;
+      list_price_text?: string | null;
+      package_price_text?: string | null;
+      net_price_text?: string | null;
+      visible_price_per_piece_text?: string | null;
+      visible_price_per_piece_idr?: number | null;
+      price_basis?: PriceBasis | null;
       tag: PriceInsightTag;
       confidence: number;
     }[];
@@ -109,9 +121,16 @@ export type StoreVisitAiResult = {
 export type StoreVisitPriceImageRow = {
   brand?: string | null;
   sku: string;
+  piece_count_text?: string | null;
+  list_price_text?: string | null;
+  package_price_text?: string | null;
+  net_price_text?: string | null;
+  visible_price_per_piece_text?: string | null;
   list_price_idr: number | null;
   package_price_idr: number | null;
   net_price_idr: number | null;
+  visible_price_per_piece_idr?: number | null;
+  price_basis?: PriceBasis | null;
   promo_type: string | null;
   piece_count: number | null;
   price_per_piece_idr: number | null;
@@ -756,6 +775,12 @@ export type AiPriceCandidate = {
   list_price_idr?: number | null;
   package_price_idr?: number | null;
   net_price_idr?: number | null;
+  raw_piece_count_text?: string | null;
+  raw_package_price_text?: string | null;
+  raw_net_price_text?: string | null;
+  raw_price_per_piece_text?: string | null;
+  visible_price_per_piece_idr?: number | null;
+  price_basis?: PriceBasis | null;
   promo_type?: string | null;
   piece_count: number | null;
   price_per_piece: number | null;

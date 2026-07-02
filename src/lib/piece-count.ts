@@ -38,3 +38,13 @@ export function normalizePieceCountFromCandidates(value: unknown, ...textCandida
   const valueText = typeof value === "string" ? value : null;
   return normalizePieceCount(value) ?? [valueText, ...textCandidates].map(parsePieceCountText).find((item) => item !== null) ?? null;
 }
+
+export function normalizePieceCountFromEvidence(value: unknown, pieceCountText?: string | null, ...textCandidates: Array<string | null | undefined>) {
+  const evidenceText = typeof pieceCountText === "string" ? pieceCountText.trim() : "";
+  if (evidenceText) {
+    if (/\b\d{1,3}\s*\+\s*$/.test(evidenceText)) return null;
+    const parsedEvidence = parsePieceCountText(evidenceText);
+    if (parsedEvidence !== null) return parsedEvidence;
+  }
+  return normalizePieceCountFromCandidates(value, ...textCandidates);
+}

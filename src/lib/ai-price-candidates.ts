@@ -1,6 +1,6 @@
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
 import { calculatePricePerPiece, parseIdrPrice, reconcilePackagePriceMetrics } from "@/lib/price-utils";
-import { normalizePieceCount, normalizePieceCountFromCandidates, parsePieceCountText } from "@/lib/piece-count";
+import { normalizePieceCount, normalizePieceCountFromCandidates, normalizePieceCountFromEvidence, parsePieceCountText } from "@/lib/piece-count";
 import type { AiPriceCandidate, CompetitorProduct, MaterialMaster, StoreVisitAiResult } from "@/lib/types";
 
 type Warning = { type: string; message: string };
@@ -41,6 +41,12 @@ type SourceItem = {
   net_price?: string | null;
   promo_type?: string | null;
   piece_count: number | null;
+  raw_piece_count_text?: string | null;
+  raw_package_price_text?: string | null;
+  raw_net_price_text?: string | null;
+  raw_price_per_piece_text?: string | null;
+  visible_price_per_piece_idr?: number | null;
+  price_basis?: string | null;
   type: "SKU" | "PROMO";
   tag?: string | null;
   confidence: number;
@@ -411,6 +417,12 @@ function sourceItems(aiResult: StoreVisitAiResult) {
     net_price: item.net_price ?? item.price,
     promo_type: item.promo_type ?? null,
     piece_count: normalizePieceCountFromCandidates(item.piece_count, item.product),
+    raw_piece_count_text: item.piece_count_text ?? null,
+    raw_package_price_text: item.package_price_text ?? null,
+    raw_net_price_text: item.net_price_text ?? null,
+    raw_price_per_piece_text: item.visible_price_per_piece_text ?? null,
+    visible_price_per_piece_idr: item.visible_price_per_piece_idr ?? null,
+    price_basis: item.price_basis ?? null,
     type: "SKU" as const,
     tag: item.tag,
     confidence: item.confidence,
@@ -442,7 +454,7 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
   const supabase = createSupabaseServiceClient();
   const items = (input.sourceItems?.map((item) => ({
     ...item,
-    piece_count: normalizePieceCountFromCandidates(item.piece_count, item.product),
+    piece_count: normalizePieceCountFromEvidence(item.piece_count, item.raw_piece_count_text, item.product),
   })).filter(isPriceCandidate)) ?? sourceItems(input.aiResult);
   const scopedItems = items.filter((item) => item.sourceImageId);
   if (scopedItems.length === 0) return [];
@@ -482,17 +494,21 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
 
   const candidateRows = scopedItems.map((item) => {
     const parsedPrice = parseCandidatePrice(item.price);
-    const pieceCount = normalizePieceCount(item.piece_count);
+    const pieceCount = normalizePieceCountFromEvidence(item.piece_count, item.raw_piece_count_text, item.product);
+    const visiblePricePerPiece = parseCandidatePrice(item.raw_price_per_piece_text) ?? item.visible_price_per_piece_idr ?? null;
     const reconciledPrices = reconcilePackagePriceMetrics({
       listPriceIdr: parseCandidatePrice(item.list_price) ?? parsedPrice,
       packagePriceIdr: parseCandidatePrice(item.package_price) ?? parsedPrice,
       netPriceIdr: parseCandidatePrice(item.net_price) ?? parsedPrice,
       pieceCount,
+      visiblePricePerPieceIdr: visiblePricePerPiece,
     });
     const listPrice = reconciledPrices.listPriceIdr ?? parsedPrice;
     const packagePrice = reconciledPrices.packagePriceIdr ?? parsedPrice;
     const netPrice = reconciledPrices.netPriceIdr ?? parsedPrice;
-    const pricePerPiece = calculatePricePerPiece(netPrice, pieceCount);
+    const pricePerPiece = reconciledPrices.priceBasis === "VISIBLE_PRICE_PER_PIECE" && reconciledPrices.visiblePricePerPieceIdr
+      ? reconciledPrices.visiblePricePerPieceIdr
+      : calculatePricePerPiece(netPrice, pieceCount);
     const warnings: Warning[] = [];
     if (!item.brand) warnings.push({ type: "MISSING_DATA", message: "AI did not extract a brand." });
     if (!item.product) warnings.push({ type: "MISSING_DATA", message: "AI did not extract a product name." });
@@ -533,6 +549,12 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
       list_price_idr: listPrice,
       package_price_idr: packagePrice,
       net_price_idr: netPrice,
+      raw_piece_count_text: item.raw_piece_count_text ?? null,
+      raw_package_price_text: item.raw_package_price_text ?? null,
+      raw_net_price_text: item.raw_net_price_text ?? null,
+      raw_price_per_piece_text: item.raw_price_per_piece_text ?? null,
+      visible_price_per_piece_idr: reconciledPrices.visiblePricePerPieceIdr,
+      price_basis: reconciledPrices.priceBasis,
       promo_type: normalizePromoType(item.promo_type),
       piece_count: pieceCount,
       price_per_piece: pricePerPiece,
