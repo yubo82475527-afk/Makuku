@@ -198,8 +198,7 @@ export function renderReportTemplatePreviewHtml(report: AgentReport, locale: str
 }
 
 export async function renderReportTemplatePreviewPng(report: AgentReport, locale: string) {
-  const { chromium } = await import("playwright");
-  const browser = await chromium.launch({ headless: true });
+  const browser = await launchReportRenderBrowser();
   try {
     const context = await browser.newContext({
       viewport: { width: 1080, height: 760 },
@@ -211,6 +210,28 @@ export async function renderReportTemplatePreviewPng(report: AgentReport, locale
   } finally {
     await browser.close();
   }
+}
+
+async function launchReportRenderBrowser() {
+  if (isServerlessRuntime()) {
+    const [{ chromium }, chromiumPackage] = await Promise.all([
+      import("playwright-core"),
+      import("@sparticuz/chromium"),
+    ]);
+    const serverlessChromium = chromiumPackage.default;
+    return chromium.launch({
+      args: serverlessChromium.args,
+      executablePath: await serverlessChromium.executablePath(),
+      headless: true,
+    });
+  }
+
+  const { chromium } = await import("playwright");
+  return chromium.launch({ headless: true });
+}
+
+function isServerlessRuntime() {
+  return process.env.VERCEL === "1" || Boolean(process.env.AWS_LAMBDA_FUNCTION_VERSION);
 }
 
 function renderMetricRow(row: AgentReportMetricRow) {

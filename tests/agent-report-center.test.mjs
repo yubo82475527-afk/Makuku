@@ -583,12 +583,24 @@ test("vercel cron configuration runs report subscriptions automatically every da
 });
 
 test("report image delivery keeps playwright as a runtime dependency and traces its assets for server routes", () => {
-  assert.match(packageJsonFile, /"dependencies"\s*:\s*\{[\s\S]*"playwright"\s*:/);
+  assert.match(packageJsonFile, /"dependencies"\s*:\s*\{[\s\S]*"playwright-core"\s*:/);
+  assert.match(packageJsonFile, /"dependencies"\s*:\s*\{[\s\S]*"@sparticuz\/chromium(?:-min)?"\s*:/);
   assert.match(nextConfigFile, /outputFileTracingIncludes/);
-  assert.match(nextConfigFile, /node_modules\/playwright\/\*\*\/*/);
+  assert.match(nextConfigFile, /node_modules\/@sparticuz\/chromium(?:-min)?\/\*\*\/*/);
   assert.match(nextConfigFile, /node_modules\/playwright-core\/\*\*\/*/);
   assert.match(nextConfigFile, /\/api\/internal\/agent-reports\/run-subscriptions/);
   assert.match(nextConfigFile, /dispatch-preview-image/);
+});
+
+test("report PNG renderer uses serverless chromium on Vercel instead of requiring playwright-managed browser installs", () => {
+  const reportTemplateRenderFile = readIfExists("src/lib/report-template-render.ts");
+
+  assert.match(reportTemplateRenderFile, /process\.env\.VERCEL|AWS_LAMBDA_FUNCTION_VERSION|NODE_ENV/);
+  assert.match(reportTemplateRenderFile, /@sparticuz\/chromium/);
+  assert.match(reportTemplateRenderFile, /playwright-core/);
+  assert.match(reportTemplateRenderFile, /executablePath/);
+  assert.match(reportTemplateRenderFile, /if \(isServerlessRuntime\(\)\)/);
+  assert.match(reportTemplateRenderFile, /await import\("playwright"\)/);
 });
 
 
