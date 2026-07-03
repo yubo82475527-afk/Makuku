@@ -14,21 +14,22 @@ test("price image prompt includes the two-state photo quality gate without addin
   assert.match(storeVisitAi, /pass\|retake_required/);
   assert.match(storeVisitAi, /wide shelf overview/);
   assert.match(storeVisitAi, /rows must be \[\]/i);
-  assert.match(storeVisitAi, /front-facing or nearly front-facing/);
-  assert.match(storeVisitAi, /background labels are unreadable/);
-  assert.match(storeVisitAi, /severe perspective distortion/);
+  assert.match(storeVisitAi, /shelf price tags or price boards are clearly visible/);
+  assert.match(storeVisitAi, /at least one full product-price row is readable/);
+  assert.match(storeVisitAi, /heavy blur or glare prevents reading/);
   assert.doesNotMatch(storeVisitAi, /OCR|optical character recognition|precheck/i);
   assert.doesNotMatch(storeVisitAi, /\/api\/.*precheck|photo-quality|quality-gate/i);
 });
 
 test("price image prompt forces package-level amounts and forbids per-piece outputs in price fields", () => {
-  assert.match(storeVisitAi, /list_price_idr, package_price_idr, and net_price_idr must ALWAYS represent WHOLE PACKAGE prices/i);
-  assert.match(storeVisitAi, /Never divide package prices by piece_count/i);
-  assert.match(storeVisitAi, /Do not output 1400, 3210, or any other per-piece value in list_price_idr, package_price_idr, or net_price_idr/i);
+  assert.match(storeVisitAi, /list_price_idr, package_price_idr, and net_price_idr must always be WHOLE PACKAGE prices/i);
+  assert.match(storeVisitAi, /Never divide package price by piece_count/i);
+  assert.match(storeVisitAi, /Never calculate package price from per-piece price/i);
+  assert.match(storeVisitAi, /If the corresponding text field is empty or null, the numeric field must be null/i);
 });
 
 test("price image prompt forces same-row Pcs bonus extraction instead of truncating to base quantity", () => {
-  assert.match(storeVisitAi, /read the original Pcs cell/i);
+  assert.match(storeVisitAi, /read the original Pcs cell from the SAME row/i);
   assert.match(storeVisitAi, /60\+6 -> 66/i);
   assert.match(storeVisitAi, /42\+4 -> 46/i);
   assert.match(storeVisitAi, /80\+10 -> 90/i);
@@ -43,17 +44,21 @@ test("price image prompt requires row-level evidence and Indonesian handwritten 
   assert.match(storeVisitAi, /net_price_text/);
   assert.match(storeVisitAi, /visible_price_per_piece_text/);
   assert.match(storeVisitAi, /SAME row/);
+  assert.match(storeVisitAi, /anchor the row by its SIZE \/ SKU \/ PCS cells/i);
+  assert.match(storeVisitAi, /read only cells that intersect that row/i);
   assert.match(storeVisitAi, /handwritten digit 7 may contain a horizontal middle stroke/i);
-  assert.match(storeVisitAi, /2\.678 -> visible_price_per_piece_text=/i);
+  assert.match(storeVisitAi, /2\.678.*visible_price_per_piece_text=.*2678/i);
   assert.match(storeVisitAi, /visible_price_per_piece_idr=2678/i);
 });
 
 test("price image prompt keeps promo package and promo per-piece evidence together", () => {
-  assert.match(storeVisitAi, /both NORMAL and PROMO price sections/i);
-  assert.match(storeVisitAi, /package_price_text, net_price_text, and visible_price_per_piece_text should come from the visible PROMO section/i);
-  assert.match(storeVisitAi, /PROMO evidence is valid ONLY when the PROMO\/PACK or PROMO\/PCS cell is visibly printed in the SAME row/i);
-  assert.match(storeVisitAi, /Never copy, inherit, carry down, or repeat PROMO package price or PROMO per-piece price from another row/i);
-  assert.match(storeVisitAi, /same-row PROMO cell is blank, hidden, cropped, or unclear/i);
+  assert.match(storeVisitAi, /HARGA PROMO \/ PACK -> promo package evidence/i);
+  assert.match(storeVisitAi, /A row has promo price ONLY if the HARGA PROMO \/ PACK cell in the SAME row contains a visible numeric price/i);
+  assert.match(storeVisitAi, /package_price_text = same-row HARGA PROMO \/ PACK/i);
+  assert.match(storeVisitAi, /do NOT copy promo package price from another row/i);
+  assert.match(storeVisitAi, /do NOT carry down the promo package price/i);
+  assert.match(storeVisitAi, /If same-row HARGA PROMO \/ PACK is visible but same-row PROMO HARGA \/ PCS is blank/i);
+  assert.match(storeVisitAi, /do not use NORMAL HARGA \/ PCS as promo per-piece price/i);
 });
 
 test("price image analysis has enough token budget for row-level evidence fields", () => {
