@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Camera, Check, ChevronDown, ChevronRight, Copy, Ellipsis, Image as ImageIcon, Loader2, RefreshCw, Search, Trash2 } from "lucide-react";
+import { ArrowLeft, Camera, Check, ChevronDown, ChevronRight, Copy, Ellipsis, Image as ImageIcon, Loader2, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
@@ -376,6 +376,8 @@ function detailText(locale: Locale) {
         retakeRequiredSummary: "有价格标签照片需重传，请进入照片操作重新拍照或从相册替换。",
         retakeRequiredFallback: "请正对价格标签靠近拍摄，确保价格数字清楚无遮挡。",
         refreshVisit: "刷新",
+        reanalyzeFullVisit: "整单重新分析",
+        reanalyzeFullVisitSubmitted: "已提交整单重新分析，后台分析中。",
       }
     : {
         batchCode: "Batch code",
@@ -448,6 +450,8 @@ function detailText(locale: Locale) {
         retakeRequiredSummary: "Price-tag photo needs retake. Use photo actions to retake or replace it.",
         retakeRequiredFallback: "Retake directly facing the price tags, closer to the shelf, with clear unobstructed price digits.",
         refreshVisit: "Refresh",
+        reanalyzeFullVisit: "Re-analyze full visit",
+        reanalyzeFullVisitSubmitted: "Full visit re-analysis submitted. Analysis is running in the background.",
       };
 }
 
@@ -471,6 +475,8 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   const [loading, setLoading] = useState(true);
   const [refreshingVisit, setRefreshingVisit] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [fullVisitReanalyzing, setFullVisitReanalyzing] = useState(false);
+  const [appUserRole, setAppUserRole] = useState<string | null>(null);
   const [analysisPhase, setAnalysisPhase] = useState<"idle" | "running" | "refreshing">("idle");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -522,6 +528,21 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
     return () => clearTimeout(timeout);
   }, [loadVisit]);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/session")
+      .then((response) => response.json())
+      .then((payload) => {
+        if (!cancelled) setAppUserRole(typeof payload.user?.role === "string" ? payload.user.role : null);
+      })
+      .catch(() => {
+        if (!cancelled) setAppUserRole(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   async function refreshVisitDetail() {
     if (refreshingVisit || analysisPhase !== "idle") return;
     setRefreshingVisit(true);
@@ -529,6 +550,37 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
       await loadVisit({ preserveLoading: true });
     } finally {
       setRefreshingVisit(false);
+    }
+  }
+
+  async function reanalyzeFullVisit() {
+    if (fullVisitReanalyzing || analysisPhase !== "idle") return;
+    setFullVisitReanalyzing(true);
+    setAnalysisPhase("running");
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch(`/api/store-visit/${id}/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ full_visit: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 409) {
+        throw new Error(text.analysisBusy ?? data.error ?? copy.aiAnalysisFailed);
+      }
+      if (!res.ok) {
+        throw new Error(data.error ?? copy.aiAnalysisFailed);
+      }
+      setAnalysisPhase("refreshing");
+      await loadVisit({ preserveLoading: true });
+      setNotice(text.reanalyzeFullVisitSubmitted);
+    } catch (reanalyzeError) {
+      setError(reanalyzeError instanceof Error ? reanalyzeError.message : copy.networkRetry);
+      await loadVisit({ preserveLoading: true });
+    } finally {
+      setFullVisitReanalyzing(false);
+      setAnalysisPhase("idle");
     }
   }
 
@@ -654,6 +706,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   const businessRetakeImages = (visit?.offline_visit_images ?? []).filter(isRetakeRequiredPriceImage);
   const systemFailedImages = (visit?.offline_visit_images ?? []).filter((image) => image.analysis_status === "failed" && !isRetakeRequiredPriceImage(image) && (image.analysis_error || image.error_message));
   const canRunWholeVisitAnalysis = status === "pending" && visit?.visit_status === "uploaded";
+  const canRunFullVisitReanalysis = appUserRole === "admin";
   const updateLocked = analysisPhase !== "idle";
   const signedImagesByPath = useMemo(
     () => new Map((visit?.signed_images ?? []).map((image) => [image.path, image] as const)),
@@ -954,6 +1007,18 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                     <button type="button" onClick={analyze} disabled={analyzing} className="inline-flex h-10 items-center gap-2 rounded-lg bg-blue-600 px-3 text-sm font-bold text-white disabled:opacity-60">
                       {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                       {copy.analyzeStore}
+                    </button>
+                  ) : null}
+                  {canRunFullVisitReanalysis ? (
+                    <button
+                      type="button"
+                      onClick={reanalyzeFullVisit}
+                      disabled={fullVisitReanalyzing || analysisPhase !== "idle"}
+                      aria-label={text.reanalyzeFullVisit}
+                      title={text.reanalyzeFullVisit}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-amber-200 bg-amber-50 text-amber-700 shadow-sm transition hover:border-amber-300 hover:bg-amber-100 disabled:opacity-60"
+                    >
+                      {fullVisitReanalyzing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
                     </button>
                   ) : null}
                   <button

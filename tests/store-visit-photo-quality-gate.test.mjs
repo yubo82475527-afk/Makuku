@@ -51,6 +51,13 @@ test("price image prompt requires row-level evidence and Indonesian handwritten 
   assert.match(storeVisitAi, /visible_price_per_piece_idr=2678/i);
 });
 
+test("price image prompt keeps promo package and promo per-piece evidence together", () => {
+  assert.match(storeVisitAi, /final payable HARGA\/PCS/i);
+  assert.match(storeVisitAi, /both NORMAL and PROMO price groups/i);
+  assert.match(storeVisitAi, /net_price_text and visible_price_per_piece_text must both come from the PROMO group/i);
+  assert.match(storeVisitAi, /Do not mix promo package price with normal HARGA\/PCS/i);
+});
+
 test("price image analysis has enough token budget for row-level evidence fields", () => {
   assert.match(storeVisitAi, /maxTokens: Math\.min\(config\.max_tokens, 6000\)/);
   assert.doesNotMatch(storeVisitAi, /maxTokens: Math\.min\(config\.max_tokens, 2500\)/);

@@ -18,10 +18,14 @@ export async function POST(request: Request, ctx: RouteContext) {
   try {
     const { id } = await ctx.params;
     const body = await request.json().catch(() => ({}));
+    const fullVisit = body.full_visit === true;
+    if (fullVisit && auth.session.role !== "admin") {
+      return Response.json({ error: "Full visit re-analysis requires admin account" }, { status: 403 });
+    }
     const affectedImageIds = Array.isArray(body.affected_image_ids)
       ? body.affected_image_ids.map((value: unknown) => String(value).trim()).filter(Boolean)
       : [];
-    if (affectedImageIds.length === 0) {
+    if (!fullVisit && affectedImageIds.length === 0) {
       return Response.json({ error: "affected_image_ids is required" }, { status: 400 });
     }
 
@@ -42,6 +46,28 @@ export async function POST(request: Request, ctx: RouteContext) {
       }, { status: 409 });
     }
 
+    let fullVisitImageIds: string[] = [];
+    if (fullVisit) {
+      const { data: fullVisitImages, error: fullVisitImagesError } = await supabase
+        .from("offline_visit_images")
+        .select("id")
+        .eq("visit_id", id)
+        .in("image_type", ["own_shelf", "competitor_shelf"])
+        .is("deleted_at", null);
+
+      if (fullVisitImagesError) {
+        return Response.json({ error: fullVisitImagesError.message }, { status: 500 });
+      }
+      fullVisitImageIds = (fullVisitImages ?? [])
+        .map((image) => String((image as { id?: unknown }).id ?? "").trim())
+        .filter(Boolean);
+      if (fullVisitImageIds.length === 0) {
+        return Response.json({ error: "No price-tag photos found for full visit re-analysis" }, { status: 400 });
+      }
+    }
+
+    const refreshImageIds = fullVisit ? fullVisitImageIds : affectedImageIds;
+
     await supabase
       .from("offline_visit_images")
       .update({
@@ -49,7 +75,7 @@ export async function POST(request: Request, ctx: RouteContext) {
         analysis_error: null,
         error_message: null,
       })
-      .in("id", affectedImageIds)
+      .in("id", refreshImageIds)
       .eq("visit_id", id);
 
     await refreshStoreVisitStoredPriceState({
@@ -69,14 +95,14 @@ export async function POST(request: Request, ctx: RouteContext) {
       try {
         await runStoreVisitAnalysis({
           visitId: id,
-          affectedImageIds,
+          affectedImageIds: refreshImageIds,
           invalidateAffectedImageSnapshots: true,
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown error";
         console.error("[store-visit-refresh] async refresh failed", {
           visit_id: id,
-          affected_image_ids: affectedImageIds,
+          affected_image_ids: refreshImageIds,
           error: message,
         });
         try {
@@ -89,7 +115,7 @@ export async function POST(request: Request, ctx: RouteContext) {
         } catch (refreshError) {
           console.error("[store-visit-refresh] failed to persist async failure state", {
             visit_id: id,
-            affected_image_ids: affectedImageIds,
+            affected_image_ids: refreshImageIds,
             error: refreshError instanceof Error ? refreshError.message : String(refreshError),
           });
         }
@@ -103,7 +129,8 @@ export async function POST(request: Request, ctx: RouteContext) {
     return Response.json({
       queued: true,
       visit_id: id,
-      affected_image_ids: affectedImageIds,
+      affected_image_ids: refreshImageIds,
+      full_visit: fullVisit,
     });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });

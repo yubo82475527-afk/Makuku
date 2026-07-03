@@ -6,6 +6,7 @@ const candidatesPage = readFileSync("src/app/[locale]/offline-price-candidates/p
 const workbenchPath = "src/components/ai-price-candidates-workbench.tsx";
 const workbench = readFileSync(workbenchPath, "utf8");
 const storeVisitRoute = readFileSync("src/app/api/store-visit/[id]/route.ts", "utf8");
+const storeVisitRefreshRoute = readFileSync("src/app/api/store-visit/[id]/refresh/route.ts", "utf8");
 const storeVisitDetailH5 = readFileSync("src/components/store-visit-detail-h5.tsx", "utf8");
 const candidateRoute = readFileSync("src/app/api/ai-price-candidates/[id]/route.ts", "utf8");
 const storeVisitCandidateRoute = readFileSync("src/app/api/store-visit/price-candidates/[id]/route.ts", "utf8");
@@ -421,6 +422,23 @@ test("mobile store visit detail closes row editor before refreshing full visit d
   assert.match(storeVisitDetailH5, /setRowEdit\(null\)/);
   assert.match(storeVisitDetailH5, /void loadVisit\(\{ preserveLoading: true \}\)/);
   assert.doesNotMatch(storeVisitDetailH5, /await loadVisit\(\{ preserveLoading: true \}\);\s*setRowEdit\(null\)/);
+});
+
+test("mobile store visit detail exposes admin-only full visit reanalysis", () => {
+  assert.match(storeVisitDetailH5, /const \[appUserRole, setAppUserRole\]/);
+  assert.match(storeVisitDetailH5, /fetch\("\/api\/auth\/session"\)/);
+  assert.match(storeVisitDetailH5, /const canRunFullVisitReanalysis = appUserRole === "admin"/);
+  assert.match(storeVisitDetailH5, /body: JSON\.stringify\(\{ full_visit: true \}\)/);
+  assert.match(storeVisitDetailH5, /aria-label=\{text\.reanalyzeFullVisit\}/);
+});
+
+test("store visit refresh API supports admin-only full visit reanalysis", () => {
+  assert.match(storeVisitRefreshRoute, /const fullVisit = body\.full_visit === true/);
+  assert.match(storeVisitRefreshRoute, /auth\.session\.role !== "admin"/);
+  assert.match(storeVisitRefreshRoute, /Full visit re-analysis requires admin account/);
+  assert.match(storeVisitRefreshRoute, /const refreshImageIds = fullVisit \? fullVisitImageIds : affectedImageIds/);
+  assert.match(storeVisitRefreshRoute, /affectedImageIds: refreshImageIds/);
+  assert.match(storeVisitRefreshRoute, /\.eq\("visit_id", id\)[\s\S]*\.in\("image_type", \["own_shelf", "competitor_shelf"\]\)/);
 });
 
 test("mobile store visit detail does not crash when selected SKU option is missing", () => {
