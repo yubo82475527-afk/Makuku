@@ -23,6 +23,8 @@ const reportCenterComponentFile = readIfExists("src/components/report-center.tsx
 const reportTemplatePreviewComponentFile = readIfExists("src/components/report-template-preview.tsx");
 const reportTemplatePreviewActionsFile = readIfExists("src/components/report-template-preview-actions.tsx");
 const appShellFile = readIfExists("src/components/app-shell.tsx");
+const packageJsonFile = readIfExists("package.json");
+const nextConfigFile = readIfExists("next.config.ts");
 const typesFile = readIfExists("src/lib/types.ts");
 const definitionsFile = readIfExists("src/lib/agent-report-definitions.ts");
 const deliverySource = readIfExists("src/lib/agent-report-delivery.ts");
@@ -578,6 +580,15 @@ test("vercel cron configuration runs report subscriptions automatically every da
   assert.equal(existsSync("vercel.json"), true);
   assert.match(vercelConfigFile, /"path"\s*:\s*"\/api\/internal\/agent-reports\/run-subscriptions"/);
   assert.match(vercelConfigFile, /"schedule"\s*:\s*"30 1 \* \* \*"/);
+});
+
+test("report image delivery keeps playwright as a runtime dependency and traces its assets for server routes", () => {
+  assert.match(packageJsonFile, /"dependencies"\s*:\s*\{[\s\S]*"playwright"\s*:/);
+  assert.match(nextConfigFile, /outputFileTracingIncludes/);
+  assert.match(nextConfigFile, /node_modules\/playwright\/\*\*\/*/);
+  assert.match(nextConfigFile, /node_modules\/playwright-core\/\*\*\/*/);
+  assert.match(nextConfigFile, /\/api\/internal\/agent-reports\/run-subscriptions/);
+  assert.match(nextConfigFile, /dispatch-preview-image/);
 });
 
 
