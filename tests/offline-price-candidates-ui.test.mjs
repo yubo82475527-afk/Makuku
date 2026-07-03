@@ -345,6 +345,14 @@ test("mobile store visit detail keeps each parsed SKU row compact", () => {
   assert.doesNotMatch(storeVisitDetailH5, /<Metric label=\{text\.listPrice\}/);
 });
 
+test("mobile store visit detail displays list price separately from net price", () => {
+  assert.match(storeVisitDetailH5, /const listPrice = row\.list_price_idr \?\? row\.package_price_idr \?\? null;/);
+  assert.match(storeVisitDetailH5, /const netPrice = row\.net_price_idr \?\? null;/);
+  assert.match(storeVisitDetailH5, /<PriceMetricRow label=\{text\.listPrice\} value=\{formatMoney\(listPrice\)\}/);
+  assert.match(storeVisitDetailH5, /<PriceMetricRow label=\{text\.netPrice\} value=\{formatMoney\(netPrice\)\}/);
+  assert.doesNotMatch(storeVisitDetailH5, /<PriceMetricRow label=\{text\.listPrice\} value=\{formatMoney\(packagePrice\)\}/);
+});
+
 test("mobile store visit detail uses Edit entry instead of activity type and pcs badge", () => {
   assert.match(storeVisitDetailH5, /editRow: "Edit"/);
   assert.match(storeVisitDetailH5, /text-blue-600/);

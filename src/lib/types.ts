@@ -125,6 +125,7 @@ export type StoreVisitAiResult = {
 
 export type StoreVisitPriceImageRow = {
   brand?: string | null;
+  product_family_text?: string | null;
   sku: string;
   piece_count_text?: string | null;
   normal_package_text?: string | null;

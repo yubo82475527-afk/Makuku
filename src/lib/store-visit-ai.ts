@@ -87,7 +87,10 @@ const STORE_VISIT_PRICE_IMAGE_PROMPT = [
   "For price-board tables, anchor the row by its SIZE / SKU / PCS cells, trace horizontally across that exact same row, and read only cells that intersect that row.",
   "Never merge across rows, borrow missing values from row above or below, carry down promo prices, repeat a promo value into later blank promo cells, use a group header as a row price, or repair blank or hidden cells.",
   "If a required product-price relationship is ambiguous, skip the row and add PARSE_RISK warning.",
-  "ROW EVIDENCE FIELDS: for each row, capture brand, sku, piece_count_text, normal_package_text, normal_piece_text, promo_package_text, promo_piece_text, promo_label, promo_type, and piece_count when visible.",
+  "PRODUCT FAMILY CONTEXT: if a visible price-board title or section header names the product family that applies to the rows, capture it as product_family_text. Example: board title \"MamyPoko X-tra Kering\" with row SKU \"NB\" -> product_family_text=\"X-tra Kering\", brand=\"MamyPoko\", sku=\"NB\".",
+  "SKU RULE: sku may include only the same-row size/variant text, but do not drop a visible product family header; put the header in product_family_text so the system can build a complete product name.",
+  "If one size cell contains multiple readable pcs-price combinations, output one row for EACH pcs-price combination. Do not collapse multiple pack sizes under S/M/L/XL into a single row.",
+  "ROW EVIDENCE FIELDS: for each row, capture brand, product_family_text, sku, piece_count_text, normal_package_text, normal_piece_text, promo_package_text, promo_piece_text, promo_label, promo_type, and piece_count when visible.",
   "The normal_package_text, normal_piece_text, promo_package_text, and promo_piece_text fields are raw cell evidence. Empty visible promo cells must remain empty.",
   "The system resolver may fill list_price_text, package_price_text, net_price_text, visible_price_per_piece_text, and numeric price fields from raw evidence. Do not calculate or repair these business fields yourself.",
   "All evidence must come from the SAME visual row. If a same-row cell is blank, hidden, cropped, or unclear, leave that field empty or null and do not fill it from another row.",
@@ -111,7 +114,7 @@ const STORE_VISIT_PRICE_IMAGE_PROMPT = [
   "HANDWRITING RULE: Indonesian handwritten digit 7 may contain a horizontal middle stroke. Do not confuse handwritten 7 with digit 2.",
   "Example: visible HARGA/PCS \"2.678\" -> visible_price_per_piece_text=\"2.678\", visible_price_per_piece_idr=2678.",
   "Return ONLY valid compact JSON. No markdown. No explanation. No extra text.",
-  '{"photo_quality":{"status":"pass|retake_required","reasons":["price_unclear|angled_affects_reading|price_obstructed"],"message":"string"},"rows":[{"brand":"string","sku":"string","piece_count_text":"44","normal_package_text":"129.900","normal_piece_text":"2.952","promo_package_text":"119.900","promo_piece_text":"2.725","promo_label":"Discount","list_price_text":"129.900","package_price_text":"119.900","net_price_text":"119.900","visible_price_per_piece_text":"2.725","list_price_idr":129900,"package_price_idr":119900,"net_price_idr":119900,"visible_price_per_piece_idr":2725,"promo_type":"Discount","piece_count":44}],"summary":"string","warnings":[{"type":"MISSING_DATA|LOW_CONFIDENCE|PARSE_RISK","message":"string"}]}',
+  '{"photo_quality":{"status":"pass|retake_required","reasons":["price_unclear|angled_affects_reading|price_obstructed"],"message":"string"},"rows":[{"brand":"string","product_family_text":"string","sku":"string","piece_count_text":"44","normal_package_text":"129.900","normal_piece_text":"2.952","promo_package_text":"119.900","promo_piece_text":"2.725","promo_label":"Discount","list_price_text":"129.900","package_price_text":"119.900","net_price_text":"119.900","visible_price_per_piece_text":"2.725","list_price_idr":129900,"package_price_idr":119900,"net_price_idr":119900,"visible_price_per_piece_idr":2725,"promo_type":"Discount","piece_count":44}],"summary":"string","warnings":[{"type":"MISSING_DATA|LOW_CONFIDENCE|PARSE_RISK","message":"string"}]}',
 ].join("\n");
 
 const STORE_VISIT_DISPLAY_PROMPT = [
@@ -201,6 +204,34 @@ function asString(value: unknown, fallback: string) {
 
 function asOptionalString(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function compactWhitespace(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function normalizeComparableText(value: string | null | undefined) {
+  return compactWhitespace(String(value ?? "")).toLowerCase();
+}
+
+function buildPriceImageSkuName(brand: string | null, productFamilyText: string | null, sku: string) {
+  const cleanSku = compactWhitespace(sku) || "Unknown SKU";
+  const cleanFamily = productFamilyText ? compactWhitespace(productFamilyText) : "";
+  if (!cleanFamily) return cleanSku;
+
+  const comparableSku = normalizeComparableText(cleanSku);
+  const comparableFamily = normalizeComparableText(cleanFamily);
+  if (comparableSku.includes(comparableFamily)) return cleanSku;
+
+  const cleanBrand = brand ? compactWhitespace(brand) : "";
+  const comparableBrand = normalizeComparableText(cleanBrand);
+  const familyWithBrand = cleanBrand && !comparableFamily.includes(comparableBrand)
+    ? `${cleanBrand} ${cleanFamily}`
+    : cleanFamily;
+  const comparableFamilyWithBrand = normalizeComparableText(familyWithBrand);
+  if (comparableSku.includes(comparableFamilyWithBrand)) return cleanSku;
+
+  return compactWhitespace(`${familyWithBrand} ${cleanSku}`);
 }
 
 function asNullablePriceNumber(value: unknown) {
@@ -503,6 +534,8 @@ export function normalizeStoreVisitPriceImageAnalysis(
       const promoPackageText = asOptionalString(row.promo_package_text);
       const promoPieceText = asOptionalString(row.promo_piece_text);
       const promoLabel = asOptionalString(row.promo_label);
+      const brand = asOptionalString(row.brand);
+      const productFamilyText = asOptionalString(row.product_family_text);
       const hasEvidenceFields = Boolean(normalPackageText || normalPieceText || promoPackageText || promoPieceText || promoLabel);
       const hasPromoPackageEvidence = Boolean(asNullablePriceNumber(promoPackageText));
       const listPriceText = hasEvidenceFields ? normalPackageText : asOptionalString(row.list_price_text);
@@ -519,7 +552,7 @@ export function normalizeStoreVisitPriceImageAnalysis(
       const rawPackagePrice = asNullablePriceNumber(packagePriceText) ?? (hasEvidenceFields ? rawListPrice : asNullablePriceNumber(row.package_price_idr) ?? rawListPrice);
       const rawNetPrice = asNullablePriceNumber(netPriceText) ?? (hasEvidenceFields ? rawPackagePrice ?? rawListPrice : asNullablePriceNumber(row.net_price_idr) ?? rawPackagePrice ?? rawListPrice);
       const visiblePricePerPiece = asNullablePriceNumber(visiblePricePerPieceText) ?? (hasEvidenceFields ? null : asNullablePriceNumber(row.visible_price_per_piece_idr));
-      const sku = asString(row.sku, "Unknown SKU");
+      const sku = buildPriceImageSkuName(brand, productFamilyText, asString(row.sku, "Unknown SKU"));
       const modelPieceCount = normalizePieceCountFromCandidates(row.piece_count, sku);
       const pieceCount = normalizePieceCountFromEvidence(row.piece_count, pieceCountText, sku);
       const reconciledPrices = reconcilePackagePriceMetrics({
@@ -557,7 +590,8 @@ export function normalizeStoreVisitPriceImageAnalysis(
       }
       const pricePerPiece = reconciledPrices.pricePerPieceIdr;
       return {
-        brand: asOptionalString(row.brand),
+        brand,
+        product_family_text: productFamilyText,
         sku,
         piece_count_text: pieceCountText,
         normal_package_text: normalPackageText,

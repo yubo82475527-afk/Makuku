@@ -1554,10 +1554,8 @@ function PriceSectionGroup({
               const displayPieceCount = candidateDisplayPieceCount(candidate, row.piece_count);
               const displayPricePerPiece = candidateDisplayPricePerPiece(candidate, row.price_per_piece_idr);
               const matchInfo = candidateMatchDisplay(candidate);
-              const {
-                package_price_idr: packagePrice,
-                net_price_idr: netPrice,
-              } = row;
+              const listPrice = row.list_price_idr ?? row.package_price_idr ?? null;
+              const netPrice = row.net_price_idr ?? null;
               return (
                 <div key={`${section.image.id}-${rowIndex}`} className="rounded-lg bg-white px-3 py-2 text-xs shadow-sm">
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
@@ -1574,7 +1572,7 @@ function PriceSectionGroup({
                     {matchInfo.matched ? matchInfo.label : text.rowUnmatched}
                   </div>
                   <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1">
-                    <PriceMetricRow label={text.listPrice} value={formatMoney(packagePrice)} />
+                    <PriceMetricRow label={text.listPrice} value={formatMoney(listPrice)} />
                     <PriceMetricRow label={text.pieceCount} value={displayPieceCount ? String(displayPieceCount) : "-"} />
                     <PriceMetricRow label={text.netPrice} value={formatMoney(netPrice)} />
                     <PriceMetricRow label={text.pricePerPiece} value={formatMoney(displayPricePerPiece)} />

@@ -387,6 +387,36 @@ test("store visit price image normalization uses promo evidence when same-row pr
   assert.equal(normalized.rows[0].promo_type, "Discount");
 });
 
+test("store visit price image normalization expands size-only sku with product family evidence", () => {
+  const storeVisitAiSource = readFileSync("src/lib/store-visit-ai.ts", "utf8");
+  assert.match(storeVisitAiSource, /product_family_text/);
+  assert.match(storeVisitAiSource, /If one size cell contains multiple readable pcs-price combinations/i);
+
+  const normalized = storeVisitAi.normalizeStoreVisitPriceImageAnalysis({
+    photo_quality: { status: "pass", reasons: [], message: "Photo quality passed." },
+    rows: [
+      {
+        brand: "MamyPoko",
+        product_family_text: "X-tra Kering",
+        sku: "NB",
+        piece_count_text: "44 Pcs",
+        normal_package_text: "Rp. 67.000",
+        normal_piece_text: "1.522",
+        promo_package_text: "Rp. 51.900",
+        promo_piece_text: "1.179",
+        piece_count: 44,
+      },
+    ],
+    warnings: [],
+  }, "makuku_shelf");
+
+  assert.equal(normalized.rows.length, 1);
+  assert.equal(normalized.rows[0].product_family_text, "X-tra Kering");
+  assert.equal(normalized.rows[0].sku, "MamyPoko X-tra Kering NB");
+  assert.equal(normalized.rows[0].net_price_idr, 51900);
+  assert.equal(normalized.rows[0].price_per_piece_idr, 1179);
+});
+
 test("store visit price image normalization prefers visible bonus piece count text over base quantity", () => {
   const normalized = storeVisitAi.normalizeStoreVisitPriceImageAnalysis({
     photo_quality: { status: "pass", reasons: [], message: "Photo quality passed." },
