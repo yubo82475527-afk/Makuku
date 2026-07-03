@@ -17,7 +17,7 @@ import type {
   ValidationWarningType,
 } from "@/lib/types";
 import { createJsonChatCompletion, imageUrlPart, textPart } from "@/lib/ai-client";
-import { calculatePricePerPiece, parseIdrPrice, reconcilePackagePriceMetrics } from "@/lib/price-utils";
+import { parseIdrPrice, reconcilePackagePriceMetrics } from "@/lib/price-utils";
 import { normalizePieceCountFromCandidates, normalizePieceCountFromEvidence } from "@/lib/piece-count";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
 
@@ -121,7 +121,7 @@ const STORE_VISIT_PRICE_IMAGE_PROMPT = [
   "Example: Comfort Fit Super Jumbo M 6-11 KG with Pcs cell 60+6 -> piece_count=66.",
   "Example: Comfort Fit Jumbo M 6-11 KG with Pcs cell 42+4 -> piece_count=46.",
   "Example: Comfort Fit Mega Pack XL 12-17 KG with Pcs cell 60+6 -> piece_count=66.",
-  "visible_price_per_piece_text is evidence only. When a whole-package price is visible, the whole-package price remains authoritative and must not be replaced by visible_price_per_piece_idr * piece_count.",
+  "visible_price_per_piece_text is analysis piece-price evidence. It must not be written into list_price_idr, package_price_idr, or net_price_idr.",
   "Do not calculate per-piece price unless it is visibly printed in HARGA/PCS. The system will calculate final price_per_piece_idr.",
   "Return ONLY valid compact JSON. No markdown. No explanation. No extra text.",
   '{"photo_quality":{"status":"pass|retake_required","reasons":["price_unclear|angled_affects_reading|price_obstructed"],"message":"string"},"rows":[{"brand":"string","sku":"string","piece_count_text":"44","list_price_text":"129.900","package_price_text":"129.900","net_price_text":"119.900","visible_price_per_piece_text":"2.725","list_price_idr":129900,"package_price_idr":129900,"net_price_idr":119900,"visible_price_per_piece_idr":2725,"promo_type":"Discount","piece_count":44}],"summary":"string","warnings":[{"type":"MISSING_DATA|LOW_CONFIDENCE|PARSE_RISK","message":"string"}]}',
@@ -528,6 +528,10 @@ export function normalizeStoreVisitPriceImageAnalysis(
         netPriceIdr: rawNetPrice,
         pieceCount,
         visiblePricePerPieceIdr: visiblePricePerPiece,
+        listPriceText,
+        packagePriceText,
+        netPriceText,
+        visiblePricePerPieceText,
       });
       const listPrice = reconciledPrices.listPriceIdr ?? rawNetPrice;
       const packagePrice = reconciledPrices.packagePriceIdr ?? listPrice;
@@ -538,13 +542,13 @@ export function normalizeStoreVisitPriceImageAnalysis(
           message: "Corrected piece count from visible same-row Pcs text evidence.",
         });
       }
-      if (reconciledPrices.correctedFromPerPiece && reconciledPrices.warningMessage) {
+      if (reconciledPrices.warningMessage) {
         normalizationWarnings.push({
           type: "PARSE_RISK",
           message: reconciledPrices.warningMessage,
         });
       }
-      const pricePerPiece = calculatePricePerPiece(netPrice, pieceCount);
+      const pricePerPiece = reconciledPrices.pricePerPieceIdr;
       return {
         brand: asOptionalString(row.brand),
         sku,

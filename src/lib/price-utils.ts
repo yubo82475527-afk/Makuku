@@ -51,91 +51,126 @@ function looksLikeDiscountedWholePackageAmount(reconstructedPackagePrice: number
   return ratio >= 0.6 && ratio <= 0.95;
 }
 
+type PriceRole = "PACKAGE" | "PIECE" | "UNKNOWN";
+type PriceEvidenceSource = "LIST" | "PACKAGE" | "NET" | "VISIBLE_PIECE";
+
+type PriceEvidence = {
+  source: PriceEvidenceSource;
+  value: number;
+  role: PriceRole;
+};
+
+function classifyPriceRole(value: number | null | undefined): PriceRole {
+  if (!value || !Number.isFinite(value) || value <= 0) return "UNKNOWN";
+  return value >= 10000 ? "PACKAGE" : "PIECE";
+}
+
+function createPriceEvidence(source: PriceEvidenceSource, textValue: string | number | null | undefined, numericValue: number | null | undefined): PriceEvidence | null {
+  const value = parseIdrPrice(textValue) ?? numericValue ?? null;
+  if (!value || !Number.isFinite(value) || value <= 0) return null;
+  return {
+    source,
+    value,
+    role: classifyPriceRole(value),
+  };
+}
+
+function evidenceValue(evidence: PriceEvidence | null | undefined, role: PriceRole) {
+  return evidence?.role === role ? evidence.value : null;
+}
+
 export function reconcilePackagePriceMetrics({
   listPriceIdr,
   packagePriceIdr,
   netPriceIdr,
   pieceCount,
   visiblePricePerPieceIdr,
+  listPriceText,
+  packagePriceText,
+  netPriceText,
+  visiblePricePerPieceText,
 }: {
   listPriceIdr: number | null;
   packagePriceIdr: number | null;
   netPriceIdr: number | null;
   pieceCount: number | null;
   visiblePricePerPieceIdr?: number | null;
+  listPriceText?: string | number | null;
+  packagePriceText?: string | number | null;
+  netPriceText?: string | number | null;
+  visiblePricePerPieceText?: string | number | null;
 }) {
-  const resolvedPackagePrice = packagePriceIdr ?? listPriceIdr ?? netPriceIdr;
-  const resolvedListPrice = listPriceIdr ?? resolvedPackagePrice ?? netPriceIdr;
-  const resolvedNetPrice = netPriceIdr ?? resolvedPackagePrice ?? resolvedListPrice;
-  const reconstructedPackagePrice = resolvedNetPrice && pieceCount && pieceCount > 1
-    ? roundedWholePackageAmount(resolvedNetPrice, pieceCount)
+  const listEvidence = createPriceEvidence("LIST", listPriceText, listPriceIdr);
+  const packageEvidence = createPriceEvidence("PACKAGE", packagePriceText, packagePriceIdr);
+  const netEvidence = createPriceEvidence("NET", netPriceText, netPriceIdr);
+  const visiblePieceEvidence = createPriceEvidence("VISIBLE_PIECE", visiblePricePerPieceText, visiblePricePerPieceIdr ?? null);
+
+  const packageListPrice = evidenceValue(listEvidence, "PACKAGE");
+  const packagePackagePrice = evidenceValue(packageEvidence, "PACKAGE") ?? packageListPrice;
+  const packageNetEvidencePrice = evidenceValue(netEvidence, "PACKAGE");
+
+  const visiblePiecePrice = evidenceValue(visiblePieceEvidence, "PIECE");
+  const netPiecePrice = evidenceValue(netEvidence, "PIECE");
+  const packageFieldPiecePrice = evidenceValue(packageEvidence, "PIECE");
+  const listFieldPiecePrice = evidenceValue(listEvidence, "PIECE");
+  const selectedPiecePrice = visiblePiecePrice ?? netPiecePrice ?? packageFieldPiecePrice ?? listFieldPiecePrice;
+  const visiblePricePerPiece = visiblePiecePrice ?? netPiecePrice ?? packageFieldPiecePrice ?? listFieldPiecePrice ?? null;
+
+  const derivedPackageFromPiece = selectedPiecePrice && pieceCount && pieceCount > 0
+    ? roundedWholePackageAmount(selectedPiecePrice, pieceCount)
+    : null;
+  const discountedPackageFromPiece = derivedPackageFromPiece
+    && packageListPrice
+    && derivedPackageFromPiece > selectedPiecePrice!
+    && looksLikeDiscountedWholePackageAmount(derivedPackageFromPiece, packageListPrice)
+      ? derivedPackageFromPiece
+      : null;
+  const dividedPackageRestoration = netPiecePrice && packagePackagePrice && pieceCount && pieceCount > 1 && isNearPackageAmount(netPiecePrice, pieceCount, packagePackagePrice)
+    ? packagePackagePrice
     : null;
 
-  if (
-    resolvedPackagePrice
-    && resolvedNetPrice
-    && pieceCount
-    && pieceCount > 1
-    && resolvedNetPrice < resolvedPackagePrice
-    && isNearPackageAmount(resolvedNetPrice, pieceCount, resolvedPackagePrice)
-  ) {
-    return {
-      listPriceIdr: resolvedListPrice ?? resolvedPackagePrice,
-      packagePriceIdr: resolvedPackagePrice,
-      netPriceIdr: resolvedPackagePrice,
-      visiblePricePerPieceIdr: visiblePricePerPieceIdr ?? null,
-      priceBasis: "RECONCILED_PACKAGE_PRICE" as const,
-      correctedFromPerPiece: true,
-      warningMessage: "AI likely divided a whole-package price by piece count. Restored whole-package IDR amount fields.",
-    };
-  }
-
-  if (
-    resolvedListPrice
-    && resolvedNetPrice
-    && pieceCount
-    && pieceCount > 1
-    && resolvedNetPrice < 10000
-    && reconstructedPackagePrice
-    && reconstructedPackagePrice > resolvedNetPrice
-    && looksLikeDiscountedWholePackageAmount(reconstructedPackagePrice, resolvedListPrice)
-  ) {
-    return {
-      listPriceIdr: resolvedListPrice,
-      packagePriceIdr: reconstructedPackagePrice,
-      netPriceIdr: reconstructedPackagePrice,
-      visiblePricePerPieceIdr: visiblePricePerPieceIdr ?? null,
-      priceBasis: "RECONCILED_PACKAGE_PRICE" as const,
-      correctedFromPerPiece: true,
-      warningMessage: "AI likely used a per-piece value for a discounted whole-package price. Reconstructed the discounted whole-package IDR amount.",
-    };
-  }
-
-  const visiblePerPiecePackagePrice = visiblePricePerPieceIdr && pieceCount && pieceCount > 0
-    ? Math.round(visiblePricePerPieceIdr * pieceCount)
-    : null;
-  if (!resolvedNetPrice && !resolvedPackagePrice && !resolvedListPrice && visiblePricePerPieceIdr && visiblePerPiecePackagePrice) {
-    return {
-      listPriceIdr: visiblePerPiecePackagePrice,
-      packagePriceIdr: visiblePerPiecePackagePrice,
-      netPriceIdr: visiblePerPiecePackagePrice,
-      visiblePricePerPieceIdr,
-      priceBasis: "VISIBLE_PRICE_PER_PIECE" as const,
-      correctedFromPerPiece: true,
-      warningMessage: "Final package price was reconstructed from visible per-piece price because no whole-package price was available.",
-    };
-  }
+  const resolvedNetPrice = packageNetEvidencePrice
+    ?? discountedPackageFromPiece
+    ?? dividedPackageRestoration
+    ?? packagePackagePrice
+    ?? packageListPrice
+    ?? derivedPackageFromPiece;
+  const resolvedPackagePrice = packagePackagePrice
+    ? discountedPackageFromPiece ?? dividedPackageRestoration ?? packagePackagePrice
+    : discountedPackageFromPiece
+    ?? dividedPackageRestoration
+    ?? derivedPackageFromPiece
+    ?? resolvedNetPrice;
+  const resolvedListPrice = packageListPrice ?? resolvedPackagePrice ?? resolvedNetPrice;
+  const pricePerPiece = selectedPiecePrice ?? calculatePricePerPiece(resolvedNetPrice ?? resolvedPackagePrice ?? null, pieceCount);
+  const derivedFromPiece = !packageNetEvidencePrice && !packagePackagePrice && !packageListPrice && Boolean(derivedPackageFromPiece);
+  const derivedFromPackage = !selectedPiecePrice && Boolean(pricePerPiece) && Boolean(listPriceText || packagePriceText || netPriceText);
+  const correctedFromPerPiece = Boolean(dividedPackageRestoration || discountedPackageFromPiece || derivedFromPiece || netPiecePrice || packageFieldPiecePrice || listFieldPiecePrice || (visiblePieceEvidence?.role === "PACKAGE"));
+  const warningMessages = [
+    dividedPackageRestoration ? "AI likely divided a whole-package price by piece count. Restored whole-package IDR amount fields." : null,
+    discountedPackageFromPiece ? "DERIVED_FROM_PIECE_PRICE: reconstructed discounted package price from piece price evidence and piece count." : null,
+    derivedFromPiece ? "DERIVED_FROM_PIECE_PRICE: no clear package price evidence; package price was derived from piece price and piece count." : null,
+    derivedFromPackage ? "DERIVED_FROM_PACKAGE: no clear piece price evidence; analysis piece price was derived from package price and piece count." : null,
+    netPiecePrice ? "net_price field contains piece price evidence; kept it separate from package price." : null,
+    packageFieldPiecePrice || listFieldPiecePrice ? "Package/list price field contains piece price evidence; kept it separate from package price." : null,
+    visiblePieceEvidence?.role === "PACKAGE" ? "visible price per piece field contains a package-scale value; ignored as piece price field evidence." : null,
+  ].filter(Boolean);
 
   return {
     listPriceIdr: resolvedListPrice,
     packagePriceIdr: resolvedPackagePrice,
     netPriceIdr: resolvedNetPrice,
-    visiblePricePerPieceIdr: visiblePricePerPieceIdr ?? null,
-    priceBasis: resolvedNetPrice && resolvedPackagePrice && resolvedNetPrice < resolvedPackagePrice
-      ? "VISIBLE_PROMO_PACKAGE_PRICE" as const
-      : "VISIBLE_PACKAGE_PRICE" as const,
-    correctedFromPerPiece: false,
-    warningMessage: null,
+    visiblePricePerPieceIdr: visiblePricePerPiece,
+    pricePerPieceIdr: pricePerPiece,
+    priceBasis: derivedFromPiece
+      ? "VISIBLE_PRICE_PER_PIECE" as const
+      : resolvedNetPrice && resolvedPackagePrice && resolvedNetPrice < resolvedPackagePrice
+        ? "VISIBLE_PROMO_PACKAGE_PRICE" as const
+        : discountedPackageFromPiece || dividedPackageRestoration
+          ? "RECONCILED_PACKAGE_PRICE" as const
+          : "VISIBLE_PACKAGE_PRICE" as const,
+    correctedFromPerPiece,
+    warningMessage: warningMessages.length > 0 ? warningMessages.join(" ") : null,
   };
 }
 

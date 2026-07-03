@@ -122,7 +122,8 @@ test("price amount-scale guard reconstructs discounted package price from per-pi
   assert.equal(result.packagePriceIdr, 164900);
   assert.equal(result.netPriceIdr, 164900);
   assert.equal(result.correctedFromPerPiece, true);
-  assert.match(result.warningMessage ?? "", /discounted whole-package/i);
+  assert.equal(result.pricePerPieceIdr, 4580);
+  assert.match(result.warningMessage ?? "", /DERIVED_FROM_PIECE_PRICE/i);
 });
 
 test("store visit price image normalization applies the package-amount guard and appends a parse risk warning", () => {
@@ -167,8 +168,8 @@ test("store visit price image normalization reconstructs discounted package tota
   assert.equal(normalized.rows[0].list_price_idr, 197500);
   assert.equal(normalized.rows[0].package_price_idr, 164900);
   assert.equal(normalized.rows[0].net_price_idr, 164900);
-  assert.equal(normalized.rows[0].price_per_piece_idr, 4580.56);
-  assert.match(normalized.warnings.at(-1)?.message ?? "", /discounted whole-package/i);
+  assert.equal(normalized.rows[0].price_per_piece_idr, 4580);
+  assert.match(normalized.warnings.at(-1)?.message ?? "", /DERIVED_FROM_PIECE_PRICE/i);
 });
 
 test("store visit price image normalization keeps clear package price ahead of visible per-piece evidence", () => {
@@ -196,7 +197,7 @@ test("store visit price image normalization keeps clear package price ahead of v
   assert.equal(normalized.rows[0].piece_count, 28);
   assert.equal(normalized.rows[0].visible_price_per_piece_idr, 2678);
   assert.equal(normalized.rows[0].net_price_idr, 75000);
-  assert.equal(normalized.rows[0].price_per_piece_idr, 2678.57);
+  assert.equal(normalized.rows[0].price_per_piece_idr, 2678);
   assert.equal(normalized.rows[0].price_basis, "VISIBLE_PROMO_PACKAGE_PRICE");
 });
 
@@ -224,9 +225,104 @@ test("store visit price image normalization does not rewrite near package price 
   assert.equal(normalized.rows.length, 1);
   assert.equal(normalized.rows[0].net_price_idr, 96900);
   assert.equal(normalized.rows[0].visible_price_per_piece_idr, 2019);
-  assert.equal(normalized.rows[0].price_per_piece_idr, 2018.75);
+  assert.equal(normalized.rows[0].price_per_piece_idr, 2019);
   assert.notEqual(normalized.rows[0].net_price_idr, 96912);
   assert.equal(normalized.rows[0].price_basis, "VISIBLE_PACKAGE_PRICE");
+});
+
+test("store visit price image normalization separates package and piece evidence when net text is a piece price", () => {
+  const normalized = storeVisitAi.normalizeStoreVisitPriceImageAnalysis({
+    photo_quality: { status: "pass", reasons: [], message: "Photo quality passed." },
+    rows: [
+      {
+        brand: "Makuku",
+        sku: "Dry Care Regular (Pants) XXL 15-25 KG",
+        list_price_idr: 56900,
+        package_price_idr: 56900,
+        net_price_idr: 2586,
+        piece_count: 26,
+        piece_count_text: "22+4",
+        package_price_text: "56.900",
+        net_price_text: "2.586",
+        visible_price_per_piece_text: "2.586",
+      },
+    ],
+    warnings: [],
+  }, "makuku_shelf");
+
+  assert.equal(normalized.rows.length, 1);
+  assert.equal(normalized.rows[0].piece_count, 26);
+  assert.equal(normalized.rows[0].net_price_idr, 56900);
+  assert.equal(normalized.rows[0].visible_price_per_piece_idr, 2586);
+  assert.equal(normalized.rows[0].price_per_piece_idr, 2586);
+  assert.match(normalized.warnings.at(-1)?.message ?? "", /piece price evidence/i);
+});
+
+test("store visit price image normalization derives piece price from package when no piece evidence is clear", () => {
+  const normalized = storeVisitAi.normalizeStoreVisitPriceImageAnalysis({
+    photo_quality: { status: "pass", reasons: [], message: "Photo quality passed." },
+    rows: [
+      {
+        brand: "Makuku",
+        sku: "Dry Care Regular (Pants) XL 12-17 KG",
+        package_price_text: "56.900",
+        net_price_text: "56.900",
+        piece_count_text: "28",
+      },
+    ],
+    warnings: [],
+  }, "makuku_shelf");
+
+  assert.equal(normalized.rows.length, 1);
+  assert.equal(normalized.rows[0].net_price_idr, 56900);
+  assert.equal(normalized.rows[0].price_per_piece_idr, 2032.14);
+  assert.match(normalized.warnings.at(-1)?.message ?? "", /DERIVED_FROM_PACKAGE/i);
+});
+
+test("store visit price image normalization derives package price from piece price when package evidence is missing", () => {
+  const normalized = storeVisitAi.normalizeStoreVisitPriceImageAnalysis({
+    photo_quality: { status: "pass", reasons: [], message: "Photo quality passed." },
+    rows: [
+      {
+        brand: "Makuku",
+        sku: "Derived package sample",
+        piece_count_text: "40",
+        visible_price_per_piece_text: "2.500",
+      },
+    ],
+    warnings: [],
+  }, "makuku_shelf");
+
+  assert.equal(normalized.rows.length, 1);
+  assert.equal(normalized.rows[0].net_price_idr, 100000);
+  assert.equal(normalized.rows[0].package_price_idr, 100000);
+  assert.equal(normalized.rows[0].visible_price_per_piece_idr, 2500);
+  assert.equal(normalized.rows[0].price_per_piece_idr, 2500);
+  assert.equal(normalized.rows[0].price_basis, "VISIBLE_PRICE_PER_PIECE");
+  assert.match(normalized.warnings.at(-1)?.message ?? "", /DERIVED_FROM_PIECE_PRICE/i);
+});
+
+test("store visit price image normalization ignores package-scale values in the piece price field", () => {
+  const normalized = storeVisitAi.normalizeStoreVisitPriceImageAnalysis({
+    photo_quality: { status: "pass", reasons: [], message: "Photo quality passed." },
+    rows: [
+      {
+        brand: "Makuku",
+        sku: "Piece field role mismatch sample",
+        package_price_text: "56.900",
+        net_price_text: "56.900",
+        visible_price_per_piece_text: "56.900",
+        piece_count_text: "28",
+      },
+    ],
+    warnings: [],
+  }, "makuku_shelf");
+
+  assert.equal(normalized.rows.length, 1);
+  assert.equal(normalized.rows[0].net_price_idr, 56900);
+  assert.equal(normalized.rows[0].visible_price_per_piece_idr, null);
+  assert.equal(normalized.rows[0].price_per_piece_idr, 2032.14);
+  assert.match(normalized.warnings.at(-1)?.message ?? "", /piece price field/i);
 });
 
 test("store visit price image normalization prefers visible bonus piece count text over base quantity", () => {
@@ -258,8 +354,7 @@ test("candidate generation source integrates the amount-scale guard before per-p
   assert.match(candidateService, /reconcilePackagePriceMetrics/);
   assert.match(candidateService, /const reconciledPrices = reconcilePackagePriceMetrics\(/);
   assert.match(candidateService, /const netPrice = reconciledPrices\.netPriceIdr/);
-  assert.doesNotMatch(candidateService, /priceBasis === "VISIBLE_PRICE_PER_PIECE"[\s\S]*visiblePricePerPieceIdr/);
-  assert.match(candidateService, /calculatePricePerPiece\(netPrice, pieceCount\)/);
+  assert.match(candidateService, /const pricePerPiece = reconciledPrices\.pricePerPieceIdr/);
   assert.match(candidateService, /raw_piece_count_text/);
   assert.match(candidateService, /raw_price_per_piece_text/);
   assert.match(candidateService, /visible_price_per_piece_idr/);

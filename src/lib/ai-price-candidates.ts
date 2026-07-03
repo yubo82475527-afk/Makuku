@@ -1,5 +1,5 @@
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
-import { calculatePricePerPiece, parseIdrPrice, reconcilePackagePriceMetrics } from "@/lib/price-utils";
+import { parseIdrPrice, reconcilePackagePriceMetrics } from "@/lib/price-utils";
 import { normalizePieceCount, normalizePieceCountFromCandidates, normalizePieceCountFromEvidence, parsePieceCountText } from "@/lib/piece-count";
 import type { AiPriceCandidate, CompetitorProduct, MaterialMaster, StoreVisitAiResult } from "@/lib/types";
 
@@ -502,18 +502,22 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
       netPriceIdr: parseCandidatePrice(item.net_price) ?? parsedPrice,
       pieceCount,
       visiblePricePerPieceIdr: visiblePricePerPiece,
+      listPriceText: item.list_price,
+      packagePriceText: item.package_price,
+      netPriceText: item.net_price,
+      visiblePricePerPieceText: item.raw_price_per_piece_text,
     });
     const listPrice = reconciledPrices.listPriceIdr ?? parsedPrice;
     const packagePrice = reconciledPrices.packagePriceIdr ?? parsedPrice;
     const netPrice = reconciledPrices.netPriceIdr ?? parsedPrice;
-    const pricePerPiece = calculatePricePerPiece(netPrice, pieceCount);
+    const pricePerPiece = reconciledPrices.pricePerPieceIdr;
     const warnings: Warning[] = [];
     if (!item.brand) warnings.push({ type: "MISSING_DATA", message: "AI did not extract a brand." });
     if (!item.product) warnings.push({ type: "MISSING_DATA", message: "AI did not extract a product name." });
     if (!parsedPrice) warnings.push({ type: "MISSING_DATA", message: "AI price could not be parsed into a number." });
     if (!pieceCount) warnings.push({ type: "MISSING_DATA", message: "Missing piece count; per-piece price cannot be calculated." });
     if (item.confidence < 0.5) warnings.push({ type: "LOW_CONFIDENCE", message: "AI extraction confidence is below 50%." });
-    if (reconciledPrices.correctedFromPerPiece && reconciledPrices.warningMessage) {
+    if (reconciledPrices.warningMessage) {
       warnings.push({ type: "PARSE_RISK", message: reconciledPrices.warningMessage });
     }
 
