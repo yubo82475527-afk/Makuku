@@ -603,4 +603,18 @@ test("report PNG renderer uses serverless chromium on Vercel instead of requirin
   assert.match(reportTemplateRenderFile, /await import\("playwright"\)/);
 });
 
+test("report image template now uses English-only copy for consistent cross-environment rendering", () => {
+  const reportTemplateRenderFile = readIfExists("src/lib/report-template-render.ts");
+  const reportTemplatePreviewFile = readIfExists("src/components/report-template-preview.tsx");
+
+  assert.match(reportTemplateRenderFile, /SFA Execution Daily Report \(HQ\)/);
+  assert.match(reportTemplateRenderFile, /Prior-day store visit and price capture summary grouped by Google Maps province/);
+  assert.match(reportTemplateRenderFile, /Visited Stores/);
+  assert.doesNotMatch(reportTemplateRenderFile, /执行日报|拜访门店数|口径|范围/);
+
+  assert.match(reportTemplatePreviewFile, /SFA Execution Daily Report \(HQ\)/);
+  assert.match(reportTemplatePreviewFile, /Prior-day store visit and price capture summary grouped by Google Maps province/);
+  assert.doesNotMatch(reportTemplatePreviewFile, /执行日报|拜访门店数|口径|范围/);
+});
+
 

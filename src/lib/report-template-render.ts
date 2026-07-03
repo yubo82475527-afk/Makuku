@@ -1,18 +1,17 @@
 import type { AgentReport, AgentReportMetricRow } from "./types.ts";
 
-export function renderReportTemplatePreviewHtml(report: AgentReport, locale: string) {
-  const isZh = locale === "zh";
-  const title = isZh ? "SFA-执行日报（总部）" : "SFA Execution Daily Report (HQ)";
-  const dateLabel = isZh ? "日期" : "Date";
-  const scopeLabel = isZh ? "省" : "Province";
-  const visitedLabel = isZh ? "拜访门店数" : "Visited Stores";
-  const employeeLabel = isZh ? "拜访人数" : "Visiting Employees";
-  const makukuLabel = isZh ? "MAKUKU价格" : "Makuku Prices";
-  const competitorLabel = isZh ? "竞品价格" : "Competitor Prices";
+export function renderReportTemplatePreviewHtml(report: AgentReport, _locale: string) {
+  const title = "SFA Execution Daily Report (HQ)";
+  const dateLabel = "Date";
+  const scopeLabel = "Province";
+  const visitedLabel = "Visited Stores";
+  const employeeLabel = "Visiting Employees";
+  const makukuLabel = "Makuku Prices";
+  const competitorLabel = "Competitor Prices";
   const rows = resolveDisplayRows(report);
 
   return `<!DOCTYPE html>
-<html lang="${isZh ? "zh" : "en"}">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -23,7 +22,7 @@ export function renderReportTemplatePreviewHtml(report: AgentReport, locale: str
         margin: 0;
         background: #f5f7fb;
         color: #1f2937;
-        font-family: Inter, "Segoe UI", "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+        font-family: Inter, "Segoe UI", Arial, sans-serif;
       }
       .page {
         width: 1080px;
@@ -162,7 +161,7 @@ export function renderReportTemplatePreviewHtml(report: AgentReport, locale: str
           <div class="title-wrap">
             <div class="eyebrow">Makuku SFA</div>
             <div class="title">${escapeHtml(title)}</div>
-            <div class="subtitle">${escapeHtml(isZh ? "按 Google 地图解析省份汇总昨日门店拜访与价格采集情况" : "Prior-day store visit and price capture summary grouped by Google Maps province")}</div>
+            <div class="subtitle">${escapeHtml("Prior-day store visit and price capture summary grouped by Google Maps province")}</div>
           </div>
           <div class="date-card">
             <div class="date-label">${escapeHtml(dateLabel)}</div>
@@ -188,8 +187,8 @@ export function renderReportTemplatePreviewHtml(report: AgentReport, locale: str
         </div>
 
         <div class="footer">
-          <div><strong>${escapeHtml(isZh ? "口径" : "Definition")}</strong> ${escapeHtml(isZh ? "门店与员工按去重口径统计；价格数按已采集记录统计。" : "Stores and employees are deduplicated; price counts are based on captured records.")}</div>
-          <div><strong>${escapeHtml(isZh ? "范围" : "Scope")}</strong> ${escapeHtml(report.scope_name)}</div>
+          <div><strong>${escapeHtml("Definition")}</strong> ${escapeHtml("Stores and employees are deduplicated; price counts are based on captured records.")}</div>
+          <div><strong>${escapeHtml("Scope")}</strong> ${escapeHtml(report.scope_name)}</div>
         </div>
       </div>
     </div>
