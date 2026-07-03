@@ -78,6 +78,11 @@ export type StoreVisitAiResult = {
       promo_type?: string | null;
       piece_count: number | null;
       piece_count_text?: string | null;
+      normal_package_text?: string | null;
+      normal_piece_text?: string | null;
+      promo_package_text?: string | null;
+      promo_piece_text?: string | null;
+      promo_label?: string | null;
       list_price_text?: string | null;
       package_price_text?: string | null;
       net_price_text?: string | null;
@@ -122,6 +127,11 @@ export type StoreVisitPriceImageRow = {
   brand?: string | null;
   sku: string;
   piece_count_text?: string | null;
+  normal_package_text?: string | null;
+  normal_piece_text?: string | null;
+  promo_package_text?: string | null;
+  promo_piece_text?: string | null;
+  promo_label?: string | null;
   list_price_text?: string | null;
   package_price_text?: string | null;
   net_price_text?: string | null;

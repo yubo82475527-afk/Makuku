@@ -87,7 +87,9 @@ const STORE_VISIT_PRICE_IMAGE_PROMPT = [
   "For price-board tables, anchor the row by its SIZE / SKU / PCS cells, trace horizontally across that exact same row, and read only cells that intersect that row.",
   "Never merge across rows, borrow missing values from row above or below, carry down promo prices, repeat a promo value into later blank promo cells, use a group header as a row price, or repair blank or hidden cells.",
   "If a required product-price relationship is ambiguous, skip the row and add PARSE_RISK warning.",
-  "ROW EVIDENCE FIELDS: for each row, capture brand, sku, piece_count_text, list_price_text, package_price_text, net_price_text, visible_price_per_piece_text, promo_type, and piece_count when visible.",
+  "ROW EVIDENCE FIELDS: for each row, capture brand, sku, piece_count_text, normal_package_text, normal_piece_text, promo_package_text, promo_piece_text, promo_label, promo_type, and piece_count when visible.",
+  "The normal_package_text, normal_piece_text, promo_package_text, and promo_piece_text fields are raw cell evidence. Empty visible promo cells must remain empty.",
+  "The system resolver may fill list_price_text, package_price_text, net_price_text, visible_price_per_piece_text, and numeric price fields from raw evidence. Do not calculate or repair these business fields yourself.",
   "All evidence must come from the SAME visual row. If a same-row cell is blank, hidden, cropped, or unclear, leave that field empty or null and do not fill it from another row.",
   "COLUMN ROLE RULE: use visible table headers to assign fields. Do not assign a price role by business guessing.",
   "For NORMAL columns, HARGA NORMAL / PACK -> list_price_text, and NORMAL HARGA / PCS -> normal per-piece evidence.",
@@ -109,7 +111,7 @@ const STORE_VISIT_PRICE_IMAGE_PROMPT = [
   "HANDWRITING RULE: Indonesian handwritten digit 7 may contain a horizontal middle stroke. Do not confuse handwritten 7 with digit 2.",
   "Example: visible HARGA/PCS \"2.678\" -> visible_price_per_piece_text=\"2.678\", visible_price_per_piece_idr=2678.",
   "Return ONLY valid compact JSON. No markdown. No explanation. No extra text.",
-  '{"photo_quality":{"status":"pass|retake_required","reasons":["price_unclear|angled_affects_reading|price_obstructed"],"message":"string"},"rows":[{"brand":"string","sku":"string","piece_count_text":"44","list_price_text":"129.900","package_price_text":"119.900","net_price_text":"119.900","visible_price_per_piece_text":"2.725","list_price_idr":129900,"package_price_idr":119900,"net_price_idr":119900,"visible_price_per_piece_idr":2725,"promo_type":"Discount","piece_count":44}],"summary":"string","warnings":[{"type":"MISSING_DATA|LOW_CONFIDENCE|PARSE_RISK","message":"string"}]}',
+  '{"photo_quality":{"status":"pass|retake_required","reasons":["price_unclear|angled_affects_reading|price_obstructed"],"message":"string"},"rows":[{"brand":"string","sku":"string","piece_count_text":"44","normal_package_text":"129.900","normal_piece_text":"2.952","promo_package_text":"119.900","promo_piece_text":"2.725","promo_label":"Discount","list_price_text":"129.900","package_price_text":"119.900","net_price_text":"119.900","visible_price_per_piece_text":"2.725","list_price_idr":129900,"package_price_idr":119900,"net_price_idr":119900,"visible_price_per_piece_idr":2725,"promo_type":"Discount","piece_count":44}],"summary":"string","warnings":[{"type":"MISSING_DATA|LOW_CONFIDENCE|PARSE_RISK","message":"string"}]}',
 ].join("\n");
 
 const STORE_VISIT_DISPLAY_PROMPT = [
@@ -496,14 +498,27 @@ export function normalizeStoreVisitPriceImageAnalysis(
     .map((item) => {
       const row = asRecord(item);
       const pieceCountText = asOptionalString(row.piece_count_text);
-      const listPriceText = asOptionalString(row.list_price_text);
-      const packagePriceText = asOptionalString(row.package_price_text);
-      const netPriceText = asOptionalString(row.net_price_text);
-      const visiblePricePerPieceText = asOptionalString(row.visible_price_per_piece_text);
-      const rawListPrice = asNullablePriceNumber(listPriceText) ?? asNullablePriceNumber(row.list_price_idr);
-      const rawPackagePrice = asNullablePriceNumber(packagePriceText) ?? asNullablePriceNumber(row.package_price_idr) ?? rawListPrice;
-      const rawNetPrice = asNullablePriceNumber(netPriceText) ?? asNullablePriceNumber(row.net_price_idr) ?? rawPackagePrice ?? rawListPrice;
-      const visiblePricePerPiece = asNullablePriceNumber(row.visible_price_per_piece_idr) ?? asNullablePriceNumber(visiblePricePerPieceText);
+      const normalPackageText = asOptionalString(row.normal_package_text);
+      const normalPieceText = asOptionalString(row.normal_piece_text);
+      const promoPackageText = asOptionalString(row.promo_package_text);
+      const promoPieceText = asOptionalString(row.promo_piece_text);
+      const promoLabel = asOptionalString(row.promo_label);
+      const hasEvidenceFields = Boolean(normalPackageText || normalPieceText || promoPackageText || promoPieceText || promoLabel);
+      const hasPromoPackageEvidence = Boolean(asNullablePriceNumber(promoPackageText));
+      const listPriceText = hasEvidenceFields ? normalPackageText : asOptionalString(row.list_price_text);
+      const packagePriceText = hasEvidenceFields
+        ? hasPromoPackageEvidence ? promoPackageText : normalPackageText
+        : asOptionalString(row.package_price_text);
+      const netPriceText = hasEvidenceFields
+        ? packagePriceText
+        : asOptionalString(row.net_price_text);
+      const visiblePricePerPieceText = hasEvidenceFields
+        ? hasPromoPackageEvidence ? promoPieceText : normalPieceText
+        : asOptionalString(row.visible_price_per_piece_text);
+      const rawListPrice = asNullablePriceNumber(listPriceText) ?? (hasEvidenceFields ? null : asNullablePriceNumber(row.list_price_idr));
+      const rawPackagePrice = asNullablePriceNumber(packagePriceText) ?? (hasEvidenceFields ? rawListPrice : asNullablePriceNumber(row.package_price_idr) ?? rawListPrice);
+      const rawNetPrice = asNullablePriceNumber(netPriceText) ?? (hasEvidenceFields ? rawPackagePrice ?? rawListPrice : asNullablePriceNumber(row.net_price_idr) ?? rawPackagePrice ?? rawListPrice);
+      const visiblePricePerPiece = asNullablePriceNumber(visiblePricePerPieceText) ?? (hasEvidenceFields ? null : asNullablePriceNumber(row.visible_price_per_piece_idr));
       const sku = asString(row.sku, "Unknown SKU");
       const modelPieceCount = normalizePieceCountFromCandidates(row.piece_count, sku);
       const pieceCount = normalizePieceCountFromEvidence(row.piece_count, pieceCountText, sku);
@@ -521,6 +536,13 @@ export function normalizeStoreVisitPriceImageAnalysis(
       const listPrice = reconciledPrices.listPriceIdr ?? rawNetPrice;
       const packagePrice = reconciledPrices.packagePriceIdr ?? listPrice;
       const netPrice = reconciledPrices.netPriceIdr ?? packagePrice ?? listPrice;
+      const promoType = hasEvidenceFields
+        ? hasPromoPackageEvidence
+          ? asOptionalString(row.promo_type) ?? promoLabel ?? "Discount"
+          : promoLabel
+            ? asOptionalString(row.promo_type) ?? promoLabel
+            : null
+        : asOptionalString(row.promo_type);
       if (pieceCountText && modelPieceCount && pieceCount && modelPieceCount !== pieceCount) {
         normalizationWarnings.push({
           type: "PARSE_RISK",
@@ -538,6 +560,11 @@ export function normalizeStoreVisitPriceImageAnalysis(
         brand: asOptionalString(row.brand),
         sku,
         piece_count_text: pieceCountText,
+        normal_package_text: normalPackageText,
+        normal_piece_text: normalPieceText,
+        promo_package_text: promoPackageText,
+        promo_piece_text: promoPieceText,
+        promo_label: promoLabel,
         list_price_text: listPriceText,
         package_price_text: packagePriceText,
         net_price_text: netPriceText,
@@ -547,7 +574,7 @@ export function normalizeStoreVisitPriceImageAnalysis(
         net_price_idr: netPrice,
         visible_price_per_piece_idr: reconciledPrices.visiblePricePerPieceIdr,
         price_basis: reconciledPrices.priceBasis,
-        promo_type: asOptionalString(row.promo_type),
+        promo_type: promoType,
         piece_count: pieceCount,
         price_per_piece_idr: pricePerPiece,
       };

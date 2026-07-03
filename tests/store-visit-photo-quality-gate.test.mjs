@@ -39,6 +39,11 @@ test("price image prompt forces same-row Pcs bonus extraction instead of truncat
 
 test("price image prompt requires row-level evidence and Indonesian handwritten 7 handling", () => {
   assert.match(storeVisitAi, /piece_count_text/);
+  assert.match(storeVisitAi, /normal_package_text/);
+  assert.match(storeVisitAi, /normal_piece_text/);
+  assert.match(storeVisitAi, /promo_package_text/);
+  assert.match(storeVisitAi, /promo_piece_text/);
+  assert.match(storeVisitAi, /promo_label/);
   assert.match(storeVisitAi, /list_price_text/);
   assert.match(storeVisitAi, /package_price_text/);
   assert.match(storeVisitAi, /net_price_text/);
@@ -55,6 +60,8 @@ test("price image prompt keeps promo package and promo per-piece evidence togeth
   assert.match(storeVisitAi, /HARGA PROMO \/ PACK -> promo package evidence/i);
   assert.match(storeVisitAi, /A row has promo price ONLY if the HARGA PROMO \/ PACK cell in the SAME row contains a visible numeric price/i);
   assert.match(storeVisitAi, /package_price_text = same-row HARGA PROMO \/ PACK/i);
+  assert.match(storeVisitAi, /Empty visible promo cells must remain empty/i);
+  assert.match(storeVisitAi, /Do not calculate or repair these business fields yourself/i);
   assert.match(storeVisitAi, /do NOT copy promo package price from another row/i);
   assert.match(storeVisitAi, /do NOT carry down the promo package price/i);
   assert.match(storeVisitAi, /If same-row HARGA PROMO \/ PACK is visible but same-row PROMO HARGA \/ PCS is blank/i);

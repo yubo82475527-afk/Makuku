@@ -325,6 +325,68 @@ test("store visit price image normalization ignores package-scale values in the 
   assert.match(normalized.warnings.at(-1)?.message ?? "", /piece price field/i);
 });
 
+test("store visit price image normalization uses normal evidence when promo cells are blank", () => {
+  const normalized = storeVisitAi.normalizeStoreVisitPriceImageAnalysis({
+    photo_quality: { status: "pass", reasons: [], message: "Photo quality passed." },
+    rows: [
+      {
+        brand: "Makuku",
+        sku: "SLIM REGULAR (PANTS) L",
+        piece_count_text: "34",
+        normal_package_text: "105.900",
+        normal_piece_text: "3.114",
+        promo_package_text: "",
+        promo_piece_text: "",
+        package_price_text: "94.900",
+        net_price_text: "94.900",
+        visible_price_per_piece_text: "2.791",
+        piece_count: 34,
+        promo_type: "Discount",
+      },
+    ],
+    warnings: [],
+  }, "makuku_shelf");
+
+  assert.equal(normalized.rows.length, 1);
+  assert.equal(normalized.rows[0].list_price_text, "105.900");
+  assert.equal(normalized.rows[0].package_price_text, "105.900");
+  assert.equal(normalized.rows[0].net_price_text, "105.900");
+  assert.equal(normalized.rows[0].visible_price_per_piece_text, "3.114");
+  assert.equal(normalized.rows[0].net_price_idr, 105900);
+  assert.equal(normalized.rows[0].visible_price_per_piece_idr, 3114);
+  assert.equal(normalized.rows[0].price_per_piece_idr, 3114);
+  assert.equal(normalized.rows[0].promo_type, null);
+});
+
+test("store visit price image normalization uses promo evidence when same-row promo package exists", () => {
+  const normalized = storeVisitAi.normalizeStoreVisitPriceImageAnalysis({
+    photo_quality: { status: "pass", reasons: [], message: "Photo quality passed." },
+    rows: [
+      {
+        brand: "Makuku",
+        sku: "SLIM REGULAR (PANTS) M",
+        piece_count_text: "32",
+        normal_package_text: "101.900",
+        normal_piece_text: "3.184",
+        promo_package_text: "94.900",
+        promo_piece_text: "2.965",
+        piece_count: 32,
+      },
+    ],
+    warnings: [],
+  }, "makuku_shelf");
+
+  assert.equal(normalized.rows.length, 1);
+  assert.equal(normalized.rows[0].list_price_text, "101.900");
+  assert.equal(normalized.rows[0].package_price_text, "94.900");
+  assert.equal(normalized.rows[0].net_price_text, "94.900");
+  assert.equal(normalized.rows[0].visible_price_per_piece_text, "2.965");
+  assert.equal(normalized.rows[0].net_price_idr, 94900);
+  assert.equal(normalized.rows[0].visible_price_per_piece_idr, 2965);
+  assert.equal(normalized.rows[0].price_per_piece_idr, 2965);
+  assert.equal(normalized.rows[0].promo_type, "Discount");
+});
+
 test("store visit price image normalization prefers visible bonus piece count text over base quantity", () => {
   const normalized = storeVisitAi.normalizeStoreVisitPriceImageAnalysis({
     photo_quality: { status: "pass", reasons: [], message: "Photo quality passed." },
