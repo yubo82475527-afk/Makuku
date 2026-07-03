@@ -352,6 +352,9 @@ export function ReportCenter({
                       <button type="button" onClick={() => void openReport(report)} className="inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
                         {isZh ? "查看" : "View"}
                       </button>
+                      <a href={`/${locale}/report-center/template-preview?report_id=${encodeURIComponent(report.id)}`} className="inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                        {templatePreviewLabel(isZh)}
+                      </a>
                       <button type="button" onClick={() => void regenerateLatest(report.report_definition_code, report)} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
                         <RefreshCw className="h-3.5 w-3.5" />
                         {rerunLabel(isZh)}
@@ -556,6 +559,10 @@ function formatDeliverySummary(summary: AgentReport["delivery_summary"] | undefi
 
 function rerunLabel(isZh: boolean) {
   return isZh ? "重算" : "Rerun";
+}
+
+function templatePreviewLabel(isZh: boolean) {
+  return isZh ? "模板预览" : "Template";
 }
 
 function redeliverLabel(isZh: boolean) {

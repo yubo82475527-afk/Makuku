@@ -83,7 +83,7 @@ export default async function ReportsPage({
 
   return (
     <>
-      <PageShellState locale={locale} dict={dict} title={isZh ? "报表" : "Reports"} currentPath={currentPath} isDemo={isDemo} />
+      <PageShellState locale={locale} dict={dict} title={isZh ? "自动化报表" : "Automated Reports"} currentPath={currentPath} isDemo={isDemo} />
       <DataNotice dict={dict} error={error} />
 
       <Card className="mb-4">

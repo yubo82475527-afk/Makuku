@@ -4,6 +4,7 @@ import {
   getAgentReportDefinition,
   legacyReportTypeToDefinitionCode,
 } from "./agent-report-definitions.ts";
+import { resolveLatestPeriodAnchor } from "./agent-report-periods.ts";
 import { generateAgentReport } from "./agent-reports.ts";
 import type {
   AgentReport,
@@ -267,8 +268,7 @@ export function resolveSubscriptionPeriodAnchor(
   subscription: Pick<AgentReportSubscription, "report_definition_code" | "report_family">,
   runAt: string | Date,
 ) {
-  void subscription;
-  return jakartaClockParts(runAt).dateKey;
+  return resolveLatestPeriodAnchor(subscription.report_definition_code, runAt);
 }
 
 export function subscriptionIsDueAt(

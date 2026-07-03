@@ -12,6 +12,14 @@ type FeishuSendMessageResponse = {
   };
 };
 
+type FeishuUploadImageResponse = {
+  code?: number;
+  msg?: string;
+  data?: {
+    image_key?: string;
+  };
+};
+
 type FeishuDirectoryUserGetResponse = {
   code?: number;
   msg?: string;
@@ -144,6 +152,57 @@ export async function sendFeishuCardMessage(input: {
       `feishu_msg=${payload.msg ?? "unknown"}`,
     ];
     throw new Error(`Failed to send Feishu card message; ${details.join("; ")}`);
+  }
+  return payload.data.message_id;
+}
+
+export async function uploadFeishuMessageImage(input: {
+  bytes: Uint8Array;
+  filename?: string;
+}) {
+  const token = await getTenantAccessToken();
+  const form = new FormData();
+  form.set("image_type", "message");
+  form.set("image", new Blob([Buffer.from(input.bytes)], { type: "image/png" }), input.filename ?? "report-preview.png");
+
+  const response = await fetch("https://open.feishu.cn/open-apis/im/v1/images", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+    },
+    body: form,
+  });
+  const payload = await response.json().catch(() => ({})) as FeishuUploadImageResponse;
+  if (!response.ok || payload.code !== 0 || !payload.data?.image_key) {
+    throw new Error(payload.msg || "Failed to upload Feishu image");
+  }
+  return payload.data.image_key;
+}
+
+export async function sendFeishuImageMessage(input: {
+  receiveIdType: FeishuReceiveIdType;
+  receiveId: string;
+  imageKey: string;
+}) {
+  const receiveId = input.receiveId.trim();
+  if (!receiveId) throw new Error("Missing Feishu receive id");
+
+  const token = await getTenantAccessToken();
+  const response = await fetch(`https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${input.receiveIdType}`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json; charset=utf-8",
+    },
+    body: JSON.stringify({
+      receive_id: receiveId,
+      msg_type: "image",
+      content: JSON.stringify({ image_key: input.imageKey }),
+    }),
+  });
+  const payload = await response.json().catch(() => ({})) as FeishuSendMessageResponse;
+  if (!response.ok || payload.code !== 0 || !payload.data?.message_id) {
+    throw new Error(payload.msg || "Failed to send Feishu image message");
   }
   return payload.data.message_id;
 }

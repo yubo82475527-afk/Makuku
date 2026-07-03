@@ -92,8 +92,18 @@ export function AiPriceCandidatesWorkbench({
   rule: AiPriceReviewRule;
 }) {
   const router = useRouter();
-  const copy = getWorkbenchCopy(locale) as WorkbenchCopy & { table: WorkbenchCopy["table"] & { imageId: string } };
+  const copy = getWorkbenchCopy(locale) as WorkbenchCopy & {
+    table: WorkbenchCopy["table"] & { imageId: string };
+    replacedPhotos?: string;
+    replacedSourcePhotoNotice?: string;
+  };
   copy.table.imageId = locale === "zh" ? "图片编号" : "Image ID";
+  if (!copy.replacedPhotos) copy.replacedPhotos = locale === "zh" ? "已替换图片" : "Replaced photos";
+  if (!copy.replacedSourcePhotoNotice) {
+    copy.replacedSourcePhotoNotice = locale === "zh"
+      ? "当前价格来源图已在 H5 中被替换，下方仅保留历史证据。"
+      : "The source photo for this candidate was replaced in H5. Keep it as historical evidence only.";
+  }
   const aiConfidenceHelp = locale === "zh"
     ? "AI 置信度 = AI 对品牌、商品、价格识别结果的整体把握，当前按识别模型输出的 confidence 展示。"
     : "AI confidence is the model confidence for the extracted brand, product, and price.";
@@ -1067,7 +1077,8 @@ function CandidateDetailDrawerContent({
   onUpdated: () => void;
   onEditMatch: (candidate: AiPriceCandidate) => void;
 }) {
-  const [visitImages, setVisitImages] = useState<VisitEvidenceImage[] | null>(() => candidate.visit_id ? null : []);
+  const [activeVisitImages, setActiveVisitImages] = useState<VisitEvidenceImage[] | null>(() => candidate.visit_id ? null : []);
+  const [replacedVisitImages, setReplacedVisitImages] = useState<VisitEvidenceImage[]>([]);
   const [price, setPrice] = useState(candidate.net_price_idr ?? candidate.parsed_price_idr ? String(Math.round(candidate.net_price_idr ?? candidate.parsed_price_idr ?? 0)) : "");
   const [pieces, setPieces] = useState(candidate.piece_count ? String(candidate.piece_count) : "");
   const [promoType, setPromoType] = useState(candidate.promo_type ?? "");
@@ -1076,10 +1087,16 @@ function CandidateDetailDrawerContent({
   const [activeImage, setActiveImage] = useState<{ url: string; label: string } | null>(null);
   const reviewedPricePerPiece = calculateReviewedPricePerPiece(price, pieces);
   const canApprove = candidateCanBeApproved(candidate);
-  const sourcePhoto = useMemo(() => findCandidateSourcePhoto(candidate, visitImages ?? []), [candidate, visitImages]);
-  const orderedVisitImages = useMemo(() => orderVisitImagesBySource(visitImages ?? [], sourcePhoto), [visitImages, sourcePhoto]);
+  const sourcePhoto = useMemo(() => findCandidateSourcePhoto(candidate, activeVisitImages ?? []), [candidate, activeVisitImages]);
+  const replacedSourcePhoto = useMemo(() => sourcePhoto ? null : findCandidateSourcePhoto(candidate, replacedVisitImages), [candidate, sourcePhoto, replacedVisitImages]);
+  const orderedVisitImages = useMemo(() => orderVisitImagesBySource(activeVisitImages ?? [], sourcePhoto), [activeVisitImages, sourcePhoto]);
   const sourcePhotoLabel = locale === "zh" ? "当前价格来源照片" : "Current price source photo";
   const sourcePhotoBadge = locale === "zh" ? "来源" : "Source";
+  const copyWithReplacement = copy as WorkbenchCopy & { replacedPhotos?: string; replacedSourcePhotoNotice?: string };
+  const replacedPhotosLabel = copyWithReplacement.replacedPhotos ?? (locale === "zh" ? "已替换图片" : "Replaced photos");
+  const replacedSourcePhotoNotice = copyWithReplacement.replacedSourcePhotoNotice ?? (locale === "zh"
+    ? "当前价格来源图已在 H5 中被替换，下方仅保留历史证据。"
+    : "The source photo for this candidate was replaced in H5. Keep it as historical evidence only.");
 
   useEffect(() => {
     if (!candidate.visit_id) return;
@@ -1087,10 +1104,20 @@ function CandidateDetailDrawerContent({
     fetch(`/api/store-visit/${candidate.visit_id}`)
       .then((response) => response.json())
       .then((payload) => {
-        if (active) setVisitImages(Array.isArray(payload.visit?.signed_images) ? payload.visit.signed_images : []);
+        if (!active) return;
+        setActiveVisitImages(
+          Array.isArray(payload.visit?.active_signed_images)
+            ? payload.visit.active_signed_images
+            : Array.isArray(payload.visit?.signed_images)
+              ? payload.visit.signed_images
+              : [],
+        );
+        setReplacedVisitImages(Array.isArray(payload.visit?.replaced_signed_images) ? payload.visit.replaced_signed_images : []);
       })
       .catch(() => {
-        if (active) setVisitImages([]);
+        if (!active) return;
+        setActiveVisitImages([]);
+        setReplacedVisitImages([]);
       });
     return () => {
       active = false;
@@ -1169,11 +1196,16 @@ function CandidateDetailDrawerContent({
 
         <div className="mt-5 rounded-lg border border-slate-200 p-3">
           <div className="mb-2 text-sm font-semibold text-slate-900">{copy.visitPhotos}</div>
-          {visitImages === null ? <div className="text-sm text-slate-500">{copy.loadingPhotos}</div> : null}
-          {visitImages !== null && visitImages.length === 0 ? <div className="text-sm text-slate-500">{copy.noPhotos}</div> : null}
+          {activeVisitImages === null ? <div className="text-sm text-slate-500">{copy.loadingPhotos}</div> : null}
+          {activeVisitImages !== null && activeVisitImages.length === 0 ? <div className="text-sm text-slate-500">{copy.noPhotos}</div> : null}
           {sourcePhoto ? (
             <div className="mb-2 rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-800">
               {sourcePhotoLabel}
+            </div>
+          ) : null}
+          {replacedSourcePhoto ? (
+            <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800">
+              {replacedSourcePhotoNotice}
             </div>
           ) : null}
           <div className="grid gap-3 sm:grid-cols-2">
@@ -1205,6 +1237,40 @@ function CandidateDetailDrawerContent({
               </div>
             );})}
           </div>
+          {replacedVisitImages.length > 0 ? (
+            <div className="mt-4 border-t border-slate-200 pt-4">
+              <div className="mb-2 text-sm font-semibold text-slate-900">{replacedPhotosLabel}</div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {replacedVisitImages.map((image) => {
+                  const isReplacedSource = replacedSourcePhoto?.path === image.path;
+                  return (
+                  <div key={image.path} className={`rounded-md border p-2 ${isReplacedSource ? "border-amber-300 bg-amber-50/70" : "border-slate-200 bg-slate-50/60 opacity-80"}`}>
+                    {image.url ? (
+                      <button
+                        type="button"
+                        onClick={() => setActiveImage({ url: image.url as string, label: image.category ?? copy.visitPhoto })}
+                        className="block w-full"
+                        aria-label={copy.previewPhoto}
+                      >
+                        <Image
+                          src={image.url}
+                          alt={image.category ?? copy.visitPhoto}
+                          width={360}
+                          height={200}
+                          unoptimized
+                          className="aspect-video w-full rounded object-cover"
+                        />
+                      </button>
+                    ) : <div className="aspect-video rounded bg-slate-100" />}
+                    <div className="mt-1 flex items-center justify-between gap-2 text-xs">
+                      <span className={isReplacedSource ? "font-medium text-amber-800" : "text-slate-500"}>{image.category ?? image.path}</span>
+                      {isReplacedSource ? <span className="rounded bg-amber-600 px-1.5 py-0.5 font-medium text-white">{sourcePhotoBadge}</span> : null}
+                    </div>
+                  </div>
+                );})}
+              </div>
+            </div>
+          ) : null}
         </div>
 
         {candidate.warnings?.length ? (

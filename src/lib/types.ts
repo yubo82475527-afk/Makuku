@@ -767,6 +767,18 @@ export type OfflineStoreVisit = {
     url: string | null;
     category?: OfflineImageType | StoreVisitImageCategory;
   }[];
+  active_signed_images?: {
+    id?: string;
+    path: string;
+    url: string | null;
+    category?: OfflineImageType | StoreVisitImageCategory;
+  }[];
+  replaced_signed_images?: {
+    id?: string;
+    path: string;
+    url: string | null;
+    category?: OfflineImageType | StoreVisitImageCategory;
+  }[];
 };
 
 export type AiPriceCandidateStatus = "pending" | "approved" | "rejected";

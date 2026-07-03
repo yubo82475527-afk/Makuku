@@ -11,6 +11,13 @@ type StoreVisitWithPriceCandidates = OfflineStoreVisit & {
   ai_price_candidates?: AiPriceCandidate[];
 };
 
+type SignedVisitImage = {
+  id?: string;
+  path: string;
+  url: string | null;
+  category?: StoreVisitImageCategory;
+};
+
 const aiPriceCandidateSelect = "id,visit_id,candidate_key,source_image_id,source_image_path,raw_brand,raw_product,raw_price,parsed_price_idr,list_price_idr,package_price_idr,net_price_idr,raw_piece_count_text,raw_package_price_text,raw_net_price_text,raw_price_per_piece_text,visible_price_per_piece_idr,price_basis,promo_type,piece_count,price_per_piece,candidate_type,ai_confidence,matched_entity_type,matched_entity_id,matched_label,match_score,warnings,status,price_snapshot_id,reviewed_piece_count,reviewed_price_per_piece,created_at,reviewed_at,reviewed_by,rejection_reason,review_method,h5_lifecycle_status,h5_lifecycle_at";
 const visitSelect = `id,visit_code,store_name,region,channel,promoter,visit_date,visit_status,analysis_status,analysis_error,summary_result,image_urls,image_categories,offline_visit_images(id,visit_id,replaces_image_id,replaced_by_image_id,deleted_at,deletion_reason,image_type,image_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at),ai_price_candidates(${aiPriceCandidateSelect})`;
 const legacyVisitSelect = `id,visit_code,store_name,region,channel,promoter,visit_date,visit_status,analysis_status,analysis_error,summary_result,image_urls,image_categories,offline_visit_images(id,visit_id,image_type,image_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at),ai_price_candidates(${aiPriceCandidateSelect})`;
@@ -27,17 +34,26 @@ async function attachSignedImageUrls(visit: OfflineStoreVisit) {
   const supabase = createSupabaseServiceClient();
   const imagePaths = Array.isArray(visit.image_urls) ? visit.image_urls : [];
   const categories = Array.isArray(visit.image_categories) ? visit.image_categories : [];
-  const legacySignedImages = await Promise.all(imagePaths.map(async (path, index) => {
+  const legacySignedImages = await Promise.all(imagePaths.map(async (path, index): Promise<SignedVisitImage> => {
     const { data } = await supabase.storage.from("store-visits").createSignedUrl(path, 60 * 60);
     return { path, url: data?.signedUrl ?? null, category: toStoreVisitImageCategory(categories[index]) };
   }));
-  const tableSignedImages = await Promise.all((visit.offline_visit_images ?? []).map(async (image) => {
+  const tableSignedImages = await Promise.all((visit.offline_visit_images ?? []).map(async (image): Promise<SignedVisitImage> => {
     const category = toStoreVisitImageCategory(image.image_type);
     if (image.image_url) return { id: image.id, path: image.image_path, url: image.image_url, category };
     const { data } = await supabase.storage.from("offline-visit-images").createSignedUrl(image.image_path, 60 * 60);
     return { id: image.id, path: image.image_path, url: data?.signedUrl ?? null, category };
   }));
-  return { ...visit, signed_images: [...tableSignedImages, ...legacySignedImages] };
+  return {
+    ...visit,
+    signed_images: [...tableSignedImages, ...legacySignedImages],
+    active_signed_images: [...tableSignedImages, ...legacySignedImages],
+  };
+}
+
+async function signVisitImages(images: OfflineVisitImage[]) {
+  const signedVisit = await attachSignedImageUrls({ offline_visit_images: images } as OfflineStoreVisit);
+  return signedVisit.signed_images ?? [];
 }
 
 function isMissingImageLifecycleColumnsError(error: { message?: string } | null) {
@@ -95,14 +111,17 @@ export async function GET(_request: Request, ctx: RouteContext) {
       : null;
     const allImages = Array.isArray(visit.offline_visit_images) ? visit.offline_visit_images : [];
     const activeImages = allImages.filter((image) => !isInactiveVisitImage(image));
-    const replacedImages = allImages.filter((image) => isInactiveVisitImage(image));
-    const signedVisitWithAllImages = await attachSignedImageUrls({
+    const inactiveImages = allImages.filter((image) => isInactiveVisitImage(image));
+    const replacedImages = inactiveImages.filter((image) => Boolean(image.replaced_by_image_id)
+      || (typeof image.vision_result === "object" && image.vision_result !== null && (image.vision_result as Record<string, unknown>).is_replaced === true));
+    const signedVisitWithActiveImages = await attachSignedImageUrls({
       ...visit,
       summary_result: summaryResult,
-      offline_visit_images: allImages,
+      offline_visit_images: activeImages,
     });
+    const replacedSignedImages = await signVisitImages(replacedImages);
     const signedVisit = {
-      ...signedVisitWithAllImages,
+      ...signedVisitWithActiveImages,
       ...visit,
       summary_result: summaryResult,
       offline_visit_images: activeImages,
@@ -112,8 +131,10 @@ export async function GET(_request: Request, ctx: RouteContext) {
       visit: {
         ...signedVisit,
         ai_price_candidates: await attachAiPriceCandidateMatchLabels(supabase, signedVisit.ai_price_candidates ?? []),
-        replaced_offline_visit_images: replacedImages,
-        signed_images: signedVisitWithAllImages.signed_images,
+        replaced_offline_visit_images: inactiveImages,
+        active_signed_images: signedVisitWithActiveImages.active_signed_images,
+        replaced_signed_images: replacedSignedImages,
+        signed_images: signedVisitWithActiveImages.active_signed_images,
       },
     });
   } catch (error) {

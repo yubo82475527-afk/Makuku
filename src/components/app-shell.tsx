@@ -80,9 +80,9 @@ const navGroups = [
     ],
   },
   {
-    label: { zh: "报表", en: "Reports" },
+    label: { zh: "自动化报表", en: "Automated Reports" },
     items: [
-      { href: "/report-center", label: { zh: "日报周报月报", en: "Reports" }, icon: FileSpreadsheet },
+      { href: "/report-center", label: { zh: "自动化报表", en: "Automated Reports" }, icon: FileSpreadsheet },
     ],
   },
 ] as const;

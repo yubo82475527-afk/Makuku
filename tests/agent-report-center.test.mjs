@@ -15,14 +15,19 @@ const rerunRouteFile = readIfExists("src/app/api/internal/agent-reports/[id]/rer
 const redeliverRouteFile = readIfExists("src/app/api/internal/agent-reports/[id]/redeliver/route.ts");
 const retryFailedRouteFile = readIfExists("src/app/api/internal/agent-reports/[id]/retry-failed/route.ts");
 const dispatchRouteFile = readIfExists("src/app/api/internal/agent-reports/[id]/dispatch/route.ts");
+const dispatchPreviewImageRouteFile = readIfExists("src/app/api/internal/agent-reports/[id]/dispatch-preview-image/route.ts");
 const reportDetailRouteFile = readIfExists("src/app/api/internal/agent-reports/[id]/route.ts");
 const reportCenterPageFile = readIfExists("src/app/[locale]/report-center/page.tsx");
+const reportTemplatePreviewPageFile = readIfExists("src/app/[locale]/report-center/template-preview/page.tsx");
 const reportCenterComponentFile = readIfExists("src/components/report-center.tsx");
+const reportTemplatePreviewComponentFile = readIfExists("src/components/report-template-preview.tsx");
+const reportTemplatePreviewActionsFile = readIfExists("src/components/report-template-preview-actions.tsx");
 const appShellFile = readIfExists("src/components/app-shell.tsx");
 const typesFile = readIfExists("src/lib/types.ts");
 const definitionsFile = readIfExists("src/lib/agent-report-definitions.ts");
 const deliverySource = readIfExists("src/lib/agent-report-delivery.ts");
 const feishuSource = readIfExists("src/lib/feishu.ts");
+const vercelConfigFile = readIfExists("vercel.json");
 
 test("subscription schedule migration upgrades agent_report_subscriptions for report center", () => {
   assert.equal(existsSync("supabase/migrations/202607010002_agent_report_subscriptions_schedule.sql"), true);
@@ -84,7 +89,9 @@ test("creating or re-enabling a subscription syncs pending delivery onto the lat
 test("reports page shows latest status and history with definition-aware subscriptions", () => {
   assert.match(replayRouteFile, /requireAdminSession/);
   assert.match(replayRouteFile, /export async function POST/);
-  assert.match(runSubscriptionsRouteFile, /requireAdminSession/);
+  assert.match(runSubscriptionsRouteFile, /dispatchPendingAgentReportRecipients/);
+  assert.match(runSubscriptionsRouteFile, /CRON_SECRET/);
+  assert.match(runSubscriptionsRouteFile, /export async function GET/);
   assert.match(runSubscriptionsRouteFile, /export async function POST/);
   assert.match(rerunRouteFile, /requireAdminSession/);
   assert.match(rerunRouteFile, /export async function POST/);
@@ -113,6 +120,8 @@ test("reports page shows latest status and history with definition-aware subscri
   assert.match(reportCenterComponentFile, /Rerun|重算/);
   assert.match(reportCenterComponentFile, /Dispatch pending|发送待发送/);
   assert.match(reportCenterComponentFile, /Retry failed|仅补失败/);
+  assert.match(reportCenterComponentFile, /Template|模板预览/);
+  assert.match(reportCenterComponentFile, /report-center\/template-preview\?report_id=/);
   assert.match(reportCenterComponentFile, /openReport/);
   assert.match(reportCenterComponentFile, /window\.confirm/);
   assert.match(reportCenterComponentFile, /可能重复发送|may send duplicate messages/i);
@@ -123,6 +132,17 @@ test("reports page shows latest status and history with definition-aware subscri
   assert.doesNotMatch(reportCenterComponentFile, /Generation Records/);
   assert.doesNotMatch(reportCenterComponentFile, /Run due subscriptions/);
   assert.match(appShellFile, /\/report-center/);
+  assert.match(reportTemplatePreviewPageFile, /Template Preview|模板预览/);
+  assert.match(reportTemplatePreviewPageFile, /getAgentReportById/);
+  assert.match(reportTemplatePreviewPageFile, /daily_price_country/);
+  assert.match(reportTemplatePreviewPageFile, /ReportTemplatePreviewActions/);
+  assert.match(reportTemplatePreviewComponentFile, /Key Metric Definitions|指标说明/);
+  assert.match(reportTemplatePreviewComponentFile, /Visited Stores/);
+  assert.match(reportTemplatePreviewComponentFile, /Competitor Price Records/);
+  assert.match(reportTemplatePreviewActionsFile, /Send Test Image|试发图片/);
+  assert.match(reportTemplatePreviewActionsFile, /dispatch-preview-image/);
+  assert.match(dispatchPreviewImageRouteFile, /dispatchReportTemplatePreviewImage/);
+  assert.match(dispatchPreviewImageRouteFile, /requireAdminSession/);
 });
 
 test("redeliver rebuilds recipients from current subscriptions, removes stale pending or failed recipients, then dispatches", () => {
@@ -182,6 +202,28 @@ test("delivery sender posts interactive cards to Feishu and updates recipient st
     process.env.FEISHU_APP_ID = originalAppId;
     process.env.FEISHU_APP_SECRET = originalAppSecret;
   }
+});
+
+test("preview image delivery uploads a Feishu image then sends image messages", () => {
+  assert.match(feishuSource, /open-apis\/im\/v1\/images/);
+  assert.match(feishuSource, /msg_type:\s*"image"/);
+  assert.match(feishuSource, /image_key/);
+  assert.match(deliverySource, /dispatchReportTemplatePreviewImage/);
+  assert.match(deliverySource, /renderReportTemplatePreviewPng/);
+  assert.match(deliverySource, /uploadFeishuMessageImage/);
+  assert.match(deliverySource, /sendFeishuImageMessage/);
+});
+
+test("formal report delivery routes daily country reports to png while keeping other definitions on cards", async () => {
+  assert.match(deliverySource, /resolveFormalReportDeliveryKind/);
+  assert.match(deliverySource, /reportDefinitionCode === "daily_price_country"/);
+  assert.match(deliverySource, /renderReportTemplatePreviewPng/);
+  assert.match(deliverySource, /sendFeishuImageMessage/);
+  assert.match(deliverySource, /sendFeishuCardMessage/);
+
+  const deliveryModule = await import("../src/lib/agent-report-delivery.ts");
+  assert.equal(deliveryModule.resolveFormalReportDeliveryKind("daily_price_country"), "image");
+  assert.equal(deliveryModule.resolveFormalReportDeliveryKind("weekly_price_management"), "card");
 });
 
 test("subscription scheduling and delivery summary helpers validate definition-aware rules and create recipients", async () => {
@@ -468,6 +510,50 @@ test("subscription scheduling and delivery summary helpers validate definition-a
   assert.equal(
     module.resolveSubscriptionPeriodAnchor(
       {
+        report_definition_code: "daily_price_country",
+        report_family: "daily",
+        recipient_type: "chat",
+        app_user_id: null,
+        feishu_user_id: null,
+        feishu_chat_id: "oc_123",
+        scope_type: "global",
+        scope_id: null,
+        send_time_local: "08:30:00",
+        send_weekday: null,
+        send_day_of_month: null,
+        timezone: "Asia/Jakarta",
+        enabled: true,
+      },
+      "2026-07-03T01:30:00.000Z",
+    ),
+    "2026-07-02",
+  );
+
+  assert.equal(
+    module.resolveSubscriptionPeriodAnchor(
+      {
+        report_definition_code: "weekly_price_management",
+        report_family: "weekly",
+        recipient_type: "chat",
+        app_user_id: null,
+        feishu_user_id: null,
+        feishu_chat_id: "oc_123",
+        scope_type: "global",
+        scope_id: null,
+        send_time_local: "09:00:00",
+        send_weekday: 1,
+        send_day_of_month: null,
+        timezone: "Asia/Jakarta",
+        enabled: true,
+      },
+      "2026-07-06T02:00:00.000Z",
+    ),
+    "2026-06-29",
+  );
+
+  assert.equal(
+    module.resolveSubscriptionPeriodAnchor(
+      {
         report_definition_code: "monthly_price_country_summary",
         report_family: "monthly",
         recipient_type: "chat",
@@ -484,8 +570,14 @@ test("subscription scheduling and delivery summary helpers validate definition-a
       },
       "2026-07-01T03:00:00.000Z",
     ),
-    "2026-07-01",
+    "2026-06-01",
   );
+});
+
+test("vercel cron configuration runs report subscriptions automatically every day at 08:30 Jakarta", () => {
+  assert.equal(existsSync("vercel.json"), true);
+  assert.match(vercelConfigFile, /"path"\s*:\s*"\/api\/internal\/agent-reports\/run-subscriptions"/);
+  assert.match(vercelConfigFile, /"schedule"\s*:\s*"30 1 \* \* \*"/);
 });
 
 

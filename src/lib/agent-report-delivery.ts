@@ -1,5 +1,7 @@
 import { renderFeishuCard } from "./agent-reports.ts";
-import { sendFeishuCardMessage } from "./feishu.ts";
+import { getAgentReportById } from "./agent-reports.ts";
+import { sendFeishuCardMessage, sendFeishuImageMessage, uploadFeishuMessageImage } from "./feishu.ts";
+import { renderReportTemplatePreviewPng } from "./report-template-render.ts";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "./supabase.ts";
 import type { AgentReport, AgentReportContentJson, AgentReportMetricRow, AgentReportMetricsJson, AgentReportRecipient } from "./types.ts";
 
@@ -9,17 +11,7 @@ type QueryResult<T> = {
   isDemo: boolean;
 };
 
-async function getAgentReportCard(reportId: string) {
-  const supabase = createSupabaseServiceClient();
-  const { data, error } = await supabase
-    .from("agent_reports")
-    .select("id,feishu_card_json,content_json,metrics_json")
-    .eq("id", reportId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!data) throw new Error("Agent report not found");
-  return data as Pick<AgentReport, "id" | "feishu_card_json" | "content_json" | "metrics_json">;
-}
+type FormalReportDeliveryKind = "card" | "image";
 
 function resolveReportCard(report: Pick<AgentReport, "id" | "feishu_card_json" | "content_json" | "metrics_json">) {
   const content = report.content_json as AgentReportContentJson | null;
@@ -29,6 +21,10 @@ function resolveReportCard(report: Pick<AgentReport, "id" | "feishu_card_json" |
     return renderFeishuCard(content, rows);
   }
   return report.feishu_card_json;
+}
+
+export function resolveFormalReportDeliveryKind(reportDefinitionCode: string): FormalReportDeliveryKind {
+  return reportDefinitionCode === "daily_price_country" ? "image" : "card";
 }
 
 async function listPendingRecipients(reportId: string) {
@@ -99,23 +95,61 @@ function resolveRecipientTarget(recipient: AgentReportRecipient) {
   };
 }
 
+async function resolveFormalReportDeliveryPayload(report: AgentReport) {
+  if (resolveFormalReportDeliveryKind(report.report_definition_code) === "image") {
+    const png = await renderReportTemplatePreviewPng(report, "zh");
+    const imageKey = await uploadFeishuMessageImage({
+      bytes: new Uint8Array(png),
+      filename: `${report.report_definition_code}-${report.period_start}.png`,
+    });
+    return {
+      kind: "image" as const,
+      send: async (recipient: AgentReportRecipient) => {
+        const target = resolveRecipientTarget(recipient);
+        return sendFeishuImageMessage({
+          receiveIdType: target.receiveIdType,
+          receiveId: target.receiveId,
+          imageKey,
+        });
+      },
+    };
+  }
+
+  const card = resolveReportCard(report);
+  return {
+    kind: "card" as const,
+    send: async (recipient: AgentReportRecipient) => {
+      const target = resolveRecipientTarget(recipient);
+      return sendFeishuCardMessage({
+        receiveIdType: target.receiveIdType,
+        receiveId: target.receiveId,
+        card,
+      });
+    },
+  };
+}
+
 export async function dispatchPendingAgentReportRecipients(reportId: string): Promise<QueryResult<AgentReportRecipient[]>> {
   if (!hasSupabaseServiceConfig()) return { data: [], error: null, isDemo: true };
 
-  const report = await getAgentReportCard(reportId);
+  const reportResult = await getAgentReportById(reportId);
+  if (reportResult.error || !reportResult.data) {
+    return {
+      data: [],
+      error: reportResult.error ?? "Agent report not found",
+      isDemo: reportResult.isDemo,
+    };
+  }
+
+  const report = reportResult.data;
   const pendingRecipients = await listPendingRecipients(reportId);
+  const delivery = await resolveFormalReportDeliveryPayload(report);
   const updatedRecipients: AgentReportRecipient[] = [];
   let firstError: string | null = null;
 
   for (const recipient of pendingRecipients) {
     try {
-      const target = resolveRecipientTarget(recipient);
-      const card = resolveReportCard(report);
-      const messageId = await sendFeishuCardMessage({
-        receiveIdType: target.receiveIdType,
-        receiveId: target.receiveId,
-        card,
-      });
+      const messageId = await delivery.send(recipient);
       updatedRecipients.push(await updateRecipient(recipient.id, {
         send_status: "sent",
         feishu_message_id: messageId,
@@ -139,4 +173,74 @@ export async function dispatchPendingAgentReportRecipients(reportId: string): Pr
 
   await syncReportDeliveryStatus(reportId);
   return { data: updatedRecipients, error: firstError, isDemo: false };
+}
+
+export async function dispatchReportTemplatePreviewImage(reportId: string, locale = "zh"): Promise<QueryResult<{ recipient_count: number; sent_count: number }>> {
+  if (!hasSupabaseServiceConfig()) return { data: { recipient_count: 0, sent_count: 0 }, error: null, isDemo: true };
+
+  const reportResult = await getAgentReportById(reportId);
+  if (reportResult.error || !reportResult.data) {
+    return {
+      data: { recipient_count: 0, sent_count: 0 },
+      error: reportResult.error ?? "Agent report not found",
+      isDemo: reportResult.isDemo,
+    };
+  }
+
+  const recipients = dedupeTemplatePreviewRecipients(reportResult.data.recipients ?? []);
+  if (recipients.length === 0) {
+    return { data: { recipient_count: 0, sent_count: 0 }, error: "No recipients are available for this report.", isDemo: false };
+  }
+
+  const png = await renderReportTemplatePreviewPng(reportResult.data, locale);
+  const imageKey = await uploadFeishuMessageImage({
+    bytes: new Uint8Array(png),
+    filename: `${reportResult.data.report_definition_code}-${reportResult.data.period_start}.png`,
+  });
+
+  let firstError: string | null = null;
+  let sentCount = 0;
+  for (const recipient of recipients) {
+    try {
+      const target = resolveRecipientTarget(recipient);
+      await sendFeishuImageMessage({
+        receiveIdType: target.receiveIdType,
+        receiveId: target.receiveId,
+        imageKey,
+      });
+      sentCount += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown template preview delivery error";
+      if (!firstError) firstError = message;
+      console.error("dispatchReportTemplatePreviewImage failed", {
+        reportId,
+        recipientId: recipient.id,
+        error: message,
+      });
+    }
+  }
+
+  return {
+    data: {
+      recipient_count: recipients.length,
+      sent_count: sentCount,
+    },
+    error: firstError,
+    isDemo: false,
+  };
+}
+
+function dedupeTemplatePreviewRecipients(recipients: AgentReportRecipient[]) {
+  const seen = new Set<string>();
+  const unique: AgentReportRecipient[] = [];
+  for (const recipient of recipients) {
+    const channel = recipient.delivery_channel === "chat" ? "chat" : "user";
+    const receiveId = channel === "chat" ? recipient.feishu_chat_id?.trim() : recipient.feishu_user_id?.trim();
+    if (!receiveId) continue;
+    const key = `${channel}:${receiveId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(recipient);
+  }
+  return unique;
 }

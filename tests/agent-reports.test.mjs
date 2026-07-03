@@ -115,6 +115,11 @@ test("report engine builds unified cardkit payload and deduplicated metrics", as
         user_id: null,
         promoter: "Alice",
         uploader_name: "Alice",
+        offline_stores: {
+          id: "os-1",
+          organization_id: "org-1",
+          name: "Store A",
+        },
       },
       {
         id: "v2",
@@ -129,6 +134,11 @@ test("report engine builds unified cardkit payload and deduplicated metrics", as
         user_id: null,
         promoter: "Alice",
         uploader_name: "Alice",
+        offline_stores: {
+          id: "os-1",
+          organization_id: "org-1",
+          name: "Store A",
+        },
       },
       {
         id: "v3",
@@ -143,6 +153,11 @@ test("report engine builds unified cardkit payload and deduplicated metrics", as
         user_id: "legacy-2",
         promoter: "Bob",
         uploader_name: "Bob",
+        offline_stores: {
+          id: "os-2",
+          organization_id: "org-2",
+          name: "Store B",
+        },
       },
     ],
     snapshots: [
@@ -178,10 +193,189 @@ test("report engine builds unified cardkit payload and deduplicated metrics", as
   assert.equal(report.feishu_card.elements[0].tag, "div");
   assert.equal(report.feishu_card.elements[0].text.tag, "lark_md");
   assert.match(report.feishu_card.elements[0].text.content, /All Stores/);
-  assert.match(report.feishu_card.elements[0].text.content, /AI Insight/);
+  assert.match(report.feishu_card.elements[0].text.content, /Report Summary/);
+  assert.doesNotMatch(report.feishu_card.elements[0].text.content, /AI Insight/);
   assert.match(report.content.key_translations, /visited store/i);
   assert.match(report.content.ai_insight, /competitor/i);
   assert.doesNotMatch(report.content.ai_insight.toLowerCase(), /osa|shelf|display|stock-out/);
+});
+
+test("daily country report excludes configured organizations from visited stores and price counts, and excluded users from employee count", async () => {
+  const reportModule = await import("../src/lib/agent-reports.ts");
+  const definitionsModule = await import("../src/lib/agent-report-definitions.ts");
+  const definition = definitionsModule.getAgentReportDefinition("daily_price_country");
+
+  const report = reportModule.buildAgentReportSnapshot({
+    definition,
+    period: reportModule.resolveReportPeriod(definition, "2026-07-01"),
+    scopeType: "global",
+    scopeId: null,
+    scopeName: "All Stores",
+    visits: [
+      {
+        id: "v1",
+        store_id: "store-1",
+        store_name: "Test Store",
+        province: "DKI Jakarta",
+        city_name: "Jakarta",
+        district: "Kelapa Gading",
+        city: "Jakarta",
+        channel_type: "offline",
+        uploader_user_id: "gary-id",
+        user_id: null,
+        promoter: "Gary",
+        uploader_name: "Gary",
+        offline_stores: {
+          id: "os-test",
+          organization_id: "30a98b85-6d36-4086-b103-e907b03b6672",
+          name: "Test Store",
+        },
+      },
+      {
+        id: "v2",
+        store_id: "store-2",
+        store_name: "Live Store",
+        province: "West Java",
+        city_name: "Bandung",
+        district: "Coblong",
+        city: "Bandung",
+        channel_type: "offline",
+        uploader_user_id: "gary-id",
+        user_id: null,
+        promoter: "Gary",
+        uploader_name: "Gary",
+        offline_stores: {
+          id: "os-live",
+          organization_id: "org-live",
+          name: "Live Store",
+        },
+      },
+      {
+        id: "v3",
+        store_id: "store-3",
+        store_name: "Live Store 2",
+        province: "Banten",
+        city_name: "Tangerang",
+        district: "Serpong",
+        city: "Tangerang",
+        channel_type: "offline",
+        uploader_user_id: "user-2",
+        user_id: null,
+        promoter: "Alice",
+        uploader_name: "Alice",
+        offline_stores: {
+          id: "os-live-2",
+          organization_id: "org-live-2",
+          name: "Live Store 2",
+        },
+      },
+    ],
+    snapshots: [
+      {
+        id: "p1",
+        competitor_product_id: null,
+        sku_master_id: "sku-1",
+        material_sku_code: null,
+        offline_stores: {
+          id: "os-test",
+          organization_id: "30a98b85-6d36-4086-b103-e907b03b6672",
+          name: "Test Store",
+        },
+      },
+      {
+        id: "p2",
+        competitor_product_id: "comp-1",
+        sku_master_id: null,
+        material_sku_code: null,
+        offline_stores: {
+          id: "os-live",
+          organization_id: "org-live",
+          name: "Live Store",
+        },
+      },
+    ],
+    previousMetrics: null,
+    excludedVisitedStoreOrganizationIds: ["30a98b85-6d36-4086-b103-e907b03b6672"],
+    excludedEmployeeUserIds: ["gary-id"],
+  });
+
+  assert.equal(report.metrics.summary.visited_store_count, 2);
+  assert.equal(report.metrics.summary.visiting_employee_count, 1);
+  assert.equal(report.metrics.summary.makuku_price_record_count, 0);
+  assert.equal(report.metrics.summary.competitor_price_record_count, 1);
+});
+
+test("daily country report province rows fall back to offline store province when visit province is empty", async () => {
+  const reportModule = await import("../src/lib/agent-reports.ts");
+  const definitionsModule = await import("../src/lib/agent-report-definitions.ts");
+  const definition = definitionsModule.getAgentReportDefinition("daily_price_country");
+
+  const report = reportModule.buildAgentReportSnapshot({
+    definition,
+    period: reportModule.resolveReportPeriod(definition, "2026-07-01"),
+    scopeType: "global",
+    scopeId: null,
+    scopeName: "All Stores",
+    visits: [
+      {
+        id: "v1",
+        store_id: "store-1",
+        store_name: "Store A",
+        province: null,
+        city_name: null,
+        district: null,
+        city: "Kabupaten Tangerang",
+        channel_type: "offline",
+        uploader_user_id: "user-1",
+        user_id: null,
+        promoter: "Alice",
+        uploader_name: "Alice",
+        offline_stores: {
+          id: "os-1",
+          organization_id: "org-1",
+          name: "Store A",
+          province: "Banten",
+          city_name: "Kabupaten Tangerang",
+          district: "Pagedangan",
+        },
+      },
+    ],
+    snapshots: [
+      {
+        id: "p1",
+        competitor_product_id: null,
+        sku_master_id: "sku-1",
+        material_sku_code: null,
+        offline_store_visits: {
+          id: "v1",
+          store_name: "Store A",
+          province: null,
+          city_name: null,
+          district: null,
+          city: "Kabupaten Tangerang",
+          offline_stores: {
+            id: "os-1",
+            organization_id: "org-1",
+            name: "Store A",
+            province: "Banten",
+            city_name: "Kabupaten Tangerang",
+            district: "Pagedangan",
+          },
+        },
+        offline_stores: {
+          id: "os-1",
+          organization_id: "org-1",
+          name: "Store A",
+          province: "Banten",
+          city_name: "Kabupaten Tangerang",
+          district: "Pagedangan",
+        },
+      },
+    ],
+    previousMetrics: null,
+  });
+
+  assert.ok(report.metrics.table_rows.some((row) => row.scope_name === "Banten"));
 });
 
 test("report engine resolves daily weekly and monthly periods in Asia Jakarta business format", async () => {

@@ -295,6 +295,11 @@ test("photo price review uses row click drawer with compact risk indicators and 
   assert.doesNotMatch(workbench, /warningMessages\.join\("；"\)/);
   assert.match(workbench, /onBackdropClick/);
   assert.match(workbench, /activeImage/);
+  assert.match(workbench, /activeVisitImages/);
+  assert.match(workbench, /replacedVisitImages/);
+  assert.match(workbench, /payload\.visit\?\.active_signed_images/);
+  assert.match(workbench, /payload\.visit\?\.replaced_signed_images/);
+  assert.match(workbench, /copy\.replacedPhotos/);
   assert.match(workbench, /setActiveImage/);
 });
 
@@ -306,6 +311,8 @@ test("store visit detail route returns signed photos from new image table and le
   assert.match(storeVisitRoute, /const legacyVisitSelect = `id,visit_code,[\s\S]+offline_visit_images\(id,visit_id,image_type,image_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at\),ai_price_candidates\(\$\{aiPriceCandidateSelect\}\)`/);
   assert.match(storeVisitRoute, /offline-visit-images/);
   assert.match(storeVisitRoute, /store-visits/);
+  assert.match(storeVisitRoute, /active_signed_images/);
+  assert.match(storeVisitRoute, /replaced_signed_images/);
   assert.match(storeVisitRoute, /signed_images/);
   assert.match(storeVisitRoute, /own_shelf[\s\S]+makuku_shelf/);
   assert.match(storeVisitRoute, /toStoreVisitImageCategory/);

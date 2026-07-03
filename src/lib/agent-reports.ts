@@ -23,6 +23,8 @@ import type {
 
 const JAKARTA_TIMEZONE = "Asia/Jakarta";
 const ZERO_UUID = "00000000-0000-0000-0000-000000000000";
+const DAILY_COUNTRY_EXCLUDED_ORGANIZATION_IDS = ["30a98b85-6d36-4086-b103-e907b03b6672"];
+const DAILY_COUNTRY_EXCLUDED_EMPLOYEE_EMAILS = ["gary.yu@makuku.com"];
 
 type QueryResult<T> = {
   data: T;
@@ -48,6 +50,9 @@ type VisitScopeRow = {
     id?: string | null;
     organization_id?: string | null;
     name?: string | null;
+    province?: string | null;
+    city_name?: string | null;
+    district?: string | null;
   } | null;
 };
 
@@ -64,6 +69,9 @@ type SnapshotScopeRow = {
     id?: string | null;
     organization_id?: string | null;
     name?: string | null;
+    province?: string | null;
+    city_name?: string | null;
+    district?: string | null;
   } | null;
 };
 
@@ -76,6 +84,8 @@ type BuildAgentReportSnapshotInput = {
   visits: VisitScopeRow[];
   snapshots: SnapshotScopeRow[];
   previousMetrics: AgentReportMetricSummary | null;
+  excludedVisitedStoreOrganizationIds?: string[];
+  excludedEmployeeUserIds?: string[];
 };
 
 type GenerateAgentReportInput = {
@@ -251,6 +261,32 @@ function visitEmployeeKey(visit: VisitScopeRow) {
   return `name:${cleanText(visit.promoter) ?? cleanText(visit.uploader_name) ?? "unknown"}`;
 }
 
+function visitOrganizationId(visit: VisitScopeRow) {
+  return cleanText(visit.offline_stores?.organization_id);
+}
+
+function isExcludedVisitedStore(visit: VisitScopeRow, excludedOrganizationIds: Set<string>) {
+  const organizationId = visitOrganizationId(visit);
+  return Boolean(organizationId && excludedOrganizationIds.has(organizationId));
+}
+
+function isExcludedEmployee(visit: VisitScopeRow, excludedUserIds: Set<string>) {
+  const uploaderUserId = cleanText(visit.uploader_user_id);
+  if (uploaderUserId && excludedUserIds.has(uploaderUserId)) return true;
+  const legacyUserId = cleanText(visit.user_id);
+  return Boolean(legacyUserId && excludedUserIds.has(legacyUserId));
+}
+
+function snapshotOrganizationId(snapshot: SnapshotScopeRow) {
+  return cleanText(snapshot.offline_store_visits?.offline_stores?.organization_id)
+    ?? cleanText(snapshot.offline_stores?.organization_id);
+}
+
+function isExcludedSnapshot(snapshot: SnapshotScopeRow, excludedOrganizationIds: Set<string>) {
+  const organizationId = snapshotOrganizationId(snapshot);
+  return Boolean(organizationId && excludedOrganizationIds.has(organizationId));
+}
+
 function isMakukuSnapshot(snapshot: SnapshotScopeRow) {
   return !cleanText(snapshot.competitor_product_id)
     && Boolean(cleanText(snapshot.sku_master_id) || cleanText(snapshot.material_sku_code));
@@ -262,8 +298,27 @@ function isCompetitorSnapshot(snapshot: SnapshotScopeRow) {
 
 function regionLabel(visit: VisitScopeRow) {
   return cleanText(visit.province)
+    ?? cleanText(visit.offline_stores?.province)
     ?? cleanText(visit.city_name)
+    ?? cleanText(visit.offline_stores?.city_name)
+    ?? cleanText(visit.district)
+    ?? cleanText(visit.offline_stores?.district)
     ?? cleanText(visit.city)
+    ?? "Unassigned";
+}
+
+function snapshotRegionLabel(snapshot: SnapshotScopeRow) {
+  return cleanText(snapshot.offline_store_visits?.province)
+    ?? cleanText(snapshot.offline_store_visits?.offline_stores?.province)
+    ?? cleanText(snapshot.offline_stores?.province)
+    ?? cleanText(snapshot.offline_store_visits?.city_name)
+    ?? cleanText(snapshot.offline_store_visits?.offline_stores?.city_name)
+    ?? cleanText(snapshot.offline_stores?.city_name)
+    ?? cleanText(snapshot.offline_store_visits?.district)
+    ?? cleanText(snapshot.offline_store_visits?.offline_stores?.district)
+    ?? cleanText(snapshot.offline_stores?.district)
+    ?? cleanText(snapshot.offline_store_visits?.city)
+    ?? cleanText(snapshot.offline_stores?.name)
     ?? "Unassigned";
 }
 
@@ -324,25 +379,84 @@ function buildAiInsight(summary: AgentReportMetricSummary, visits: VisitScopeRow
   return lines.join(" ");
 }
 
+function buildProvinceMetricRows(input: {
+  visitsForVisitedStoreCount: VisitScopeRow[];
+  visitsForEmployeeCount: VisitScopeRow[];
+  snapshotsForPriceCounts: SnapshotScopeRow[];
+}) {
+  const regionMap = new Map<string, AgentReportMetricRow>();
+  const storeKeysByRegion = new Map<string, Set<string>>();
+  const employeeKeysByRegion = new Map<string, Set<string>>();
+
+  const ensureRow = (scopeName: string) => {
+    const existing = regionMap.get(scopeName);
+    if (existing) return existing;
+    const created: AgentReportMetricRow = {
+      scope_name: scopeName,
+      visited_store_count: 0,
+      visiting_employee_count: 0,
+      makuku_price_record_count: 0,
+      competitor_price_record_count: 0,
+    };
+    regionMap.set(scopeName, created);
+    storeKeysByRegion.set(scopeName, new Set<string>());
+    employeeKeysByRegion.set(scopeName, new Set<string>());
+    return created;
+  };
+
+  for (const visit of input.visitsForVisitedStoreCount) {
+    const scopeName = regionLabel(visit);
+    const row = ensureRow(scopeName);
+    const keys = storeKeysByRegion.get(scopeName)!;
+    keys.add(visitStoreKey(visit));
+    row.visited_store_count = keys.size;
+  }
+
+  for (const visit of input.visitsForEmployeeCount) {
+    const scopeName = regionLabel(visit);
+    const row = ensureRow(scopeName);
+    const keys = employeeKeysByRegion.get(scopeName)!;
+    keys.add(visitEmployeeKey(visit));
+    row.visiting_employee_count = keys.size;
+  }
+
+  for (const snapshot of input.snapshotsForPriceCounts) {
+    const scopeName = snapshotRegionLabel(snapshot);
+    const row = ensureRow(scopeName);
+    if (isMakukuSnapshot(snapshot)) row.makuku_price_record_count += 1;
+    if (isCompetitorSnapshot(snapshot)) row.competitor_price_record_count += 1;
+  }
+
+  return Array.from(regionMap.values()).sort((left, right) => {
+    const leftTotal = left.visited_store_count + left.makuku_price_record_count + left.competitor_price_record_count;
+    const rightTotal = right.visited_store_count + right.makuku_price_record_count + right.competitor_price_record_count;
+    if (leftTotal !== rightTotal) return rightTotal - leftTotal;
+    return left.scope_name.localeCompare(right.scope_name);
+  });
+}
+
 function reportTitle(definition: AgentReportDefinition, period: AgentReportPeriod) {
   if (definition.family === "daily") return `${definition.name} ${period.startDate}`;
   if (definition.family === "weekly") return `${definition.name} ${period.label}`;
   return `${definition.name} ${period.label}`;
 }
 
-function buildPlainTextTable(rows: AgentReportMetricRow[]) {
-  const header = "Scope | Visited Stores | Visiting Employees | Makuku Price Records | Competitor Price Records";
-  const body = rows.map((row) =>
-    `${row.scope_name} | ${row.visited_store_count} | ${row.visiting_employee_count} | ${row.makuku_price_record_count} | ${row.competitor_price_record_count}`,
-  );
-  return [header, ...body].join("\n");
+function buildMetricSummaryMarkdown(rows: AgentReportMetricRow[]) {
+  const row = rows[0];
+  if (!row) return "_No report data available._";
+  return [
+    `**Scope**  \n${row.scope_name}`,
+    `**Visited Stores**  \n**${row.visited_store_count}**`,
+    `**Visiting Employees**  \n**${row.visiting_employee_count}**`,
+    `**Makuku Price Records**  \n**${row.makuku_price_record_count}**`,
+    `**Competitor Price Records**  \n**${row.competitor_price_record_count}**`,
+  ].join("\n\n");
 }
 
 export function renderFeishuCard(content: AgentReportContentJson, rows: AgentReportMetricRow[]) {
   const sections = [
     `**Key Metric Definitions**\n${content.key_translations}`,
-    `**Report Table**\n${buildPlainTextTable(rows)}`,
-    `**AI Insight**\n${content.ai_insight}`,
+    `**Report Summary**\n${buildMetricSummaryMarkdown(rows)}`,
   ].join("\n\n");
 
   return {
@@ -369,11 +483,22 @@ export function renderFeishuCard(content: AgentReportContentJson, rows: AgentRep
 }
 
 export function buildAgentReportSnapshot(input: BuildAgentReportSnapshotInput) {
+  const excludedVisitedStoreOrganizationIds = new Set(input.excludedVisitedStoreOrganizationIds ?? []);
+  const excludedEmployeeUserIds = new Set(input.excludedEmployeeUserIds ?? []);
+  const visitsForVisitedStoreCount = excludedVisitedStoreOrganizationIds.size > 0
+    ? input.visits.filter((visit) => !isExcludedVisitedStore(visit, excludedVisitedStoreOrganizationIds))
+    : input.visits;
+  const visitsForEmployeeCount = excludedEmployeeUserIds.size > 0
+    ? input.visits.filter((visit) => !isExcludedEmployee(visit, excludedEmployeeUserIds))
+    : input.visits;
+  const snapshotsForPriceCounts = excludedVisitedStoreOrganizationIds.size > 0
+    ? input.snapshots.filter((snapshot) => !isExcludedSnapshot(snapshot, excludedVisitedStoreOrganizationIds))
+    : input.snapshots;
   const summary: AgentReportMetricSummary = {
-    visited_store_count: new Set(input.visits.map(visitStoreKey)).size,
-    visiting_employee_count: new Set(input.visits.map(visitEmployeeKey)).size,
-    makuku_price_record_count: input.snapshots.filter(isMakukuSnapshot).length,
-    competitor_price_record_count: input.snapshots.filter(isCompetitorSnapshot).length,
+    visited_store_count: new Set(visitsForVisitedStoreCount.map(visitStoreKey)).size,
+    visiting_employee_count: new Set(visitsForEmployeeCount.map(visitEmployeeKey)).size,
+    makuku_price_record_count: snapshotsForPriceCounts.filter(isMakukuSnapshot).length,
+    competitor_price_record_count: snapshotsForPriceCounts.filter(isCompetitorSnapshot).length,
   };
   const warnings = buildWarnings(summary);
   const table_rows: AgentReportMetricRow[] = [
@@ -382,6 +507,13 @@ export function buildAgentReportSnapshot(input: BuildAgentReportSnapshotInput) {
       ...summary,
     },
   ];
+  if (input.definition.code === "daily_price_country" && input.scopeType === "global") {
+    table_rows.push(...buildProvinceMetricRows({
+      visitsForVisitedStoreCount,
+      visitsForEmployeeCount,
+      snapshotsForPriceCounts,
+    }));
+  }
   const metrics: AgentReportMetricsJson = {
     summary,
     table_rows,
@@ -460,7 +592,7 @@ async function loadVisitsForPeriod(period: AgentReportPeriod) {
   const supabase = createSupabaseServiceClient();
   const initial = await supabase
     .from("offline_store_visits")
-    .select("id,store_id,store_name,province,city_name,district,city,channel_type,uploader_user_id,user_id,promoter,uploader_name,visit_date,offline_stores(id,organization_id,name)")
+    .select("id,store_id,store_name,province,city_name,district,city,channel_type,uploader_user_id,user_id,promoter,uploader_name,visit_date,offline_stores(id,organization_id,name,province,city_name,district)")
     .gte("visit_date", period.startDate)
     .lte("visit_date", period.endDate)
     .order("visit_date", { ascending: false })
@@ -471,7 +603,7 @@ async function loadVisitsForPeriod(period: AgentReportPeriod) {
   if (error?.message.includes("user_id")) {
     const legacy = await supabase
       .from("offline_store_visits")
-      .select("id,store_id,store_name,province,city_name,district,city,channel_type,uploader_user_id,promoter,uploader_name,visit_date,offline_stores(id,organization_id,name)")
+      .select("id,store_id,store_name,province,city_name,district,city,channel_type,uploader_user_id,promoter,uploader_name,visit_date,offline_stores(id,organization_id,name,province,city_name,district)")
       .gte("visit_date", period.startDate)
       .lte("visit_date", period.endDate)
       .order("visit_date", { ascending: false })
@@ -501,7 +633,7 @@ async function loadSnapshotsForPeriod(period: AgentReportPeriod) {
   const supabase = createSupabaseServiceClient();
   const initial = await supabase
     .from("price_snapshots")
-    .select("id,competitor_product_id,sku_master_id,material_sku_code,captured_at,source_visit_id,offline_store_id,offline_store_visits!source_visit_id(id,store_id,store_name,province,city_name,district,city,channel_type,uploader_user_id,user_id,promoter,uploader_name,visit_date,offline_stores(id,organization_id,name)),offline_stores(id,organization_id,name)")
+    .select("id,competitor_product_id,sku_master_id,material_sku_code,captured_at,source_visit_id,offline_store_id,offline_store_visits!source_visit_id(id,store_id,store_name,province,city_name,district,city,channel_type,uploader_user_id,user_id,promoter,uploader_name,visit_date,offline_stores(id,organization_id,name,province,city_name,district)),offline_stores(id,organization_id,name,province,city_name,district)")
     .gte("captured_at", `${period.startDate}T00:00:00.000Z`)
     .lte("captured_at", `${period.endDate}T23:59:59.999Z`)
     .order("captured_at", { ascending: false })
@@ -512,7 +644,7 @@ async function loadSnapshotsForPeriod(period: AgentReportPeriod) {
   if (error?.message.includes("user_id")) {
     const withoutLegacyUser = await supabase
       .from("price_snapshots")
-      .select("id,competitor_product_id,sku_master_id,material_sku_code,captured_at,source_visit_id,offline_store_id,offline_store_visits!source_visit_id(id,store_id,store_name,province,city_name,district,city,channel_type,uploader_user_id,promoter,uploader_name,visit_date,offline_stores(id,organization_id,name)),offline_stores(id,organization_id,name)")
+      .select("id,competitor_product_id,sku_master_id,material_sku_code,captured_at,source_visit_id,offline_store_id,offline_store_visits!source_visit_id(id,store_id,store_name,province,city_name,district,city,channel_type,uploader_user_id,promoter,uploader_name,visit_date,offline_stores(id,organization_id,name,province,city_name,district)),offline_stores(id,organization_id,name,province,city_name,district)")
       .gte("captured_at", `${period.startDate}T00:00:00.000Z`)
       .lte("captured_at", `${period.endDate}T23:59:59.999Z`)
       .order("captured_at", { ascending: false })
@@ -664,14 +796,32 @@ async function readPreviousSummary(period: AgentReportPeriod, scopeType: AgentRe
   return metrics?.summary ?? null;
 }
 
+async function resolveExcludedEmployeeUserIds(definition: AgentReportDefinition) {
+  if (definition.code !== "daily_price_country" || !hasSupabaseServiceConfig()) return [];
+  const emails = DAILY_COUNTRY_EXCLUDED_EMPLOYEE_EMAILS.map((email) => email.trim().toLowerCase()).filter(Boolean);
+  if (emails.length === 0) return [];
+
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("app_users")
+    .select("id,email")
+    .in("email", emails);
+  if (error || !data) return [];
+
+  return (data as Array<{ id?: string | null }>)
+    .map((row) => cleanText(row.id))
+    .filter((value): value is string => Boolean(value));
+}
+
 export async function generateAgentReport(input: GenerateAgentReportInput): Promise<QueryResult<AgentReport>> {
   const definition = getAgentReportDefinition(input.reportDefinitionCode ?? legacyReportTypeToDefinitionCode(input.reportType ?? "daily", input.scopeType));
   const period = resolveReportPeriod(definition, input.periodAnchor);
   const scopeName = await resolveScopeName(input.scopeType, input.scopeId);
-  const [visitsResult, snapshotsResult, previousSummary] = await Promise.all([
+  const [visitsResult, snapshotsResult, previousSummary, excludedEmployeeUserIds] = await Promise.all([
     loadVisitsForPeriod(period),
     loadSnapshotsForPeriod(period),
     readPreviousSummary(period, input.scopeType, input.scopeId),
+    resolveExcludedEmployeeUserIds(definition),
   ]);
   const visits = filterScopedVisits(visitsResult.data, input.scopeType, input.scopeId);
   const snapshots = filterScopedSnapshots(snapshotsResult.data, input.scopeType, input.scopeId);
@@ -684,6 +834,8 @@ export async function generateAgentReport(input: GenerateAgentReportInput): Prom
     visits,
     snapshots,
     previousMetrics: previousSummary,
+    excludedVisitedStoreOrganizationIds: definition.code === "daily_price_country" ? DAILY_COUNTRY_EXCLUDED_ORGANIZATION_IDS : [],
+    excludedEmployeeUserIds,
   });
 
   if (!hasSupabaseServiceConfig()) {
