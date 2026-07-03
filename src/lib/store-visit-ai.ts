@@ -121,7 +121,7 @@ const STORE_VISIT_PRICE_IMAGE_PROMPT = [
   "Example: Comfort Fit Super Jumbo M 6-11 KG with Pcs cell 60+6 -> piece_count=66.",
   "Example: Comfort Fit Jumbo M 6-11 KG with Pcs cell 42+4 -> piece_count=46.",
   "Example: Comfort Fit Mega Pack XL 12-17 KG with Pcs cell 60+6 -> piece_count=66.",
-  "If visible_price_per_piece_text and piece_count_text are both clear, net_price_idr may be reconstructed from visible_price_per_piece_idr * piece_count. Still keep package/list/net text evidence from the visible row.",
+  "visible_price_per_piece_text is evidence only. When a whole-package price is visible, the whole-package price remains authoritative and must not be replaced by visible_price_per_piece_idr * piece_count.",
   "Do not calculate per-piece price unless it is visibly printed in HARGA/PCS. The system will calculate final price_per_piece_idr.",
   "Return ONLY valid compact JSON. No markdown. No explanation. No extra text.",
   '{"photo_quality":{"status":"pass|retake_required","reasons":["price_unclear|angled_affects_reading|price_obstructed"],"message":"string"},"rows":[{"brand":"string","sku":"string","piece_count_text":"44","list_price_text":"129.900","package_price_text":"129.900","net_price_text":"119.900","visible_price_per_piece_text":"2.725","list_price_idr":129900,"package_price_idr":129900,"net_price_idr":119900,"visible_price_per_piece_idr":2725,"promo_type":"Discount","piece_count":44}],"summary":"string","warnings":[{"type":"MISSING_DATA|LOW_CONFIDENCE|PARSE_RISK","message":"string"}]}',
@@ -140,7 +140,7 @@ export const DEFAULT_STORE_VISIT_AI_CONFIG: StoreVisitAiConfig = {
   version_name: "Default code config",
   system_prompt: STORE_VISIT_AI_PROMPT,
   temperature: 0,
-  max_tokens: 5000,
+  max_tokens: 6000,
   status: "active",
 };
 
@@ -544,9 +544,7 @@ export function normalizeStoreVisitPriceImageAnalysis(
           message: reconciledPrices.warningMessage,
         });
       }
-      const pricePerPiece = reconciledPrices.priceBasis === "VISIBLE_PRICE_PER_PIECE" && reconciledPrices.visiblePricePerPieceIdr
-        ? reconciledPrices.visiblePricePerPieceIdr
-        : calculatePricePerPiece(netPrice, pieceCount);
+      const pricePerPiece = calculatePricePerPiece(netPrice, pieceCount);
       return {
         brand: asOptionalString(row.brand),
         sku,
@@ -677,7 +675,7 @@ export async function analyzeStoreVisitPriceImage(input: {
       },
     ],
     temperature: config.temperature,
-    maxTokens: Math.min(config.max_tokens, 5000),
+    maxTokens: Math.min(config.max_tokens, 6000),
   });
 
   console.info("[store-visit-ai] price image analyzed", {

@@ -506,9 +506,7 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
     const listPrice = reconciledPrices.listPriceIdr ?? parsedPrice;
     const packagePrice = reconciledPrices.packagePriceIdr ?? parsedPrice;
     const netPrice = reconciledPrices.netPriceIdr ?? parsedPrice;
-    const pricePerPiece = reconciledPrices.priceBasis === "VISIBLE_PRICE_PER_PIECE" && reconciledPrices.visiblePricePerPieceIdr
-      ? reconciledPrices.visiblePricePerPieceIdr
-      : calculatePricePerPiece(netPrice, pieceCount);
+    const pricePerPiece = calculatePricePerPiece(netPrice, pieceCount);
     const warnings: Warning[] = [];
     if (!item.brand) warnings.push({ type: "MISSING_DATA", message: "AI did not extract a brand." });
     if (!item.product) warnings.push({ type: "MISSING_DATA", message: "AI did not extract a product name." });
