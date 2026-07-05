@@ -109,6 +109,17 @@ test("single-photo refresh failure keeps analyzed workflow state while marking f
   assert.doesNotMatch(storeVisitRefreshRoute, /visitStatusOverride: "uploaded"/);
 });
 
+test("store visit refresh route runs analysis in-request instead of after background callback", () => {
+  assert.doesNotMatch(storeVisitRefreshRoute, /after\s*\(/);
+  assert.match(storeVisitRefreshRoute, /await runStoreVisitAnalysis\(/);
+});
+
+test("store visit refresh route still resets affected image statuses before rerun", () => {
+  assert.match(storeVisitRefreshRoute, /from\("offline_visit_images"\)\s*[\s\S]*analysis_status: "analyzing"/);
+  assert.match(storeVisitRefreshRoute, /vision_result: null/);
+  assert.match(storeVisitRefreshRoute, /refreshStoreVisitStoredPriceState\(\{[\s\S]*analysisStatusOverride: "analyzing"/);
+});
+
 test("single-photo refresh rejects concurrent visit analysis with a 409 business error", () => {
   assert.match(storeVisitRefreshRoute, /select\("analysis_status"\)/);
   assert.match(storeVisitRefreshRoute, /typedVisit\?\.analysis_status === "analyzing"/);
@@ -144,6 +155,8 @@ test("store visit analysis supports partial success and image-level failure reco
   assert.match(storeVisitAiDebug, /priceImageFailures/);
   assert.match(storeVisitAiDebug, /analysis_status: "failed"/);
   assert.match(storeVisitAiDebug, /analysis_error: systemErrorMessage/);
+  assert.match(storeVisitAnalysis, /finalizeStoreVisitImageAnalysisStatuses/);
+  assert.match(storeVisitAnalysis, /await finalizeStoreVisitImageAnalysisStatuses\(/);
   assert.match(storeVisitAnalysis, /analysisStatus = hasRetakeRequiredImages[\s\S]*"action_required"[\s\S]*aiAnalysis\.partialFailure[\s\S]*"partial"[\s\S]*"completed"/);
   assert.match(storeVisitAnalysis, /visit_status: "analyzed"/);
   assert.match(storeVisitAnalysis, /analysis_partial_failures/);
@@ -203,6 +216,16 @@ test("store visit analysis persists visit-level timing metrics into summary_resu
   assert.match(storeVisitAnalysis, /visit_analysis_completed_at/);
 });
 
+test("store visit price analysis persists prompt metadata for image and summary debugging", () => {
+  assert.match(storeVisitAi, /PRICE_IMAGE_PROMPT_VERSION/);
+  assert.match(storeVisitAi, /prompt_hash/);
+  assert.match(storeVisitAi, /analysis_metadata/);
+  assert.match(storeVisitAiDebug, /prompt_version/);
+  assert.match(storeVisitAiDebug, /prompt_hash/);
+  assert.match(storeVisitAiDebug, /metadata/);
+  assert.match(storeVisitAiDebug, /price_image_results/);
+});
+
 test("single-photo refresh preserves the first whole-visit analysis timing metrics", () => {
   assert.doesNotMatch(storeVisitRefreshRoute, /visitAnalysisStartedAt:/);
   assert.match(storeVisitAnalysis, /firstVisitAnalysisStartedAt/);
@@ -217,6 +240,19 @@ test("store visit analysis failure path also persists visit-level timing metrics
   assert.match(analyzeRoute, /summary_result:\s*\{[\s\S]*analysis_metrics:/);
   assert.match(analyzeRoute, /visit_analysis_duration_ms/);
   assert.match(analyzeRoute, /visit_analysis_completed_at/);
+});
+
+test("store visit detail route can reconcile stale analyzing visits after completed analysis metrics exist", () => {
+  assert.match(readFileSync("src/app/api/store-visit/[id]/route.ts", "utf8"), /visit_analysis_completed_at/);
+  assert.match(readFileSync("src/app/api/store-visit/[id]/route.ts", "utf8"), /refreshStoreVisitStoredPriceState/);
+});
+
+test("stored price state recovery can finalize stale analyzing images from persisted evidence", () => {
+  assert.match(storeVisitImageMaintenance, /visit_analysis_completed_at/);
+  assert.match(storeVisitImageMaintenance, /image\.analysis_status === "pending" \|\| image\.analysis_status === "analyzing"/);
+  assert.match(storeVisitImageMaintenance, /asPriceImageAnalysis\(image\.vision_result\)/);
+  assert.match(storeVisitImageMaintenance, /analysis_status: "analyzed"/);
+  assert.match(storeVisitImageMaintenance, /analysis_status: "failed"/);
 });
 
 test("store visit monitor has a dedicated backend navigation entry", () => {
@@ -240,6 +276,39 @@ test("store visit monitor data path reads analysis metrics and computes visit la
   assert.match(dataFile, /P50|p50/);
   assert.match(dataFile, /P95|p95/);
   assert.match(dataFile, /last 24 hours|24 \* 60 \* 60 \* 1000/);
+});
+
+test("store visit monitor page adds a compact price parsing quality section with three boss metrics", () => {
+  assert.match(storeVisitMonitorPage, /Price parsing quality/);
+  assert.match(storeVisitMonitorPage, /Accuracy/);
+  assert.match(storeVisitMonitorPage, /Auto-approval rate/);
+  assert.match(storeVisitMonitorPage, /Average price deviation/);
+});
+
+test("store visit monitor data path exposes price parsing quality metrics from the quality view", () => {
+  assert.match(dataFile, /quality:\s*\{/);
+  assert.match(dataFile, /accuracy/);
+  assert.match(dataFile, /autoApprovalRate/);
+  assert.match(dataFile, /avgPriceDeviationRate/);
+  assert.match(dataFile, /ai_price_candidate_quality_metrics_v1/);
+});
+
+test("store visit monitor list places row-level price parsing quality columns after Retake", () => {
+  assert.match(storeVisitMonitorPage, /<th className="py-2 pr-3">Retake<\/th>/);
+  assert.match(storeVisitMonitorPage, /<th className="py-2 pr-3">Accuracy<\/th>/);
+  assert.match(storeVisitMonitorPage, /<th className="py-2 pr-3">Auto-approval rate<\/th>/);
+  assert.match(storeVisitMonitorPage, /<th className="py-2 pr-3">Average price deviation<\/th>/);
+  assert.match(
+    storeVisitMonitorPage,
+    /Retake<\/th>[\s\S]*Accuracy<\/th>[\s\S]*Auto-approval rate<\/th>[\s\S]*Average price deviation<\/th>[\s\S]*Started at<\/th>/,
+  );
+});
+
+test("store visit monitor data path includes per-visit price parsing quality metrics", () => {
+  assert.match(dataFile, /type StoreVisitMonitorItem = \{[\s\S]*accuracy: number \| null;/);
+  assert.match(dataFile, /type StoreVisitMonitorItem = \{[\s\S]*autoApprovalRate: number \| null;/);
+  assert.match(dataFile, /type StoreVisitMonitorItem = \{[\s\S]*avgPriceDeviationRate: number \| null;/);
+  assert.match(dataFile, /visitQualityById/);
 });
 
 test("new H5 store visit requires at least one price-tag image, not only Makuku photos", () => {

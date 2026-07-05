@@ -14,58 +14,63 @@ test("price image prompt includes the two-state photo quality gate without addin
   assert.match(storeVisitAi, /pass\|retake_required/);
   assert.match(storeVisitAi, /wide shelf overview/);
   assert.match(storeVisitAi, /rows must be \[\]/i);
-  assert.match(storeVisitAi, /shelf price tags or price boards are clearly visible/);
-  assert.match(storeVisitAi, /at least one full product-price row is readable/);
+  assert.match(storeVisitAi, /shelf price tags, price labels, or price boards are clearly visible/);
+  assert.match(storeVisitAi, /at least one product-price relationship is visually reliable/);
   assert.match(storeVisitAi, /heavy blur or glare prevents reading/);
   assert.doesNotMatch(storeVisitAi, /OCR|optical character recognition|precheck/i);
   assert.doesNotMatch(storeVisitAi, /\/api\/.*precheck|photo-quality|quality-gate/i);
 });
 
-test("price image prompt forces package-level amounts and forbids per-piece outputs in price fields", () => {
-  assert.match(storeVisitAi, /list_price_idr, package_price_idr, and net_price_idr must always be WHOLE PACKAGE prices/i);
-  assert.match(storeVisitAi, /Never divide package price by piece_count/i);
-  assert.match(storeVisitAi, /Never calculate package price from per-piece price/i);
-  assert.match(storeVisitAi, /If the corresponding text field is empty or null, the numeric field must be null/i);
+test("price image prompt is evidence-only and does not ask vision to output business price fields", () => {
+  assert.match(storeVisitAi, /PRIMARY PRINCIPLE/i);
+  assert.match(storeVisitAi, /evidence extractor, not a pricing engine/i);
+  assert.match(storeVisitAi, /must never perform business reasoning, promotion selection, price reconciliation, value propagation, or price calculation/i);
+  assert.match(storeVisitAi, /Evidence Completeness is NOT required/i);
+  assert.doesNotMatch(storeVisitAi, /BUSINESS FIELD COMPATIBILITY/i);
+  assert.doesNotMatch(storeVisitAi, /"list_price_text":"129\.900"/);
+  assert.doesNotMatch(storeVisitAi, /"package_price_text":"119\.900"/);
+  assert.doesNotMatch(storeVisitAi, /"net_price_text":"119\.900"/);
+  assert.doesNotMatch(storeVisitAi, /"visible_price_per_piece_text":"2\.725"/);
+  assert.doesNotMatch(storeVisitAi, /"list_price_idr":129900/);
+  assert.doesNotMatch(storeVisitAi, /"package_price_idr":119900/);
+  assert.doesNotMatch(storeVisitAi, /"net_price_idr":119900/);
+  assert.doesNotMatch(storeVisitAi, /"visible_price_per_piece_idr":2725/);
 });
 
 test("price image prompt forces same-row Pcs bonus extraction instead of truncating to base quantity", () => {
   assert.match(storeVisitAi, /read the original Pcs cell from the SAME row/i);
   assert.match(storeVisitAi, /60\+6 -> 66/i);
-  assert.match(storeVisitAi, /42\+4 -> 46/i);
   assert.match(storeVisitAi, /80\+10 -> 90/i);
-  assert.match(storeVisitAi, /bonus digits are unreadable, set piece_count=null and add PARSE_RISK/i);
-  assert.match(storeVisitAi, /Never discard visible bonus quantity/i);
+  assert.match(storeVisitAi, /bonus digits are unreadable, piece_count=null and add PARSE_RISK/i);
 });
 
 test("price image prompt requires row-level evidence and Indonesian handwritten 7 handling", () => {
+  assert.match(storeVisitAi, /source_type/);
+  assert.match(storeVisitAi, /PRICE_BOARD_ROW/);
+  assert.match(storeVisitAi, /PRICE_TAG/);
+  assert.match(storeVisitAi, /group_id/);
+  assert.match(storeVisitAi, /section_title/);
+  assert.match(storeVisitAi, /row_anchor/);
   assert.match(storeVisitAi, /piece_count_text/);
   assert.match(storeVisitAi, /normal_package_text/);
   assert.match(storeVisitAi, /normal_piece_text/);
   assert.match(storeVisitAi, /promo_package_text/);
   assert.match(storeVisitAi, /promo_piece_text/);
   assert.match(storeVisitAi, /promo_label/);
-  assert.match(storeVisitAi, /list_price_text/);
-  assert.match(storeVisitAi, /package_price_text/);
-  assert.match(storeVisitAi, /net_price_text/);
-  assert.match(storeVisitAi, /visible_price_per_piece_text/);
-  assert.match(storeVisitAi, /SAME row/);
-  assert.match(storeVisitAi, /anchor the row by its SIZE \/ SKU \/ PCS cells/i);
-  assert.match(storeVisitAi, /read only cells that intersect that row/i);
+  assert.match(storeVisitAi, /same visual evidence group/i);
+  assert.match(storeVisitAi, /same board, same section, and same horizontal row/i);
+  assert.match(storeVisitAi, /same individual tag/i);
   assert.match(storeVisitAi, /handwritten digit 7 may contain a horizontal middle stroke/i);
-  assert.match(storeVisitAi, /2\.678.*visible_price_per_piece_text=.*2678/i);
-  assert.match(storeVisitAi, /visible_price_per_piece_idr=2678/i);
+  assert.match(storeVisitAi, /2\.678.*means 2678/i);
 });
 
 test("price image prompt keeps promo package and promo per-piece evidence together", () => {
-  assert.match(storeVisitAi, /HARGA PROMO \/ PACK -> promo package evidence/i);
-  assert.match(storeVisitAi, /A row has promo price ONLY if the HARGA PROMO \/ PACK cell in the SAME row contains a visible numeric price/i);
-  assert.match(storeVisitAi, /package_price_text = same-row HARGA PROMO \/ PACK/i);
+  assert.match(storeVisitAi, /HARGA PROMO \/ PACK -> promo_package_text/i);
   assert.match(storeVisitAi, /Empty visible promo cells must remain empty/i);
-  assert.match(storeVisitAi, /Do not calculate or repair these business fields yourself/i);
-  assert.match(storeVisitAi, /do NOT copy promo package price from another row/i);
-  assert.match(storeVisitAi, /do NOT carry down the promo package price/i);
-  assert.match(storeVisitAi, /If same-row HARGA PROMO \/ PACK is visible but same-row PROMO HARGA \/ PCS is blank/i);
-  assert.match(storeVisitAi, /do not use NORMAL HARGA \/ PCS as promo per-piece price/i);
+  assert.match(storeVisitAi, /Do not copy promo price from another row/i);
+  assert.match(storeVisitAi, /Do not carry down promo price/i);
+  assert.match(storeVisitAi, /Do not infer promo from normal price/i);
+  assert.match(storeVisitAi, /If the evidence field is empty, its confidence must be null/i);
 });
 
 test("price image analysis has enough token budget for row-level evidence fields", () => {

@@ -24,6 +24,7 @@ type ReviewInput = { price: string; pieces: string; promoType: string };
 type ReviewOverride = { price_idr: number; net_price_idr: number; piece_count: number; promo_type: string | null };
 type WorkbenchCopy = ReturnType<typeof getWorkbenchCopy>;
 type HeaderHelpState = { title: string; body: string } | null;
+const removedRuleSettingsLegacyCopy = "AI ≥ legacy rule settings removed";
 type VisitEvidenceImage = {
   id?: string;
   path: string;
@@ -74,6 +75,22 @@ function HeaderHelpDialog({ help, closeLabel, onClose }: { help: HeaderHelpState
   );
 }
 
+function AutoApprovalExplanation({ copy }: { copy: WorkbenchCopy }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700" data-role="auto-approval-explanation" data-legacy-copy={removedRuleSettingsLegacyCopy}>
+      <div className="font-semibold text-slate-900">{copy.autoApprovalExplanation.title}</div>
+      <div className="mt-1 text-xs leading-5 text-slate-600">{copy.autoApprovalExplanation.summary}</div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {copy.autoApprovalExplanation.conditions.map((condition) => (
+          <span key={condition} className="rounded-full border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700">
+            {condition}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function AiPriceCandidatesWorkbench({
   items,
   total,
@@ -93,12 +110,23 @@ export function AiPriceCandidatesWorkbench({
 }) {
   const router = useRouter();
   const copy = getWorkbenchCopy(locale) as WorkbenchCopy & {
-    table: WorkbenchCopy["table"] & { imageId: string };
+    table: WorkbenchCopy["table"] & { imageId: string; reviewDecision: string; issueCount: string; priceEvidence: string; riskIssues: string };
+    conflicts: string;
+    priceEvidenceDetail: string;
+    reviewDecisions: { auto: string; review: string };
     replacedPhotos?: string;
     replacedSourcePhotoNotice?: string;
   };
   copy.table.imageId = locale === "zh" ? "图片编号" : "Image ID";
   if (!copy.replacedPhotos) copy.replacedPhotos = locale === "zh" ? "已替换图片" : "Replaced photos";
+  copy.table.aiConfidence = locale === "zh" ? "识别置信度" : copy.table.aiConfidence;
+  copy.table.reviewDecision = locale === "zh" ? "审核建议" : copy.table.reviewDecision;
+  copy.table.issueCount = locale === "zh" ? "异常数" : copy.table.issueCount;
+  copy.table.priceEvidence = locale === "zh" ? "价格证据" : copy.table.priceEvidence;
+  copy.table.riskIssues = locale === "zh" ? "异常/风险" : copy.table.riskIssues;
+  copy.conflicts = locale === "zh" ? "冲突" : copy.conflicts;
+  copy.priceEvidenceDetail = locale === "zh" ? "价格证据详情" : copy.priceEvidenceDetail;
+  copy.reviewDecisions = locale === "zh" ? { auto: "自动通过", review: "需复核" } : copy.reviewDecisions;
   if (!copy.replacedSourcePhotoNotice) {
     copy.replacedSourcePhotoNotice = locale === "zh"
       ? "当前价格来源图已在 H5 中被替换，下方仅保留历史证据。"
@@ -106,7 +134,7 @@ export function AiPriceCandidatesWorkbench({
   }
   const aiConfidenceHelp = locale === "zh"
     ? "AI 置信度 = AI 对品牌、商品、价格识别结果的整体把握，当前按识别模型输出的 confidence 展示。"
-    : "AI confidence is the model confidence for the extracted brand, product, and price.";
+    : "Recognition confidence is the model confidence that product, tag, row, and section are visually associated. It is not final price reliability.";
   const matchScoreHelp = locale === "zh"
     ? "商品命中度 = 自动匹配商品的算法分数。Makuku: 片数35% + 尺码30% + 品牌/系列15% + 商品名15% + 价格接近度5%。竞品: 片数40% + 尺码30% + 品牌15% + 商品名15%。"
     : "Match score is the auto-match score. Makuku: 35% piece count + 30% size + 15% brand/series + 15% product text + 5% price proximity. Competitors: 40% piece count + 30% size + 15% brand + 15% product text.";
@@ -114,7 +142,6 @@ export function AiPriceCandidatesWorkbench({
   const [activeCandidate, setActiveCandidate] = useState<AiPriceCandidate | null>(null);
   const [activeJob, setActiveJob] = useState<AiPriceReviewJob | null>(null);
   const [jobItems, setJobItems] = useState<AiPriceReviewJobItem[]>([]);
-  const [ruleModalOpen, setRuleModalOpen] = useState(false);
   const [rejectDialog, setRejectDialog] = useState<RejectDialogState>(null);
   const [matchDialog, setMatchDialog] = useState<MatchDialogState>(null);
   const [headerHelp, setHeaderHelp] = useState<HeaderHelpState>(null);
@@ -327,10 +354,8 @@ export function AiPriceCandidatesWorkbench({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <StatusTabs locale={locale} filters={filters} copy={copy} />
-        <Button type="button" onClick={() => setRuleModalOpen(true)} className="!bg-white !text-slate-700 ring-1 ring-slate-300 hover:!bg-slate-50">
-          {copy.ruleSettings}
-        </Button>
       </div>
+      <AutoApprovalExplanation copy={copy} />
 
       {showBulkToolbar ? (
         <BulkReviewToolbar
@@ -347,7 +372,7 @@ export function AiPriceCandidatesWorkbench({
       {items.length === 0 ? <EmptyState text={copy.emptyState} /> : null}
       {items.length > 0 ? (
         <div className="overflow-x-auto rounded-lg border border-slate-200">
-          <table className="w-full min-w-[2240px] text-left text-sm">
+          <table className="w-full min-w-[2040px] text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500 [&_th]:whitespace-nowrap">
               <tr>
                 <th className="w-10 px-3 py-2">
@@ -366,12 +391,13 @@ export function AiPriceCandidatesWorkbench({
                 <th className="px-3 py-2">{copy.table.pcs}</th>
                 <th className="px-3 py-2">{copy.table.perPiece}</th>
                 <th className="px-3 py-2">
-                  <span className="inline-flex items-center">AI<HeaderHelp title={copy.table.aiConfidence} body={aiConfidenceHelp} onOpen={setHeaderHelp} /></span>
+                  <span className="inline-flex items-center">{copy.table.aiConfidence}<HeaderHelp title={copy.table.aiConfidence} body={aiConfidenceHelp} onOpen={setHeaderHelp} /></span>
                 </th>
+                <th className="px-3 py-2">{copy.table.priceEvidence}</th>
                 <th className="px-3 py-2">
                   <span className="inline-flex items-center">{copy.table.match}<HeaderHelp title={copy.table.match} body={matchScoreHelp} onOpen={setHeaderHelp} /></span>
                 </th>
-                <th className="px-3 py-2">{copy.table.warnings}</th>
+                <th className="px-3 py-2">{copy.table.riskIssues}</th>
                 <th className="px-3 py-2">{copy.table.evidence}</th>
                 {showApprovedAudit ? <th className="px-3 py-2">{copy.approvedAt}</th> : null}
                 {showApprovedAudit ? <th className="px-3 py-2">{copy.reviewMethod}</th> : null}
@@ -382,7 +408,7 @@ export function AiPriceCandidatesWorkbench({
                 <th className="px-3 py-2">{submitterLabel(locale)}</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200 bg-white">
+            <tbody className="divide-y divide-slate-200 bg-white [&_td]:whitespace-nowrap">
               {items.map((candidate) => {
                 const visit = candidate.offline_store_visits;
                 const isEditable = filters.status === "pending" && candidate.status === "pending";
@@ -393,7 +419,7 @@ export function AiPriceCandidatesWorkbench({
                 const reviewedPricePerPiece = isEditable
                   ? calculateReviewedPricePerPiece(reviewInput.price, reviewInput.pieces)
                   : candidate.reviewed_price_per_piece ?? candidate.price_per_piece;
-                const warningMessages = warningMessagesForCandidate(candidate);
+                const riskIssues = getRiskIssues(candidate);
                 return (
                   <tr
                     key={candidate.id}
@@ -420,7 +446,7 @@ export function AiPriceCandidatesWorkbench({
                     <td className="px-3 py-3 font-medium text-slate-700">{formatShortImageId(candidate.source_image_id)}</td>
                     <td className="px-3 py-3 text-slate-600">{visit?.visit_date ?? shortTime(candidate.created_at)}</td>
                     <td className="px-3 py-3 font-medium text-slate-900">{candidate.raw_brand || "-"}</td>
-                    <td className="max-w-xs px-3 py-3 text-slate-700">{candidate.raw_product || "-"}</td>
+                    <td className="max-w-xs whitespace-normal break-words px-3 py-3 text-slate-700">{candidate.raw_product || "-"}</td>
                     <td className="px-3 py-3">{rowPackagePrice ? formatIdr(rowPackagePrice) : "-"}</td>
                     <td className="px-3 py-3">{promoTypeLabel(candidate.promo_type, locale)}</td>
                     <td className="px-3 py-3">{rowDiscountAmount !== null ? formatIdr(rowDiscountAmount) : "-"}</td>
@@ -457,7 +483,8 @@ export function AiPriceCandidatesWorkbench({
                       ) : candidate.reviewed_piece_count ?? candidate.piece_count ?? "-"}
                     </td>
                     <td className="px-3 py-3 font-medium">{reviewedPricePerPiece ? formatIdr(reviewedPricePerPiece) : "-"}</td>
-                    <td className="px-3 py-3">{Math.round(candidate.ai_confidence * 100)}%</td>
+                    <td className="px-3 py-3">{formatAiConfidence(candidate.ai_confidence, candidate.legacy_confidence_fallback)}</td>
+                    <td className="px-3 py-3">{formatPriceEvidenceStatus(candidate)}</td>
                     <td className="min-w-52 px-3 py-3" onClick={stopReviewRowClick}>
                       <MatchedSkuCell
                         candidate={candidate}
@@ -466,16 +493,16 @@ export function AiPriceCandidatesWorkbench({
                       />
                     </td>
                     <td className="px-3 py-3" onClick={stopReviewRowClick}>
-                      {warningMessages.length ? (
+                      {riskIssues.length ? (
                         <button
                           type="button"
-                          title={warningMessages.join("\n")}
-                          aria-label={copy.riskIndicatorLabel(warningMessages.length)}
+                          title={riskIssues.join("\n")}
+                          aria-label={copy.riskIndicatorLabel(riskIssues.length)}
                           onClick={() => openCandidateDrawer(candidate)}
                           className="inline-flex h-7 items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2 text-xs font-semibold text-red-700 hover:bg-red-100"
                         >
                           <span aria-hidden="true">!</span>
-                          <span>{warningMessages.length}</span>
+                          <span>{riskIssues.length}</span>
                         </button>
                       ) : "-"}
                     </td>
@@ -519,7 +546,6 @@ export function AiPriceCandidatesWorkbench({
         </div>
       </div>
 
-      <ReviewRuleModal open={ruleModalOpen} initialRule={rule} copy={copy} onClose={() => setRuleModalOpen(false)} />
       <HeaderHelpDialog help={headerHelp} closeLabel={copy.close} onClose={() => setHeaderHelp(null)} />
       <MatchEditorDialog
         key={matchDialog ? `match-${matchDialog.candidate.id}` : "match-closed"}
@@ -644,75 +670,6 @@ function BulkReviewToolbar({
         </div>
       ) : null}
       {error ? <div className="mt-2 text-sm text-red-600">{error}</div> : null}
-    </div>
-  );
-}
-
-function ReviewRuleModal({
-  open,
-  initialRule,
-  copy,
-  onClose,
-}: {
-  open: boolean;
-  initialRule: AiPriceReviewRule;
-  copy: WorkbenchCopy;
-  onClose: () => void;
-}) {
-  const [rule, setRule] = useState(initialRule);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-
-  if (!open) return null;
-
-  async function save() {
-    setSaving(true);
-    setMessage(null);
-    try {
-      const response = await fetch("/api/ai-price-review-rules", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(rule),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error ?? copy.saveRuleFailed);
-      setRule(payload.rule);
-      setMessage(copy.ruleSaved);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : copy.saveRuleFailed);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4">
-      <div className="w-full max-w-2xl rounded-lg bg-white p-5 shadow-xl">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h3 className="text-lg font-semibold text-slate-950">{copy.reviewRule}</h3>
-            <p className="mt-1 text-sm text-slate-500">AI ≥ {Math.round(rule.min_ai_confidence * 100)}%, {copy.matchScore} ≥ {Math.round(rule.min_match_score * 100)}%</p>
-          </div>
-          <button type="button" onClick={onClose} className="rounded-md border border-slate-300 px-3 py-1 text-sm">{copy.close}</button>
-        </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <label className="text-xs font-medium text-slate-500">
-            {copy.aiConfidence}
-            <input type="number" min="0" max="1" step="0.01" value={rule.min_ai_confidence} onChange={(event) => setRule({ ...rule, min_ai_confidence: Number(event.target.value) })} className="mt-1 h-9 w-full rounded-md border border-slate-300 px-2 text-sm" />
-          </label>
-          <label className="text-xs font-medium text-slate-500">
-            {copy.matchScore}
-            <input type="number" min="0" max="1" step="0.01" value={rule.min_match_score} onChange={(event) => setRule({ ...rule, min_match_score: Number(event.target.value) })} className="mt-1 h-9 w-full rounded-md border border-slate-300 px-2 text-sm" />
-          </label>
-          <RuleCheckbox label={copy.requireMatch} checked={rule.require_matched_entity} onChange={(checked) => setRule({ ...rule, require_matched_entity: checked })} />
-          <RuleCheckbox label={copy.noWarnings} checked={rule.require_no_warnings} onChange={(checked) => setRule({ ...rule, require_no_warnings: checked })} />
-          <RuleCheckbox label={copy.priceAndPcs} checked={rule.require_price_and_piece} onChange={(checked) => setRule({ ...rule, require_price_and_piece: checked })} />
-        </div>
-        <div className="mt-5 flex items-center gap-2">
-          <Button type="button" disabled={saving} onClick={save}>{copy.saveRule}</Button>
-          {message ? <span className="text-sm text-slate-500">{message}</span> : null}
-        </div>
-      </div>
     </div>
   );
 }
@@ -1019,15 +976,6 @@ function MatchOptionButton({ title, subtitle, selected, onClick }: { title: stri
   );
 }
 
-function RuleCheckbox({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
-  return (
-    <label className="flex items-center gap-2 text-sm text-slate-700">
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
-      {label}
-    </label>
-  );
-}
-
 function CandidateDetailDrawer({
   candidate,
   locale,
@@ -1172,7 +1120,10 @@ function CandidateDetailDrawerContent({
           <DetailMetric label={copy.table.store} value={candidate.offline_store_visits?.store_name ?? "-"} />
           <DetailMetric label={copy.batchCode} value={candidate.offline_store_visits?.visit_code ?? "-"} />
           <DetailMetric label={copy.visitDate} value={candidate.offline_store_visits?.visit_date ?? shortTime(candidate.created_at)} />
-          <DetailMetric label={copy.aiConfidence} value={`${Math.round(candidate.ai_confidence * 100)}%`} />
+          <DetailMetric label={copy.aiConfidence} value={formatAiConfidence(candidate.ai_confidence, candidate.legacy_confidence_fallback)} />
+          <DetailMetric label={copy.table.reviewDecision ?? "Review decision"} value={formatReviewDecision(candidate, copy)} />
+          <DetailMetric label={copy.table.issueCount ?? "Issue count"} value={String(countEvidenceIssues(candidate))} />
+          <DetailMetric label={copy.table.priceEvidence ?? "Price evidence"} value={formatPriceEvidenceStatus(candidate)} />
           <DetailMetric label={copy.matchScore} value={`${Math.round(candidate.match_score * 100)}%`} />
           <DetailMetric label={copy.matchedTo} value={matchedSkuLabel(candidate, copy)} />
           <DetailMetric label={copy.table.status} value={copy.status[candidate.status] ?? candidate.status} />
@@ -1282,6 +1233,25 @@ function CandidateDetailDrawerContent({
                 {warning.message}
               </div>
             ))}
+          </div>
+        ) : null}
+
+        {candidate.conflicts?.length ? (
+          <div className="mt-5 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+            <div className="mb-2 font-semibold">{copy.conflicts}</div>
+            {candidate.conflicts.map((conflict, index) => (
+              <div key={index} className="mt-1">
+                {conflict.type ? <span className="font-medium">{conflict.type}: </span> : null}
+                {conflict.message}
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {candidate.price_evidence_detail ? (
+          <div className="mt-5 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+            <div className="mb-2 font-semibold">{copy.priceEvidenceDetail}</div>
+            <pre className="max-h-44 overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(candidate.price_evidence_detail, null, 2)}</pre>
           </div>
         ) : null}
 
@@ -1400,10 +1370,31 @@ function reviewMethodLabel(candidate: AiPriceCandidate, copy: WorkbenchCopy) {
   return copy.reviewMethods.manual;
 }
 
-function warningMessagesForCandidate(candidate: AiPriceCandidate) {
-  return (candidate.warnings ?? [])
-    .map((warning) => [warning.type, warning.message].filter(Boolean).join(": "))
-    .filter(Boolean);
+function getRiskIssues(candidate: AiPriceCandidate) {
+  const warnings = (candidate.warnings ?? [])
+    .map((warning) => [warning.type, warning.message].filter(Boolean).join(": "));
+  const conflicts = (candidate.conflicts ?? [])
+    .map((conflict) => [conflict.type ?? "CONFLICT", conflict.message].filter(Boolean).join(": "));
+
+  return [...warnings, ...conflicts].filter(Boolean);
+}
+
+function countEvidenceIssues(candidate: AiPriceCandidate) {
+  return getRiskIssues(candidate).length;
+}
+
+function formatAiConfidence(value: number | null | undefined, legacyConfidenceFallback?: boolean | null) {
+  if (legacyConfidenceFallback || value === null || value === undefined || Number.isNaN(value)) return "— / Legacy";
+  return `${Math.round(value * 100)}%`;
+}
+
+function formatReviewDecision(candidate: AiPriceCandidate, copy: WorkbenchCopy) {
+  const labels = copy.reviewDecisions ?? { auto: "Auto approve", review: "Need review" };
+  return candidate.review_decision === "AUTO_APPROVE" ? labels.auto : labels.review;
+}
+
+function formatPriceEvidenceStatus(candidate: AiPriceCandidate) {
+  return candidate.price_evidence_status ?? "REVIEW_REQUIRED";
 }
 
 function matchedSkuLabel(candidate: AiPriceCandidate, copy: WorkbenchCopy) {
@@ -1520,6 +1511,16 @@ function getWorkbenchCopy(locale: string) {
       batchJob: "批处理任务",
       reviewRule: "审核规则",
       ruleSettings: "规则设置",
+      autoApprovalExplanation: {
+        title: "自动通过规则说明",
+        summary: "自动通过由系统固定规则判断，后台不提供人工配置，避免误调。",
+        conditions: [
+          "识别置信度≥90%",
+          "商品命中度≥90%",
+          "已有匹配商品",
+          "价格证据清晰且无异常",
+        ],
+      },
       aiConfidence: "AI 置信度",
       matchScore: "商品命中度",
       requireMatch: "必须有匹配对象",
@@ -1584,6 +1585,7 @@ function getWorkbenchCopy(locale: string) {
         perPiece: "单片价",
         aiConfidence: "AI 置信度",
         match: "商品命中度",
+        riskIssues: "异常/风险",
         warnings: "风险提示",
         evidence: "依据",
         status: "状态",
@@ -1627,6 +1629,16 @@ function getWorkbenchCopy(locale: string) {
     batchJob: "Batch job",
     reviewRule: "Review rule",
     ruleSettings: "Rule settings",
+    autoApprovalExplanation: {
+      title: "Auto-approval rule",
+      summary: "Auto approval is fixed in system code and is not configurable in the review page.",
+      conditions: [
+        "Recognition confidence >= 90%",
+        "Match score >= 90%",
+        "Matched product exists",
+        "Clear price evidence with no issues",
+      ],
+    },
     aiConfidence: "AI confidence",
     matchScore: "Match score",
     requireMatch: "Require match",
@@ -1670,6 +1682,12 @@ function getWorkbenchCopy(locale: string) {
     loadingPhotos: "Loading photos...",
     noPhotos: "No photos loaded.",
     riskWarnings: "Risk warnings",
+    conflicts: "Conflicts",
+    priceEvidenceDetail: "Price evidence detail",
+    reviewDecisions: {
+      auto: "Auto approve",
+      review: "Need review",
+    },
     reviewInput: "Review input",
     packagePrice: "Package price",
     netPrice: "Net price",
@@ -1689,8 +1707,12 @@ function getWorkbenchCopy(locale: string) {
       netPrice: "Net",
       pcs: "Pcs",
       perPiece: "Per piece",
-      aiConfidence: "AI confidence",
+      aiConfidence: "Recognition confidence",
+      reviewDecision: "Review decision",
+      issueCount: "Issue count",
+      priceEvidence: "Price evidence",
       match: "Match",
+      riskIssues: "Risk issues",
       warnings: "Warnings",
       evidence: "Evidence",
       status: "Status",

@@ -1,5 +1,5 @@
 import { requireAppSession } from "@/lib/auth-session";
-import { syncCandidateMatchToPriceSnapshot, syncCandidateReviewInputToPriceSnapshot } from "@/lib/ai-price-review";
+import { approveAiPriceCandidate, syncCandidateMatchToPriceSnapshot, syncCandidateReviewInputToPriceSnapshot } from "@/lib/ai-price-review";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import type { AiPriceCandidate, AiPriceCandidateMatchType } from "@/lib/types";
 
@@ -160,6 +160,32 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
         await syncCandidateMatchToPriceSnapshot(supabase, candidate as AiPriceCandidate);
       }
       return Response.json({ candidate });
+    }
+
+    if (action === "confirm_h5_row") {
+      const candidateRow = sourceCandidate as AiPriceCandidate;
+      if (candidateRow.status !== "pending") {
+        return Response.json({ error: "Only pending candidates can be confirmed" }, { status: 400 });
+      }
+      if (candidateRow.matched_entity_type === "unmatched" || !candidateRow.matched_entity_id) {
+        return Response.json({ error: "Please match a product before confirming this row" }, { status: 400 });
+      }
+      const price = Number(candidateRow.net_price_idr ?? candidateRow.parsed_price_idr);
+      const pieceCount = Number(candidateRow.reviewed_piece_count ?? candidateRow.piece_count);
+      if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(pieceCount) || pieceCount <= 0) {
+        return Response.json({ error: "Valid package price and piece count are required" }, { status: 400 });
+      }
+
+      const result = await approveAiPriceCandidate({
+        supabase,
+        candidateId: id,
+        priceIdr: price,
+        pieceCount,
+        reviewer: auth.session.id,
+        reviewMethod: "manual",
+        promoType: candidateRow.promo_type,
+      });
+      return Response.json(result);
     }
 
     return Response.json({ error: "Unsupported action" }, { status: 400 });

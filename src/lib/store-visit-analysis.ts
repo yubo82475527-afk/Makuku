@@ -1,6 +1,7 @@
 import { autoApproveAiPriceCandidatesForVisit } from "@/lib/ai-price-review";
 import { generateAiPriceCandidates } from "@/lib/ai-price-candidates";
 import {
+  finalizeStoreVisitImageAnalysisStatuses,
   invalidateStoreVisitImagePriceImpact,
   invalidateStoreVisitLegacyUnscopedPriceImpact,
 } from "@/lib/store-visit-image-maintenance";
@@ -30,9 +31,15 @@ function buildSourceItems(
         raw_price_per_piece_text: row.visible_price_per_piece_text,
         visible_price_per_piece_idr: row.visible_price_per_piece_idr,
         price_basis: row.price_basis,
+        legacy_confidence_fallback: row.legacy_confidence_fallback,
+        price_evidence_status: row.price_evidence_status,
+        price_evidence_confidence: row.price_evidence_confidence,
+        price_evidence_detail: row.price_evidence_detail,
+        review_decision: row.review_decision,
+        conflicts: row.conflicts,
         type: "SKU" as const,
         tag: "HERO",
-        confidence: 0.9,
+        confidence: row.ai_confidence ?? null,
         source: "key_sku" as const,
         sourceImageId: imageResult.imageId,
         sourceRowIndex: rowIndex,
@@ -75,6 +82,14 @@ export async function runStoreVisitAnalysis(input: {
   }
 
   const aiAnalysis = await runStoreVisitAiAnalysisForVisit({ visitId: input.visitId });
+  await finalizeStoreVisitImageAnalysisStatuses({
+    visitId: input.visitId,
+    analyzedImageIds: aiAnalysis.price_image_results.map((item) => item.imageId),
+    failedImages: aiAnalysis.price_image_failures ?? [],
+    retakeRequiredImageIds: (aiAnalysis.price_image_retake_required ?? []).map((item) => item.imageId),
+    affectedImageIds: input.affectedImageIds,
+    supabase,
+  });
   const hasRetakeRequiredImages = (aiAnalysis.price_image_retake_required ?? []).length > 0;
   const allFailuresAreRetakeRequired = Boolean(
     aiAnalysis.allPriceImagesFailed

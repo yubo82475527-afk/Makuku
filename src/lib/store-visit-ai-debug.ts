@@ -219,7 +219,7 @@ export async function runStoreVisitAiAnalysisForVisit(input: {
     }))
     .filter((item) => item.imageCategory === "makuku_shelf" || item.imageCategory === "competitor_shelf");
 
-  const priceImageResults: { imageId: string; result: StoreVisitPriceImageAnalysis }[] = [];
+  const priceImageResults: { imageId: string; result: StoreVisitPriceImageAnalysis; metadata?: Record<string, unknown> | null; prompt_version?: string | null; prompt_hash?: string | null }[] = [];
   const priceImageFailures: { imageId: string; imagePath: string; systemErrorMessage: string }[] = [];
   let priceImageCursor = 0;
   const worker = async () => {
@@ -231,7 +231,14 @@ export async function runStoreVisitAiAnalysisForVisit(input: {
       const tableImage = item.tableImage;
       if (!tableImage || !item.imageCategory) continue;
       if (tableImage.analysis_status === "analyzed" && isPriceImageResult(tableImage.vision_result)) {
-        priceImageResults.push({ imageId: tableImage.id, result: tableImage.vision_result });
+        const cachedResult = tableImage.vision_result;
+        priceImageResults.push({
+          imageId: tableImage.id,
+          result: cachedResult,
+          metadata: isRecord(cachedResult.analysis_metadata) ? cachedResult.analysis_metadata : null,
+          prompt_version: typeof cachedResult.prompt_version === "string" ? cachedResult.prompt_version : null,
+          prompt_hash: typeof cachedResult.prompt_hash === "string" ? cachedResult.prompt_hash : null,
+        });
         continue;
       }
 
@@ -248,12 +255,29 @@ export async function runStoreVisitAiAnalysisForVisit(input: {
           visitDate: typedVisit.visit_date,
           config: input.config,
         });
-        priceImageResults.push({ imageId: tableImage.id, result: result.normalized });
+        const visionResult = {
+          ...result.normalized,
+          analysis_metadata: {
+            ...(result.normalized.analysis_metadata ?? {}),
+            model: result.metadata.model,
+            api_family: result.metadata.api_family,
+            request_url: result.metadata.request_url,
+            response_id: result.metadata.response_id ?? null,
+            provider_request_id: result.metadata.provider_request_id ?? null,
+          },
+        };
+        priceImageResults.push({
+          imageId: tableImage.id,
+          result: visionResult,
+          metadata: visionResult.analysis_metadata,
+          prompt_version: visionResult.prompt_version ?? null,
+          prompt_hash: visionResult.prompt_hash ?? null,
+        });
         await supabase
           .from("offline_visit_images")
           .update({
             analysis_status: "analyzed",
-            vision_result: result.normalized,
+            vision_result: visionResult,
             analysis_error: null,
             error_message: null,
           })

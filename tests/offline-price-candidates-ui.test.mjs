@@ -51,16 +51,25 @@ test("photo price review uses status tabs instead of top status dropdown", () =>
   assert.doesNotMatch(candidatesPage, /tabClass/);
 });
 
-test("photo price review moves rule settings and reject reason into modals", () => {
-  assert.match(workbench, /ReviewRuleModal/);
-  assert.match(workbench, /ruleModalOpen/);
+test("photo price review removes auto-approval configuration and shows read-only rule explanation", () => {
+  assert.doesNotMatch(workbench, /ReviewRuleModal/);
+  assert.doesNotMatch(workbench, /ruleModalOpen/);
+  assert.doesNotMatch(workbench, /setRuleModalOpen/);
   assert.match(workbench, /RejectReasonDialog/);
   assert.match(workbench, /rejectDialog/);
   assert.match(workbench, /onJobCreated/);
   assert.match(workbench, /await rejectSelected\(reason, \(\) => \{/);
   assert.match(workbench, /dialogClosed = true;\s*setRejectDialog\(null\);/);
   assert.doesNotMatch(workbench, /setRejectDialog\(null\);\s*try \{/);
-  assert.match(workbench, /\/api\/ai-price-review-rules/);
+  assert.match(workbench, /autoApprovalExplanation/);
+  assert.match(workbench, /自动通过规则说明/);
+  assert.match(workbench, /价格证据清晰且无异常/);
+  assert.doesNotMatch(workbench, /系统审核建议=自动通过/);
+  assert.doesNotMatch(workbench, /异常数=0/);
+  assert.doesNotMatch(workbench, /价格证据=CLEAR/);
+  assert.doesNotMatch(workbench, /\/api\/ai-price-review-rules/);
+  assert.doesNotMatch(workbench, /min_ai_confidence.*onChange/s);
+  assert.doesNotMatch(workbench, /min_match_score.*onChange/s);
   assert.doesNotMatch(workbench, /ReviewRulePanel/);
   assert.doesNotMatch(workbench, /placeholder=\{copy\.rejectReason\} className="h-9 min-w-64/);
 });
@@ -96,12 +105,35 @@ test("photo price review table headers expose help tooltips for AI and match sco
   assert.match(workbench, /const \[headerHelp, setHeaderHelp\] = useState<HeaderHelpState>\(null\)/);
   assert.match(workbench, /<button[\s\S]+aria-label=\{title\}[\s\S]+onClick=\{\(event\) => \{[\s\S]+onOpen\(\{ title, body \}\)/);
   assert.match(workbench, /<HeaderHelpDialog help=\{headerHelp\} closeLabel=\{copy\.close\} onClose=\{\(\) => setHeaderHelp\(null\)\} \/>/);
-  assert.match(workbench, /AI<HeaderHelp title=\{copy\.table\.aiConfidence\} body=\{aiConfidenceHelp\} onOpen=\{setHeaderHelp\} \/>/);
+  assert.match(workbench, /\{copy\.table\.aiConfidence\}<HeaderHelp title=\{copy\.table\.aiConfidence\} body=\{aiConfidenceHelp\} onOpen=\{setHeaderHelp\} \/>/);
   assert.match(workbench, /\{copy\.table\.match\}<HeaderHelp title=\{copy\.table\.match\} body=\{matchScoreHelp\} onOpen=\{setHeaderHelp\} \/>/);
   assert.match(workbench, /function HeaderHelpDialog\(\{ help, closeLabel, onClose \}/);
   assert.match(workbench, /role="dialog" aria-modal="true"/);
   assert.match(workbench, /AI 置信度 = AI 对品牌、商品、价格识别结果的整体把握/);
   assert.match(workbench, /商品命中度 = 自动匹配商品的算法分数/);
+});
+
+test("photo price review merges risk issue columns and keeps review decision in the drawer", () => {
+  assert.doesNotMatch(workbench, /<th className="px-3 py-2">\{copy\.table\.reviewDecision\}<\/th>/);
+  assert.doesNotMatch(workbench, /<th className="px-3 py-2">\{copy\.table\.issueCount\}<\/th>/);
+  assert.doesNotMatch(workbench, /<th className="px-3 py-2">\{copy\.table\.warnings\}<\/th>/);
+  assert.match(workbench, /copy\.table\.riskIssues/);
+  assert.match(workbench, /copy\.table\.priceEvidence/);
+  assert.match(workbench, /formatReviewDecision/);
+  assert.match(workbench, /getRiskIssues/);
+  assert.match(workbench, /countEvidenceIssues/);
+  assert.match(workbench, /formatPriceEvidenceStatus/);
+  assert.match(workbench, /formatAiConfidence\(candidate\.ai_confidence, candidate\.legacy_confidence_fallback/);
+  assert.match(workbench, /price_evidence_detail/);
+  assert.match(workbench, /conflicts/);
+  assert.match(workbench, /识别置信度/);
+  assert.match(workbench, /审核建议/);
+  assert.match(workbench, /异常数/);
+  assert.match(workbench, /价格证据/);
+  assert.match(candidateExportRoute, /"review_decision"/);
+  assert.match(candidateExportRoute, /"issue_count"/);
+  assert.match(candidateExportRoute, /"price_evidence_status"/);
+  assert.match(candidateExportRoute, /legacy_confidence_fallback/);
 });
 
 test("photo price review and export expose store visit batch codes", () => {
@@ -219,8 +251,9 @@ test("Chinese photo price review copy renders as readable UTF-8 text", () => {
 
 test("photo price review exposes evidence drawer and readable warning details", () => {
   assert.match(workbench, /viewEvidence/);
-  assert.match(workbench, /warningMessagesForCandidate/);
+  assert.match(workbench, /getRiskIssues/);
   assert.match(workbench, /candidate\.warnings/);
+  assert.match(workbench, /candidate\.conflicts/);
   assert.match(workbench, /setActiveCandidate\(candidate\)/);
   assert.match(workbench, /visitPhotos/);
   assert.match(workbench, /\/api\/store-visit\/\$\{candidate\.visit_id\}/);
@@ -353,11 +386,39 @@ test("mobile store visit detail keeps each parsed SKU row compact", () => {
 });
 
 test("mobile store visit detail displays list price separately from net price", () => {
-  assert.match(storeVisitDetailH5, /const listPrice = row\.list_price_idr \?\? row\.package_price_idr \?\? null;/);
-  assert.match(storeVisitDetailH5, /const netPrice = row\.net_price_idr \?\? null;/);
+  assert.match(storeVisitDetailH5, /function candidateDisplayListPrice/);
+  assert.match(storeVisitDetailH5, /function candidateDisplayNetPrice/);
+  assert.match(storeVisitDetailH5, /const listPrice = candidateDisplayListPrice\(candidate, row\.list_price_idr \?\? row\.package_price_idr \?\? null\);/);
+  assert.match(storeVisitDetailH5, /const netPrice = candidateDisplayNetPrice\(candidate, row\.net_price_idr \?\? null\);/);
   assert.match(storeVisitDetailH5, /<PriceMetricRow label=\{text\.listPrice\} value=\{formatMoney\(listPrice\)\}/);
   assert.match(storeVisitDetailH5, /<PriceMetricRow label=\{text\.netPrice\} value=\{formatMoney\(netPrice\)\}/);
   assert.doesNotMatch(storeVisitDetailH5, /<PriceMetricRow label=\{text\.listPrice\} value=\{formatMoney\(packagePrice\)\}/);
+});
+
+test("mobile store visit detail shows need-confirm as a row tag without hiding parsed prices", () => {
+  assert.match(storeVisitDetailH5, /needsConfirmationText: "需确认"/);
+  assert.match(storeVisitDetailH5, /row\.review_decision === "NEED_REVIEW"/);
+  assert.match(storeVisitDetailH5, /price_evidence_status/);
+  assert.match(storeVisitDetailH5, /candidate\?\.status === "approved"/);
+  assert.match(storeVisitDetailH5, /needsConfirmation \? \(/);
+  assert.match(storeVisitDetailH5, /\{text\.needsConfirmationText\}/);
+  assert.doesNotMatch(storeVisitDetailH5, /formatReviewableMoney\(listPrice, needsConfirmation/);
+  assert.doesNotMatch(storeVisitDetailH5, /formatReviewablePieceCount\(displayPieceCount, needsConfirmation/);
+  assert.doesNotMatch(storeVisitDetailH5, />低置信</);
+  assert.doesNotMatch(storeVisitDetailH5, />CONFLICT</);
+  assert.doesNotMatch(storeVisitDetailH5, />DERIVED</);
+  assert.doesNotMatch(storeVisitDetailH5, />Legacy</);
+});
+
+test("mobile store visit detail hides price rows while analysis is still running", () => {
+  assert.match(storeVisitDetailH5, /const hasAnalyzingPriceImage = \(visit\?\.offline_visit_images \?\? \[\]\)\.some\(\(image\) => image\.analysis_status === "analyzing"\);/);
+  assert.match(storeVisitDetailH5, /const visitAnalysisInProgress = analyzing \|\| fullVisitReanalyzing \|\| \(status === "analyzing" && !hasAnalyzingPriceImage\);/);
+  assert.match(storeVisitDetailH5, /visitAnalysisInProgress=\{visitAnalysisInProgress\}/);
+  assert.match(storeVisitDetailH5, /const priceRowsPending = visitAnalysisInProgress \|\| retryingImageIds\.includes\(section\.image\.id\) \|\| isAnalyzingImage \|\| \(isProcessingRetake && sectionLocalUpload\?\.status === "analyzing"\);/);
+  assert.doesNotMatch(storeVisitDetailH5, /const visitAnalysisInProgress = status === "analyzing" \|\| analysisPhase !== "idle";/);
+  assert.match(storeVisitDetailH5, /isAnalyzingImage && !isProcessingRetake \? \(/);
+  assert.match(storeVisitDetailH5, /priceRowsPending \? null :/);
+  assert.doesNotMatch(storeVisitDetailH5, /priceRowsPending \? \([\s\S]+<Loader2 className="h-3\.5 w-3\.5 animate-spin" \/>[\s\S]+\{text\.analyzingOne\}/);
 });
 
 test("mobile store visit detail uses Edit entry instead of activity type and pcs badge", () => {
@@ -367,8 +428,21 @@ test("mobile store visit detail uses Edit entry instead of activity type and pcs
   assert.match(storeVisitDetailH5, /\{text\.editRow\}/);
   assert.match(storeVisitDetailH5, /onClick=\{\(\) => onOpenRowEditor\(/);
   assert.match(storeVisitDetailH5, /pieceCount: "Pcs"/);
-  assert.match(storeVisitDetailH5, /<PriceMetricRow label=\{text\.pieceCount\} value=\{displayPieceCount/);
+  assert.match(storeVisitDetailH5, /<PriceMetricRow label=\{text\.pieceCount\} value=\{displayPieceCount \? String\(displayPieceCount\) : "-"\}/);
   assert.doesNotMatch(storeVisitDetailH5, /<PriceMetricRow label=\{text\.promoType\}/);
+});
+
+test("mobile store visit detail supports one-tap confirmation for complete matched rows", () => {
+  assert.match(storeVisitDetailH5, /confirmRow: "确认"/);
+  assert.match(storeVisitDetailH5, /confirmRow: "Confirm"/);
+  assert.match(storeVisitDetailH5, /function canQuickConfirmRow/);
+  assert.match(storeVisitDetailH5, /onConfirmRow/);
+  assert.match(storeVisitDetailH5, /action: "confirm_h5_row"/);
+  assert.match(storeVisitDetailH5, /candidate\.status === "pending"/);
+  assert.match(storeVisitDetailH5, /candidate\.matched_entity_type !== "unmatched"/);
+  assert.match(storeVisitDetailH5, /\{text\.confirmRow\}/);
+  assert.match(storeVisitCandidateRoute, /approveAiPriceCandidate/);
+  assert.match(storeVisitCandidateRoute, /action === "confirm_h5_row"/);
 });
 
 test("mobile store visit detail loads candidate review data and H5 match options", () => {
@@ -430,6 +504,15 @@ test("mobile store visit detail saves H5 row edits through one request", () => {
   assert.doesNotMatch(storeVisitDetailH5, /action: "save_review_input"/);
   assert.doesNotMatch(storeVisitDetailH5, /const matchChanged = rowEdit\.matchedEntityType !== rowEdit\.originalMatchedEntityType/);
   assert.doesNotMatch(storeVisitDetailH5, /action: "update_match"/);
+});
+
+test("mobile store visit row editor shows a compact sku header and auto-calculated per-piece preview", () => {
+  assert.match(storeVisitDetailH5, /pricePerPieceAuto:/);
+  assert.match(storeVisitDetailH5, /autoCalculated:/);
+  assert.match(storeVisitDetailH5, /const computedRowPricePerPiece = Number\.isFinite\(previewNetPrice\) && previewNetPrice > 0 && Number\.isFinite\(previewPieceCount\) && previewPieceCount > 0/);
+  assert.match(storeVisitDetailH5, /line-clamp-2 text-\[13px\] leading-5 text-slate-500/);
+  assert.match(storeVisitDetailH5, /value=\{computedRowPricePerPiece === null \? "-" : formatMoney\(computedRowPricePerPiece\)\}/);
+  assert.match(storeVisitDetailH5, /readOnly/);
 });
 
 test("mobile store visit detail closes row editor before refreshing full visit data", () => {
@@ -519,13 +602,18 @@ test("mobile store visit detail keeps SKU search usable above mobile keyboard", 
 });
 
 test("mobile store visit detail matches approved candidate rows before falling back to unmatched", () => {
-  assert.doesNotMatch(storeVisitDetailH5, /candidate\.status === "pending"/);
+  const matchCandidateFunction = storeVisitDetailH5.match(/function matchCandidateForRow\([\s\S]*?\n\}/)?.[0] ?? "";
+  assert.doesNotMatch(matchCandidateFunction, /candidate\.status === "pending"/);
   assert.match(storeVisitDetailH5, /candidate\.source_image_id === imageId/);
   assert.match(storeVisitDetailH5, /normalizeMatchText\(candidate\.raw_product\) === normalizedSku/);
   assert.match(storeVisitDetailH5, /const aPieceMatch = candidateDisplayPieceCount\(a, row\.piece_count\) === rowPieceCount \? 1 : 0;/);
   assert.match(storeVisitDetailH5, /const rowNetPrice = row\.net_price_idr \?\? null;/);
   assert.match(storeVisitDetailH5, /const aPriceMatch = \(a\.net_price_idr \?\? a\.parsed_price_idr \?\? null\) === rowNetPrice \? 1 : 0;/);
   assert.match(storeVisitDetailH5, /sort\(\(a, b\) =>/);
+});
+
+test("mobile store visit detail renders the normalized row sku title", () => {
+  assert.match(storeVisitDetailH5, /className="line-clamp-1 min-w-0 text-sm font-semibold leading-5 text-slate-900">\{row\.sku\}/);
 });
 
 test("H5 price candidate API updates approved matches and syncs linked snapshots", () => {

@@ -18,7 +18,7 @@ type SignedVisitImage = {
   category?: StoreVisitImageCategory;
 };
 
-const aiPriceCandidateSelect = "id,visit_id,candidate_key,source_image_id,source_image_path,raw_brand,raw_product,raw_price,parsed_price_idr,list_price_idr,package_price_idr,net_price_idr,raw_piece_count_text,raw_package_price_text,raw_net_price_text,raw_price_per_piece_text,visible_price_per_piece_idr,price_basis,promo_type,piece_count,price_per_piece,candidate_type,ai_confidence,matched_entity_type,matched_entity_id,matched_label,match_score,warnings,status,price_snapshot_id,reviewed_piece_count,reviewed_price_per_piece,created_at,reviewed_at,reviewed_by,rejection_reason,review_method,h5_lifecycle_status,h5_lifecycle_at";
+const aiPriceCandidateSelect = "id,visit_id,candidate_key,source_image_id,source_image_path,raw_brand,raw_product,raw_price,parsed_price_idr,ai_list_price_idr,ai_package_price_idr,ai_net_price_idr,list_price_idr,package_price_idr,net_price_idr,raw_piece_count_text,raw_package_price_text,raw_net_price_text,raw_price_per_piece_text,visible_price_per_piece_idr,price_basis,ai_promo_type,promo_type,ai_piece_count,ai_price_per_piece,piece_count,price_per_piece,candidate_type,ai_confidence,legacy_confidence_fallback,price_evidence_status,price_evidence_confidence,price_evidence_detail,conflicts,review_decision,ai_matched_entity_type,ai_matched_entity_id,ai_matched_label,matched_entity_type,matched_entity_id,matched_label,match_score,warnings,status,price_snapshot_id,reviewed_piece_count,reviewed_price_per_piece,created_at,reviewed_at,reviewed_by,rejection_reason,review_method,h5_lifecycle_status,h5_lifecycle_at";
 const visitSelect = `id,visit_code,store_name,region,channel,promoter,visit_date,visit_status,analysis_status,analysis_error,summary_result,image_urls,image_categories,offline_visit_images(id,visit_id,replaces_image_id,replaced_by_image_id,deleted_at,deletion_reason,image_type,image_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at),ai_price_candidates(${aiPriceCandidateSelect})`;
 const legacyVisitSelect = `id,visit_code,store_name,region,channel,promoter,visit_date,visit_status,analysis_status,analysis_error,summary_result,image_urls,image_categories,offline_visit_images(id,visit_id,image_type,image_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at),ai_price_candidates(${aiPriceCandidateSelect})`;
 
@@ -100,9 +100,31 @@ export async function GET(_request: Request, ctx: RouteContext) {
     if (error || !data) return Response.json({ error: error?.message ?? "Visit not found" }, { status: 404 });
 
     let visit = data as unknown as StoreVisitWithPriceCandidates;
+    const summaryResultRecord = typeof visit.summary_result === "object" && visit.summary_result !== null
+      ? visit.summary_result as Record<string, unknown>
+      : null;
+    const analysisMetrics = summaryResultRecord && typeof summaryResultRecord.analysis_metrics === "object" && summaryResultRecord.analysis_metrics !== null
+      ? summaryResultRecord.analysis_metrics as Record<string, unknown>
+      : null;
+    const hasCompletedAnalysisMetrics = typeof analysisMetrics?.visit_analysis_completed_at === "string";
     const staleAnalyzingImages = Array.isArray(visit.offline_visit_images) ? visit.offline_visit_images : [];
     const hasPendingImage = staleAnalyzingImages.some((image) => image.analysis_status === "pending" || image.analysis_status === "analyzing");
-    if ((visit.analysis_status === "analyzing" || visit.visit_status === "analyzing") && !hasPendingImage) {
+    const hasStoredImageAnalysisEvidence = staleAnalyzingImages.some((image) => {
+      const visionResult = typeof image.vision_result === "object" && image.vision_result !== null
+        ? image.vision_result as Record<string, unknown>
+        : null;
+      return Array.isArray(visionResult?.rows)
+        || typeof visionResult?.photo_quality === "object"
+        || image.analysis_status === "failed"
+        || Boolean(image.analysis_error || image.error_message);
+    });
+    if (
+      (visit.analysis_status === "analyzing" || visit.visit_status === "analyzing")
+      && (
+        !hasPendingImage
+        || (hasCompletedAnalysisMetrics && hasStoredImageAnalysisEvidence)
+      )
+    ) {
       visit = await refreshStoreVisitStoredPriceState({ visitId: id, supabase });
     }
 

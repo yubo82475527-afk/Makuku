@@ -1,5 +1,4 @@
 import { revalidatePath } from "next/cache";
-import { after } from "next/server";
 import { runStoreVisitAnalysis } from "@/lib/store-visit-analysis";
 import { requireAppSession } from "@/lib/auth-session";
 import { createSupabaseServiceClient } from "@/lib/supabase";
@@ -72,6 +71,7 @@ export async function POST(request: Request, ctx: RouteContext) {
       .from("offline_visit_images")
       .update({
         analysis_status: "analyzing",
+        vision_result: null,
         analysis_error: null,
         error_message: null,
       })
@@ -91,47 +91,67 @@ export async function POST(request: Request, ctx: RouteContext) {
     revalidatePath("/en/mobile/offline-capture");
     revalidatePath(`/en/mobile/offline-capture/${id}`);
 
-    after(async () => {
+    try {
+      const result = await runStoreVisitAnalysis({
+        visitId: id,
+        affectedImageIds: refreshImageIds,
+        invalidateAffectedImageSnapshots: true,
+      });
+
+      revalidatePath("/zh/mobile/offline-capture");
+      revalidatePath(`/zh/mobile/offline-capture/${id}`);
+      revalidatePath("/en/mobile/offline-capture");
+      revalidatePath(`/en/mobile/offline-capture/${id}`);
+
+      return Response.json({
+        queued: false,
+        visit_id: id,
+        affected_image_ids: refreshImageIds,
+        full_visit: fullVisit,
+        visit: result.visit,
+        ai_result: result.aiResult,
+        auto_reviewed_count: result.autoReviewedCount,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      console.error("[store-visit-refresh] analysis failed", {
+        visit_id: id,
+        affected_image_ids: refreshImageIds,
+        error: message,
+      });
       try {
-        await runStoreVisitAnalysis({
+        await supabase
+          .from("offline_visit_images")
+          .update({
+            analysis_status: "failed",
+            analysis_error: message,
+            error_message: message,
+          })
+          .eq("visit_id", id)
+          .in("id", refreshImageIds)
+          .in("analysis_status", ["pending", "analyzing"]);
+
+        await refreshStoreVisitStoredPriceState({
           visitId: id,
-          affectedImageIds: refreshImageIds,
-          invalidateAffectedImageSnapshots: true,
+          analysisStatusOverride: "failed",
+          analysisErrorOverride: message,
+          visitStatusOverride: "analyzed",
+          supabase,
         });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Unknown error";
-        console.error("[store-visit-refresh] async refresh failed", {
+      } catch (refreshError) {
+        console.error("[store-visit-refresh] failed to persist failure state", {
           visit_id: id,
           affected_image_ids: refreshImageIds,
-          error: message,
+          error: refreshError instanceof Error ? refreshError.message : String(refreshError),
         });
-        try {
-          await refreshStoreVisitStoredPriceState({
-            visitId: id,
-            analysisStatusOverride: "failed",
-            analysisErrorOverride: message,
-            visitStatusOverride: "analyzed",
-          });
-        } catch (refreshError) {
-          console.error("[store-visit-refresh] failed to persist async failure state", {
-            visit_id: id,
-            affected_image_ids: refreshImageIds,
-            error: refreshError instanceof Error ? refreshError.message : String(refreshError),
-          });
-        }
-        revalidatePath("/zh/mobile/offline-capture");
-        revalidatePath(`/zh/mobile/offline-capture/${id}`);
-        revalidatePath("/en/mobile/offline-capture");
-        revalidatePath(`/en/mobile/offline-capture/${id}`);
       }
-    });
 
-    return Response.json({
-      queued: true,
-      visit_id: id,
-      affected_image_ids: refreshImageIds,
-      full_visit: fullVisit,
-    });
+      revalidatePath("/zh/mobile/offline-capture");
+      revalidatePath(`/zh/mobile/offline-capture/${id}`);
+      revalidatePath("/en/mobile/offline-capture");
+      revalidatePath(`/en/mobile/offline-capture/${id}`);
+      return Response.json({ error: message }, { status: 500 });
+    }
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
   }

@@ -19,6 +19,10 @@ const jobRoute = existsSync(jobRoutePath) ? readFileSync(jobRoutePath, "utf8") :
 const runRoutePath = "src/app/api/ai-price-candidates/bulk-review/[jobId]/run/route.ts";
 const runRoute = existsSync(runRoutePath) ? readFileSync(runRoutePath, "utf8") : "";
 const singleRoute = readFileSync("src/app/api/ai-price-candidates/[id]/route.ts", "utf8");
+const evidenceReviewMigrationPath = "supabase/migrations/202607050001_price_evidence_review_decision.sql";
+const evidenceReviewMigration = existsSync(evidenceReviewMigrationPath) ? readFileSync(evidenceReviewMigrationPath, "utf8") : "";
+const qualityMigrationPath = "supabase/migrations/202607050002_ai_price_candidate_quality_metrics.sql";
+const qualityMigration = existsSync(qualityMigrationPath) ? readFileSync(qualityMigrationPath, "utf8") : "";
 
 test("bulk review migration adds rules jobs items and reject audit fields", () => {
   assert.equal(existsSync(migrationPath), true);
@@ -60,6 +64,44 @@ test("candidate review service centralizes approve reject and rule eligibility",
   assert.match(singleRoute, /approveAiPriceCandidate/);
 });
 
+test("candidate review requires explicit auto-approve decision and treats legacy confidence as review-only", () => {
+  assert.match(reviewService, /const MIN_RECOGNITION_CONFIDENCE\s*=\s*0\.9/);
+  assert.match(reviewService, /const MIN_MATCH_SCORE\s*=\s*0\.9/);
+  assert.match(reviewService, /const REQUIRE_MATCHED_ENTITY\s*=\s*true/);
+  assert.match(reviewService, /candidate\.review_decision !== "AUTO_APPROVE"/);
+  assert.match(reviewService, /candidate\.ai_confidence == null/);
+  assert.match(reviewService, /legacy_confidence_fallback/);
+  assert.match(reviewService, /candidate\.ai_confidence < MIN_RECOGNITION_CONFIDENCE/);
+  assert.match(reviewService, /candidate\.match_score < MIN_MATCH_SCORE/);
+  assert.doesNotMatch(reviewService, /candidate\.ai_confidence < rule\.min_ai_confidence/);
+  assert.doesNotMatch(reviewService, /candidate\.match_score < rule\.min_match_score/);
+});
+
+test("price evidence review migration adds nullable confidence and review decision fields", () => {
+  assert.equal(existsSync(evidenceReviewMigrationPath), true);
+  assert.match(evidenceReviewMigration, /alter column ai_confidence drop not null/i);
+  assert.match(evidenceReviewMigration, /legacy_confidence_fallback boolean not null default false/i);
+  assert.match(evidenceReviewMigration, /price_evidence_status text/i);
+  assert.match(evidenceReviewMigration, /price_evidence_confidence numeric/i);
+  assert.match(evidenceReviewMigration, /price_evidence_detail jsonb/i);
+  assert.match(evidenceReviewMigration, /conflicts jsonb not null default '\[\]'::jsonb/i);
+  assert.match(evidenceReviewMigration, /review_decision text not null default 'NEED_REVIEW'/i);
+});
+
+test("quality metrics migration preserves immutable ai raw fields and creates a quality view", () => {
+  assert.equal(existsSync(qualityMigrationPath), true);
+  assert.match(qualityMigration, /add column if not exists ai_matched_entity_type text/i);
+  assert.match(qualityMigration, /add column if not exists ai_matched_entity_id text/i);
+  assert.match(qualityMigration, /add column if not exists ai_list_price_idr numeric/i);
+  assert.match(qualityMigration, /add column if not exists ai_package_price_idr numeric/i);
+  assert.match(qualityMigration, /add column if not exists ai_net_price_idr numeric/i);
+  assert.match(qualityMigration, /add column if not exists ai_piece_count integer/i);
+  assert.match(qualityMigration, /create or replace view public\.ai_price_candidate_quality_metrics_v1/i);
+  assert.match(qualityMigration, /price_delta_pct/i);
+  assert.match(qualityMigration, /row_correct_flag/i);
+  assert.match(qualityMigration, /auto_approved_flag/i);
+});
+
 test("auto review processes eligible candidates with bounded concurrency", () => {
   assert.match(reviewService, /const AUTO_REVIEW_CONCURRENCY\s*=\s*10/);
   assert.match(reviewService, /eligibleCandidates/);
@@ -82,6 +124,8 @@ test("single candidate API can save pending review input without approving", () 
   assert.match(singleRoute, /piece_count/);
   assert.match(singleRoute, /price_per_piece/);
   assert.match(singleRoute, /status.*pending|pending.*status/s);
+  assert.doesNotMatch(singleRoute, /ai_net_price_idr:\s*Math\.round\(price\)/);
+  assert.doesNotMatch(singleRoute, /ai_piece_count:\s*Math\.floor\(pieceCount\)/);
 });
 
 test("bulk review API creates jobs and processes them in chunks", () => {

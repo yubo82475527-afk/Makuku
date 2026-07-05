@@ -32,6 +32,8 @@ export type PriceBasis =
   | "VISIBLE_PROMO_PACKAGE_PRICE"
   | "VISIBLE_PRICE_PER_PIECE"
   | "RECONCILED_PACKAGE_PRICE";
+export type PriceEvidenceStatus = "CLEAR" | "LOW_CONFIDENCE" | "DERIVED" | "CONFLICT" | "REVIEW_REQUIRED";
+export type PriceReviewDecision = "AUTO_APPROVE" | "NEED_REVIEW";
 
 export type StoreVisitAiResult = {
   raw_extraction: {
@@ -124,6 +126,10 @@ export type StoreVisitAiResult = {
 };
 
 export type StoreVisitPriceImageRow = {
+  source_type?: "PRICE_BOARD_ROW" | "PRICE_TAG" | string | null;
+  group_id?: string | null;
+  section_title?: string | null;
+  row_anchor?: string | null;
   brand?: string | null;
   product_family_text?: string | null;
   sku: string;
@@ -133,6 +139,14 @@ export type StoreVisitPriceImageRow = {
   promo_package_text?: string | null;
   promo_piece_text?: string | null;
   promo_label?: string | null;
+  normal_package_price_confidence?: number | null;
+  promo_package_price_confidence?: number | null;
+  normal_per_piece_price_confidence?: number | null;
+  promo_per_piece_price_confidence?: number | null;
+  piece_count_confidence?: number | null;
+  row_binding_confidence?: number | null;
+  section_binding_confidence?: number | null;
+  product_identity_confidence?: number | null;
   list_price_text?: string | null;
   package_price_text?: string | null;
   net_price_text?: string | null;
@@ -142,6 +156,13 @@ export type StoreVisitPriceImageRow = {
   net_price_idr: number | null;
   visible_price_per_piece_idr?: number | null;
   price_basis?: PriceBasis | null;
+  ai_confidence?: number | null;
+  legacy_confidence_fallback?: boolean;
+  price_evidence_status?: PriceEvidenceStatus | null;
+  price_evidence_confidence?: number | null;
+  price_evidence_detail?: Record<string, unknown> | null;
+  conflicts?: { type?: string; message: string }[];
+  review_decision?: PriceReviewDecision;
   promo_type: string | null;
   piece_count: number | null;
   price_per_piece_idr: number | null;
@@ -168,6 +189,11 @@ export type StoreVisitPriceImageAnalysis = {
     type: "MISSING_DATA" | "LOW_CONFIDENCE" | "PARSE_RISK";
     message: string;
   }[];
+  prompt_version?: string;
+  prompt_hash?: string;
+  analysis_metadata?: Record<string, unknown>;
+  review_decision?: PriceReviewDecision;
+  conflicts?: { type?: string; message: string }[];
 };
 
 export type StoreVisitDisplayAnalysis = {
@@ -795,6 +821,9 @@ export type AiPriceCandidate = {
   raw_product: string;
   raw_price: string;
   parsed_price_idr: number | null;
+  ai_list_price_idr?: number | null;
+  ai_package_price_idr?: number | null;
+  ai_net_price_idr?: number | null;
   list_price_idr?: number | null;
   package_price_idr?: number | null;
   net_price_idr?: number | null;
@@ -805,10 +834,22 @@ export type AiPriceCandidate = {
   visible_price_per_piece_idr?: number | null;
   price_basis?: PriceBasis | null;
   promo_type?: string | null;
+  ai_piece_count?: number | null;
+  ai_price_per_piece?: number | null;
+  ai_promo_type?: string | null;
   piece_count: number | null;
   price_per_piece: number | null;
   candidate_type: RawExtractionType;
-  ai_confidence: number;
+  ai_confidence: number | null;
+  legacy_confidence_fallback?: boolean;
+  price_evidence_status?: PriceEvidenceStatus | null;
+  price_evidence_confidence?: number | null;
+  price_evidence_detail?: Record<string, unknown> | null;
+  conflicts?: { type?: string; message: string }[];
+  review_decision?: PriceReviewDecision;
+  ai_matched_entity_type?: AiPriceCandidateMatchType | null;
+  ai_matched_entity_id?: string | null;
+  ai_matched_label?: string | null;
   matched_entity_type: AiPriceCandidateMatchType;
   matched_entity_id: string | null;
   matched_label: string | null;

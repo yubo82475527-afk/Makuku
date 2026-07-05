@@ -18,6 +18,9 @@ const csvColumns = [
   "price_per_piece",
   "candidate_type",
   "ai_confidence",
+  "review_decision",
+  "issue_count",
+  "price_evidence_status",
   "matched_sku_code",
   "matched_sku_name",
   "matched_entity_type",
@@ -55,6 +58,10 @@ function warningText(candidate: AiPriceCandidate) {
     .map((warning) => warning.message)
     .filter(Boolean)
     .join(" | ");
+}
+
+function issueCount(candidate: AiPriceCandidate) {
+  return (candidate.warnings ?? []).length + (candidate.conflicts ?? []).length;
 }
 
 function downloadName(dateFrom: string | null, dateTo: string | null) {
@@ -129,7 +136,10 @@ export async function GET(request: Request) {
         candidate.piece_count,
         candidate.price_per_piece,
         candidate.candidate_type,
-        formatRate(candidate.ai_confidence),
+        candidate.legacy_confidence_fallback ? "" : formatRate(candidate.ai_confidence),
+        candidate.review_decision,
+        issueCount(candidate),
+        candidate.price_evidence_status,
         material?.tenant_sku_code,
         material?.tenant_sku_name,
         candidate.matched_entity_type,

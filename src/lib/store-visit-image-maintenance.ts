@@ -126,6 +126,18 @@ function missingLifecycleColumns(error: { message?: string | null } | null) {
   return message.includes("h5_lifecycle_status") || message.includes("h5_lifecycle_at") || message.includes("schema cache");
 }
 
+function imageHasPersistedFinalEvidence(image: OfflineVisitImage) {
+  return Boolean(asPriceImageAnalysis(image.vision_result))
+    || Boolean(image.analysis_error || image.error_message);
+}
+
+function recoverStaleImageStatus(image: OfflineVisitImage, hasCompletedAnalysisMetrics: boolean) {
+  if (!hasCompletedAnalysisMetrics) return null;
+  if (image.analysis_status !== "pending" && image.analysis_status !== "analyzing") return null;
+  if (!imageHasPersistedFinalEvidence(image)) return null;
+  return asPriceImageAnalysis(image.vision_result) ? "analyzed" : "failed";
+}
+
 function deriveStoredAnalysisState(images: OfflineVisitImage[], currentVisitStatus?: OfflineStoreVisit["visit_status"]) {
   const priceImages = images.filter((image) => isPriceCategory(toImageCategory(image)));
   const analyzedResults = priceImages
@@ -186,6 +198,100 @@ function deriveStoredAnalysisState(images: OfflineVisitImage[], currentVisitStat
     analysisError,
     visitStatus,
     aiResult: composeStoreVisitAiResult({ rows, partialFailure }),
+  };
+}
+
+export async function finalizeStoreVisitImageAnalysisStatuses(input: {
+  visitId: string;
+  analyzedImageIds: string[];
+  failedImages: { imageId: string; systemErrorMessage: string }[];
+  retakeRequiredImageIds?: string[];
+  affectedImageIds?: string[];
+  supabase?: SupabaseServiceClient;
+}) {
+  const supabase = input.supabase ?? createSupabaseServiceClient();
+  const analyzedImageIds = Array.from(new Set([
+    ...input.analyzedImageIds,
+    ...(input.retakeRequiredImageIds ?? []),
+  ].map((value) => value.trim()).filter(Boolean)));
+  const failedEntries = Array.from(new Map(
+    input.failedImages
+      .map((entry) => [entry.imageId.trim(), entry] as const)
+      .filter(([imageId]) => Boolean(imageId)),
+  ).values());
+  const affectedImageIds = input.affectedImageIds?.length
+    ? input.affectedImageIds
+    : [...analyzedImageIds, ...failedEntries.map((entry) => entry.imageId)];
+  const targetImageIds = Array.from(new Set(affectedImageIds.map((value) => value.trim()).filter(Boolean)));
+
+  if (analyzedImageIds.length > 0) {
+    const { error } = await supabase
+      .from("offline_visit_images")
+      .update({
+        analysis_status: "analyzed",
+        analysis_error: null,
+        error_message: null,
+      })
+      .eq("visit_id", input.visitId)
+      .in("id", analyzedImageIds);
+    if (error) throw new Error(error.message);
+  }
+
+  if (failedEntries.length > 0) {
+    await Promise.all(failedEntries.map(async (entry) => {
+      const { error } = await supabase
+        .from("offline_visit_images")
+        .update({
+          analysis_status: "failed",
+          analysis_error: entry.systemErrorMessage,
+          error_message: entry.systemErrorMessage,
+        })
+        .eq("visit_id", input.visitId)
+        .eq("id", entry.imageId);
+      if (error) throw new Error(error.message);
+    }));
+  }
+
+  if (targetImageIds.length === 0) {
+    return { analyzedImageIds, failedImageIds: failedEntries.map((entry) => entry.imageId), forceClosedImageIds: [] };
+  }
+
+  const { data: currentImages, error: currentImagesError } = await supabase
+    .from("offline_visit_images")
+    .select("id, analysis_status")
+    .eq("visit_id", input.visitId)
+    .in("id", targetImageIds);
+  if (currentImagesError) throw new Error(currentImagesError.message);
+
+  const successfulImageIdSet = new Set(analyzedImageIds);
+  const failedImageIdSet = new Set(failedEntries.map((entry) => entry.imageId));
+  const unresolvedImageIds = (currentImages ?? [])
+    .map((image) => String((image as { id?: unknown }).id ?? "").trim())
+    .filter((imageId) => Boolean(imageId)
+      && !successfulImageIdSet.has(imageId)
+      && !failedImageIdSet.has(imageId));
+
+  if (unresolvedImageIds.length === 0) {
+    return { analyzedImageIds, failedImageIds: [...failedImageIdSet], forceClosedImageIds: [] };
+  }
+
+  const finalizationError = "Image analysis finished without a persisted final status. Please retry this photo.";
+  const { error: unresolvedError } = await supabase
+    .from("offline_visit_images")
+    .update({
+      analysis_status: "failed",
+      analysis_error: finalizationError,
+      error_message: finalizationError,
+    })
+    .eq("visit_id", input.visitId)
+    .in("id", unresolvedImageIds)
+    .in("analysis_status", ["pending", "analyzing"]);
+  if (unresolvedError) throw new Error(unresolvedError.message);
+
+  return {
+    analyzedImageIds,
+    failedImageIds: [...failedImageIdSet],
+    forceClosedImageIds: unresolvedImageIds,
   };
 }
 
@@ -354,8 +460,68 @@ export async function refreshStoreVisitStoredPriceState(input: {
   const allImages = Array.isArray(typedVisit.offline_visit_images) ? typedVisit.offline_visit_images : [];
   const activeImages = allImages.filter((image) => !isInactiveVisitImage(image));
   const activePriceImages = activeImages.filter((image) => isPriceCategory(toImageCategory(image)));
-  const derived = deriveStoredAnalysisState(activePriceImages, typedVisit.visit_status);
   const summaryBase = isRecord(typedVisit.summary_result) ? typedVisit.summary_result : {};
+  const analysisMetrics = isRecord(summaryBase.analysis_metrics) ? summaryBase.analysis_metrics as Record<string, unknown> : null;
+  const hasCompletedAnalysisMetrics = typeof analysisMetrics?.visit_analysis_completed_at === "string";
+  const staleRecoveredImages = activePriceImages
+    .map((image) => {
+      const recoveredStatus = recoverStaleImageStatus(image, hasCompletedAnalysisMetrics);
+      return recoveredStatus ? { image, recoveredStatus } : null;
+    })
+    .filter((entry): entry is { image: OfflineVisitImage; recoveredStatus: "analyzed" | "failed" } => Boolean(entry));
+
+  if (staleRecoveredImages.length > 0) {
+    const recoveredAnalyzedIds = staleRecoveredImages
+      .filter((entry) => entry.recoveredStatus === "analyzed")
+      .map((entry) => entry.image.id);
+    const recoveredFailedImages = staleRecoveredImages
+      .filter((entry) => entry.recoveredStatus === "failed");
+
+    if (recoveredAnalyzedIds.length > 0) {
+      const { error: analyzedRecoveryError } = await supabase
+        .from("offline_visit_images")
+        .update({
+          analysis_status: "analyzed",
+          analysis_error: null,
+          error_message: null,
+        })
+        .eq("visit_id", input.visitId)
+        .in("id", recoveredAnalyzedIds)
+        .in("analysis_status", ["pending", "analyzing"]);
+      if (analyzedRecoveryError) throw new Error(analyzedRecoveryError.message);
+    }
+
+    if (recoveredFailedImages.length > 0) {
+      await Promise.all(recoveredFailedImages.map(async ({ image }) => {
+        const failureMessage = image.analysis_error ?? image.error_message ?? "Image analysis failed.";
+        const { error: failedRecoveryError } = await supabase
+          .from("offline_visit_images")
+          .update({
+            analysis_status: "failed",
+            analysis_error: failureMessage,
+            error_message: failureMessage,
+          })
+          .eq("visit_id", input.visitId)
+          .eq("id", image.id)
+          .in("analysis_status", ["pending", "analyzing"]);
+        if (failedRecoveryError) throw new Error(failedRecoveryError.message);
+      }));
+    }
+  }
+
+  const normalizedActivePriceImages: OfflineVisitImage[] = activePriceImages.map((image) => {
+    const recoveredStatus = recoverStaleImageStatus(image, hasCompletedAnalysisMetrics);
+    if (!recoveredStatus) return image;
+    return recoveredStatus === "analyzed"
+      ? { ...image, analysis_status: "analyzed" as const, analysis_error: null, error_message: null }
+      : {
+          ...image,
+          analysis_status: "failed" as const,
+          analysis_error: image.analysis_error ?? image.error_message ?? "Image analysis failed.",
+          error_message: image.error_message ?? image.analysis_error ?? "Image analysis failed.",
+        };
+  });
+  const derived = deriveStoredAnalysisState(normalizedActivePriceImages, typedVisit.visit_status);
   const nextAnalysisStatus = input.analysisStatusOverride ?? derived.analysisStatus;
   const nextAnalysisError = input.analysisErrorOverride === undefined ? derived.analysisError : input.analysisErrorOverride;
 

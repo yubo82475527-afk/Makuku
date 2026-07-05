@@ -91,6 +91,9 @@ export type StoreVisitMonitorItem = {
   successCount: number;
   failureCount: number;
   retakeRequiredCount: number;
+  accuracy: number | null;
+  autoApprovalRate: number | null;
+  avgPriceDeviationRate: number | null;
   startedAt: string | null;
   completedAt: string | null;
   createdAt: string;
@@ -106,8 +109,15 @@ export type StoreVisitMonitorSummary = {
   averageSuccessfulImagesPerVisit: number | null;
 };
 
+export type StoreVisitMonitorQuality = {
+  accuracy: number | null;
+  autoApprovalRate: number | null;
+  avgPriceDeviationRate: number | null;
+};
+
 export type StoreVisitMonitorResult = {
   summary: StoreVisitMonitorSummary;
+  quality: StoreVisitMonitorQuality;
   visits: StoreVisitMonitorItem[];
   filters: {
     dateFrom: string;
@@ -3369,6 +3379,9 @@ function toMonitorItem(visit: OfflineStoreVisit): StoreVisitMonitorItem {
     retakeRequiredCount: isFiniteNumber(analysisMetrics.price_image_retake_required_count)
       ? analysisMetrics.price_image_retake_required_count
       : 0,
+    accuracy: null,
+    autoApprovalRate: null,
+    avgPriceDeviationRate: null,
     startedAt: typeof analysisMetrics.visit_analysis_started_at === "string"
       ? analysisMetrics.visit_analysis_started_at
       : null,
@@ -3376,6 +3389,122 @@ function toMonitorItem(visit: OfflineStoreVisit): StoreVisitMonitorItem {
       ? analysisMetrics.visit_analysis_completed_at
       : null,
     createdAt: visit.created_at,
+  };
+}
+
+function emptyStoreVisitMonitorQuality(): StoreVisitMonitorQuality {
+  return {
+    accuracy: null,
+    autoApprovalRate: null,
+    avgPriceDeviationRate: null,
+  };
+}
+
+function isMissingStoreVisitQualityViewError(error: { message?: string } | null) {
+  const message = error?.message ?? "";
+  return message.includes("ai_price_candidate_quality_metrics_v1")
+    && (message.includes("Could not find the table") || message.includes("does not exist") || message.includes("schema cache"));
+}
+
+async function getStoreVisitMonitorQuality(visitIds: string[]): Promise<QueryResult<StoreVisitMonitorQuality>> {
+  if (!hasSupabaseServiceConfig() || visitIds.length === 0) {
+    return { data: emptyStoreVisitMonitorQuality(), error: null, isDemo: !hasSupabaseServiceConfig() };
+  }
+
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("ai_price_candidate_quality_metrics_v1")
+    .select("candidate_id,row_correct_flag,auto_approved_flag,price_delta_pct")
+    .in("visit_id", visitIds)
+    .eq("is_active_candidate", true)
+    .range(0, 9999);
+
+  if (isMissingStoreVisitQualityViewError(error)) {
+    return { data: emptyStoreVisitMonitorQuality(), error: null, isDemo: false };
+  }
+  if (error) return { data: emptyStoreVisitMonitorQuality(), error: error.message, isDemo: false };
+
+  const rows = (data ?? []) as {
+    candidate_id: string;
+    row_correct_flag?: boolean | null;
+    auto_approved_flag?: boolean | null;
+    price_delta_pct?: number | null;
+  }[];
+  const denominator = rows.length;
+  const deviationRows = rows
+    .map((row) => row.price_delta_pct)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+
+  return {
+    data: {
+      accuracy: denominator > 0
+        ? rows.filter((row) => row.row_correct_flag === true).length / denominator
+        : null,
+      autoApprovalRate: denominator > 0
+        ? rows.filter((row) => row.auto_approved_flag === true).length / denominator
+        : null,
+      avgPriceDeviationRate: deviationRows.length > 0
+        ? deviationRows.reduce((sum, value) => sum + value, 0) / deviationRows.length
+        : null,
+    },
+    error: null,
+    isDemo: false,
+  };
+}
+
+async function getStoreVisitMonitorVisitQuality(visitIds: string[]): Promise<QueryResult<Record<string, StoreVisitMonitorQuality>>> {
+  if (!hasSupabaseServiceConfig() || visitIds.length === 0) {
+    return { data: {}, error: null, isDemo: !hasSupabaseServiceConfig() };
+  }
+
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("ai_price_candidate_quality_metrics_v1")
+    .select("visit_id,row_correct_flag,auto_approved_flag,price_delta_pct")
+    .in("visit_id", visitIds)
+    .eq("is_active_candidate", true)
+    .range(0, 9999);
+
+  if (isMissingStoreVisitQualityViewError(error)) {
+    return { data: {}, error: null, isDemo: false };
+  }
+  if (error) return { data: {}, error: error.message, isDemo: false };
+
+  const grouped = new Map<string, { total: number; correct: number; autoApproved: number; deviations: number[] }>();
+  for (const row of (data ?? []) as {
+    visit_id?: string | null;
+    row_correct_flag?: boolean | null;
+    auto_approved_flag?: boolean | null;
+    price_delta_pct?: number | null;
+  }[]) {
+    if (!row.visit_id) continue;
+    const bucket = grouped.get(row.visit_id) ?? { total: 0, correct: 0, autoApproved: 0, deviations: [] };
+    bucket.total += 1;
+    if (row.row_correct_flag === true) bucket.correct += 1;
+    if (row.auto_approved_flag === true) bucket.autoApproved += 1;
+    if (typeof row.price_delta_pct === "number" && Number.isFinite(row.price_delta_pct)) {
+      bucket.deviations.push(row.price_delta_pct);
+    }
+    grouped.set(row.visit_id, bucket);
+  }
+
+  const visitQualityById = Object.fromEntries(
+    Array.from(grouped.entries()).map(([visitId, bucket]) => [
+      visitId,
+      {
+        accuracy: bucket.total > 0 ? bucket.correct / bucket.total : null,
+        autoApprovalRate: bucket.total > 0 ? bucket.autoApproved / bucket.total : null,
+        avgPriceDeviationRate: bucket.deviations.length > 0
+          ? bucket.deviations.reduce((sum, value) => sum + value, 0) / bucket.deviations.length
+          : null,
+      },
+    ]),
+  ) as Record<string, StoreVisitMonitorQuality>;
+
+  return {
+    data: visitQualityById,
+    error: null,
+    isDemo: false,
   };
 }
 
@@ -3431,18 +3560,41 @@ export async function getStoreVisitMonitor(
       : null,
   };
 
+  const visitIds = visits.map((visit) => visit.visitId);
+  const [qualityResult, visitQualityResult] = await Promise.all([
+    getStoreVisitMonitorQuality(visitIds),
+    getStoreVisitMonitorVisitQuality(visitIds),
+  ]);
+  const quality = {
+    accuracy: qualityResult.data.accuracy,
+    autoApprovalRate: qualityResult.data.autoApprovalRate,
+    avgPriceDeviationRate: qualityResult.data.avgPriceDeviationRate,
+  };
+  const visitQualityById = visitQualityResult.data;
+  const visitsWithQuality = visits.map((visit) => ({
+    ...visit,
+    accuracy: visitQualityById[visit.visitId]?.accuracy ?? null,
+    autoApprovalRate: visitQualityById[visit.visitId]?.autoApprovalRate ?? null,
+    avgPriceDeviationRate: visitQualityById[visit.visitId]?.avgPriceDeviationRate ?? null,
+  }));
+
   return {
     data: {
       summary,
-      visits,
+      quality: {
+        accuracy: quality.accuracy,
+        autoApprovalRate: quality.autoApprovalRate,
+        avgPriceDeviationRate: quality.avgPriceDeviationRate,
+      },
+      visits: visitsWithQuality,
       filters: {
         dateFrom,
         dateTo,
         isDefaultRecent24Hours,
       },
     },
-    error: visitsResult.error,
-    isDemo: visitsResult.isDemo,
+    error: visitsResult.error ?? qualityResult.error ?? visitQualityResult.error,
+    isDemo: visitsResult.isDemo || qualityResult.isDemo || visitQualityResult.isDemo,
   };
 }
 

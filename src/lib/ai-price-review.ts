@@ -6,6 +6,9 @@ import type { AiPriceCandidate, AiPriceCandidateReviewMethod, AiPriceReviewRule,
 type SupabaseServiceClient = ReturnType<typeof import("@/lib/supabase").createSupabaseServiceClient>;
 
 const AUTO_REVIEW_CONCURRENCY = 10;
+const MIN_RECOGNITION_CONFIDENCE = 0.9;
+const MIN_MATCH_SCORE = 0.9;
+const REQUIRE_MATCHED_ENTITY = true;
 
 type CandidateUpdatePayload = {
   status: "approved" | "rejected";
@@ -24,20 +27,32 @@ type CandidateUpdatePayload = {
   review_method?: AiPriceCandidateReviewMethod;
 };
 
-export function candidateMatchesReviewRule(candidate: AiPriceCandidate, rule: AiPriceReviewRule) {
+export function candidateMatchesReviewRule(candidate: AiPriceCandidate, _rule: AiPriceReviewRule) {
   if (candidate.status !== "pending") return { eligible: false, reason: "Only pending candidates can be bulk reviewed." };
-  if (candidate.ai_confidence < rule.min_ai_confidence) return { eligible: false, reason: "AI confidence is below the active rule." };
-  if (candidate.match_score < rule.min_match_score) return { eligible: false, reason: "Match score is below the active rule." };
-  if (rule.require_matched_entity && (!candidate.matched_entity_id || candidate.matched_entity_type === "unmatched")) {
+  if (candidate.review_decision !== "AUTO_APPROVE") return { eligible: false, reason: "Candidate requires manual review." };
+  if (candidate.ai_confidence == null || candidate.legacy_confidence_fallback) return { eligible: false, reason: "Recognition confidence is missing or legacy." };
+  if (candidate.ai_confidence < MIN_RECOGNITION_CONFIDENCE) return { eligible: false, reason: "Recognition confidence is below the fixed auto-approval threshold." };
+  if (candidate.match_score < MIN_MATCH_SCORE) return { eligible: false, reason: "Match score is below the fixed auto-approval threshold." };
+  if (REQUIRE_MATCHED_ENTITY && (!candidate.matched_entity_id || candidate.matched_entity_type === "unmatched")) {
     return { eligible: false, reason: "Missing matched product or material master data." };
   }
-  if (rule.require_no_warnings && (candidate.warnings ?? []).length > 0) {
+  if ((candidate.warnings ?? []).length > 0 || (candidate.conflicts ?? []).length > 0) {
     return { eligible: false, reason: "Candidate has review warnings." };
   }
-  if (rule.require_price_and_piece && (!candidate.parsed_price_idr || !candidate.piece_count)) {
+  if (!candidate.parsed_price_idr || !candidate.piece_count) {
     return { eligible: false, reason: "Missing package price or piece count." };
   }
   return { eligible: true, reason: null };
+}
+
+export function resolveCandidateReviewPricePerPiece(
+  candidate: Pick<AiPriceCandidate, "visible_price_per_piece_idr" | "price_per_piece">,
+  packageDerivedPricePerPiece: number,
+) {
+  return positiveNumberOrFallback(
+    candidate.visible_price_per_piece_idr,
+    positiveNumberOrFallback(candidate.price_per_piece, packageDerivedPricePerPiece),
+  );
 }
 
 export async function approveAiPriceCandidate({
@@ -105,6 +120,7 @@ export async function approveAiPriceCandidate({
     net_price_idr: netPrice,
     piece_count: Math.floor(reviewedPieceCount),
   });
+  const reviewedPricePerPiece = resolveCandidateReviewPricePerPiece(candidateRow, normalized.price_per_piece);
 
   const visit = candidate.offline_store_visits as {
     store_id?: string | null;
@@ -148,7 +164,7 @@ export async function approveAiPriceCandidate({
       status: "approved",
       parsed_price_idr: netPrice,
       reviewed_piece_count: Math.floor(reviewedPieceCount),
-      reviewed_price_per_piece: normalized.price_per_piece,
+      reviewed_price_per_piece: reviewedPricePerPiece,
       price_snapshot_id: snapshotWithStore.id,
       reviewed_at: new Date().toISOString(),
       reviewed_by: reviewer ?? null,
@@ -172,7 +188,7 @@ export async function approveAiPriceCandidate({
       voucher_value_idr: 0,
       shipping_subsidy_idr: 0,
       net_price_idr: normalized.net_price_idr,
-      price_per_piece: normalized.price_per_piece,
+      price_per_piece: reviewedPricePerPiece,
       promo_type: normalizeCandidatePromoType(promoType ?? candidateRow.promo_type),
       captured_at: visit?.visit_date ? new Date(`${visit.visit_date}T00:00:00`).toISOString() : new Date().toISOString(),
       source: "offline_ai_confirmed",
@@ -190,7 +206,7 @@ export async function approveAiPriceCandidate({
     status: "approved",
     parsed_price_idr: netPrice,
     reviewed_piece_count: Math.floor(reviewedPieceCount),
-    reviewed_price_per_piece: normalized.price_per_piece,
+    reviewed_price_per_piece: reviewedPricePerPiece,
     price_snapshot_id: snapshot.id,
     reviewed_at: new Date().toISOString(),
     reviewed_by: reviewer ?? null,

@@ -136,6 +136,29 @@ function formatMoney(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? formatIdr(value) : "-";
 }
 
+function rowNeedsConfirmation(row: StoreVisitPriceImageAnalysis["rows"][number], candidate: AiPriceCandidate | null) {
+  if (candidate?.status === "approved") return false;
+  return row.review_decision === "NEED_REVIEW"
+    || candidate?.review_decision === "NEED_REVIEW"
+    || row.price_evidence_status !== "CLEAR"
+    || candidate?.price_evidence_status !== "CLEAR";
+}
+
+function canQuickConfirmRow(candidate: AiPriceCandidate | null) {
+  const price = Number(candidate?.net_price_idr ?? candidate?.parsed_price_idr);
+  const pieceCount = Number(candidate?.reviewed_piece_count ?? candidate?.piece_count);
+  return Boolean(
+    candidate
+    && candidate.status === "pending"
+    && candidate.matched_entity_type !== "unmatched"
+    && candidate.matched_entity_id
+    && Number.isFinite(price)
+    && price > 0
+    && Number.isFinite(pieceCount)
+    && pieceCount > 0,
+  );
+}
+
 function formatImageShortCode(value: string | null | undefined) {
   const shortCode = formatShortImageId(value);
   return shortCode === "-" ? shortCode : `ID: ${shortCode}`;
@@ -220,6 +243,22 @@ function normalizeMatchText(value: string | null | undefined) {
 
 function candidateDisplayPieceCount(candidate: AiPriceCandidate | null, fallback: number | null | undefined) {
   return candidate?.reviewed_piece_count ?? candidate?.piece_count ?? fallback ?? null;
+}
+
+function candidateDisplayListPrice(candidate: AiPriceCandidate | null, fallback: number | null | undefined) {
+  return candidate?.list_price_idr
+    ?? candidate?.package_price_idr
+    ?? candidate?.net_price_idr
+    ?? candidate?.parsed_price_idr
+    ?? fallback
+    ?? null;
+}
+
+function candidateDisplayNetPrice(candidate: AiPriceCandidate | null, fallback: number | null | undefined) {
+  return candidate?.net_price_idr
+    ?? candidate?.parsed_price_idr
+    ?? fallback
+    ?? null;
 }
 
 function candidateDisplayPricePerPiece(candidate: AiPriceCandidate | null, fallback: number | null | undefined) {
@@ -320,6 +359,28 @@ function resolveMatchLabel(rowEdit: RowEditState, matchOptions: MatchOptionState
 }
 
 function detailText(locale: Locale) {
+  /*
+  const rowEditPreviewText = locale === "zh"
+    ? {
+        ...rowEditPreviewText,
+        pricePerPieceAuto: "鑷姩鍗曠墖浠?,
+        autoCalculated: "鑷姩璁＄畻",
+      }
+    : {
+        ...rowEditPreviewText,
+        pricePerPieceAuto: "Per Piece",
+        autoCalculated: "Auto-calculated",
+      };
+  */
+  const rowEditPreviewText = locale === "zh"
+    ? {
+        pricePerPieceAuto: "Per Piece",
+        autoCalculated: "Auto",
+      }
+    : {
+        pricePerPieceAuto: "Per Piece",
+        autoCalculated: "Auto-calculated",
+      };
   return locale === "zh"
     ? {
         batchCode: "拍照批次",
@@ -330,7 +391,9 @@ function detailText(locale: Locale) {
         netPrice: "到手价",
         pricePerPiece: "单片价",
         pieceCount: "Pcs",
+        needsConfirmationText: "需确认",
         editRow: "Edit",
+        confirmRow: "确认",
         rowUnmatched: "未匹配",
         rowEditorTitle: "修改价格",
         skuMatch: "SKU Match",
@@ -388,7 +451,9 @@ function detailText(locale: Locale) {
         netPrice: "Net Price",
         pricePerPiece: "Per Piece",
         pieceCount: "Pcs",
+        needsConfirmationText: "Needs confirmation",
         editRow: "Edit",
+        confirmRow: "Confirm",
         rowUnmatched: "Unmatched",
         rowEditorTitle: "Edit Price",
         skuMatch: "SKU Match",
@@ -455,6 +520,13 @@ function detailText(locale: Locale) {
       };
 }
 
+function rowEditorPreviewText() {
+  return {
+    pricePerPieceAuto: "Per Piece",
+    autoCalculated: "Auto-calculated",
+  };
+}
+
 export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string }) {
   const copy = getMobileCopy(locale);
   const text = detailText(locale);
@@ -495,6 +567,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmState | null>(null);
   const [rowEdit, setRowEdit] = useState<RowEditState | null>(null);
   const [rowEditSaving, setRowEditSaving] = useState(false);
+  const [confirmingRowCandidateIds, setConfirmingRowCandidateIds] = useState<string[]>([]);
   const [matchOptions, setMatchOptions] = useState<MatchOptionState>({ materials: [], products: [] });
   const [matchOptionsLoading, setMatchOptionsLoading] = useState(false);
   const [matchOptionsError, setMatchOptionsError] = useState<string | null>(null);
@@ -702,7 +775,31 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
     }
   }
 
+  async function confirmRow(candidateId: string) {
+    if (confirmingRowCandidateIds.includes(candidateId)) return;
+    setConfirmingRowCandidateIds((current) => [...current, candidateId]);
+    setError(null);
+    try {
+      const response = await fetch(`/api/store-visit/price-candidates/${candidateId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "confirm_h5_row" }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error ?? text.saveRowFailed);
+      const candidate = payload.candidate;
+      if (candidate) applySavedRowCandidate(candidate as AiPriceCandidate);
+      await loadVisit({ preserveLoading: true });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : text.saveRowFailed);
+    } finally {
+      setConfirmingRowCandidateIds((current) => current.filter((id) => id !== candidateId));
+    }
+  }
+
   const status = visit?.analysis_status ?? "pending";
+  const hasAnalyzingPriceImage = (visit?.offline_visit_images ?? []).some((image) => image.analysis_status === "analyzing");
+  const visitAnalysisInProgress = analyzing || fullVisitReanalyzing || (status === "analyzing" && !hasAnalyzingPriceImage);
   const businessRetakeImages = (visit?.offline_visit_images ?? []).filter(isRetakeRequiredPriceImage);
   const systemFailedImages = (visit?.offline_visit_images ?? []).filter((image) => image.analysis_status === "failed" && !isRetakeRequiredPriceImage(image) && (image.analysis_error || image.error_message));
   const canRunWholeVisitAnalysis = status === "pending" && visit?.visit_status === "uploaded";
@@ -1084,6 +1181,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   collapsed={collapsedGroups.makuku_shelf}
                   onToggleCollapsed={() => setCollapsedGroups((current) => ({ ...current, makuku_shelf: !current.makuku_shelf }))}
                   updateLocked={updateLocked}
+                  visitAnalysisInProgress={visitAnalysisInProgress}
                   text={text}
                   localUploadsByImageId={localUploads}
                   candidates={visit?.ai_price_candidates ?? []}
@@ -1092,6 +1190,8 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   retryingImageIds={retryingImageIds}
                   onOpenActions={(imageId, imageCategory, label) => setActionSheet({ imageId, category: imageCategory, label })}
                   onOpenRowEditor={openRowEditor}
+                  onConfirmRow={(candidateId) => void confirmRow(candidateId)}
+                  confirmingRowCandidateIds={confirmingRowCandidateIds}
                   onRetakeFile={(imageId, file) => void uploadPricePhoto({ file, category: "makuku_shelf", targetImageId: imageId })}
                   cameraRetakeInputRefs={cameraRetakeInputRefs}
                   albumRetakeInputRefs={albumRetakeInputRefs}
@@ -1105,6 +1205,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   collapsed={collapsedGroups.competitor_shelf}
                   onToggleCollapsed={() => setCollapsedGroups((current) => ({ ...current, competitor_shelf: !current.competitor_shelf }))}
                   updateLocked={updateLocked}
+                  visitAnalysisInProgress={visitAnalysisInProgress}
                   text={text}
                   localUploadsByImageId={localUploads}
                   candidates={visit?.ai_price_candidates ?? []}
@@ -1113,6 +1214,8 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   retryingImageIds={retryingImageIds}
                   onOpenActions={(imageId, imageCategory, label) => setActionSheet({ imageId, category: imageCategory, label })}
                   onOpenRowEditor={openRowEditor}
+                  onConfirmRow={(candidateId) => void confirmRow(candidateId)}
+                  confirmingRowCandidateIds={confirmingRowCandidateIds}
                   onRetakeFile={(imageId, file) => void uploadPricePhoto({ file, category: "competitor_shelf", targetImageId: imageId })}
                   cameraRetakeInputRefs={cameraRetakeInputRefs}
                   albumRetakeInputRefs={albumRetakeInputRefs}
@@ -1382,6 +1485,7 @@ function PriceSectionGroup({
   collapsed,
   onToggleCollapsed,
   updateLocked,
+  visitAnalysisInProgress,
   text,
   localUploadsByImageId,
   candidates,
@@ -1390,6 +1494,8 @@ function PriceSectionGroup({
   onPreview,
   onOpenActions,
   onOpenRowEditor,
+  onConfirmRow,
+  confirmingRowCandidateIds,
   onRetakeFile,
   cameraRetakeInputRefs,
   albumRetakeInputRefs,
@@ -1401,6 +1507,7 @@ function PriceSectionGroup({
   collapsed: boolean;
   onToggleCollapsed: () => void;
   updateLocked: boolean;
+  visitAnalysisInProgress: boolean;
   text: ReturnType<typeof detailText>;
   localUploadsByImageId: Record<string, LocalUploadState>;
   candidates: AiPriceCandidate[];
@@ -1409,6 +1516,8 @@ function PriceSectionGroup({
   onPreview: (image: { url: string; label: string }) => void;
   onOpenActions: (imageId: string, category: "makuku_shelf" | "competitor_shelf", label: string) => void;
   onOpenRowEditor: (section: PriceParseSection, row: StoreVisitPriceImageAnalysis["rows"][number], rowIndex: number) => void;
+  onConfirmRow: (candidateId: string) => void;
+  confirmingRowCandidateIds: string[];
   onRetakeFile: (imageId: string, file: File) => void;
   cameraRetakeInputRefs: MutableRefObject<Record<string, HTMLInputElement | null>>;
   albumRetakeInputRefs: MutableRefObject<Record<string, HTMLInputElement | null>>;
@@ -1434,6 +1543,7 @@ function PriceSectionGroup({
             const previewUrl = sectionLocalUpload?.previewUrl ?? section.signedImage?.url ?? null;
             const isProcessingRetake = sectionLocalUpload?.mode === "retake";
             const isAnalyzingImage = section.image.analysis_status === "analyzing";
+            const priceRowsPending = visitAnalysisInProgress || retryingImageIds.includes(section.image.id) || isAnalyzingImage || (isProcessingRetake && sectionLocalUpload?.status === "analyzing");
             const needsRetake = isRetakeRequiredPriceImage(section.image);
             const isActionDisabled = updateLocked || retryingImageIds.includes(section.image.id) || deletingImageIds.includes(section.image.id);
 
@@ -1549,27 +1659,50 @@ function PriceSectionGroup({
           ) : null}
 
           <div className="mt-3 space-y-2">
-            {section.result?.rows.length ? section.result.rows.map((row, rowIndex) => {
+            {priceRowsPending ? null : section.result?.rows.length ? section.result.rows.map((row, rowIndex) => {
               const candidate = matchCandidateForRow(candidates, section.image.id, row);
               const displayPieceCount = candidateDisplayPieceCount(candidate, row.piece_count);
               const displayPricePerPiece = candidateDisplayPricePerPiece(candidate, row.price_per_piece_idr);
               const matchInfo = candidateMatchDisplay(candidate);
-              const listPrice = row.list_price_idr ?? row.package_price_idr ?? null;
-              const netPrice = row.net_price_idr ?? null;
+              const listPrice = candidateDisplayListPrice(candidate, row.list_price_idr ?? row.package_price_idr ?? null);
+              const netPrice = candidateDisplayNetPrice(candidate, row.net_price_idr ?? null);
+              const needsConfirmation = rowNeedsConfirmation(row, candidate);
+              const quickConfirmAvailable = needsConfirmation && canQuickConfirmRow(candidate);
+              const isConfirmingRow = Boolean(candidate?.id && confirmingRowCandidateIds.includes(candidate.id));
               return (
                 <div key={`${section.image.id}-${rowIndex}`} className="rounded-lg bg-white px-3 py-2 text-xs shadow-sm">
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
                     <div className="line-clamp-1 min-w-0 text-sm font-semibold leading-5 text-slate-900">{row.sku}</div>
-                    <button
-                      type="button"
-                      onClick={() => onOpenRowEditor(section, row, rowIndex)}
-                      className="shrink-0 whitespace-nowrap text-[11px] font-semibold leading-5 text-blue-600"
-                    >
-                      {text.editRow}
-                    </button>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {quickConfirmAvailable && candidate?.id ? (
+                        <button
+                          type="button"
+                          disabled={isConfirmingRow}
+                          onClick={() => onConfirmRow(candidate.id)}
+                          className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-emerald-600 px-2 py-0.5 text-[11px] font-semibold leading-5 text-white disabled:opacity-60"
+                        >
+                          {isConfirmingRow ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                          {text.confirmRow}
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => onOpenRowEditor(section, row, rowIndex)}
+                        className="shrink-0 whitespace-nowrap text-[11px] font-semibold leading-5 text-blue-600"
+                      >
+                        {text.editRow}
+                      </button>
+                    </div>
                   </div>
-                  <div className={`mt-1 break-words text-[10px] leading-4 ${matchInfo.matched ? "text-slate-500" : "font-semibold text-red-600"}`}>
-                    {matchInfo.matched ? matchInfo.label : text.rowUnmatched}
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                    {needsConfirmation ? (
+                      <span className="rounded-full bg-amber-100 px-2 py-[1px] text-[10px] font-semibold leading-4 text-amber-700">
+                        {text.needsConfirmationText}
+                      </span>
+                    ) : null}
+                    <span className={`break-words text-[10px] leading-4 ${matchInfo.matched ? "text-slate-500" : "font-semibold text-red-600"}`}>
+                      {matchInfo.matched ? matchInfo.label : text.rowUnmatched}
+                    </span>
                   </div>
                   <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1">
                     <PriceMetricRow label={text.listPrice} value={formatMoney(listPrice)} />
@@ -1723,6 +1856,12 @@ function RowEditSheet({
   onSave: () => void;
 }) {
   const [matchPickerOpen, setMatchPickerOpen] = useState(false);
+  const previewText = rowEditorPreviewText();
+  const previewNetPrice = Number(rowEdit.netPrice);
+  const previewPieceCount = Number(rowEdit.pieceCount);
+  const computedRowPricePerPiece = Number.isFinite(previewNetPrice) && previewNetPrice > 0 && Number.isFinite(previewPieceCount) && previewPieceCount > 0
+    ? Math.round((previewNetPrice / previewPieceCount) * 100) / 100
+    : null;
   const options = filterValidMatchOptions(rowEdit.matchedEntityType === "material_master" ? matchOptions.materials : matchOptions.products);
   const selectedMatchOptionLabel = rowEdit.matchedEntityId
     ? rowEdit.selectedMatchLabel || rowEdit.matchedEntityId
@@ -1755,7 +1894,7 @@ function RowEditSheet({
       <div className="max-h-[calc(100dvh-24px)] w-full overflow-y-auto rounded-t-3xl bg-white px-4 pt-4 shadow-2xl" onClick={(event) => event.stopPropagation()}>
         <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-200" />
         <div className="text-sm font-semibold text-slate-900">{text.rowEditorTitle}</div>
-        <div className="mt-1 text-sm text-slate-500">{rowEdit.sku}</div>
+        <div className="mt-1 line-clamp-2 text-[13px] leading-5 text-slate-500">{rowEdit.sku}</div>
 
         <div className="mt-4 space-y-3">
           <label className="block">
@@ -1765,6 +1904,20 @@ function RowEditSheet({
               onChange={(event) => onChange((current) => current ? { ...current, netPrice: event.target.value } : current)}
               className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-blue-500"
               inputMode="numeric"
+            />
+          </label>
+
+          <label className="block">
+            <div className="mb-1 flex items-center justify-between gap-2 text-xs font-medium text-slate-500">
+              <span>{previewText.pricePerPieceAuto}</span>
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                {previewText.autoCalculated}
+              </span>
+            </div>
+            <input
+              value={computedRowPricePerPiece === null ? "-" : formatMoney(computedRowPricePerPiece)}
+              readOnly
+              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-700 outline-none"
             />
           </label>
 

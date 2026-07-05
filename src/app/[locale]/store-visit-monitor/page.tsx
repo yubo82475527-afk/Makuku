@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { PageShellState } from "@/components/page-shell-state";
 import { Badge, Button, Card, DataNotice, EmptyState, MetricCard, SelectInput, TextInput } from "@/components/ui";
-import { formatJakartaTime } from "@/lib/format";
+import { formatJakartaTime, formatPercent } from "@/lib/format";
 import { getPageI18n } from "@/lib/i18n/server";
 import { getStoreVisitMonitor } from "@/lib/data";
 
@@ -71,6 +71,20 @@ export default async function StoreVisitMonitorPage({
       </div>
 
       <Card className="mb-4">
+        <div className="mb-3">
+          <h2 className="font-semibold">Price parsing quality</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Unchanged H5 flow. These metrics summarize current AI parsing quality against final approved store price snapshots.
+          </p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          <MetricCard label="Accuracy" value={formatPercent(monitor.quality.accuracy !== null ? monitor.quality.accuracy * 100 : null)} />
+          <MetricCard label="Auto-approval rate" value={formatPercent(monitor.quality.autoApprovalRate !== null ? monitor.quality.autoApprovalRate * 100 : null)} />
+          <MetricCard label="Average price deviation" value={formatPercent(monitor.quality.avgPriceDeviationRate !== null ? monitor.quality.avgPriceDeviationRate * 100 : null)} />
+        </div>
+      </Card>
+
+      <Card className="mb-4">
         <form className="grid gap-3 md:grid-cols-7">
           <TextInput name="visit_code" placeholder="Visit code" defaultValue={getFilter("visit_code")} />
           <TextInput name="store_name" placeholder="Store name" defaultValue={getFilter("store_name")} />
@@ -118,6 +132,9 @@ export default async function StoreVisitMonitorPage({
                   <th className="py-2 pr-3">Success</th>
                   <th className="py-2 pr-3">Failure</th>
                   <th className="py-2 pr-3">Retake</th>
+                  <th className="py-2 pr-3">Accuracy</th>
+                  <th className="py-2 pr-3">Auto-approval rate</th>
+                  <th className="py-2 pr-3">Average price deviation</th>
                   <th className="py-2 pr-3">Started at</th>
                   <th className="py-2 pr-3">Completed at</th>
                   <th className="py-2 pr-3">Details</th>
@@ -138,6 +155,9 @@ export default async function StoreVisitMonitorPage({
                     <td className="whitespace-nowrap py-3 pr-3">{visit.successCount}</td>
                     <td className="whitespace-nowrap py-3 pr-3">{visit.failureCount}</td>
                     <td className="whitespace-nowrap py-3 pr-3">{visit.retakeRequiredCount}</td>
+                    <td className="whitespace-nowrap py-3 pr-3">{formatPercent(visit.accuracy !== null ? visit.accuracy * 100 : null)}</td>
+                    <td className="whitespace-nowrap py-3 pr-3">{formatPercent(visit.autoApprovalRate !== null ? visit.autoApprovalRate * 100 : null)}</td>
+                    <td className="whitespace-nowrap py-3 pr-3">{formatPercent(visit.avgPriceDeviationRate !== null ? visit.avgPriceDeviationRate * 100 : null)}</td>
                     <td className="whitespace-nowrap py-3 pr-3">{visit.startedAt ? formatJakartaTime(visit.startedAt) : "-"}</td>
                     <td className="whitespace-nowrap py-3 pr-3">{visit.completedAt ? formatJakartaTime(visit.completedAt) : "-"}</td>
                     <td className="whitespace-nowrap py-3 pr-3">

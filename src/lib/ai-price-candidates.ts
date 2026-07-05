@@ -1,9 +1,9 @@
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
 import { parseIdrPrice, reconcilePackagePriceMetrics } from "@/lib/price-utils";
 import { normalizePieceCount, normalizePieceCountFromCandidates, normalizePieceCountFromEvidence, parsePieceCountText } from "@/lib/piece-count";
-import type { AiPriceCandidate, CompetitorProduct, MaterialMaster, StoreVisitAiResult } from "@/lib/types";
+import type { AiPriceCandidate, CompetitorProduct, MaterialMaster, PriceEvidenceStatus, PriceReviewDecision, StoreVisitAiResult } from "@/lib/types";
 
-type Warning = { type: string; message: string };
+type Warning = { type?: string; message: string };
 
 type SkuMatchAttributes = {
   normalizedText: string;
@@ -47,9 +47,15 @@ type SourceItem = {
   raw_price_per_piece_text?: string | null;
   visible_price_per_piece_idr?: number | null;
   price_basis?: string | null;
+  legacy_confidence_fallback?: boolean | null;
+  price_evidence_status?: PriceEvidenceStatus | null;
+  price_evidence_confidence?: number | null;
+  price_evidence_detail?: Record<string, unknown> | null;
+  conflicts?: Warning[] | null;
+  review_decision?: PriceReviewDecision | null;
   type: "SKU" | "PROMO";
   tag?: string | null;
-  confidence: number;
+  confidence: number | null;
   source: "key_sku" | "raw";
   sourceImageId?: string | null;
   sourceImagePath?: string | null;
@@ -401,7 +407,7 @@ function pickBestCompetitor(candidate: { brand: string; product: string; pieceCo
 
 function isPriceCandidate(item: SourceItem) {
   if (!item.brand || !item.product) return false;
-  if (item.confidence < 0.4) return false;
+  if (item.confidence !== null && item.confidence < 0.4) return false;
   if (item.tag === "ANOMALY") return false;
   if (hasNonPricePromotionText(item)) return false;
   return parseCandidatePrice(item.price) !== null;
@@ -516,7 +522,8 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
     if (!item.product) warnings.push({ type: "MISSING_DATA", message: "AI did not extract a product name." });
     if (!parsedPrice) warnings.push({ type: "MISSING_DATA", message: "AI price could not be parsed into a number." });
     if (!pieceCount) warnings.push({ type: "MISSING_DATA", message: "Missing piece count; per-piece price cannot be calculated." });
-    if (item.confidence < 0.5) warnings.push({ type: "LOW_CONFIDENCE", message: "AI extraction confidence is below 50%." });
+    if (item.confidence === null) warnings.push({ type: "PARSE_RISK", message: "Legacy visual association confidence is missing; manual review required." });
+    if (item.confidence !== null && item.confidence < 0.5) warnings.push({ type: "LOW_CONFIDENCE", message: "AI extraction confidence is below 50%." });
     if (reconciledPrices.warningMessage) {
       warnings.push({ type: "PARSE_RISK", message: reconciledPrices.warningMessage });
     }
@@ -547,6 +554,15 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
       raw_brand: item.brand,
       raw_product: item.product,
       raw_price: item.price,
+      ai_matched_entity_type: matchedEntityType,
+      ai_matched_entity_id: matchedEntityId,
+      ai_matched_label: materialMatch ? materialLabel(materialMatch.item) : competitorMatch ? competitorLabel(competitorMatch.item) : null,
+      ai_list_price_idr: listPrice,
+      ai_package_price_idr: packagePrice,
+      ai_net_price_idr: netPrice,
+      ai_piece_count: pieceCount,
+      ai_price_per_piece: pricePerPiece,
+      ai_promo_type: normalizePromoType(item.promo_type),
       parsed_price_idr: netPrice,
       list_price_idr: listPrice,
       package_price_idr: packagePrice,
@@ -562,6 +578,12 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
       price_per_piece: pricePerPiece,
       candidate_type: item.type,
       ai_confidence: item.confidence,
+      legacy_confidence_fallback: item.legacy_confidence_fallback ?? item.confidence === null,
+      price_evidence_status: item.price_evidence_status ?? reconciledPrices.priceEvidenceStatus,
+      price_evidence_confidence: item.price_evidence_confidence ?? reconciledPrices.priceEvidenceConfidence,
+      price_evidence_detail: item.price_evidence_detail ?? reconciledPrices.priceEvidenceDetail,
+      conflicts: item.conflicts ?? reconciledPrices.conflicts,
+      review_decision: item.review_decision ?? reconciledPrices.reviewDecision,
       matched_entity_type: matchedEntityType,
       matched_entity_id: matchedEntityId,
       matched_label: materialMatch ? materialLabel(materialMatch.item) : competitorMatch ? competitorLabel(competitorMatch.item) : null,
