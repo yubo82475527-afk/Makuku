@@ -3406,6 +3406,43 @@ function isMissingStoreVisitQualityViewError(error: { message?: string } | null)
     && (message.includes("Could not find the table") || message.includes("does not exist") || message.includes("schema cache"));
 }
 
+function isInactiveQualityLifecycleStatus(status: string | null | undefined) {
+  return status === "deleted" || status === "replaced" || status === "reanalyzed";
+}
+
+function valuesMatch(left: string | number | null | undefined, right: string | number | null | undefined) {
+  return left === right || (left == null && right == null);
+}
+
+type StoreVisitMonitorQualityRow = {
+  visit_id: string | null;
+  status: string;
+  review_method?: string | null;
+  candidate_type: string;
+  h5_lifecycle_status?: string | null;
+  ai_matched_entity_type?: string | null;
+  ai_matched_entity_id?: string | null;
+  ai_net_price_idr?: number | null;
+  matched_entity_type?: string | null;
+  matched_entity_id?: string | null;
+  net_price_idr?: number | null;
+};
+
+function candidateContributesToQuality(row: StoreVisitMonitorQualityRow) {
+  return row.candidate_type === "SKU" && !isInactiveQualityLifecycleStatus(row.h5_lifecycle_status);
+}
+
+function candidateMatchesOriginalAi(row: StoreVisitMonitorQualityRow) {
+  if (row.status === "rejected") return false;
+  return valuesMatch(row.ai_matched_entity_type, row.matched_entity_type)
+    && valuesMatch(row.ai_matched_entity_id, row.matched_entity_id)
+    && valuesMatch(row.ai_net_price_idr, row.net_price_idr);
+}
+
+function candidateWasAutoApproved(row: StoreVisitMonitorQualityRow) {
+  return row.status === "approved" && row.review_method === "auto_rule";
+}
+
 async function getStoreVisitMonitorQuality(visitIds: string[]): Promise<QueryResult<StoreVisitMonitorQuality>> {
   if (!hasSupabaseServiceConfig() || visitIds.length === 0) {
     return { data: emptyStoreVisitMonitorQuality(), error: null, isDemo: !hasSupabaseServiceConfig() };
@@ -3413,35 +3450,36 @@ async function getStoreVisitMonitorQuality(visitIds: string[]): Promise<QueryRes
 
   const supabase = createSupabaseServiceClient();
   const { data, error } = await supabase
-    .from("ai_price_candidate_quality_metrics_v1")
-    .select("candidate_id,row_correct_flag,auto_approved_flag,price_delta_pct")
+    // Keep the SQL view for downstream consumers; the monitor reads ai_price_candidates directly
+    // so the metrics reflect current row edits immediately without requiring snapshot approval.
+    .from("ai_price_candidates")
+    .select("visit_id,status,review_method,candidate_type,h5_lifecycle_status,ai_matched_entity_type,ai_matched_entity_id,ai_net_price_idr,matched_entity_type,matched_entity_id,net_price_idr")
     .in("visit_id", visitIds)
-    .eq("is_active_candidate", true)
     .range(0, 9999);
 
-  if (isMissingStoreVisitQualityViewError(error)) {
+  if (isMissingStoreVisitQualityViewError(error) || (error?.message ?? "").includes("ai_matched_entity_type")) {
     return { data: emptyStoreVisitMonitorQuality(), error: null, isDemo: false };
   }
   if (error) return { data: emptyStoreVisitMonitorQuality(), error: error.message, isDemo: false };
 
-  const rows = (data ?? []) as {
-    candidate_id: string;
-    row_correct_flag?: boolean | null;
-    auto_approved_flag?: boolean | null;
-    price_delta_pct?: number | null;
-  }[];
-  const denominator = rows.length;
-  const deviationRows = rows
-    .map((row) => row.price_delta_pct)
+  const rows = (data ?? []) as StoreVisitMonitorQualityRow[];
+  const activeRows = rows.filter(candidateContributesToQuality);
+  const denominator = activeRows.length;
+  const deviationRows = activeRows
+    .map((row) => {
+      if (typeof row.ai_net_price_idr !== "number" || !Number.isFinite(row.ai_net_price_idr)) return null;
+      if (typeof row.net_price_idr !== "number" || !Number.isFinite(row.net_price_idr) || row.net_price_idr <= 0) return null;
+      return Math.abs(row.ai_net_price_idr - row.net_price_idr) / row.net_price_idr;
+    })
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
 
   return {
     data: {
       accuracy: denominator > 0
-        ? rows.filter((row) => row.row_correct_flag === true).length / denominator
+        ? activeRows.filter(candidateMatchesOriginalAi).length / denominator
         : null,
       autoApprovalRate: denominator > 0
-        ? rows.filter((row) => row.auto_approved_flag === true).length / denominator
+        ? activeRows.filter(candidateWasAutoApproved).length / denominator
         : null,
       avgPriceDeviationRate: deviationRows.length > 0
         ? deviationRows.reduce((sum, value) => sum + value, 0) / deviationRows.length
@@ -3459,31 +3497,34 @@ async function getStoreVisitMonitorVisitQuality(visitIds: string[]): Promise<Que
 
   const supabase = createSupabaseServiceClient();
   const { data, error } = await supabase
-    .from("ai_price_candidate_quality_metrics_v1")
-    .select("visit_id,row_correct_flag,auto_approved_flag,price_delta_pct")
+    .from("ai_price_candidates")
+    .select("visit_id,status,review_method,candidate_type,h5_lifecycle_status,ai_matched_entity_type,ai_matched_entity_id,ai_net_price_idr,matched_entity_type,matched_entity_id,net_price_idr")
     .in("visit_id", visitIds)
-    .eq("is_active_candidate", true)
     .range(0, 9999);
 
-  if (isMissingStoreVisitQualityViewError(error)) {
+  if (isMissingStoreVisitQualityViewError(error) || (error?.message ?? "").includes("ai_matched_entity_type")) {
     return { data: {}, error: null, isDemo: false };
   }
   if (error) return { data: {}, error: error.message, isDemo: false };
 
   const grouped = new Map<string, { total: number; correct: number; autoApproved: number; deviations: number[] }>();
-  for (const row of (data ?? []) as {
-    visit_id?: string | null;
-    row_correct_flag?: boolean | null;
-    auto_approved_flag?: boolean | null;
-    price_delta_pct?: number | null;
-  }[]) {
+  for (const row of (data ?? []) as StoreVisitMonitorQualityRow[]) {
     if (!row.visit_id) continue;
+    if (!candidateContributesToQuality(row)) continue;
     const bucket = grouped.get(row.visit_id) ?? { total: 0, correct: 0, autoApproved: 0, deviations: [] };
     bucket.total += 1;
-    if (row.row_correct_flag === true) bucket.correct += 1;
-    if (row.auto_approved_flag === true) bucket.autoApproved += 1;
-    if (typeof row.price_delta_pct === "number" && Number.isFinite(row.price_delta_pct)) {
-      bucket.deviations.push(row.price_delta_pct);
+    if (candidateMatchesOriginalAi(row)) {
+      bucket.correct += 1;
+    }
+    if (candidateWasAutoApproved(row)) bucket.autoApproved += 1;
+    if (
+      typeof row.ai_net_price_idr === "number"
+      && Number.isFinite(row.ai_net_price_idr)
+      && typeof row.net_price_idr === "number"
+      && Number.isFinite(row.net_price_idr)
+      && row.net_price_idr > 0
+    ) {
+      bucket.deviations.push(Math.abs(row.ai_net_price_idr - row.net_price_idr) / row.net_price_idr);
     }
     grouped.set(row.visit_id, bucket);
   }

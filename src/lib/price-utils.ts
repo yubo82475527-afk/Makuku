@@ -80,6 +80,35 @@ function minConfidence(values: Array<number | null | undefined>) {
   return Math.min(...normalized);
 }
 
+function textContainsVisiblePieceCount(text: string | number | null | undefined, pieceCount: number | null | undefined) {
+  if (!pieceCount || !Number.isFinite(pieceCount) || pieceCount <= 0) return false;
+  const normalizedText = String(text ?? "").trim().toUpperCase();
+  if (!normalizedText) return false;
+  const count = String(Math.floor(pieceCount));
+  const countPattern = new RegExp(`(^|[^0-9])${count}([^0-9]|$)`);
+  return countPattern.test(normalizedText);
+}
+
+function hasVisiblePieceCountEvidence({
+  pieceCount,
+  pieceCountText,
+  skuText,
+  rowAnchor,
+  pieceCountConfidence,
+}: {
+  pieceCount: number | null;
+  pieceCountText?: string | number | null;
+  skuText?: string | number | null;
+  rowAnchor?: string | number | null;
+  pieceCountConfidence?: number | null;
+}) {
+  if (!pieceCount || !Number.isFinite(pieceCount) || pieceCount <= 0) return false;
+  if (textContainsVisiblePieceCount(pieceCountText, pieceCount)) return true;
+  if (textContainsVisiblePieceCount(rowAnchor, pieceCount)) return true;
+  if (textContainsVisiblePieceCount(skuText, pieceCount)) return true;
+  return (normalizeConfidence(pieceCountConfidence) ?? 0) >= PRICE_EVIDENCE_CONFIDENCE_THRESHOLD;
+}
+
 function createPriceEvidence(
   source: PriceEvidenceSource,
   textValue: string | number | null | undefined,
@@ -110,6 +139,9 @@ export function reconcilePackagePriceMetrics({
   packagePriceText,
   netPriceText,
   visiblePricePerPieceText,
+  pieceCountText,
+  skuText,
+  rowAnchor,
   listPriceConfidence,
   packagePriceConfidence,
   netPriceConfidence,
@@ -128,6 +160,9 @@ export function reconcilePackagePriceMetrics({
   packagePriceText?: string | number | null;
   netPriceText?: string | number | null;
   visiblePricePerPieceText?: string | number | null;
+  pieceCountText?: string | number | null;
+  skuText?: string | number | null;
+  rowAnchor?: string | number | null;
   listPriceConfidence?: number | null;
   packagePriceConfidence?: number | null;
   netPriceConfidence?: number | null;
@@ -205,6 +240,32 @@ export function reconcilePackagePriceMetrics({
     ? [rowBindingConfidence, sectionBindingConfidence]
     : [rowBindingConfidence, sectionBindingConfidence, productIdentityConfidence]);
   const legacyConfidenceFallback = aiConfidence === null;
+  const visiblePieceCountClear = hasVisiblePieceCountEvidence({
+    pieceCount,
+    pieceCountText,
+    skuText,
+    rowAnchor,
+    pieceCountConfidence,
+  });
+  const finalPackagePriceConfidence = selectedPackageEvidence
+    ? minConfidence([
+        selectedPackageEvidence.confidence,
+        rowBindingConfidence,
+        sectionBindingConfidence,
+        productIdentityConfidence,
+      ])
+    : null;
+  const finalPiecePriceConfidence = selectedPieceEvidence
+    ? minConfidence([
+        selectedPieceEvidence.confidence,
+        rowBindingConfidence,
+        sectionBindingConfidence,
+        productIdentityConfidence,
+      ])
+    : null;
+  const finalPackagePriceClear = Boolean(visiblePieceCountClear && selectedPackageEvidence && finalPackagePriceConfidence !== null && finalPackagePriceConfidence >= PRICE_EVIDENCE_CONFIDENCE_THRESHOLD);
+  const finalPiecePriceClear = Boolean(visiblePieceCountClear && selectedPieceEvidence && finalPiecePriceConfidence !== null && finalPiecePriceConfidence >= PRICE_EVIDENCE_CONFIDENCE_THRESHOLD);
+  const finalActualPriceClear = finalPackagePriceClear || finalPiecePriceClear;
   const resolvedPackagePriceConfidence = minConfidence([
     selectedPackageEvidence?.confidence ?? (derivedFromPiece ? selectedPieceEvidence?.confidence : null),
     pieceCountConfidence,
@@ -218,7 +279,14 @@ export function reconcilePackagePriceMetrics({
     sectionBindingConfidence,
   ]);
   const priceEvidenceConfidence = minConfidence([resolvedPackagePriceConfidence, resolvedPerPiecePriceConfidence]);
-  const lowConfidence = priceEvidenceConfidence !== null && priceEvidenceConfidence < PRICE_EVIDENCE_CONFIDENCE_THRESHOLD;
+  const finalActualPriceConfidence = finalPackagePriceClear && finalPiecePriceClear && priceEvidenceConfidence !== null
+    ? priceEvidenceConfidence
+    : finalPackagePriceClear
+    ? finalPackagePriceConfidence
+    : finalPiecePriceClear
+      ? finalPiecePriceConfidence
+      : priceEvidenceConfidence;
+  const lowConfidence = !finalActualPriceClear && priceEvidenceConfidence !== null && priceEvidenceConfidence < PRICE_EVIDENCE_CONFIDENCE_THRESHOLD;
   const packageToPieceDerivationIsClear = derivedFromPackage
     && !derivedFromPiece
     && !dividedPackageRestoration
@@ -231,7 +299,11 @@ export function reconcilePackagePriceMetrics({
   const reviewableDerivedFromPackage = derivedFromPackage && !packageToPieceDerivationIsClear;
   const priceEvidenceStatus: PriceEvidenceStatus = conflict
     ? "CONFLICT"
-    : derivedFromPiece || reviewableDerivedFromPackage
+    : finalActualPriceClear
+      ? "CLEAR"
+      : !visiblePieceCountClear && Boolean(pieceCount)
+        ? "REVIEW_REQUIRED"
+        : derivedFromPiece || reviewableDerivedFromPackage
       ? "DERIVED"
       : lowConfidence
         ? "LOW_CONFIDENCE"
@@ -247,16 +319,14 @@ export function reconcilePackagePriceMetrics({
   const warningMessages = [
     lowConfidence ? "LOW_CONFIDENCE: selected price evidence confidence is below review threshold." : null,
     dividedPackageRestoration ? "AI likely divided a whole-package price by piece count. Restored whole-package IDR amount fields." : null,
-    derivedFromPiece ? "DERIVED_FROM_PIECE_PRICE: no clear package price evidence; package price was derived from piece price and piece count." : null,
-    reviewableDerivedFromPackage ? "DERIVED_FROM_PACKAGE: no clear piece price evidence; analysis piece price was derived from package price and piece count." : null,
+    derivedFromPiece && !finalPiecePriceClear ? "DERIVED_FROM_PIECE_PRICE: no clear package price evidence; package price was derived from piece price and piece count." : null,
+    reviewableDerivedFromPackage && !finalPackagePriceClear ? "DERIVED_FROM_PACKAGE: no clear piece price evidence; analysis piece price was derived from package price and piece count." : null,
     netPiecePrice ? "net_price field contains piece price evidence; kept it separate from package price." : null,
     packageFieldPiecePrice || listFieldPiecePrice ? "Package/list price field contains piece price evidence; kept it separate from package price." : null,
     visiblePieceEvidence?.role === "PACKAGE" ? "visible price per piece field contains a package-scale value; ignored as piece price field evidence." : null,
   ].filter(Boolean);
   const warnings = warningMessages.map((message) => ({ type: "PARSE_RISK", message: String(message) }));
   const reviewDecision: PriceReviewDecision = priceEvidenceStatus === "CLEAR"
-    && aiConfidence !== null
-    && aiConfidence >= PRICE_EVIDENCE_CONFIDENCE_THRESHOLD
     && warnings.length === 0
     && conflicts.length === 0
       ? "AUTO_APPROVE"
@@ -282,11 +352,13 @@ export function reconcilePackagePriceMetrics({
     aiConfidence,
     legacyConfidenceFallback,
     priceEvidenceStatus,
-    priceEvidenceConfidence,
+    priceEvidenceConfidence: finalActualPriceConfidence,
     reviewDecision,
     priceEvidenceDetail: {
       package_price_confidence: resolvedPackagePriceConfidence,
       per_piece_price_confidence: resolvedPerPiecePriceConfidence,
+      final_actual_price_confidence: finalActualPriceConfidence,
+      visible_piece_count_clear: visiblePieceCountClear,
       piece_count_confidence: normalizeConfidence(pieceCountConfidence),
       row_binding_confidence: normalizeConfidence(rowBindingConfidence),
       section_binding_confidence: normalizeConfidence(sectionBindingConfidence),
@@ -295,6 +367,7 @@ export function reconcilePackagePriceMetrics({
       per_piece_price_source: selectedPieceEvidence?.source ?? (derivedFromPackage ? selectedPackageEvidence?.source ?? null : null),
       package_price_status: derivedFromPiece ? "DERIVED" : selectedPackageEvidence ? "VISIBLE" : "MISSING",
       per_piece_price_status: derivedFromPackage ? "DERIVED" : selectedPieceEvidence ? "VISIBLE" : "MISSING",
+      per_piece_derivation_basis: derivedFromPackage ? "PACKAGE_AND_PIECE_COUNT" : null,
       threshold: PRICE_EVIDENCE_CONFIDENCE_THRESHOLD,
     },
   };

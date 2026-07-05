@@ -64,14 +64,14 @@ test("candidate review service centralizes approve reject and rule eligibility",
   assert.match(singleRoute, /approveAiPriceCandidate/);
 });
 
-test("candidate review requires explicit auto-approve decision and treats legacy confidence as review-only", () => {
-  assert.match(reviewService, /const MIN_RECOGNITION_CONFIDENCE\s*=\s*0\.9/);
+test("candidate review trusts resolver auto-approve decision and does not hard-block lower visual confidence", () => {
   assert.match(reviewService, /const MIN_MATCH_SCORE\s*=\s*0\.9/);
   assert.match(reviewService, /const REQUIRE_MATCHED_ENTITY\s*=\s*true/);
   assert.match(reviewService, /candidate\.review_decision !== "AUTO_APPROVE"/);
-  assert.match(reviewService, /candidate\.ai_confidence == null/);
-  assert.match(reviewService, /legacy_confidence_fallback/);
-  assert.match(reviewService, /candidate\.ai_confidence < MIN_RECOGNITION_CONFIDENCE/);
+  assert.doesNotMatch(reviewService, /MIN_RECOGNITION_CONFIDENCE/);
+  assert.doesNotMatch(reviewService, /candidate\.ai_confidence == null/);
+  assert.doesNotMatch(reviewService, /legacy_confidence_fallback/);
+  assert.doesNotMatch(reviewService, /candidate\.ai_confidence < MIN_RECOGNITION_CONFIDENCE/);
   assert.match(reviewService, /candidate\.match_score < MIN_MATCH_SCORE/);
   assert.doesNotMatch(reviewService, /candidate\.ai_confidence < rule\.min_ai_confidence/);
   assert.doesNotMatch(reviewService, /candidate\.match_score < rule\.min_match_score/);

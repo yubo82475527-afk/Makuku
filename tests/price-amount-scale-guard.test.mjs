@@ -627,6 +627,108 @@ test("store visit price image normalization treats promo piece as final actual p
   assert.equal(row.price_per_piece_idr, 1398);
 });
 
+test("store visit price image normalization auto-approves clear package price when piece count is visible in row sku", () => {
+  const normalized = storeVisitAi.normalizeStoreVisitPriceImageAnalysis({
+    photo_quality: { status: "pass", reasons: [], message: "Photo quality passed." },
+    rows: [
+      {
+        source_type: "PRICE_BOARD_ROW",
+        group_id: "merries_board",
+        section_title: "Merries Good Skin - Pants",
+        row_anchor: "M48",
+        brand: "SONObebe",
+        product_family_text: "Merries Good Skin - Pants",
+        sku: "M48",
+        piece_count_text: null,
+        normal_package_text: "96,900",
+        normal_piece_text: null,
+        promo_package_text: null,
+        promo_piece_text: null,
+        piece_count: 48,
+        normal_package_price_confidence: 0.83,
+        piece_count_confidence: 0,
+        row_binding_confidence: 0.9,
+        section_binding_confidence: 0.95,
+        product_identity_confidence: 0.92,
+      },
+    ],
+    warnings: [],
+  }, "makuku_shelf");
+
+  const row = normalized.rows[0];
+  assert.equal(row.net_price_idr, 96900);
+  assert.equal(row.piece_count, 48);
+  assert.equal(row.price_per_piece_idr, 2018.75);
+  assert.equal(row.price_evidence_status, "CLEAR");
+  assert.equal(row.review_decision, "AUTO_APPROVE");
+  assert.equal((row.warnings ?? []).length, 0);
+  assert.equal(row.price_evidence_detail?.per_piece_price_status, "DERIVED");
+});
+
+test("store visit price image normalization auto-approves clear visible piece price when piece count is visible", () => {
+  const normalized = storeVisitAi.normalizeStoreVisitPriceImageAnalysis({
+    photo_quality: { status: "pass", reasons: [], message: "Photo quality passed." },
+    rows: [
+      {
+        source_type: "PRICE_BOARD_ROW",
+        group_id: "visible_piece_board",
+        row_anchor: "XL38",
+        brand: "Makuku",
+        sku: "XL38",
+        piece_count_text: null,
+        normal_package_text: null,
+        normal_piece_text: "2.550",
+        promo_package_text: null,
+        promo_piece_text: null,
+        piece_count: 38,
+        normal_per_piece_price_confidence: 0.86,
+        piece_count_confidence: 0,
+        row_binding_confidence: 0.9,
+        section_binding_confidence: 0.92,
+        product_identity_confidence: 0.9,
+      },
+    ],
+    warnings: [],
+  }, "makuku_shelf");
+
+  const row = normalized.rows[0];
+  assert.equal(row.net_price_idr, 96900);
+  assert.equal(row.price_per_piece_idr, 2550);
+  assert.equal(row.price_evidence_status, "CLEAR");
+  assert.equal(row.review_decision, "AUTO_APPROVE");
+});
+
+test("store visit price image normalization requires review when piece count is not visible evidence", () => {
+  const normalized = storeVisitAi.normalizeStoreVisitPriceImageAnalysis({
+    photo_quality: { status: "pass", reasons: [], message: "Photo quality passed." },
+    rows: [
+      {
+        source_type: "PRICE_BOARD_ROW",
+        group_id: "hidden_piece_board",
+        brand: "Makuku",
+        sku: "Comfort Fit",
+        piece_count_text: null,
+        normal_package_text: "96,900",
+        normal_piece_text: null,
+        promo_package_text: null,
+        promo_piece_text: null,
+        piece_count: 48,
+        normal_package_price_confidence: 0.9,
+        piece_count_confidence: 0,
+        row_binding_confidence: 0.9,
+        section_binding_confidence: 0.92,
+        product_identity_confidence: 0.9,
+      },
+    ],
+    warnings: [],
+  }, "makuku_shelf");
+
+  const row = normalized.rows[0];
+  assert.equal(row.net_price_idr, 96900);
+  assert.equal(row.price_evidence_status, "REVIEW_REQUIRED");
+  assert.equal(row.review_decision, "NEED_REVIEW");
+});
+
 test("store visit price image normalization requires review when evidence is derived or confidence is missing", () => {
   const normalized = storeVisitAi.normalizeStoreVisitPriceImageAnalysis({
     photo_quality: { status: "pass", reasons: [], message: "Photo quality passed." },

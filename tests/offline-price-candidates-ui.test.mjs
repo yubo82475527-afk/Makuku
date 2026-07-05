@@ -528,6 +528,14 @@ test("mobile store visit detail exposes admin-only full visit reanalysis", () =>
   assert.match(storeVisitDetailH5, /const canRunFullVisitReanalysis = appUserRole === "admin"/);
   assert.match(storeVisitDetailH5, /body: JSON\.stringify\(\{ full_visit: true \}\)/);
   assert.match(storeVisitDetailH5, /aria-label=\{text\.reanalyzeFullVisit\}/);
+  assert.match(storeVisitDetailH5, /confirmFullVisitReanalyzeTitle:/);
+  assert.match(storeVisitDetailH5, /confirmFullVisitReanalyzeDescription:/);
+  assert.match(storeVisitDetailH5, /confirmFullVisitReanalyzeAction:/);
+  assert.match(storeVisitDetailH5, /const \[fullVisitReanalyzeConfirmOpen, setFullVisitReanalyzeConfirmOpen\] = useState\(false\)/);
+  assert.match(storeVisitDetailH5, /onClick=\{\(\) => setFullVisitReanalyzeConfirmOpen\(true\)\}/);
+  assert.doesNotMatch(storeVisitDetailH5, /onClick=\{reanalyzeFullVisit\}/);
+  assert.match(storeVisitDetailH5, /fullVisitReanalyzeConfirmOpen \? \(/);
+  assert.match(storeVisitDetailH5, /onClick=\{\(\) => \{\s*void reanalyzeFullVisit\(\)\.then\(\(\) => \{\s*setFullVisitReanalyzeConfirmOpen\(false\);/s);
 });
 
 test("store visit refresh API supports admin-only full visit reanalysis", () => {

@@ -530,9 +530,23 @@ function rowEditorPreviewText() {
 export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string }) {
   const copy = getMobileCopy(locale);
   const text = detailText(locale);
+  const fullVisitReanalyzeCopy = locale === "zh"
+    ? {
+        confirmFullVisitReanalyzeTitle: "确认整单重新分析？",
+        confirmFullVisitReanalyzeDescription: "这会重跑当前整个 Visit 的 AI 识别。已有价格结果可能会被刷新，通常需要等待几分钟。",
+        confirmFullVisitReanalyzeAction: "确认整单重跑",
+      }
+    : {
+        confirmFullVisitReanalyzeTitle: "Re-analyze this full visit?",
+        confirmFullVisitReanalyzeDescription: "This will rerun AI analysis for the entire visit. Existing price results may be refreshed and it can take a few minutes.",
+        confirmFullVisitReanalyzeAction: "Confirm Full Re-analysis",
+      };
   const confirmReanalyzeTitle = textOrFallback(text.confirmReanalyzeTitle, locale === "zh" ? "确认重新识别这张照片？" : "Re-analyze this photo?");
   const confirmReanalyzeDescription = textOrFallback(text.confirmReanalyzeDescription, locale === "zh" ? "这会只重跑当前这张照片的 AI 识别，并刷新它关联的价格结果。" : "This will rerun AI analysis for this single photo. Existing linked price snapshots from this photo may be refreshed.");
   const confirmReanalyzeActionLabel = textOrFallback(text.confirmReanalyzeAction, locale === "zh" ? "确认重新识别" : "Confirm Re-analyze");
+  const confirmFullVisitReanalyzeTitle = fullVisitReanalyzeCopy.confirmFullVisitReanalyzeTitle;
+  const confirmFullVisitReanalyzeDescription = fullVisitReanalyzeCopy.confirmFullVisitReanalyzeDescription;
+  const confirmFullVisitReanalyzeActionLabel = fullVisitReanalyzeCopy.confirmFullVisitReanalyzeAction;
   const reanalyzingLabel = textOrFallback(text.reanalyzing, locale === "zh" ? "重新识别中..." : "Re-analyzing...");
   const confirmDeleteTitle = textOrFallback(text.confirmDeleteTitle, locale === "zh" ? "确认删除这张照片？" : "Delete this photo?");
   const confirmDeleteDescription = textOrFallback(text.confirmDeleteDescription, locale === "zh" ? "删除后，H5 和关联的价格快照都会同步删除，且不可恢复。" : "This will remove the photo from H5 and delete its linked price snapshots. This action cannot be undone.");
@@ -548,6 +562,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   const [refreshingVisit, setRefreshingVisit] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [fullVisitReanalyzing, setFullVisitReanalyzing] = useState(false);
+  const [fullVisitReanalyzeConfirmOpen, setFullVisitReanalyzeConfirmOpen] = useState(false);
   const [appUserRole, setAppUserRole] = useState<string | null>(null);
   const [analysisPhase, setAnalysisPhase] = useState<"idle" | "running" | "refreshing">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -1109,7 +1124,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   {canRunFullVisitReanalysis ? (
                     <button
                       type="button"
-                      onClick={reanalyzeFullVisit}
+                      onClick={() => setFullVisitReanalyzeConfirmOpen(true)}
                       disabled={fullVisitReanalyzing || analysisPhase !== "idle"}
                       aria-label={text.reanalyzeFullVisit}
                       title={text.reanalyzeFullVisit}
@@ -1422,6 +1437,47 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   type="button"
                   disabled={retryingImageIds.includes(reanalyzeConfirm.imageId)}
                   onClick={() => setReanalyzeConfirm(null)}
+                  className="flex flex-1 items-center justify-center rounded-2xl bg-slate-100 px-4 py-3 text-sm font-medium text-slate-700 disabled:opacity-60"
+                >
+                  {text.close}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {fullVisitReanalyzeConfirmOpen ? (
+          <div
+            className="fixed inset-0 z-[64] flex items-end bg-slate-950/45"
+            role="dialog"
+            aria-modal="true"
+            onClick={() => {
+              if (!fullVisitReanalyzing) setFullVisitReanalyzeConfirmOpen(false);
+            }}
+          >
+            <div className="w-full rounded-t-3xl bg-white px-4 pb-6 pt-4 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+              <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-200" />
+              <div className="text-sm font-semibold text-slate-900">{visit?.visit_code ?? visit?.store_name ?? text.reanalyzeFullVisit}</div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">{confirmFullVisitReanalyzeTitle}</div>
+              <div className="mt-2 text-sm leading-6 text-slate-600">{confirmFullVisitReanalyzeDescription}</div>
+              <div className="mt-4 flex gap-2">
+                <button
+                  type="button"
+                  disabled={fullVisitReanalyzing}
+                  onClick={() => {
+                    void reanalyzeFullVisit().then(() => {
+                      setFullVisitReanalyzeConfirmOpen(false);
+                    });
+                  }}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
+                >
+                  {fullVisitReanalyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                  {fullVisitReanalyzing ? reanalyzingLabel : confirmFullVisitReanalyzeActionLabel}
+                </button>
+                <button
+                  type="button"
+                  disabled={fullVisitReanalyzing}
+                  onClick={() => setFullVisitReanalyzeConfirmOpen(false)}
                   className="flex flex-1 items-center justify-center rounded-2xl bg-slate-100 px-4 py-3 text-sm font-medium text-slate-700 disabled:opacity-60"
                 >
                   {text.close}

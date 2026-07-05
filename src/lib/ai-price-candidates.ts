@@ -512,6 +512,8 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
       packagePriceText: item.package_price,
       netPriceText: item.net_price,
       visiblePricePerPieceText: item.raw_price_per_piece_text,
+      pieceCountText: item.raw_piece_count_text,
+      skuText: item.product,
     });
     const listPrice = reconciledPrices.listPriceIdr ?? parsedPrice;
     const packagePrice = reconciledPrices.packagePriceIdr ?? parsedPrice;

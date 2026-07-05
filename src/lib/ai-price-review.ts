@@ -6,7 +6,6 @@ import type { AiPriceCandidate, AiPriceCandidateReviewMethod, AiPriceReviewRule,
 type SupabaseServiceClient = ReturnType<typeof import("@/lib/supabase").createSupabaseServiceClient>;
 
 const AUTO_REVIEW_CONCURRENCY = 10;
-const MIN_RECOGNITION_CONFIDENCE = 0.9;
 const MIN_MATCH_SCORE = 0.9;
 const REQUIRE_MATCHED_ENTITY = true;
 
@@ -30,8 +29,6 @@ type CandidateUpdatePayload = {
 export function candidateMatchesReviewRule(candidate: AiPriceCandidate, _rule: AiPriceReviewRule) {
   if (candidate.status !== "pending") return { eligible: false, reason: "Only pending candidates can be bulk reviewed." };
   if (candidate.review_decision !== "AUTO_APPROVE") return { eligible: false, reason: "Candidate requires manual review." };
-  if (candidate.ai_confidence == null || candidate.legacy_confidence_fallback) return { eligible: false, reason: "Recognition confidence is missing or legacy." };
-  if (candidate.ai_confidence < MIN_RECOGNITION_CONFIDENCE) return { eligible: false, reason: "Recognition confidence is below the fixed auto-approval threshold." };
   if (candidate.match_score < MIN_MATCH_SCORE) return { eligible: false, reason: "Match score is below the fixed auto-approval threshold." };
   if (REQUIRE_MATCHED_ENTITY && (!candidate.matched_entity_id || candidate.matched_entity_type === "unmatched")) {
     return { eligible: false, reason: "Missing matched product or material master data." };
