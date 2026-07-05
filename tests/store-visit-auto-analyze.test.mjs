@@ -83,6 +83,27 @@ test("store visit analysis only generates candidates that are bound to a source 
   assert.match(readFileSync("src/lib/ai-price-review.ts", "utf8"), /if \(!sourceImageId\) \{\s*throw new Error\("AI price candidate is missing source_image_id and cannot create a price snapshot"\);/s);
 });
 
+test("store visit analysis keeps all visible H5 image rows as candidates even when confidence is low or brand is missing", () => {
+  const candidateService = readFileSync("src/lib/ai-price-candidates.ts", "utf8");
+  assert.match(candidateService, /function isH5VisiblePriceCandidate/);
+  assert.match(candidateService, /const scopedItems = items\.filter\(\(item\) => item\.sourceImageId\)/);
+  assert.match(candidateService, /const items = \(input\.sourceItems\?\.map\([\s\S]*\)\.filter\(isH5VisiblePriceCandidate\)\)/);
+  assert.doesNotMatch(candidateService, /if \(item\.confidence !== null && item\.confidence < 0\.4\) return false/);
+  assert.doesNotMatch(candidateService, /if \(!item\.brand \|\| !item\.product\) return false/);
+});
+
+test("store visit analysis repair script can backfill missing row candidates for a visit code", () => {
+  const repairScript = readFileSync("scripts/backfill-store-visit-row-candidates.mjs", "utf8");
+  assert.match(repairScript, /ST202607030004/);
+  assert.match(repairScript, /generateAiPriceCandidates/);
+  assert.match(repairScript, /sourceRowIndex/);
+  assert.match(repairScript, /rowIndexUpdates/);
+  assert.match(repairScript, /\.update\(\{\s*source_row_index:/);
+  assert.match(repairScript, /updatedCount/);
+  assert.match(repairScript, /candidateCountBefore/);
+  assert.match(repairScript, /candidateCountAfter/);
+});
+
 test("store visit analysis accepts new image rows as well as legacy image arrays", () => {
   assert.match(analyzeRoute, /offline_visit_images\(id\)/);
   assert.match(analyzeRoute, /legacyImageCount/);

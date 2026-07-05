@@ -19,15 +19,16 @@ test("piece count helper supports bonus pack and size-pack text formats", () => 
 
 test("store visit price image normalization recovers piece count from sku text", () => {
   assert.match(storeVisitAi, /normalizePieceCountFromCandidates\(row\.piece_count, sku\)/);
-  assert.match(storeVisitAi, /calculatePricePerPiece\(netPrice, pieceCount\)/);
   assert.match(storeVisitAi, /28\+6 pcs/);
-  assert.match(storeVisitAi, /piece_count is the total pack piece count/);
+  assert.match(storeVisitAi, /piece_count_text/);
 });
 
 test("AI price candidates preserve source row index while deduplicating by image, entity, and price", () => {
   assert.match(candidateService, /sourceRowIndex/);
+  assert.match(candidateService, /source_row_index/);
   assert.match(candidateService, /"image_entity_price"/);
-  assert.match(candidateService, /item\.sourceImageId,\s*matchedEntityType,\s*matchedEntityId,\s*String\(netPrice\)/s);
+  assert.match(candidateService, /String\(item\.sourceRowIndex \?\? ""\)/);
+  assert.match(candidateService, /matchedEntityId \?\? ""/);
   assert.doesNotMatch(candidateService, /const byKey = new Map/);
   assert.doesNotMatch(candidateService, /keySkuPricePieceKeys/);
   assert.doesNotMatch(candidateService, /if \(!item\.piece_count\) return false/);

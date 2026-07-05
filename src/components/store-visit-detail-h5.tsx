@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Camera, Check, ChevronDown, ChevronRight, Copy, Ellipsis, Image as ImageIcon, Loader2, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
+import { ArrowLeft, Camera, Check, ChevronDown, ChevronRight, Copy, Ellipsis, Image as ImageIcon, Loader2, Pencil, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
@@ -88,8 +88,30 @@ type ImageActionSheetState = {
   label: string;
 };
 
+type RowActionSheetState = {
+  section: PriceParseSection;
+  row: StoreVisitPriceImageAnalysis["rows"][number];
+  rowIndex: number;
+  candidate: AiPriceCandidate;
+  label: string;
+};
+
+type PriceDisplayRow = {
+  row: StoreVisitPriceImageAnalysis["rows"][number];
+  rowIndex: number;
+  rowKey: string;
+  candidate: AiPriceCandidate | null;
+  displayCandidate: AiPriceCandidate | null;
+  legacyDisplayOnly: boolean;
+};
+
 type DeleteConfirmState = {
   imageId: string;
+  label: string;
+};
+
+type RowDeleteConfirmState = {
+  candidateId: string;
   label: string;
 };
 
@@ -271,7 +293,18 @@ function candidateMatchDisplay(candidate: AiPriceCandidate | null) {
   return { matched, label };
 }
 
-function matchCandidateForRow(
+function exactCandidateForRow(
+  candidates: AiPriceCandidate[],
+  imageId: string,
+  rowIndex: number,
+) {
+  return candidates.find((candidate) => (
+    candidate.source_image_id === imageId
+    && candidate.source_row_index === rowIndex
+  )) ?? null;
+}
+
+function legacyDisplayCandidateForRow(
   candidates: AiPriceCandidate[],
   imageId: string,
   row: StoreVisitPriceImageAnalysis["rows"][number],
@@ -281,6 +314,8 @@ function matchCandidateForRow(
   const rowNetPrice = row.net_price_idr ?? null;
   const sameRowCandidates = candidates.filter((candidate) => (
     candidate.source_image_id === imageId
+    && candidate.source_row_index == null
+    && candidate.h5_lifecycle_status !== "deleted"
     && normalizeMatchText(candidate.raw_product) === normalizedSku
   ));
   if (sameRowCandidates.length === 0) return null;
@@ -305,6 +340,26 @@ function matchCandidateForRow(
 
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     })[0] ?? null;
+}
+
+function buildPriceDisplayRows(
+  candidates: AiPriceCandidate[],
+  imageId: string,
+  rows: StoreVisitPriceImageAnalysis["rows"],
+): PriceDisplayRow[] {
+  return rows.flatMap((row, rowIndex) => {
+    const candidate = exactCandidateForRow(candidates, imageId, rowIndex);
+    if (candidate?.h5_lifecycle_status === "deleted") return [];
+    const legacyCandidate = candidate ? null : legacyDisplayCandidateForRow(candidates, imageId, row);
+    return [{
+      row,
+      rowIndex,
+      rowKey: `${imageId}:${rowIndex}`,
+      candidate,
+      displayCandidate: candidate ?? legacyCandidate,
+      legacyDisplayOnly: !candidate && Boolean(legacyCandidate),
+    }];
+  });
 }
 
 function materialOptionValue(item: MaterialMaster | null | undefined) {
@@ -381,6 +436,7 @@ function detailText(locale: Locale) {
         pricePerPieceAuto: "Per Piece",
         autoCalculated: "Auto-calculated",
       };
+  void rowEditPreviewText;
   return locale === "zh"
     ? {
         batchCode: "拍照批次",
@@ -453,6 +509,7 @@ function detailText(locale: Locale) {
         pieceCount: "Pcs",
         needsConfirmationText: "Needs confirmation",
         editRow: "Edit",
+        deleteRow: "Delete SKU",
         confirmRow: "Confirm",
         rowUnmatched: "Unmatched",
         rowEditorTitle: "Edit Price",
@@ -530,6 +587,7 @@ function rowEditorPreviewText() {
 export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string }) {
   const copy = getMobileCopy(locale);
   const text = detailText(locale);
+  const deleteRowLabel = "deleteRow" in text ? text.deleteRow : "Delete SKU";
   const fullVisitReanalyzeCopy = locale === "zh"
     ? {
         confirmFullVisitReanalyzeTitle: "确认整单重新分析？",
@@ -578,11 +636,14 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   const [retryingImageIds, setRetryingImageIds] = useState<string[]>([]);
   const [deletingImageIds, setDeletingImageIds] = useState<string[]>([]);
   const [actionSheet, setActionSheet] = useState<ImageActionSheetState | null>(null);
+  const [rowActionSheet, setRowActionSheet] = useState<RowActionSheetState | null>(null);
   const [reanalyzeConfirm, setReanalyzeConfirm] = useState<ReanalyzeConfirmState | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmState | null>(null);
+  const [rowDeleteConfirm, setRowDeleteConfirm] = useState<RowDeleteConfirmState | null>(null);
   const [rowEdit, setRowEdit] = useState<RowEditState | null>(null);
   const [rowEditSaving, setRowEditSaving] = useState(false);
   const [confirmingRowCandidateIds, setConfirmingRowCandidateIds] = useState<string[]>([]);
+  const [deletingRowCandidateIds, setDeletingRowCandidateIds] = useState<string[]>([]);
   const [matchOptions, setMatchOptions] = useState<MatchOptionState>({ materials: [], products: [] });
   const [matchOptionsLoading, setMatchOptionsLoading] = useState(false);
   const [matchOptionsError, setMatchOptionsError] = useState<string | null>(null);
@@ -717,20 +778,24 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   }
 
   function openRowEditor(section: PriceParseSection, row: StoreVisitPriceImageAnalysis["rows"][number], rowIndex: number) {
-    const candidate = matchCandidateForRow(visit?.ai_price_candidates ?? [], section.image.id, row);
+    const candidate = exactCandidateForRow(visit?.ai_price_candidates ?? [], section.image.id, rowIndex);
+    if (!candidate || candidate.h5_lifecycle_status === "deleted") {
+      setError(text.saveRowFailed);
+      return;
+    }
     setRowEdit({
       imageId: section.image.id,
       rowIndex,
       sku: row.sku,
-      candidateId: candidate?.id ?? null,
-      netPrice: String(candidate?.net_price_idr ?? row.net_price_idr ?? ""),
+      candidateId: candidate.id,
+      netPrice: String(candidate.net_price_idr ?? row.net_price_idr ?? ""),
       pieceCount: String(candidateDisplayPieceCount(candidate, row.piece_count) ?? ""),
-      matchedEntityType: candidate?.matched_entity_type ?? "unmatched",
-      matchedEntityId: candidate?.matched_entity_id ?? "",
-      selectedMatchLabel: candidate?.matched_sku_label ?? candidate?.matched_label ?? "",
+      matchedEntityType: candidate.matched_entity_type ?? "unmatched",
+      matchedEntityId: candidate.matched_entity_id ?? "",
+      selectedMatchLabel: candidate.matched_sku_label ?? candidate.matched_label ?? "",
       matchSearchQuery: "",
-      originalMatchedEntityType: candidate?.matched_entity_type ?? "unmatched",
-      originalMatchedEntityId: candidate?.matched_entity_id ?? "",
+      originalMatchedEntityType: candidate.matched_entity_type ?? "unmatched",
+      originalMatchedEntityId: candidate.matched_entity_id ?? "",
     });
   }
 
@@ -809,6 +874,31 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
       setError(caught instanceof Error ? caught.message : text.saveRowFailed);
     } finally {
       setConfirmingRowCandidateIds((current) => current.filter((id) => id !== candidateId));
+    }
+  }
+
+  async function deleteRow(candidateId: string) {
+    if (deletingRowCandidateIds.includes(candidateId)) return false;
+    setDeletingRowCandidateIds((current) => [...current, candidateId]);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(`/api/store-visit/price-candidates/${candidateId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete_h5_row" }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error ?? text.saveRowFailed);
+      const candidate = payload.candidate;
+      if (candidate) applySavedRowCandidate(candidate as AiPriceCandidate);
+      await loadVisit({ preserveLoading: true });
+      return true;
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : text.saveRowFailed);
+      return false;
+    } finally {
+      setDeletingRowCandidateIds((current) => current.filter((id) => id !== candidateId));
     }
   }
 
@@ -1204,9 +1294,16 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   deletingImageIds={deletingImageIds}
                   retryingImageIds={retryingImageIds}
                   onOpenActions={(imageId, imageCategory, label) => setActionSheet({ imageId, category: imageCategory, label })}
-                  onOpenRowEditor={openRowEditor}
+                  onOpenRowActions={(section, row, rowIndex, candidate) => setRowActionSheet({
+                    section,
+                    row,
+                    rowIndex,
+                    candidate,
+                    label: row.sku,
+                  })}
                   onConfirmRow={(candidateId) => void confirmRow(candidateId)}
                   confirmingRowCandidateIds={confirmingRowCandidateIds}
+                  deletingRowCandidateIds={deletingRowCandidateIds}
                   onRetakeFile={(imageId, file) => void uploadPricePhoto({ file, category: "makuku_shelf", targetImageId: imageId })}
                   cameraRetakeInputRefs={cameraRetakeInputRefs}
                   albumRetakeInputRefs={albumRetakeInputRefs}
@@ -1228,9 +1325,16 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   deletingImageIds={deletingImageIds}
                   retryingImageIds={retryingImageIds}
                   onOpenActions={(imageId, imageCategory, label) => setActionSheet({ imageId, category: imageCategory, label })}
-                  onOpenRowEditor={openRowEditor}
+                  onOpenRowActions={(section, row, rowIndex, candidate) => setRowActionSheet({
+                    section,
+                    row,
+                    rowIndex,
+                    candidate,
+                    label: row.sku,
+                  })}
                   onConfirmRow={(candidateId) => void confirmRow(candidateId)}
                   confirmingRowCandidateIds={confirmingRowCandidateIds}
+                  deletingRowCandidateIds={deletingRowCandidateIds}
                   onRetakeFile={(imageId, file) => void uploadPricePhoto({ file, category: "competitor_shelf", targetImageId: imageId })}
                   cameraRetakeInputRefs={cameraRetakeInputRefs}
                   albumRetakeInputRefs={albumRetakeInputRefs}
@@ -1332,6 +1436,50 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
             onRequestMatchOptions={() => void loadMatchOptions()}
             onSave={() => void saveRowEdit()}
           />
+        ) : null}
+
+        {rowActionSheet ? (
+          <div className="fixed inset-0 z-[60] flex items-end bg-slate-950/45" role="dialog" aria-modal="true" onClick={() => setRowActionSheet(null)}>
+            <div className="w-full rounded-t-3xl bg-white px-4 pb-6 pt-4 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+              <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-200" />
+              <div className="line-clamp-2 text-sm font-semibold text-slate-900">{rowActionSheet.label}</div>
+              <div className="mt-4 space-y-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const current = rowActionSheet;
+                    setRowActionSheet(null);
+                    openRowEditor(current.section, current.row, current.rowIndex);
+                  }}
+                  className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-medium text-slate-800"
+                >
+                  <span>{text.editRow}</span>
+                  <Pencil className="h-4 w-4 text-slate-400" />
+                </button>
+                <button
+                  type="button"
+                  disabled={deletingRowCandidateIds.includes(rowActionSheet.candidate.id)}
+                  onClick={() => {
+                    setRowDeleteConfirm({ candidateId: rowActionSheet.candidate.id, label: rowActionSheet.label });
+                    setRowActionSheet(null);
+                  }}
+                  className="flex w-full items-center justify-between rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-left text-sm font-medium text-red-700 disabled:opacity-50"
+                >
+                  <span>{deleteRowLabel}</span>
+                  {deletingRowCandidateIds.includes(rowActionSheet.candidate.id)
+                    ? <Loader2 className="h-4 w-4 animate-spin text-red-400" />
+                    : <Trash2 className="h-4 w-4 text-red-400" />}
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRowActionSheet(null)}
+                className="mt-3 flex w-full items-center justify-center rounded-2xl bg-slate-100 px-4 py-3 text-sm font-medium text-slate-700"
+              >
+                {text.close}
+              </button>
+            </div>
+          </div>
         ) : null}
 
         {actionSheet ? (
@@ -1487,6 +1635,47 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
           </div>
         ) : null}
 
+        {rowDeleteConfirm ? (
+          <div
+            className="fixed inset-0 z-[65] flex items-end bg-slate-950/45"
+            role="dialog"
+            aria-modal="true"
+            onClick={() => {
+              if (!deletingRowCandidateIds.includes(rowDeleteConfirm.candidateId)) setRowDeleteConfirm(null);
+            }}
+          >
+            <div className="w-full rounded-t-3xl bg-white px-4 pb-6 pt-4 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+              <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-200" />
+              <div className="line-clamp-2 text-sm font-semibold text-slate-900">{rowDeleteConfirm.label}</div>
+              <div className="mt-1 text-sm font-semibold text-red-700">{deleteRowLabel}</div>
+              <div className="mt-4 flex gap-2">
+                <button
+                  type="button"
+                  disabled={deletingRowCandidateIds.includes(rowDeleteConfirm.candidateId)}
+                  onClick={() => {
+                    const candidateId = rowDeleteConfirm.candidateId;
+                    void deleteRow(candidateId).then((deleted) => {
+                      if (deleted) setRowDeleteConfirm((current) => current?.candidateId === candidateId ? null : current);
+                    });
+                  }}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-red-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
+                >
+                  {deletingRowCandidateIds.includes(rowDeleteConfirm.candidateId) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  {deletingRowCandidateIds.includes(rowDeleteConfirm.candidateId) ? deletingLabel : deleteRowLabel}
+                </button>
+                <button
+                  type="button"
+                  disabled={deletingRowCandidateIds.includes(rowDeleteConfirm.candidateId)}
+                  onClick={() => setRowDeleteConfirm(null)}
+                  className="flex flex-1 items-center justify-center rounded-2xl bg-slate-100 px-4 py-3 text-sm font-medium text-slate-700 disabled:opacity-60"
+                >
+                  {text.close}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         {deleteConfirm ? (
           <div
             className="fixed inset-0 z-[65] flex items-end bg-slate-950/45"
@@ -1549,9 +1738,10 @@ function PriceSectionGroup({
   retryingImageIds,
   onPreview,
   onOpenActions,
-  onOpenRowEditor,
+  onOpenRowActions,
   onConfirmRow,
   confirmingRowCandidateIds,
+  deletingRowCandidateIds,
   onRetakeFile,
   cameraRetakeInputRefs,
   albumRetakeInputRefs,
@@ -1571,9 +1761,10 @@ function PriceSectionGroup({
   retryingImageIds: string[];
   onPreview: (image: { url: string; label: string }) => void;
   onOpenActions: (imageId: string, category: "makuku_shelf" | "competitor_shelf", label: string) => void;
-  onOpenRowEditor: (section: PriceParseSection, row: StoreVisitPriceImageAnalysis["rows"][number], rowIndex: number) => void;
+  onOpenRowActions: (section: PriceParseSection, row: StoreVisitPriceImageAnalysis["rows"][number], rowIndex: number, candidate: AiPriceCandidate) => void;
   onConfirmRow: (candidateId: string) => void;
   confirmingRowCandidateIds: string[];
+  deletingRowCandidateIds: string[];
   onRetakeFile: (imageId: string, file: File) => void;
   cameraRetakeInputRefs: MutableRefObject<Record<string, HTMLInputElement | null>>;
   albumRetakeInputRefs: MutableRefObject<Record<string, HTMLInputElement | null>>;
@@ -1600,6 +1791,7 @@ function PriceSectionGroup({
             const isProcessingRetake = sectionLocalUpload?.mode === "retake";
             const isAnalyzingImage = section.image.analysis_status === "analyzing";
             const priceRowsPending = visitAnalysisInProgress || retryingImageIds.includes(section.image.id) || isAnalyzingImage || (isProcessingRetake && sectionLocalUpload?.status === "analyzing");
+            const displayRows = buildPriceDisplayRows(candidates, section.image.id, section.result?.rows ?? []);
             const needsRetake = isRetakeRequiredPriceImage(section.image);
             const isActionDisabled = updateLocked || retryingImageIds.includes(section.image.id) || deletingImageIds.includes(section.image.id);
 
@@ -1715,18 +1907,19 @@ function PriceSectionGroup({
           ) : null}
 
           <div className="mt-3 space-y-2">
-            {priceRowsPending ? null : section.result?.rows.length ? section.result.rows.map((row, rowIndex) => {
-              const candidate = matchCandidateForRow(candidates, section.image.id, row);
-              const displayPieceCount = candidateDisplayPieceCount(candidate, row.piece_count);
-              const displayPricePerPiece = candidateDisplayPricePerPiece(candidate, row.price_per_piece_idr);
-              const matchInfo = candidateMatchDisplay(candidate);
-              const listPrice = candidateDisplayListPrice(candidate, row.list_price_idr ?? row.package_price_idr ?? null);
-              const netPrice = candidateDisplayNetPrice(candidate, row.net_price_idr ?? null);
-              const needsConfirmation = rowNeedsConfirmation(row, candidate);
+            {priceRowsPending ? null : displayRows.length ? displayRows.map((displayRow) => {
+              const { row, rowIndex, rowKey, candidate, displayCandidate } = displayRow;
+              const displayPieceCount = candidateDisplayPieceCount(displayCandidate, row.piece_count);
+              const displayPricePerPiece = candidateDisplayPricePerPiece(displayCandidate, row.price_per_piece_idr);
+              const matchInfo = candidateMatchDisplay(displayCandidate);
+              const listPrice = candidateDisplayListPrice(displayCandidate, row.list_price_idr ?? row.package_price_idr ?? null);
+              const netPrice = candidateDisplayNetPrice(displayCandidate, row.net_price_idr ?? null);
+              const needsConfirmation = rowNeedsConfirmation(row, displayCandidate);
               const quickConfirmAvailable = needsConfirmation && canQuickConfirmRow(candidate);
               const isConfirmingRow = Boolean(candidate?.id && confirmingRowCandidateIds.includes(candidate.id));
+              const isDeletingRow = Boolean(candidate?.id && deletingRowCandidateIds.includes(candidate.id));
               return (
-                <div key={`${section.image.id}-${rowIndex}`} className="rounded-lg bg-white px-3 py-2 text-xs shadow-sm">
+                <div key={rowKey} className="rounded-lg bg-white px-3 py-2 text-xs shadow-sm">
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
                     <div className="line-clamp-1 min-w-0 text-sm font-semibold leading-5 text-slate-900">{row.sku}</div>
                     <div className="flex shrink-0 items-center gap-2">
@@ -1743,8 +1936,11 @@ function PriceSectionGroup({
                       ) : null}
                       <button
                         type="button"
-                        onClick={() => onOpenRowEditor(section, row, rowIndex)}
-                        className="shrink-0 whitespace-nowrap text-[11px] font-semibold leading-5 text-blue-600"
+                        disabled={!candidate || isDeletingRow}
+                        onClick={() => {
+                          if (candidate) onOpenRowActions(section, row, rowIndex, candidate);
+                        }}
+                        className="shrink-0 whitespace-nowrap text-[11px] font-semibold leading-5 text-blue-600 disabled:text-slate-300"
                       >
                         {text.editRow}
                       </button>

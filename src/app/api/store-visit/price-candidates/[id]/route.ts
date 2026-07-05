@@ -88,6 +88,20 @@ async function buildMatchPatch(
   };
 }
 
+async function deleteLinkedSnapshot(
+  supabase: ReturnType<typeof createSupabaseServiceClient>,
+  snapshotId: string | null,
+) {
+  if (!snapshotId) return false;
+  const { error, data } = await supabase
+    .from("price_snapshots")
+    .delete()
+    .eq("id", snapshotId)
+    .select("id");
+  if (error) throw new Error(error.message);
+  return (data?.length ?? 0) > 0;
+}
+
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
     const auth = await requireAppSession(request);
@@ -97,12 +111,15 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     const body = await request.json().catch(() => ({}));
     const action = String(body.action ?? "").trim();
     const supabase = createSupabaseServiceClient();
+    const candidateStatuses = action === "delete_h5_row"
+      ? ["pending", "approved", "rejected"]
+      : ["pending", "approved"];
 
     const { data: sourceCandidate, error: sourceCandidateError } = await supabase
       .from("ai_price_candidates")
       .select("*")
       .eq("id", id)
-      .in("status", ["pending", "approved"])
+      .in("status", candidateStatuses)
       .maybeSingle();
     if (sourceCandidateError) throw new Error(sourceCandidateError.message);
     if (!sourceCandidate) throw new Error("Pending or approved candidate not found");
@@ -186,6 +203,29 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
         promoType: candidateRow.promo_type,
       });
       return Response.json(result);
+    }
+
+    if (action === "delete_h5_row") {
+      const candidateRow = sourceCandidate as AiPriceCandidate;
+      const deletedSnapshot = await deleteLinkedSnapshot(supabase, candidateRow.price_snapshot_id);
+      const deletedAt = new Date().toISOString();
+      const { data: candidate, error } = await supabase
+        .from("ai_price_candidates")
+        .update({
+          status: "rejected",
+          price_snapshot_id: null,
+          reviewed_at: deletedAt,
+          reviewed_by: auth.session.id,
+          review_method: "manual",
+          rejection_reason: "H5 deleted this SKU row.",
+          h5_lifecycle_status: "deleted",
+          h5_lifecycle_at: deletedAt,
+        })
+        .eq("id", id)
+        .select("*")
+        .single();
+      if (error || !candidate) throw new Error(error?.message ?? "Pending or approved candidate not found");
+      return Response.json({ candidate, deleted_snapshot: deletedSnapshot });
     }
 
     return Response.json({ error: "Unsupported action" }, { status: 400 });

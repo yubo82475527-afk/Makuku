@@ -246,6 +246,14 @@ function normalizePromoType(value: string | null | undefined) {
   return text;
 }
 
+function isH5VisiblePriceCandidate(item: SourceItem) {
+  if (!item.sourceImageId) return false;
+  if (!item.product) return false;
+  if (item.tag === "ANOMALY") return false;
+  if (hasNonPricePromotionText(item)) return false;
+  return parseCandidatePrice(item.price) !== null;
+}
+
 function candidateKey({
   item,
   matchedEntityType,
@@ -257,12 +265,13 @@ function candidateKey({
   matchedEntityId: string | null;
   netPrice: number | null;
 }) {
-  if (item.sourceImageId && matchedEntityId && netPrice) {
+  if (item.sourceImageId && netPrice) {
     return [
       "image_entity_price",
       item.sourceImageId,
+      String(item.sourceRowIndex ?? ""),
       matchedEntityType,
-      matchedEntityId,
+      matchedEntityId ?? "",
       String(netPrice),
     ].join("|");
   }
@@ -276,7 +285,6 @@ function candidateKey({
   ].join("|");
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function isExtendedCandidateColumnError(error: { message?: string } | null) {
   const message = error?.message ?? "";
   return [
@@ -287,6 +295,7 @@ function isExtendedCandidateColumnError(error: { message?: string } | null) {
     "candidate_key",
     "source_image_id",
     "source_image_path",
+    "source_row_index",
   ].some((column) => message.includes(column));
 }
 
@@ -406,8 +415,7 @@ function pickBestCompetitor(candidate: { brand: string; product: string; pieceCo
 }
 
 function isPriceCandidate(item: SourceItem) {
-  if (!item.brand || !item.product) return false;
-  if (item.confidence !== null && item.confidence < 0.4) return false;
+  if (!item.product) return false;
   if (item.tag === "ANOMALY") return false;
   if (hasNonPricePromotionText(item)) return false;
   return parseCandidatePrice(item.price) !== null;
@@ -461,7 +469,7 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
   const items = (input.sourceItems?.map((item) => ({
     ...item,
     piece_count: normalizePieceCountFromEvidence(item.piece_count, item.raw_piece_count_text, item.product),
-  })).filter(isPriceCandidate)) ?? sourceItems(input.aiResult);
+  })).filter(isH5VisiblePriceCandidate)) ?? sourceItems(input.aiResult);
   const scopedItems = items.filter((item) => item.sourceImageId);
   if (scopedItems.length === 0) return [];
 
@@ -553,6 +561,7 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
       candidate_key: itemCandidateKey,
       source_image_id: item.sourceImageId ?? null,
       source_image_path: item.sourceImagePath ?? null,
+      source_row_index: item.sourceRowIndex ?? null,
       raw_brand: item.brand,
       raw_product: item.product,
       raw_price: item.price,
@@ -604,10 +613,23 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
 
   if (rows.length === 0) return [];
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("ai_price_candidates")
     .insert(rows)
     .select(candidateVisitSelect);
+
+  if (isExtendedCandidateColumnError(error)) {
+    const legacyRows = rows.map(({ source_row_index: _sourceRowIndex, ...row }) => {
+      void _sourceRowIndex;
+      return row;
+    });
+    const legacyInsert = await supabase
+      .from("ai_price_candidates")
+      .insert(legacyRows)
+      .select(candidateVisitSelect);
+    data = legacyInsert.data;
+    error = legacyInsert.error;
+  }
 
   if (isMissingCandidateTableError(error)) {
     return [];

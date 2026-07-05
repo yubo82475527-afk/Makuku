@@ -817,6 +817,7 @@ export type AiPriceCandidate = {
   candidate_key?: string | null;
   source_image_id?: string | null;
   source_image_path?: string | null;
+  source_row_index?: number | null;
   raw_brand: string;
   raw_product: string;
   raw_price: string;

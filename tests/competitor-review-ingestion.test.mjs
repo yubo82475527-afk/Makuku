@@ -14,9 +14,11 @@ test("AI candidate generation assigns stable candidate keys for idempotent reana
   assert.match(candidateService, /existingActiveKeys/);
   assert.match(candidateService, /candidateKey\(\{[\s\S]*matchedEntityType/);
   assert.match(candidateService, /sourceImageId/);
+  assert.match(candidateService, /sourceRowIndex/);
   assert.match(candidateService, /matchedEntityId/);
   assert.match(candidateService, /netPrice/);
-  assert.doesNotMatch(candidateService, /return \["image_row", item\.sourceImageId, item\.sourceRowIndex\]\.join\("\|"\)/);
+  assert.match(candidateService, /String\(item\.sourceRowIndex \?\? ""\)/);
+  assert.match(candidateService, /matchedEntityId \?\? ""/);
 });
 
 test("AI candidate generation deduplicates candidate keys before inserting", () => {
@@ -130,7 +132,7 @@ test("AI candidate generation scopes inserts to image-backed rows without legacy
   assert.match(candidateService, /if \(scopedItems\.length === 0\) return \[\]/);
   assert.match(candidateService, /const candidateRows = scopedItems\.map/);
   assert.match(candidateService, /const rows = candidateRows\.filter/);
-  assert.doesNotMatch(candidateService, /const legacyRows = rows\.map/);
-  assert.doesNotMatch(candidateService, /legacyRow/);
+  assert.match(candidateService, /const legacyRows = rows\.map/);
+  assert.match(candidateService, /source_row_index: _sourceRowIndex/);
   assert.doesNotMatch(candidateService, /error\?\.message\.includes\("ai_price_candidates"\)\)\s*\{\s*return \[\]/);
 });
