@@ -1,6 +1,7 @@
 import { demoOfflineStoreVisits } from "@/lib/demo-data";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
-import type { OfflineStoreVisit, StoreVisitAiResult } from "@/lib/types";
+import { loadActiveAiJobsForVisits } from "@/lib/store-visit-ai-jobs";
+import type { OfflineStoreVisit, StoreVisitAiResult, StoreVisitAiJobSummary } from "@/lib/types";
 
 const defaultPageSize = 20;
 const maxPageSize = 50;
@@ -120,7 +121,7 @@ function formatVisitRegion(visit: OfflineStoreVisit) {
   return visit.region ?? structured ?? visit.city ?? null;
 }
 
-function serializeVisit(visit: OfflineStoreVisit) {
+function serializeVisit(visit: OfflineStoreVisit, activeAiJob?: StoreVisitAiJobSummary | null) {
   const storeSummary = typeof visit.ai_result?.store_summary === "string" ? visit.ai_result.store_summary : null;
   const keySkuPrices = Array.isArray(visit.ai_result?.price_insights?.key_sku_prices)
     ? visit.ai_result.price_insights.key_sku_prices.map((row) => ({
@@ -156,6 +157,7 @@ function serializeVisit(visit: OfflineStoreVisit) {
     image_urls: visit.image_urls ?? [],
     photo_count: photoCount(visit),
     created_at: visit.created_at,
+    active_ai_job: activeAiJob ?? null,
   };
 }
 
@@ -185,7 +187,7 @@ export async function GET(request: Request) {
       const { start, end } = todayRange();
       const todayRows = visits.filter((visit) => isVisitOnToday(visit, todayVisitDate, start, end));
       return Response.json({
-        visits: paged.map(serializeVisit),
+        visits: paged.map((visit) => serializeVisit(visit)),
         pagination: {
           page,
           page_size: pageSize,
@@ -236,9 +238,13 @@ export async function GET(request: Request) {
     const rows = (visitsResult.data ?? []) as OfflineStoreVisit[];
     const hasNext = rows.length > pageSize;
     const pagedRows = hasNext ? rows.slice(0, pageSize) : rows;
+    const activeJobsByVisitId = await loadActiveAiJobsForVisits({
+      supabase,
+      visitIds: pagedRows.map((visit) => visit.id),
+    });
 
     return Response.json({
-      visits: pagedRows.map(serializeVisit),
+      visits: pagedRows.map((visit) => serializeVisit(visit, activeJobsByVisitId.get(visit.id) ?? null)),
       pagination: {
         page,
         page_size: pageSize,

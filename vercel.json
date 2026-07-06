@@ -3,6 +3,10 @@
     {
       "path": "/api/internal/agent-reports/run-subscriptions",
       "schedule": "30 1 * * *"
+    },
+    {
+      "path": "/api/internal/store-visit-ai/run",
+      "schedule": "* * * * *"
     }
   ]
 }

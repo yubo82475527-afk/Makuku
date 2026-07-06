@@ -1033,6 +1033,11 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
         submitFailed: copy.submitFailed,
         onProgress: (completedCount) => setSubmitStatus(`${labels.processingPhotos} ${completedCount}/${flattenedImages.length}`),
       });
+      await fetch("/api/store-visit/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visit_id: visitId }),
+      }).catch(() => null);
 
       setSubmitStatus(labels.submitted);
       setRedirectingToList(true);

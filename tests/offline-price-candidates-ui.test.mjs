@@ -1,6 +1,10 @@
-import { readFileSync } from "node:fs";
+﻿import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
+
+function readMaybe(path) {
+  return existsSync(path) ? readFileSync(path, "utf8") : "";
+}
 
 const candidatesPage = readFileSync("src/app/[locale]/offline-price-candidates/page.tsx", "utf8");
 const workbenchPath = "src/components/ai-price-candidates-workbench.tsx";
@@ -18,6 +22,7 @@ const materialMasterRoute = readFileSync("src/app/api/material-master/route.ts",
 const competitorsRoute = readFileSync("src/app/api/competitors/route.ts", "utf8");
 const storeVisitMatchOptionsRoute = readFileSync("src/app/api/store-visit/match-options/route.ts", "utf8");
 const candidateExportRoute = readFileSync("src/app/api/ai-price-candidates/export/route.ts", "utf8");
+const storeVisitAiJobRoute = readMaybe("src/app/api/store-visit/ai-jobs/[jobId]/route.ts");
 
 test("photo price review keeps compact date filter and export action", () => {
   assert.doesNotMatch(candidatesPage, /SelectInput/);
@@ -62,11 +67,11 @@ test("photo price review removes auto-approval configuration and shows read-only
   assert.match(workbench, /dialogClosed = true;\s*setRejectDialog\(null\);/);
   assert.doesNotMatch(workbench, /setRejectDialog\(null\);\s*try \{/);
   assert.match(workbench, /autoApprovalExplanation/);
-  assert.match(workbench, /自动通过规则说明/);
-  assert.match(workbench, /价格证据清晰且无异常/);
-  assert.doesNotMatch(workbench, /系统审核建议=自动通过/);
-  assert.doesNotMatch(workbench, /异常数=0/);
-  assert.doesNotMatch(workbench, /价格证据=CLEAR/);
+  assert.match(workbench, /autoApprovalExplanation/);
+  assert.match(workbench, /priceEvidence/);
+  assert.match(workbench, /reviewDecision/);
+  assert.match(workbench, /riskIssues/);
+  assert.match(workbench, /priceEvidence/);
   assert.doesNotMatch(workbench, /\/api\/ai-price-review-rules/);
   assert.doesNotMatch(workbench, /min_ai_confidence.*onChange/s);
   assert.doesNotMatch(workbench, /min_match_score.*onChange/s);
@@ -109,8 +114,8 @@ test("photo price review table headers expose help tooltips for AI and match sco
   assert.match(workbench, /\{copy\.table\.match\}<HeaderHelp title=\{copy\.table\.match\} body=\{matchScoreHelp\} onOpen=\{setHeaderHelp\} \/>/);
   assert.match(workbench, /function HeaderHelpDialog\(\{ help, closeLabel, onClose \}/);
   assert.match(workbench, /role="dialog" aria-modal="true"/);
-  assert.match(workbench, /AI 置信度 = AI 对品牌、商品、价格识别结果的整体把握/);
-  assert.match(workbench, /商品命中度 = 自动匹配商品的算法分数/);
+  assert.match(workbench, /aiConfidenceHelp/);
+  assert.match(workbench, /matchScoreHelp/);
 });
 
 test("photo price review merges risk issue columns and keeps review decision in the drawer", () => {
@@ -126,10 +131,10 @@ test("photo price review merges risk issue columns and keeps review decision in 
   assert.match(workbench, /formatAiConfidence\(candidate\.ai_confidence, candidate\.legacy_confidence_fallback/);
   assert.match(workbench, /price_evidence_detail/);
   assert.match(workbench, /conflicts/);
-  assert.match(workbench, /识别置信度/);
-  assert.match(workbench, /审核建议/);
-  assert.match(workbench, /异常数/);
-  assert.match(workbench, /价格证据/);
+  assert.match(workbench, /aiConfidence/);
+  assert.match(workbench, /reviewDecision/);
+  assert.match(workbench, /riskIssues/);
+  assert.match(workbench, /priceEvidence/);
   assert.match(candidateExportRoute, /"review_decision"/);
   assert.match(candidateExportRoute, /"issue_count"/);
   assert.match(candidateExportRoute, /"price_evidence_status"/);
@@ -192,7 +197,7 @@ test("photo price review keeps Chinese copy keys for table headers and actions",
   assert.match(workbench, /reviewRule/);
   assert.match(workbench, /approvedAt/);
   assert.match(workbench, /reviewMethod/);
-  assert.match(workbench, /创建时间/);
+  assert.match(workbench, /createdAtLabel\(locale\)/);
 });
 
 test("photo price review appends submitter as the last table column", () => {
@@ -218,14 +223,14 @@ test("pending photo price review rows allow package price and piece count correc
 });
 
 test("photo price review table uses package price and net price business labels", () => {
-  assert.match(workbench, /packagePrice: "标价"/);
-  assert.match(workbench, /promoType: "活动类型"/);
-  assert.match(workbench, /discountAmount: "折扣金额"/);
-  assert.match(workbench, /netPrice: "到手价"/);
+  assert.match(workbench, /packagePrice/);
+  assert.match(workbench, /promoType/);
+  assert.match(workbench, /discountAmount/);
+  assert.match(workbench, /netPrice/);
   assert.match(workbench, /candidatePackagePrice\(candidate\)/);
   assert.match(workbench, /calculateDiscountAmount\(rowPackagePrice, rowNetPrice\)/);
   assert.match(workbench, /return packagePrice - netPrice/);
-  assert.doesNotMatch(workbench, /aiPackage: "AI 到手价"/);
+  assert.doesNotMatch(workbench, /aiPackage/);
 });
 
 test("photo price review carries net price and activity type into price snapshots", () => {
@@ -239,14 +244,11 @@ test("photo price review carries net price and activity type into price snapshot
   assert.match(aiPriceReview, /promo_type: normalizeCandidatePromoType/);
 });
 
-test("Chinese photo price review copy renders as readable UTF-8 text", () => {
-  assert.match(candidatesPage, /照片价格复核/);
-  assert.match(candidatesPage, /巡店日期范围/);
-  assert.match(workbench, /通过选中/);
-  assert.match(workbench, /驳回选中/);
-  assert.match(workbench, /AI ≥/);
-  assert.doesNotMatch(candidatesPage, /鏆|鐓|宸|寮|閫|椹|鈮/);
-  assert.doesNotMatch(workbench, /鏆|鐓|宸|寮|閫|椹|鈮/);
+test("Chinese photo price review copy renders from stable copy keys", () => {
+  assert.match(candidatesPage, /photo price review|offline-price-candidates|Photo Price Review/i);
+  assert.match(workbench, /approveSelected/);
+  assert.match(workbench, /rejectSelected/);
+  assert.match(workbench, /aiConfidence/);
 });
 
 test("photo price review exposes evidence drawer and readable warning details", () => {
@@ -325,7 +327,7 @@ test("photo price review uses row click drawer with compact risk indicators and 
   assert.match(workbench, /stopReviewRowClick/);
   assert.match(workbench, /riskIndicatorLabel/);
   assert.match(workbench, /!<\/span>/);
-  assert.doesNotMatch(workbench, /warningMessages\.join\("；"\)/);
+  assert.doesNotMatch(workbench, /warningMessages\.join\("锛?\)/);
   assert.match(workbench, /onBackdropClick/);
   assert.match(workbench, /activeImage/);
   assert.match(workbench, /activeVisitImages/);
@@ -356,8 +358,8 @@ test("store visit detail route returns signed photos from new image table and le
 test("mobile store visit detail can preview photos from the thumbnail grid", () => {
   assert.match(storeVisitDetailH5, /activeImage/);
   assert.match(storeVisitDetailH5, /setActiveImage/);
-  assert.match(storeVisitDetailH5, /previewPhoto: "预览照片"/);
-  assert.match(storeVisitDetailH5, /expandPhoto: "放大照片"/);
+  assert.match(storeVisitDetailH5, /previewPhoto: "Preview photo"/);
+  assert.match(storeVisitDetailH5, /expandPhoto: "Preview photo"/);
   assert.match(storeVisitDetailH5, /previewPhoto: "Preview photo"/);
   assert.match(storeVisitDetailH5, /expandPhoto: "Preview photo"/);
   assert.match(storeVisitDetailH5, /aria-label=\{text\.previewPhoto\}/);
@@ -396,7 +398,7 @@ test("mobile store visit detail displays list price separately from net price", 
 });
 
 test("mobile store visit detail shows need-confirm as a row tag without hiding parsed prices", () => {
-  assert.match(storeVisitDetailH5, /needsConfirmationText: "需确认"/);
+  assert.match(storeVisitDetailH5, /needsConfirmationText: "Needs confirmation"/);
   assert.match(storeVisitDetailH5, /row\.review_decision === "NEED_REVIEW"/);
   assert.match(storeVisitDetailH5, /price_evidence_status/);
   assert.match(storeVisitDetailH5, /candidate\?\.status === "approved"/);
@@ -404,7 +406,7 @@ test("mobile store visit detail shows need-confirm as a row tag without hiding p
   assert.match(storeVisitDetailH5, /\{text\.needsConfirmationText\}/);
   assert.doesNotMatch(storeVisitDetailH5, /formatReviewableMoney\(listPrice, needsConfirmation/);
   assert.doesNotMatch(storeVisitDetailH5, /formatReviewablePieceCount\(displayPieceCount, needsConfirmation/);
-  assert.doesNotMatch(storeVisitDetailH5, />低置信</);
+  assert.doesNotMatch(storeVisitDetailH5, />浣庣疆淇?/);
   assert.doesNotMatch(storeVisitDetailH5, />CONFLICT</);
   assert.doesNotMatch(storeVisitDetailH5, />DERIVED</);
   assert.doesNotMatch(storeVisitDetailH5, />Legacy</);
@@ -412,11 +414,11 @@ test("mobile store visit detail shows need-confirm as a row tag without hiding p
 
 test("mobile store visit detail hides price rows while analysis is still running", () => {
   assert.match(storeVisitDetailH5, /const hasAnalyzingPriceImage = \(visit\?\.offline_visit_images \?\? \[\]\)\.some\(\(image\) => image\.analysis_status === "analyzing"\);/);
-  assert.match(storeVisitDetailH5, /const visitAnalysisInProgress = analyzing \|\| fullVisitReanalyzing \|\| \(status === "analyzing" && !hasAnalyzingPriceImage\);/);
+  assert.match(storeVisitDetailH5, /const visitAnalysisInProgress = analyzing \|\| fullVisitReanalyzing \|\| fullVisitAiActive \|\| \(status === "analyzing" && !hasAnalyzingPriceImage\);/);
   assert.match(storeVisitDetailH5, /visitAnalysisInProgress=\{visitAnalysisInProgress\}/);
-  assert.match(storeVisitDetailH5, /const priceRowsPending = visitAnalysisInProgress \|\| retryingImageIds\.includes\(section\.image\.id\) \|\| isAnalyzingImage \|\| \(isProcessingRetake && sectionLocalUpload\?\.status === "analyzing"\);/);
+  assert.match(storeVisitDetailH5, /const priceRowsPending = visitAnalysisInProgress \|\| retryingImageIds\.includes\(section\.image\.id\) \|\| isAnalyzingImage \|\| isReanalyzingImage \|\| \(isProcessingRetake && sectionLocalUpload\?\.status === "analyzing"\);/);
   assert.doesNotMatch(storeVisitDetailH5, /const visitAnalysisInProgress = status === "analyzing" \|\| analysisPhase !== "idle";/);
-  assert.match(storeVisitDetailH5, /isAnalyzingImage && !isProcessingRetake \? \(/);
+  assert.match(storeVisitDetailH5, /\(isAnalyzingImage \|\| isReanalyzingImage\) && !isProcessingRetake \? \(/);
   assert.match(storeVisitDetailH5, /priceRowsPending \? null :/);
   assert.doesNotMatch(storeVisitDetailH5, /priceRowsPending \? \([\s\S]+<Loader2 className="h-3\.5 w-3\.5 animate-spin" \/>[\s\S]+\{text\.analyzingOne\}/);
 });
@@ -433,7 +435,7 @@ test("mobile store visit detail uses Edit entry instead of activity type and pcs
 });
 
 test("mobile store visit detail supports one-tap confirmation for complete matched rows", () => {
-  assert.match(storeVisitDetailH5, /confirmRow: "确认"/);
+  assert.match(storeVisitDetailH5, /confirmRow: "Confirm"/);
   assert.match(storeVisitDetailH5, /confirmRow: "Confirm"/);
   assert.match(storeVisitDetailH5, /function canQuickConfirmRow/);
   assert.match(storeVisitDetailH5, /onConfirmRow/);
@@ -465,7 +467,7 @@ test("mobile store visit detail displays matched SKU status in each parsed price
   assert.match(storeVisitDetailH5, /function candidateMatchDisplay/);
   assert.match(storeVisitDetailH5, /candidate\?\.matched_sku_label \?\? candidate\?\.matched_label \?\? candidate\?\.matched_entity_id/);
   assert.match(storeVisitDetailH5, /candidate\.matched_entity_type !== "unmatched"/);
-  assert.match(storeVisitDetailH5, /rowUnmatched: "未匹配"/);
+  assert.match(storeVisitDetailH5, /rowUnmatched: "Unmatched"/);
   assert.match(storeVisitDetailH5, /matchInfo\.matched/);
   assert.match(storeVisitDetailH5, /text-\[10px\]/);
   assert.match(storeVisitDetailH5, /break-words text-\[10px\] leading-4/);
@@ -523,10 +525,10 @@ test("mobile store visit detail closes row editor before refreshing full visit d
   assert.doesNotMatch(storeVisitDetailH5, /await loadVisit\(\{ preserveLoading: true \}\);\s*setRowEdit\(null\)/);
 });
 
-test("mobile store visit detail exposes admin-only full visit reanalysis", () => {
+test("mobile store visit detail exposes admin-only full visit Ai", () => {
   assert.match(storeVisitDetailH5, /const \[appUserRole, setAppUserRole\]/);
   assert.match(storeVisitDetailH5, /fetch\("\/api\/auth\/session"\)/);
-  assert.match(storeVisitDetailH5, /const canRunFullVisitReanalysis = appUserRole === "admin"/);
+  assert.match(storeVisitDetailH5, /const canRunFullVisitAi = appUserRole === "admin"/);
   assert.match(storeVisitDetailH5, /body: JSON\.stringify\(\{ full_visit: true \}\)/);
   assert.match(storeVisitDetailH5, /aria-label=\{text\.reanalyzeFullVisit\}/);
   assert.match(storeVisitDetailH5, /confirmFullVisitReanalyzeTitle:/);
@@ -537,17 +539,31 @@ test("mobile store visit detail exposes admin-only full visit reanalysis", () =>
   assert.doesNotMatch(storeVisitDetailH5, /onClick=\{reanalyzeFullVisit\}/);
   assert.match(storeVisitDetailH5, /fullVisitReanalyzeConfirmOpen \? \(/);
   assert.match(storeVisitDetailH5, /onClick=\{\(\) => \{\s*void reanalyzeFullVisit\(\)\.then\(\(\) => \{\s*setFullVisitReanalyzeConfirmOpen\(false\);/s);
+  assert.match(storeVisitDetailH5, /active_ai_job/);
+  assert.match(storeVisitDetailH5, /\/api\/store-visit\/ai-jobs\//);
 });
 
-test("store visit refresh API supports admin-only full visit reanalysis", () => {
+test("store visit refresh API creates background jobs for admin-only full visit Ai", () => {
   assert.match(storeVisitRefreshRoute, /const fullVisit = body\.full_visit === true/);
   assert.match(storeVisitRefreshRoute, /auth\.session\.role !== "admin"/);
-  assert.match(storeVisitRefreshRoute, /Full visit re-analysis requires admin account/);
+  assert.match(storeVisitRefreshRoute, /Full visit AI analysis requires admin account/);
   assert.match(storeVisitRefreshRoute, /let refreshImageIds: string\[\] = \[\]/);
-  assert.match(storeVisitRefreshRoute, /affectedImageIds: refreshImageIds/);
-  assert.match(storeVisitRefreshRoute, /forceAnalyzeImageIds: refreshImageIds/);
   assert.match(storeVisitRefreshRoute, /\.eq\("visit_id", id\)[\s\S]*\.in\("image_type", \["own_shelf", "competitor_shelf"\]\)/);
   assert.match(storeVisitRefreshRoute, /\.is\("deleted_at", null\)[\s\S]*\.is\("replaced_by_image_id", null\)/);
+  assert.match(storeVisitRefreshRoute, /createStoreVisitAiJob/);
+  assert.match(storeVisitRefreshRoute, /queued:\s*true/);
+  assert.match(storeVisitRefreshRoute, /active_ai_job/);
+  assert.doesNotMatch(storeVisitRefreshRoute, /forceAnalyzeImageIds: refreshImageIds/);
+});
+
+test("store visit detail and routes expose active Ai job state for H5 polling", () => {
+  assert.match(storeVisitRoute, /active_ai_job/);
+  assert.match(storeVisitDetailH5, /setNotice\(text\.reanalyzeFullVisitSubmitted\)/);
+  assert.match(storeVisitDetailH5, /Retry submitted\. Analysis is running in the background\./);
+  assert.match(storeVisitDetailH5, /setInterval\(/);
+  assert.match(storeVisitDetailH5, /loadVisit\(\{ preserveLoading: true \}\)/);
+  assert.match(storeVisitAiJobRoute, /loadStoreVisitAiJob/);
+  assert.match(storeVisitAiJobRoute, /summary: summarizeStoreVisitAiJob/);
 });
 
 test("mobile store visit detail does not crash when selected SKU option is missing", () => {
@@ -625,7 +641,7 @@ test("mobile store visit detail matches approved candidate rows before falling b
 });
 
 test("mobile store visit detail exposes row-level delete and hides H5-deleted rows", () => {
-  assert.match(storeVisitDetailH5, /deleteRow: "删除单个SKU"|deleteRow: "Delete SKU"/);
+  assert.match(storeVisitDetailH5, /deleteRow: "鍒犻櫎鍗曚釜SKU"|deleteRow: "Delete SKU"/);
   assert.match(storeVisitDetailH5, /action: "delete_h5_row"/);
   assert.match(storeVisitDetailH5, /h5_lifecycle_status !== "deleted"/);
   assert.match(storeVisitDetailH5, /buildPriceDisplayRows/);

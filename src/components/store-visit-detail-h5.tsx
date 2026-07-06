@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { ArrowLeft, Camera, Check, ChevronDown, ChevronRight, Copy, Ellipsis, Image as ImageIcon, Loader2, Pencil, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
 import Link from "next/link";
@@ -17,6 +17,7 @@ import type {
   StoreVisitDisplayAnalysis,
   StoreVisitImageCategory,
   StoreVisitPriceImageAnalysis,
+  StoreVisitAiJobSummary,
 } from "@/lib/types";
 import { LoadingOverlay } from "@/components/loading-overlay";
 
@@ -42,6 +43,7 @@ type StoreVisitDetail = {
   offline_visit_images?: OfflineVisitImage[];
   signed_images?: SignedVisitImage[];
   ai_price_candidates?: AiPriceCandidate[];
+  active_ai_job?: StoreVisitAiJobSummary | null;
 };
 
 type LocalUploadState = {
@@ -119,6 +121,10 @@ type ReanalyzeConfirmState = {
   imageId: string;
   label: string;
 };
+
+function isActiveAiJob(job: StoreVisitAiJobSummary | null | undefined) {
+  return job?.status === "queued" || job?.status === "running";
+}
 
 const maxUploadBytes = 20 * 1024 * 1024;
 const compressionMaxSide = 3000;
@@ -418,8 +424,8 @@ function detailText(locale: Locale) {
   const rowEditPreviewText = locale === "zh"
     ? {
         ...rowEditPreviewText,
-        pricePerPieceAuto: "鑷姩鍗曠墖浠?,
-        autoCalculated: "鑷姩璁＄畻",
+        pricePerPieceAuto: "閼奉亜濮╅崡鏇犲娴?,
+        autoCalculated: "閼奉亜濮╃拋锛勭暬",
       }
     : {
         ...rowEditPreviewText,
@@ -439,64 +445,81 @@ function detailText(locale: Locale) {
   void rowEditPreviewText;
   return locale === "zh"
     ? {
-        batchCode: "拍照批次",
-        priceParsing: "价格解析",
-        displayAnalysis: "陈列解析",
-        listPrice: "标价",
-        promoType: "活动类型",
-        netPrice: "到手价",
-        pricePerPiece: "单片价",
+        batchCode: "Batch code",
+        priceParsing: "Price Parsing",
+        displayAnalysis: "Store Display",
+        listPrice: "List Price",
+        promoType: "Activity Type",
+        netPrice: "Net Price",
+        pricePerPiece: "Per Piece",
         pieceCount: "Pcs",
-        needsConfirmationText: "需确认",
+        needsConfirmationText: "Needs confirmation",
         editRow: "Edit",
-        confirmRow: "确认",
-        rowUnmatched: "未匹配",
-        rowEditorTitle: "修改价格",
+        deleteRow: "Delete SKU",
+        confirmRow: "Confirm",
+        rowUnmatched: "Unmatched",
+        rowEditorTitle: "Edit Price",
         skuMatch: "SKU Match",
-        save: "保存",
-        cancel: "取消",
+        save: "Save",
+        cancel: "Cancel",
         unmatched: "Unmatched",
         matchTypeOwn: "Makuku SKU",
         matchTypeCompetitor: "Competitor SKU",
         matchTypeNone: "Unmatched",
-        searchMatch: "搜索 SKU Match",
-        saveRowFailed: "保存失败",
-        loadingMatchOptions: "SKU Match 加载中",
-        loadMatchOptionsFailed: "SKU Match 加载失败",
-        selectMatchFirst: "请先选择 SKU Match",
-        noPriceRows: "这张图片暂时没有可展示的价格结果。",
-        noPriceResult: "暂无价格解析结果。",
-        noDisplayResult: "暂无陈列解析结果。",
-        noDisplayImages: "未上传门店陈列图片。",
-        partialSuccess: "部分成功",
-        businessAnalysisError: "部分图片未解析成功，已成功解析的价格可以先复核；失败图片可稍后重试。",
-        systemError: "系统报错",
-        copySystemError: "复制报错",
-        copiedSystemError: "已复制",
-        copySystemErrorFailed: "复制失败，请手动长按选中报错内容。",
-        photoPrefix: "照片",
-        close: "关闭",
-        retake: "重拍",
-        retakePhoto: "拍照重拍",
-        replaceFromAlbum: "从相册替换",
-        updateThisPhoto: "更新这张",
-        updated: "已更新",
-        refreshingOne: "本张识别结果已刷新",
-        uploading: "上传中",
-        analyzingOne: "识别中",
-        retryUpload: "重试上传",
-        retryAnalysis: "重试识别",
-        analysisBusy: "当前有图片正在分析，请等待完成后再操作下一张图片",
-        retakeAgain: "再次重拍",
-        previewPhoto: "预览照片",
-        expandPhoto: "放大照片",
-        failedNeedsUpdate: "识别失败，请更新这张照片",
-        retakeRequired: "请重新上传该图片",
-        retakeRequiredSummary: "有价格标签照片需重传，请进入照片操作重新拍照或从相册替换。",
-        retakeRequiredFallback: "请正对价格标签靠近拍摄，确保价格数字清楚无遮挡。",
-        refreshVisit: "刷新",
-        reanalyzeFullVisit: "整单重新分析",
-        reanalyzeFullVisitSubmitted: "已提交整单重新分析，后台分析中。",
+        searchMatch: "Search SKU Match",
+        saveRowFailed: "Failed to save row changes",
+        loadingMatchOptions: "Loading SKU match options",
+        loadMatchOptionsFailed: "Failed to load SKU match options",
+        selectMatchFirst: "Select a SKU match first",
+        noPriceRows: "No readable price rows for this image yet.",
+        noPriceResult: "No price parsing result yet.",
+        noDisplayResult: "Store Display photos are stored only in 1.0.",
+        noDisplayImages: "No Store Display photos uploaded.",
+        partialSuccess: "Partial success",
+        businessAnalysisError: "Some photos were not parsed. Parsed prices can be reviewed first; failed photos can be retried later.",
+        systemError: "System error",
+        copySystemError: "Copy error",
+        copiedSystemError: "Copied",
+        copySystemErrorFailed: "Copy failed. Please long-press and select the error text manually.",
+        photoPrefix: "Photo",
+        close: "Close",
+        retake: "Retake",
+        retakePhoto: "Retake Photo",
+        replaceFromAlbum: "Replace from Album",
+        updateThisPhoto: "Update Photo",
+        updated: "Updated",
+        refreshingOne: "This photo result has been refreshed",
+        uploading: "Uploading",
+        analyzingOne: "Analyzing",
+        retryUpload: "Retry upload",
+        retryAnalysis: "Retry analysis",
+        analysisBusy: "Another photo is still analyzing. Please wait before updating the next photo.",
+        analysisFailed: "Analysis failed",
+        reAnalyze: "Analyze",
+        confirmReanalyzeTitle: "Analyze this photo?",
+        confirmReanalyzeDescription: "This will rerun AI analysis for this single photo. Existing linked price snapshots from this photo may be refreshed.",
+        confirmReanalyzeAction: "Confirm Analyze",
+        reanalyzing: "Re-analyzing...",
+        delete: "Delete",
+        confirmDeleteTitle: "Delete this photo?",
+        confirmDeleteDescription: "This will remove the photo from H5 and delete its linked price snapshots. This action cannot be undone.",
+        confirmDeleteAction: "Confirm Delete",
+        deleting: "Deleting...",
+        deleteResult: "Photo deleted. {count} linked price snapshot(s) removed.",
+        deleteResultUnknown: "Photo deleted.",
+        deleteRefreshFailed: "Delete request succeeded, but the page did not confirm the removal. Please refresh and verify.",
+        photoActions: "Photo actions",
+        deleteSuccess: "This photo has been deleted.",
+        retakeAgain: "Retake again",
+        previewPhoto: "Preview photo",
+        expandPhoto: "Preview photo",
+        failedNeedsUpdate: "Analysis failed. Update this photo to continue.",
+        retakeRequired: "Please re-upload this photo",
+        retakeRequiredSummary: "Price-tag photo needs retake. Use photo actions to retake or replace it.",
+        retakeRequiredFallback: "Retake directly facing the price tags, closer to the shelf, with clear unobstructed price digits.",
+        refreshVisit: "Refresh",
+        reanalyzeFullVisit: "Analyze full visit",
+        reanalyzeFullVisitSubmitted: "Full visit AI analysis submitted. Analysis is running in the background.",
       }
     : {
         batchCode: "Batch code",
@@ -549,10 +572,10 @@ function detailText(locale: Locale) {
         retryAnalysis: "Retry analysis",
         analysisBusy: "Another photo is still analyzing. Please wait before updating the next photo.",
         analysisFailed: "Analysis failed",
-        reAnalyze: "Re-analyze",
-        confirmReanalyzeTitle: "Re-analyze this photo?",
+        reAnalyze: "Analyze",
+        confirmReanalyzeTitle: "Analyze this photo?",
         confirmReanalyzeDescription: "This will rerun AI analysis for this single photo. Existing linked price snapshots from this photo may be refreshed.",
-        confirmReanalyzeAction: "Confirm Re-analyze",
+        confirmReanalyzeAction: "Confirm Analyze",
         reanalyzing: "Re-analyzing...",
         delete: "Delete",
         confirmDeleteTitle: "Delete this photo?",
@@ -572,8 +595,8 @@ function detailText(locale: Locale) {
         retakeRequiredSummary: "Price-tag photo needs retake. Use photo actions to retake or replace it.",
         retakeRequiredFallback: "Retake directly facing the price tags, closer to the shelf, with clear unobstructed price digits.",
         refreshVisit: "Refresh",
-        reanalyzeFullVisit: "Re-analyze full visit",
-        reanalyzeFullVisitSubmitted: "Full visit re-analysis submitted. Analysis is running in the background.",
+        reanalyzeFullVisit: "Analyze full visit",
+        reanalyzeFullVisitSubmitted: "Full visit AI analysis submitted. Analysis is running in the background.",
       };
 }
 
@@ -588,33 +611,27 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   const copy = getMobileCopy(locale);
   const text = detailText(locale);
   const deleteRowLabel = "deleteRow" in text ? text.deleteRow : "Delete SKU";
-  const fullVisitReanalyzeCopy = locale === "zh"
-    ? {
-        confirmFullVisitReanalyzeTitle: "确认整单重新分析？",
-        confirmFullVisitReanalyzeDescription: "这会重跑当前整个 Visit 的 AI 识别。已有价格结果可能会被刷新，通常需要等待几分钟。",
-        confirmFullVisitReanalyzeAction: "确认整单重跑",
-      }
-    : {
-        confirmFullVisitReanalyzeTitle: "Re-analyze this full visit?",
-        confirmFullVisitReanalyzeDescription: "This will rerun AI analysis for the entire visit. Existing price results may be refreshed and it can take a few minutes.",
-        confirmFullVisitReanalyzeAction: "Confirm Full Re-analysis",
-      };
-  const confirmReanalyzeTitle = textOrFallback(text.confirmReanalyzeTitle, locale === "zh" ? "确认重新识别这张照片？" : "Re-analyze this photo?");
-  const confirmReanalyzeDescription = textOrFallback(text.confirmReanalyzeDescription, locale === "zh" ? "这会只重跑当前这张照片的 AI 识别，并刷新它关联的价格结果。" : "This will rerun AI analysis for this single photo. Existing linked price snapshots from this photo may be refreshed.");
-  const confirmReanalyzeActionLabel = textOrFallback(text.confirmReanalyzeAction, locale === "zh" ? "确认重新识别" : "Confirm Re-analyze");
+  const fullVisitReanalyzeCopy = {
+    confirmFullVisitReanalyzeTitle: "Analyze this full visit?",
+    confirmFullVisitReanalyzeDescription: "This will rerun AI analysis for the entire visit. Existing price results may be refreshed and it can take a few minutes.",
+    confirmFullVisitReanalyzeAction: "Confirm Full AI analysis",
+  };
+  const confirmReanalyzeTitle = textOrFallback(text.confirmReanalyzeTitle, "Analyze this photo?");
+  const confirmReanalyzeDescription = textOrFallback(text.confirmReanalyzeDescription, "This will rerun AI analysis for this single photo. Existing linked price snapshots from this photo may be refreshed.");
+  const confirmReanalyzeActionLabel = textOrFallback(text.confirmReanalyzeAction, "Confirm Analyze");
   const confirmFullVisitReanalyzeTitle = fullVisitReanalyzeCopy.confirmFullVisitReanalyzeTitle;
   const confirmFullVisitReanalyzeDescription = fullVisitReanalyzeCopy.confirmFullVisitReanalyzeDescription;
   const confirmFullVisitReanalyzeActionLabel = fullVisitReanalyzeCopy.confirmFullVisitReanalyzeAction;
-  const reanalyzingLabel = textOrFallback(text.reanalyzing, locale === "zh" ? "重新识别中..." : "Re-analyzing...");
-  const confirmDeleteTitle = textOrFallback(text.confirmDeleteTitle, locale === "zh" ? "确认删除这张照片？" : "Delete this photo?");
-  const confirmDeleteDescription = textOrFallback(text.confirmDeleteDescription, locale === "zh" ? "删除后，H5 和关联的价格快照都会同步删除，且不可恢复。" : "This will remove the photo from H5 and delete its linked price snapshots. This action cannot be undone.");
-  const confirmDeleteActionLabel = textOrFallback(text.confirmDeleteAction, locale === "zh" ? "确认删除" : "Confirm Delete");
-  const deletingLabel = textOrFallback(text.deleting, locale === "zh" ? "删除中..." : "Deleting...");
-  const photoActionsLabel = textOrFallback(text.photoActions, locale === "zh" ? "照片操作" : "Photo actions");
-  const retakePhotoLabel = textOrFallback(text.retakePhoto, locale === "zh" ? "拍照重拍" : "Retake Photo");
-  const replaceFromAlbumLabel = textOrFallback(text.replaceFromAlbum, locale === "zh" ? "从相册替换" : "Replace from Album");
-  const reAnalyzeLabel = textOrFallback(text.reAnalyze, locale === "zh" ? "重新识别" : "Re-analyze");
-  const deleteLabel = textOrFallback(text.delete, locale === "zh" ? "删除" : "Delete");
+  const reanalyzingLabel = textOrFallback(text.reanalyzing, "Re-analyzing...");
+  const confirmDeleteTitle = textOrFallback(text.confirmDeleteTitle, "Delete this photo?");
+  const confirmDeleteDescription = textOrFallback(text.confirmDeleteDescription, "This will remove the photo from H5 and delete its linked price snapshots. This action cannot be undone.");
+  const confirmDeleteActionLabel = textOrFallback(text.confirmDeleteAction, "Confirm Delete");
+  const deletingLabel = textOrFallback(text.deleting, "Deleting...");
+  const photoActionsLabel = textOrFallback(text.photoActions, "Photo actions");
+  const retakePhotoLabel = textOrFallback(text.retakePhoto, "Retake Photo");
+  const replaceFromAlbumLabel = textOrFallback(text.replaceFromAlbum, "Replace from Album");
+  const reAnalyzeLabel = textOrFallback(text.reAnalyze, "Analyze");
+  const deleteLabel = textOrFallback(text.delete, "Delete");
   const [visit, setVisit] = useState<StoreVisitDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshingVisit, setRefreshingVisit] = useState(false);
@@ -677,6 +694,39 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
     return () => clearTimeout(timeout);
   }, [loadVisit]);
 
+  const activeAiJobForPolling = visit?.active_ai_job ?? null;
+  const activeAiJobId = activeAiJobForPolling?.id;
+  const activeAiJobStatus = activeAiJobForPolling?.status;
+
+  useEffect(() => {
+    if (!activeAiJobId || !isActiveAiJob(activeAiJobForPolling)) return undefined;
+
+    let cancelled = false;
+    async function pollAiJob() {
+      try {
+        const response = await fetch(`/api/store-visit/ai-jobs/${activeAiJobId}`);
+        const payload = await response.json().catch(() => ({}));
+        if (cancelled || !response.ok) return;
+        const summary = payload.summary as StoreVisitAiJobSummary | null | undefined;
+        if (summary) {
+          setVisit((current) => current ? { ...current, active_ai_job: summary } : current);
+        }
+        if (!isActiveAiJob(summary)) {
+          await loadVisit({ preserveLoading: true });
+        }
+      } catch {
+        if (!cancelled) void loadVisit({ preserveLoading: true });
+      }
+    }
+
+    void pollAiJob();
+    const interval = window.setInterval(pollAiJob, 2500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [activeAiJobForPolling, activeAiJobId, activeAiJobStatus, loadVisit]);
+
   useEffect(() => {
     let cancelled = false;
     fetch("/api/auth/session")
@@ -705,7 +755,6 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   async function reanalyzeFullVisit() {
     if (fullVisitReanalyzing || analysisPhase !== "idle") return;
     setFullVisitReanalyzing(true);
-    setAnalysisPhase("running");
     setError(null);
     setNotice(null);
     try {
@@ -721,7 +770,6 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
       if (!res.ok) {
         throw new Error(data.error ?? copy.aiAnalysisFailed);
       }
-      setAnalysisPhase("refreshing");
       await loadVisit({ preserveLoading: true });
       setNotice(text.reanalyzeFullVisitSubmitted);
     } catch (reanalyzeError) {
@@ -729,7 +777,6 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
       await loadVisit({ preserveLoading: true });
     } finally {
       setFullVisitReanalyzing(false);
-      setAnalysisPhase("idle");
     }
   }
 
@@ -903,13 +950,18 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   }
 
   const status = visit?.analysis_status ?? "pending";
+  const activeAiJob = isActiveAiJob(visit?.active_ai_job) ? visit?.active_ai_job ?? null : null;
+  const activeAiJobImageIds = useMemo(() => (
+    new Set(activeAiJob?.target_image_ids ?? [])
+  ), [activeAiJob?.target_image_ids]);
+  const fullVisitAiActive = activeAiJob?.job_type === "full_visit_reanalysis";
   const hasAnalyzingPriceImage = (visit?.offline_visit_images ?? []).some((image) => image.analysis_status === "analyzing");
-  const visitAnalysisInProgress = analyzing || fullVisitReanalyzing || (status === "analyzing" && !hasAnalyzingPriceImage);
+  const visitAnalysisInProgress = analyzing || fullVisitReanalyzing || fullVisitAiActive || (status === "analyzing" && !hasAnalyzingPriceImage);
   const businessRetakeImages = (visit?.offline_visit_images ?? []).filter(isRetakeRequiredPriceImage);
   const systemFailedImages = (visit?.offline_visit_images ?? []).filter((image) => image.analysis_status === "failed" && !isRetakeRequiredPriceImage(image) && (image.analysis_error || image.error_message));
   const canRunWholeVisitAnalysis = status === "pending" && visit?.visit_status === "uploaded";
-  const canRunFullVisitReanalysis = appUserRole === "admin";
-  const updateLocked = analysisPhase !== "idle";
+  const canRunFullVisitAi = appUserRole === "admin";
+  const updateLocked = analysisPhase !== "idle" || fullVisitAiActive;
   const signedImagesByPath = useMemo(
     () => new Map((visit?.signed_images ?? []).map((image) => [image.path, image] as const)),
     [visit?.signed_images],
@@ -939,7 +991,8 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   const actionSheetImage = actionSheet
     ? priceParseSections.find((section) => section.image.id === actionSheet.imageId)?.image ?? null
     : null;
-  const actionSheetImageIsAnalyzing = actionSheetImage?.analysis_status === "analyzing";
+  const actionSheetImageIsAnalyzing = actionSheetImage?.analysis_status === "analyzing"
+    || (actionSheet ? activeAiJobImageIds.has(actionSheet.imageId) : false);
 
   const displayImages = (visit?.offline_visit_images ?? [])
     .map((image) => ({
@@ -976,7 +1029,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
         throw new Error(data.error ?? copy.aiAnalysisFailed);
       }
       await loadVisit({ preserveLoading: true });
-      setNotice(locale === "zh" ? "已提交重试，后台分析中。" : "Retry submitted. Analysis is running in the background.");
+      setNotice("Retry submitted. Analysis is running in the background.");
     } catch (retryError) {
       setError(retryError instanceof Error ? retryError.message : copy.networkRetry);
     } finally {
@@ -1150,10 +1203,10 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
         open={analysisPhase !== "idle"}
         title={
           analysisPhase === "refreshing"
-            ? (locale === "zh" ? "分析完成，正在刷新结果..." : "Analysis complete. Refreshing results...")
-            : (locale === "zh" ? "正在重新分析巡店..." : "Re-analyzing the visit...")
+            ? "Analysis complete. Refreshing results..."
+            : "Re-analyzing the visit..."
         }
-        description={locale === "zh" ? "请稍候，不要重复点击。" : "Please wait and avoid tapping repeatedly."}
+        description="Please wait and avoid tapping repeatedly."
       />
       <main className="mx-auto min-h-screen max-w-md bg-slate-50 px-4 py-5 text-slate-950">
         <header className="mb-4 flex items-center gap-3">
@@ -1169,6 +1222,12 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
 
         {error ? <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
         {notice ? <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</div> : null}
+        {activeAiJob ? (
+          <div className="mb-4 flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-800">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            AI analysis running in background
+          </div>
+        ) : null}
 
         {loading ? (
           <div className="space-y-4">
@@ -1211,11 +1270,11 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                       {copy.analyzeStore}
                     </button>
                   ) : null}
-                  {canRunFullVisitReanalysis ? (
+                  {canRunFullVisitAi ? (
                     <button
                       type="button"
                       onClick={() => setFullVisitReanalyzeConfirmOpen(true)}
-                      disabled={fullVisitReanalyzing || analysisPhase !== "idle"}
+                      disabled={fullVisitReanalyzing || analysisPhase !== "idle" || Boolean(activeAiJob)}
                       aria-label={text.reanalyzeFullVisit}
                       title={text.reanalyzeFullVisit}
                       className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-amber-200 bg-amber-50 text-amber-700 shadow-sm transition hover:border-amber-300 hover:bg-amber-100 disabled:opacity-60"
@@ -1293,6 +1352,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   onPreview={setActiveImage}
                   deletingImageIds={deletingImageIds}
                   retryingImageIds={retryingImageIds}
+                  aiJobImageIds={activeAiJob?.target_image_ids ?? []}
                   onOpenActions={(imageId, imageCategory, label) => setActionSheet({ imageId, category: imageCategory, label })}
                   onOpenRowActions={(section, row, rowIndex, candidate) => setRowActionSheet({
                     section,
@@ -1324,6 +1384,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   onPreview={setActiveImage}
                   deletingImageIds={deletingImageIds}
                   retryingImageIds={retryingImageIds}
+                  aiJobImageIds={activeAiJob?.target_image_ids ?? []}
                   onOpenActions={(imageId, imageCategory, label) => setActionSheet({ imageId, category: imageCategory, label })}
                   onOpenRowActions={(section, row, rowIndex, candidate) => setRowActionSheet({
                     section,
@@ -1386,14 +1447,14 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
 
         {!loading && !visit && !error ? (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500 shadow-sm">
-            <div>{locale === "zh" ? "没有找到这条巡店记录。" : "This visit record could not be found."}</div>
+            <div>This visit record could not be found.</div>
             <button
               type="button"
               onClick={() => void loadVisit()}
               className="mt-4 inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white"
             >
               <RefreshCw className="h-4 w-4" />
-              {locale === "zh" ? "重新加载" : "Reload"}
+              {locale === "zh" ? "閲嶆柊鍔犺浇" : "Reload"}
             </button>
           </div>
         ) : null}
@@ -1736,6 +1797,7 @@ function PriceSectionGroup({
   candidates,
   deletingImageIds,
   retryingImageIds,
+  aiJobImageIds,
   onPreview,
   onOpenActions,
   onOpenRowActions,
@@ -1759,6 +1821,7 @@ function PriceSectionGroup({
   candidates: AiPriceCandidate[];
   deletingImageIds: string[];
   retryingImageIds: string[];
+  aiJobImageIds: string[];
   onPreview: (image: { url: string; label: string }) => void;
   onOpenActions: (imageId: string, category: "makuku_shelf" | "competitor_shelf", label: string) => void;
   onOpenRowActions: (section: PriceParseSection, row: StoreVisitPriceImageAnalysis["rows"][number], rowIndex: number, candidate: AiPriceCandidate) => void;
@@ -1769,7 +1832,7 @@ function PriceSectionGroup({
   cameraRetakeInputRefs: MutableRefObject<Record<string, HTMLInputElement | null>>;
   albumRetakeInputRefs: MutableRefObject<Record<string, HTMLInputElement | null>>;
 }) {
-  const photoActionsLabel = textOrFallback(text.photoActions, locale === "zh" ? "照片操作" : "Photo actions");
+  const photoActionsLabel = textOrFallback(text.photoActions, locale === "zh" ? "鐓х墖鎿嶄綔" : "Photo actions");
 
   return (
     <div className="space-y-3">
@@ -1790,10 +1853,11 @@ function PriceSectionGroup({
             const previewUrl = sectionLocalUpload?.previewUrl ?? section.signedImage?.url ?? null;
             const isProcessingRetake = sectionLocalUpload?.mode === "retake";
             const isAnalyzingImage = section.image.analysis_status === "analyzing";
-            const priceRowsPending = visitAnalysisInProgress || retryingImageIds.includes(section.image.id) || isAnalyzingImage || (isProcessingRetake && sectionLocalUpload?.status === "analyzing");
+            const isReanalyzingImage = aiJobImageIds.includes(section.image.id);
+            const priceRowsPending = visitAnalysisInProgress || retryingImageIds.includes(section.image.id) || isAnalyzingImage || isReanalyzingImage || (isProcessingRetake && sectionLocalUpload?.status === "analyzing");
             const displayRows = buildPriceDisplayRows(candidates, section.image.id, section.result?.rows ?? []);
             const needsRetake = isRetakeRequiredPriceImage(section.image);
-            const isActionDisabled = updateLocked || retryingImageIds.includes(section.image.id) || deletingImageIds.includes(section.image.id);
+            const isActionDisabled = updateLocked || isReanalyzingImage || retryingImageIds.includes(section.image.id) || deletingImageIds.includes(section.image.id);
 
             return (
               <>
@@ -1829,7 +1893,7 @@ function PriceSectionGroup({
                   accept="image/*"
                   capture="environment"
                   className="sr-only"
-                  disabled={updateLocked || isAnalyzingImage}
+                  disabled={updateLocked || isAnalyzingImage || isReanalyzingImage}
                   onChange={(event) => {
                     const file = event.target.files?.[0];
                     if (file) onRetakeFile(section.image.id, file);
@@ -1841,7 +1905,7 @@ function PriceSectionGroup({
                   type="file"
                   accept="image/*"
                   className="sr-only"
-                  disabled={updateLocked || isAnalyzingImage}
+                  disabled={updateLocked || isAnalyzingImage || isReanalyzingImage}
                   onChange={(event) => {
                     const file = event.target.files?.[0];
                     if (file) onRetakeFile(section.image.id, file);
@@ -1856,7 +1920,7 @@ function PriceSectionGroup({
                     {text.refreshingOne}
                   </span>
                 ) : null}
-                {isAnalyzingImage && !isProcessingRetake ? (
+                {(isAnalyzingImage || isReanalyzingImage) && !isProcessingRetake ? (
                   <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-[1px] text-[10px] font-semibold leading-5 text-blue-700">
                     <Loader2 className="h-3 w-3 animate-spin" />
                     {text.analyzingOne}

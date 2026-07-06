@@ -76,6 +76,8 @@ export type StoreVisitMonitorFilters = {
   promoter?: string;
   analysisStatus?: string;
   limit?: number;
+  page?: number;
+  pageSize?: number;
 };
 
 export type StoreVisitMonitorItem = {
@@ -119,6 +121,16 @@ export type StoreVisitMonitorResult = {
   summary: StoreVisitMonitorSummary;
   quality: StoreVisitMonitorQuality;
   visits: StoreVisitMonitorItem[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+    from: number;
+    to: number;
+    hasPrevious: boolean;
+    hasNext: boolean;
+  };
   filters: {
     dateFrom: string;
     dateTo: string;
@@ -3345,6 +3357,66 @@ function defaultRecent24HoursRange() {
   };
 }
 
+const storeVisitMonitorDefaultPageSize = 50;
+const storeVisitMonitorMaxPageSize = 100;
+const storeVisitMonitorSummaryLimit = 5000;
+const storeVisitMonitorSelect = "id,visit_code,store_name,visit_date,promoter,uploader_name,analysis_status,visit_status,summary_result,created_at,image_urls";
+
+function positiveInteger(value: unknown, fallback: number) {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) return fallback;
+  return parsed;
+}
+
+function normalizeStoreVisitMonitorPagination(filters: StoreVisitMonitorFilters) {
+  const page = positiveInteger(filters.page, 1);
+  const requestedPageSize = positiveInteger(filters.pageSize ?? filters.limit, storeVisitMonitorDefaultPageSize);
+  return {
+    page,
+    pageSize: Math.min(requestedPageSize, storeVisitMonitorMaxPageSize),
+  };
+}
+
+function storeVisitMonitorPagination(page: number, pageSize: number, total: number, itemCount: number) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const to = total === 0 ? 0 : Math.min((page - 1) * pageSize + itemCount, total);
+  return {
+    page,
+    pageSize,
+    total,
+    totalPages,
+    from,
+    to,
+    hasPrevious: page > 1,
+    hasNext: page < totalPages,
+  };
+}
+
+function filterMonitorItems(items: StoreVisitMonitorItem[], filters: StoreVisitMonitorFilters, dateFrom: string, dateTo: string) {
+  return items.filter((visit) => {
+    const completedDate = (visit.completedAt ?? "").slice(0, 10);
+    if (completedDate) {
+      if (completedDate < dateFrom || completedDate > dateTo) return false;
+    } else if (visit.visitDate < dateFrom || visit.visitDate > dateTo) {
+      return false;
+    }
+    if (filters.visitCode && !(visit.visitCode ?? "").toLowerCase().includes(filters.visitCode.toLowerCase())) return false;
+    if (filters.storeName && !visit.storeName.toLowerCase().includes(filters.storeName.toLowerCase())) return false;
+    if (filters.promoter && !visit.promoter.toLowerCase().includes(filters.promoter.toLowerCase())) return false;
+    if (filters.analysisStatus && visit.analysisStatus !== filters.analysisStatus) return false;
+    return true;
+  });
+}
+
+function sortMonitorItems(items: StoreVisitMonitorItem[]) {
+  return [...items].sort((a, b) => {
+    const completedDiff = new Date(b.completedAt ?? b.createdAt).getTime() - new Date(a.completedAt ?? a.createdAt).getTime();
+    if (completedDiff !== 0) return completedDiff;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+}
+
 function percentile(values: number[], ratio: number) {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
@@ -3549,6 +3621,63 @@ async function getStoreVisitMonitorVisitQuality(visitIds: string[]): Promise<Que
   };
 }
 
+async function getStoreVisitMonitorRows(filters: StoreVisitMonitorFilters, dateFrom: string, dateTo: string) {
+  if (!hasSupabaseServiceConfig()) {
+    const sorted = sortMonitorItems(filterMonitorItems(demoOfflineStoreVisits.map(toMonitorItem), filters, dateFrom, dateTo));
+    return { rows: sorted, total: sorted.length, error: null, isDemo: true };
+  }
+
+  const supabase = createSupabaseServiceClient();
+  const { page, pageSize } = normalizeStoreVisitMonitorPagination(filters);
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let pageQuery = supabase
+    .from("offline_store_visits")
+    .select(storeVisitMonitorSelect, { count: "exact" })
+    .gte("visit_date", dateFrom)
+    .lte("visit_date", dateTo)
+    .order("created_at", { ascending: false })
+    .range(from, to);
+  let summaryQuery = supabase
+    .from("offline_store_visits")
+    .select(storeVisitMonitorSelect)
+    .gte("visit_date", dateFrom)
+    .lte("visit_date", dateTo)
+    .order("created_at", { ascending: false })
+    .range(0, storeVisitMonitorSummaryLimit - 1);
+
+  if (filters.visitCode) {
+    pageQuery = pageQuery.ilike("visit_code", `%${filters.visitCode}%`);
+    summaryQuery = summaryQuery.ilike("visit_code", `%${filters.visitCode}%`);
+  }
+  if (filters.storeName) {
+    pageQuery = pageQuery.ilike("store_name", `%${filters.storeName}%`);
+    summaryQuery = summaryQuery.ilike("store_name", `%${filters.storeName}%`);
+  }
+  if (filters.promoter) {
+    const promoterFilter = `promoter.ilike.%${filters.promoter}%,uploader_name.ilike.%${filters.promoter}%`;
+    pageQuery = pageQuery.or(promoterFilter);
+    summaryQuery = summaryQuery.or(promoterFilter);
+  }
+  if (filters.analysisStatus) {
+    pageQuery = pageQuery.eq("analysis_status", filters.analysisStatus);
+    summaryQuery = summaryQuery.eq("analysis_status", filters.analysisStatus);
+  }
+
+  const [pageResult, summaryResult] = await Promise.all([pageQuery, summaryQuery]);
+  if (pageResult.error) return { rows: [], summaryRows: [], total: 0, error: pageResult.error.message, isDemo: false };
+  if (summaryResult.error) return { rows: [], summaryRows: [], total: 0, error: summaryResult.error.message, isDemo: false };
+
+  return {
+    rows: ((pageResult.data ?? []) as OfflineStoreVisit[]).map(toMonitorItem),
+    summaryRows: ((summaryResult.data ?? []) as OfflineStoreVisit[]).map(toMonitorItem),
+    total: pageResult.count ?? 0,
+    error: null,
+    isDemo: false,
+  };
+}
+
 export async function getStoreVisitMonitor(
   filters: StoreVisitMonitorFilters = {},
 ): Promise<QueryResult<StoreVisitMonitorResult>> {
@@ -3556,48 +3685,26 @@ export async function getStoreVisitMonitor(
   const dateFrom = filters.dateFrom || recent24Hours.dateFrom;
   const dateTo = filters.dateTo || recent24Hours.dateTo;
   const isDefaultRecent24Hours = !filters.dateFrom && !filters.dateTo;
+  const { page, pageSize } = normalizeStoreVisitMonitorPagination(filters);
+  const visitsResult = await getStoreVisitMonitorRows(filters, dateFrom, dateTo);
+  const visits = visitsResult.rows;
+  const summaryVisits = visitsResult.summaryRows ?? visits;
 
-  const visitsResult = await getOfflineStoreVisits({
-    limit: filters.limit ?? 500,
-    includeImageUrls: false,
-  });
-
-  const visits = visitsResult.data
-    .map(toMonitorItem)
-    .filter((visit) => {
-      const completedDate = (visit.completedAt ?? "").slice(0, 10);
-      if (completedDate) {
-        if (completedDate < dateFrom || completedDate > dateTo) return false;
-      } else if (visit.visitDate < dateFrom || visit.visitDate > dateTo) {
-        return false;
-      }
-      if (filters.visitCode && !(visit.visitCode ?? "").toLowerCase().includes(filters.visitCode.toLowerCase())) return false;
-      if (filters.storeName && !visit.storeName.toLowerCase().includes(filters.storeName.toLowerCase())) return false;
-      if (filters.promoter && !visit.promoter.toLowerCase().includes(filters.promoter.toLowerCase())) return false;
-      if (filters.analysisStatus && visit.analysisStatus !== filters.analysisStatus) return false;
-      return true;
-    })
-    .sort((a, b) => {
-      const completedDiff = new Date(b.completedAt ?? b.createdAt).getTime() - new Date(a.completedAt ?? a.createdAt).getTime();
-      if (completedDiff !== 0) return completedDiff;
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-    });
-
-  const durations = visits
+  const durations = summaryVisits
     .map((visit) => visit.fullAnalysisTimeMs)
     .filter((value): value is number => isFiniteNumber(value));
 
   const summary: StoreVisitMonitorSummary = {
-    visitsAnalyzed: visits.length,
+    visitsAnalyzed: visitsResult.total,
     p50: percentile(durations, 0.5),
     p90: percentile(durations, 0.9),
     p95: percentile(durations, 0.95),
-    actionRequiredOrFailedCount: visits.filter((visit) => visit.analysisStatus === "action_required" || visit.analysisStatus === "failed").length,
-    averageImagesPerVisit: visits.length > 0
-      ? Math.round((visits.reduce((sum, visit) => sum + visit.imageCount, 0) / visits.length) * 10) / 10
+    actionRequiredOrFailedCount: summaryVisits.filter((visit) => visit.analysisStatus === "action_required" || visit.analysisStatus === "failed").length,
+    averageImagesPerVisit: summaryVisits.length > 0
+      ? Math.round((summaryVisits.reduce((sum, visit) => sum + visit.imageCount, 0) / summaryVisits.length) * 10) / 10
       : null,
-    averageSuccessfulImagesPerVisit: visits.length > 0
-      ? Math.round((visits.reduce((sum, visit) => sum + visit.successCount, 0) / visits.length) * 10) / 10
+    averageSuccessfulImagesPerVisit: summaryVisits.length > 0
+      ? Math.round((summaryVisits.reduce((sum, visit) => sum + visit.successCount, 0) / summaryVisits.length) * 10) / 10
       : null,
   };
 
@@ -3628,6 +3735,7 @@ export async function getStoreVisitMonitor(
         avgPriceDeviationRate: quality.avgPriceDeviationRate,
       },
       visits: visitsWithQuality,
+      pagination: storeVisitMonitorPagination(page, pageSize, visitsResult.total, visitsWithQuality.length),
       filters: {
         dateFrom,
         dateTo,

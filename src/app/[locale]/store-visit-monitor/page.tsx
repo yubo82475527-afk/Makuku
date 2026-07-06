@@ -21,6 +21,11 @@ function statusTone(status: string | null) {
   return "neutral";
 }
 
+function readPositiveInt(value: string, fallback: number) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 export default async function StoreVisitMonitorPage({
   params,
   searchParams,
@@ -34,6 +39,8 @@ export default async function StoreVisitMonitorPage({
     const value = filters[key];
     return Array.isArray(value) ? value[0] ?? "" : value ?? "";
   };
+  const page = readPositiveInt(getFilter("page"), 1);
+  const pageSize = readPositiveInt(getFilter("page_size"), 50);
 
   const result = await getStoreVisitMonitor({
     dateFrom: getFilter("date_from") || undefined,
@@ -42,9 +49,21 @@ export default async function StoreVisitMonitorPage({
     storeName: getFilter("store_name") || undefined,
     promoter: getFilter("promoter") || undefined,
     analysisStatus: getFilter("analysis_status") || undefined,
+    page,
+    pageSize,
   });
 
   const monitor = result.data;
+  const pageHref = (nextPage: number) => {
+    const query = new URLSearchParams();
+    for (const key of ["visit_code", "store_name", "promoter", "analysis_status", "date_from", "date_to"]) {
+      const value = getFilter(key);
+      if (value) query.set(key, value);
+    }
+    query.set("page", String(nextPage));
+    query.set("page_size", String(monitor.pagination.pageSize));
+    return `/${locale}/store-visit-monitor?${query.toString()}`;
+  };
 
   return (
     <>
@@ -74,7 +93,7 @@ export default async function StoreVisitMonitorPage({
         <div className="mb-3">
           <h2 className="font-semibold">Price parsing quality</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Unchanged H5 flow. These metrics summarize current AI parsing quality against final approved store price snapshots.
+            Unchanged H5 flow. These metrics summarize the current page against final approved store price snapshots.
           </p>
         </div>
         <div className="grid gap-3 md:grid-cols-3">
@@ -85,7 +104,7 @@ export default async function StoreVisitMonitorPage({
       </Card>
 
       <Card className="mb-4">
-        <form className="grid gap-3 md:grid-cols-7">
+        <form className="grid gap-3 md:grid-cols-8">
           <TextInput name="visit_code" placeholder="Visit code" defaultValue={getFilter("visit_code")} />
           <TextInput name="store_name" placeholder="Store name" defaultValue={getFilter("store_name")} />
           <TextInput name="promoter" placeholder="Promoter" defaultValue={getFilter("promoter")} />
@@ -100,6 +119,11 @@ export default async function StoreVisitMonitorPage({
           </SelectInput>
           <TextInput name="date_from" type="date" defaultValue={monitor.filters.dateFrom} />
           <TextInput name="date_to" type="date" defaultValue={monitor.filters.dateTo} />
+          <SelectInput name="page_size" defaultValue={String(monitor.pagination.pageSize)}>
+            <option value="25">25 / page</option>
+            <option value="50">50 / page</option>
+            <option value="100">100 / page</option>
+          </SelectInput>
           <div className="flex gap-2">
             <Button type="submit">Filter</Button>
             <Link href={`/${locale}/store-visit-monitor`} className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
@@ -112,7 +136,11 @@ export default async function StoreVisitMonitorPage({
       <Card>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <h2 className="font-semibold">Visit analysis list</h2>
-          <div className="text-sm text-slate-500">{monitor.visits.length} visits</div>
+          <div className="text-sm text-slate-500">
+            {monitor.pagination.total === 0
+              ? "0 visits"
+              : `Showing ${monitor.pagination.from}-${monitor.pagination.to} of ${monitor.pagination.total} visits`}
+          </div>
         </div>
 
         {monitor.visits.length === 0 ? <EmptyState text="No store visits found for this range." /> : null}
@@ -172,6 +200,40 @@ export default async function StoreVisitMonitorPage({
                 ))}
               </tbody>
             </table>
+          </div>
+        ) : null}
+
+        {monitor.pagination.totalPages > 1 ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4 text-sm">
+            <div className="text-slate-500">
+              Page {monitor.pagination.page} of {monitor.pagination.totalPages}
+            </div>
+            <div className="flex gap-2">
+              {monitor.pagination.hasPrevious ? (
+                <Link
+                  href={pageHref(monitor.pagination.page - 1)}
+                  className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-3 font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Previous
+                </Link>
+              ) : (
+                <span className="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-slate-50 px-3 font-medium text-slate-400">
+                  Previous
+                </span>
+              )}
+              {monitor.pagination.hasNext ? (
+                <Link
+                  href={pageHref(monitor.pagination.page + 1)}
+                  className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-3 font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Next
+                </Link>
+              ) : (
+                <span className="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-slate-50 px-3 font-medium text-slate-400">
+                  Next
+                </span>
+              )}
+            </div>
           </div>
         ) : null}
       </Card>

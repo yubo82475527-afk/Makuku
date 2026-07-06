@@ -2,6 +2,7 @@ import { createSupabaseServiceClient } from "@/lib/supabase";
 import { attachAiPriceCandidateMatchLabels } from "@/lib/data";
 import type { AiPriceCandidate, OfflineImageType, OfflineStoreVisit, OfflineVisitImage, StoreVisitImageCategory } from "@/lib/types";
 import { isInactiveVisitImage, refreshStoreVisitStoredPriceState } from "@/lib/store-visit-image-maintenance";
+import { loadActiveStoreVisitAiJob, summarizeStoreVisitAiJob } from "@/lib/store-visit-ai-jobs";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -166,6 +167,7 @@ export async function GET(_request: Request, ctx: RouteContext) {
       summary_result: summaryResult,
       offline_visit_images: activeImages,
     };
+    const activeAi = await loadActiveStoreVisitAiJob({ visitId: id, supabase });
 
     return Response.json({
       visit: {
@@ -175,6 +177,7 @@ export async function GET(_request: Request, ctx: RouteContext) {
         active_signed_images: signedVisitWithActiveImages.active_signed_images,
         replaced_signed_images: replacedSignedImages,
         signed_images: signedVisitWithActiveImages.active_signed_images,
+        active_ai_job: summarizeStoreVisitAiJob(activeAi.job, activeAi.items),
       },
     });
   } catch (error) {

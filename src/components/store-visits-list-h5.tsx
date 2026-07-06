@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { ArrowLeft, CalendarDays, ChevronRight, ImageIcon, Languages, Loader2, LogIn, LogOut, Plus, RefreshCw, Settings } from "lucide-react";
 import Link from "next/link";
@@ -12,7 +12,7 @@ import { localeLabels, replacePathLocale, type Locale } from "@/lib/i18n/config"
 import { writeLocalePreferenceCookie } from "@/lib/locale-preference";
 import { getMobileCopy, mobileAnalysisStatusLabel } from "@/lib/mobile-i18n";
 import { summarizeBrandSkuCounts } from "@/lib/store-visit-summary";
-import type { StoreVisitAnalysisStatus, StoreVisitAiResult } from "@/lib/types";
+import type { StoreVisitAnalysisStatus, StoreVisitAiResult, StoreVisitAiJobSummary } from "@/lib/types";
 import { MobileLanguageSwitch } from "@/components/mobile-language-switch";
 
 const storageKey = "makuku_app_user";
@@ -38,6 +38,7 @@ type VisitListItem = {
   ai_result?: StoreVisitAiResult | null;
   photo_count?: number;
   created_at: string;
+  active_ai_job?: StoreVisitAiJobSummary | null;
 };
 
 type Pagination = {
@@ -93,6 +94,7 @@ function summarizeVisitBrandCounts(aiResult: StoreVisitAiResult | null | undefin
 }
 
 function visitDisplayStatus(visit: VisitListItem): StoreVisitAnalysisStatus {
+  if (visit.active_ai_job?.status === "queued" || visit.active_ai_job?.status === "running") return "analyzing";
   const status = visit.analysis_status ?? "pending";
   const photoCount = visit.photo_count ?? 0;
   if (visit.visit_status === "draft" && photoCount === 0) return "pending";
@@ -233,7 +235,7 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
         submitting: "\u767b\u5f55\u4e2d...",
         required: "\u8bf7\u8f93\u5165\u7528\u6237\u540d\u548c\u5bc6\u7801\u3002",
         failed: "\u767b\u5f55\u5931\u8d25",
-        pricePhotoRetakeRequired: "有价格标签照片需重传，进入详情重新拍照或替换。",
+        pricePhotoRetakeRequired: "\u6709\u4ef7\u683c\u6807\u7b7e\u7167\u7247\u9700\u91cd\u4f20\uff0c\u8fdb\u5165\u8be6\u60c5\u91cd\u65b0\u62cd\u7167\u6216\u66ff\u6362\u3002",
       }
     : {
         title: "Mobile Visit Login",
@@ -411,13 +413,25 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
     void autoAnalyzeVisit(pendingVisit.id, user);
   }, [autoAnalyzeVisit, autoAnalyzingVisitIds, loading, loadingMore, user, visits]);
 
+  useEffect(() => {
+    if (!user?.id) return undefined;
+    const hasActiveAiJob = visits.some((visit) => (
+      visit.active_ai_job?.status === "queued" || visit.active_ai_job?.status === "running"
+    ));
+    if (!hasActiveAiJob) return undefined;
+    const interval = window.setInterval(() => {
+      void loadVisits(1, false, user);
+    }, 3000);
+    return () => window.clearInterval(interval);
+  }, [loadVisits, user, visits]);
+
   if (!user) {
     return (
       <>
         <LoadingOverlay
           open={loginPhase !== "idle"}
           title={loginPhase === "redirecting" ? loadingText.redirecting : loadingText.loggingIn}
-          description={locale === "zh" ? "请稍候，不要重复点击。" : "Please wait and avoid tapping repeatedly."}
+          description={locale === "zh" ? "\u8bf7\u7a0d\u540e\uff0c\u4e0d\u8981\u91cd\u590d\u70b9\u51fb\u3002" : "Please wait and avoid tapping repeatedly."}
         />
         <main className="mx-auto min-h-screen max-w-md bg-slate-50 px-4 py-5 text-slate-950">
           <header className="mb-4 flex items-center gap-3">
@@ -540,6 +554,7 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
           const summary = summarizeVisitBrandCounts(visit.ai_result, locale);
           const priceRetakeRequired = status === "action_required";
           const openVisitToHandlePhotos = status === "partial" || status === "action_required" || status === "failed";
+          const activeAiJob = visit.active_ai_job?.status === "queued" || visit.active_ai_job?.status === "running";
           return (
             <article key={visit.id} className="rounded-xl border border-slate-200 bg-white shadow-sm">
               <Link
@@ -556,6 +571,11 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
 
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <Badge className={statusClass(status)}>{mobileAnalysisStatusLabel(locale, status)}</Badge>
+                  {activeAiJob ? (
+                    <Badge className="bg-blue-50 text-blue-700 ring-blue-200">
+                      {locale === "zh" ? "\u540e\u53f0\u91cd\u8dd1\u4e2d" : "Background re-run"}
+                    </Badge>
+                  ) : null}
                 </div>
 
                 {priceRetakeRequired ? (
@@ -564,7 +584,7 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
                   </p>
                 ) : openVisitToHandlePhotos ? (
                   <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium leading-5 text-amber-800">
-                    {locale === "zh" ? "进入详情处理单张图片。" : "Open details to handle individual photos."}
+                    {locale === "zh" ? "\u8fdb\u5165\u8be6\u60c5\u5904\u7406\u5355\u5f20\u56fe\u7247\u3002" : "Open details to handle individual photos."}
                   </p>
                 ) : summary ? (
                   <p

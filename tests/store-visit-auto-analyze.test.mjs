@@ -1,6 +1,10 @@
-import { readFileSync } from "node:fs";
+﻿import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
+
+function readMaybe(path) {
+  return existsSync(path) ? readFileSync(path, "utf8") : "";
+}
 
 const storeVisitH5 = readFileSync("src/components/store-visit-h5.tsx", "utf8");
 const storeVisitsListH5 = readFileSync("src/components/store-visits-list-h5.tsx", "utf8");
@@ -8,20 +12,25 @@ const analyzeRoute = readFileSync("src/app/api/store-visit/analyze/route.ts", "u
 const storeVisitImagesRoute = readFileSync("src/app/api/store-visit/[id]/images/route.ts", "utf8");
 const storeVisitDetailH5 = readFileSync("src/components/store-visit-detail-h5.tsx", "utf8");
 const storeVisitRefreshRoute = readFileSync("src/app/api/store-visit/[id]/refresh/route.ts", "utf8");
-const storeVisitAi = readFileSync("src/lib/store-visit-ai.ts", "utf8");
+const storeVisitAiCore = readFileSync("src/lib/store-visit-ai.ts", "utf8");
 const storeVisitAiDebug = readFileSync("src/lib/store-visit-ai-debug.ts", "utf8");
 const storeVisitAnalysis = readFileSync("src/lib/store-visit-analysis.ts", "utf8");
 const storeVisitImageMaintenance = readFileSync("src/lib/store-visit-image-maintenance.ts", "utf8");
 const appShell = readFileSync("src/components/app-shell.tsx", "utf8");
 const storeVisitMonitorPage = readFileSync("src/app/[locale]/store-visit-monitor/page.tsx", "utf8");
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
+const storeVisitAiJobs = readMaybe("src/lib/store-visit-ai-jobs.ts");
+const storeVisitAiJobRoute = readMaybe("src/app/api/store-visit/ai-jobs/[jobId]/route.ts");
+const storeVisitAiRunnerRoute = readMaybe("src/app/api/internal/store-visit-ai/run/route.ts");
+const vercelConfig = readFileSync("vercel.json", "utf8");
 
 test("new H5 store visit returns to the list after uploads without waiting for AI analysis", () => {
   const analyzeIndex = storeVisitH5.indexOf('fetch("/api/store-visit/analyze"');
   const listRedirectIndex = storeVisitH5.indexOf('router.replace(`/${locale}/mobile/offline-capture`)');
 
   assert.ok(listRedirectIndex >= 0, "submit flow should keep returning to the visit list");
-  assert.equal(analyzeIndex, -1, "submit flow should not wait for AI analysis");
+  assert.ok(analyzeIndex >= 0, "submit flow should enqueue backend AI analysis");
+  assert.ok(analyzeIndex < listRedirectIndex, "submit flow should enqueue quickly before returning to the list");
   assert.doesNotMatch(storeVisitH5, /setSubmitStatus\(labels\.analyzingPrices\)/);
   assert.doesNotMatch(storeVisitH5, /void fetch\("\/api\/store-visit\/analyze"/);
 });
@@ -34,7 +43,7 @@ test("mobile visit list auto-starts uploaded pending visits once per page sessio
   assert.match(storeVisitsListH5, /fetch\("\/api\/store-visit\/analyze"/);
 });
 
-test("H5 list does not expose manual whole-visit reanalysis after initial analysis", () => {
+test("H5 list does not expose manual whole-visit Ai after initial analysis", () => {
   assert.doesNotMatch(storeVisitsListH5, /function reanalyzeVisit/);
   assert.doesNotMatch(storeVisitsListH5, /reanalyzingVisitId/);
   assert.doesNotMatch(storeVisitsListH5, /onClick=\{\(\) => reanalyzeVisit\(visit\.id\)\}/);
@@ -63,10 +72,10 @@ test("image upload API does not block non-replacement uploads because new visit 
 });
 
 test("store visit analysis auto-approves AI price candidates that match the active rule", () => {
-  assert.match(analyzeRoute, /runStoreVisitAnalysis/);
+  assert.match(storeVisitAiJobs, /runStoreVisitAnalysis/);
   assert.match(storeVisitAnalysis, /generateAiPriceCandidates/);
   assert.match(storeVisitAnalysis, /autoApproveAiPriceCandidatesForVisit/);
-  assert.match(analyzeRoute, /autoReviewedCount/);
+  assert.match(storeVisitAnalysis, /autoReview/);
   assert.match(storeVisitAnalysis, /auto_reviewed_count/);
   assert.match(storeVisitAnalysis, /review_method.*auto_rule|auto_rule.*review_method/s);
 });
@@ -104,47 +113,61 @@ test("store visit analysis repair script can backfill missing row candidates for
   assert.match(repairScript, /candidateCountAfter/);
 });
 
-test("store visit analysis accepts new image rows as well as legacy image arrays", () => {
-  assert.match(analyzeRoute, /offline_visit_images\(id\)/);
-  assert.match(analyzeRoute, /legacyImageCount/);
-  assert.match(analyzeRoute, /tableImageCount/);
-  assert.match(analyzeRoute, /legacyImageCount \+ tableImageCount/);
-  assert.doesNotMatch(analyzeRoute, /const imagePaths = Array\.isArray\(typedVisit\.image_urls\) \? typedVisit\.image_urls : \[\];\s*if \(imagePaths\.length === 0\)/s);
+test("store visit analysis accepts active price image rows for initial analysis", () => {
+  assert.match(analyzeRoute, /offline_visit_images\(id,image_type,deleted_at,replaced_by_image_id\)/);
+  assert.match(analyzeRoute, /activePriceImageIds/);
+  assert.match(analyzeRoute, /No price-tag photos found for this visit/);
+  assert.doesNotMatch(analyzeRoute, /legacyImageCount/);
 });
 
 test("store visit analysis failures keep retryable status and error details", () => {
-  assert.match(analyzeRoute, /analysis_status: "failed"/);
-  assert.match(analyzeRoute, /visit_status: "analyzed"/);
-  assert.match(analyzeRoute, /analysis_error: message/);
+  assert.match(storeVisitAiJobs, /analysis_status: "failed"/);
+  assert.match(storeVisitAiJobs, /visitStatusOverride: "analyzed"/);
+  assert.match(storeVisitAiJobs, /analysisErrorOverride: input\.message/);
 });
 
 test("store visit analyze route only allows first whole-visit analysis", () => {
   assert.match(analyzeRoute, /const isInitialWholeVisitAnalysis = typedVisit\.visit_status === "uploaded"[\s\S]*\(!typedVisit\.analysis_status \|\| typedVisit\.analysis_status === "pending"\)/);
-  assert.match(analyzeRoute, /single-photo/i);
+  assert.match(analyzeRoute, /This visit is not waiting for initial AI analysis/);
   assert.match(analyzeRoute, /status: 400/);
 });
 
+test("store visit analyze route checks visit ownership before creating a job", () => {
+  assert.match(analyzeRoute, /isAllowedAdminRole/);
+  assert.match(analyzeRoute, /typedVisit\.user_id === auth\.session\.id/);
+  assert.match(analyzeRoute, /typedVisit\.uploader_user_id === auth\.session\.id/);
+});
+
 test("single-photo refresh failure keeps analyzed workflow state while marking failed result", () => {
-  assert.match(storeVisitRefreshRoute, /analysisStatusOverride: "failed"/);
-  assert.match(storeVisitRefreshRoute, /visitStatusOverride: "analyzed"/);
-  assert.doesNotMatch(storeVisitRefreshRoute, /visitStatusOverride: "uploaded"/);
+  assert.match(storeVisitAiJobs, /analysisStatusOverride: "failed"/);
+  assert.match(storeVisitAiJobs, /visitStatusOverride: "analyzed"/);
+  assert.doesNotMatch(storeVisitAiJobs, /visitStatusOverride: "uploaded"/);
 });
 
-test("store visit refresh route runs analysis in-request instead of after background callback", () => {
-  assert.doesNotMatch(storeVisitRefreshRoute, /after\s*\(/);
-  assert.match(storeVisitRefreshRoute, /await runStoreVisitAnalysis\(/);
+test("store visit refresh route creates a durable background job instead of running AI in-request", () => {
+  assert.match(storeVisitRefreshRoute, /createStoreVisitAiJob/);
+  assert.match(storeVisitRefreshRoute, /after\s*\(/);
+  assert.match(storeVisitRefreshRoute, /queued:\s*true/);
+  assert.match(storeVisitRefreshRoute, /active_ai_job/);
+  assert.doesNotMatch(storeVisitRefreshRoute, /await runStoreVisitAnalysis\(/);
 });
 
-test("store visit refresh route marks affected images analyzing without clearing old vision before rerun", () => {
-  assert.match(storeVisitRefreshRoute, /from\("offline_visit_images"\)\s*[\s\S]*analysis_status: "analyzing"/);
+test("store visit refresh route checks visit ownership before creating a reanalysis job", () => {
+  assert.match(storeVisitRefreshRoute, /isAllowedAdminRole/);
+  assert.match(storeVisitRefreshRoute, /visitRow\.user_id === auth\.session\.id/);
+  assert.match(storeVisitRefreshRoute, /visitRow\.uploader_user_id === auth\.session\.id/);
+});
+
+test("store visit refresh route does not mark images analyzing before the runner claims a job item", () => {
+  assert.doesNotMatch(storeVisitRefreshRoute, /from\("offline_visit_images"\)\s*[\s\S]*analysis_status: "analyzing"/);
   assert.doesNotMatch(storeVisitRefreshRoute, /vision_result: null/);
-  assert.match(storeVisitRefreshRoute, /refreshStoreVisitStoredPriceState\(\{[\s\S]*analysisStatusOverride: "analyzing"/);
+  assert.doesNotMatch(storeVisitRefreshRoute, /refreshStoreVisitStoredPriceState\(\{[\s\S]*analysisStatusOverride: "analyzing"/);
 });
 
 test("single-photo refresh rejects concurrent visit analysis with a 409 business error", () => {
-  assert.match(storeVisitRefreshRoute, /select\("analysis_status"\)/);
-  assert.match(storeVisitRefreshRoute, /typedVisit\?\.analysis_status === "analyzing"/);
-  assert.match(storeVisitRefreshRoute, /Another photo in this visit is still analyzing\. Please wait for it to finish before updating the next photo\./);
+  assert.match(storeVisitAiJobs, /activeJobStatuses/);
+  assert.match(storeVisitRefreshRoute, /409/);
+  assert.match(storeVisitRefreshRoute, /active_ai_job/);
   assert.match(storeVisitRefreshRoute, /status: 409/);
 });
 
@@ -156,7 +179,7 @@ test("H5 detail only shows whole-visit analysis before the first run and keeps s
 });
 
 test("H5 detail turns refresh 409 conflicts into a friendly operator message", () => {
-  assert.match(storeVisitDetailH5, /analysisBusy: "Another photo is still analyzing\. Please wait before updating the next photo\."|analysisBusy: "当前有图片正在分析，请等待完成后再操作下一张图片"/);
+  assert.match(storeVisitDetailH5, /analysisBusy: "Another photo is still analyzing\. Please wait before updating the next photo\."|analysisBusy: "褰撳墠鏈夊浘鐗囨鍦ㄥ垎鏋愶紝璇风瓑寰呭畬鎴愬悗鍐嶆搷浣滀笅涓€寮犲浘鐗?/);
   assert.match(storeVisitDetailH5, /if \(res\.status === 409\)/);
   assert.match(storeVisitDetailH5, /if \(analyzeRes\.status === 409\)/);
 });
@@ -230,7 +253,7 @@ test("store visit price image analysis uses fixed parallelism of 5 inside a visi
 });
 
 test("store visit analysis persists visit-level timing metrics into summary_result", () => {
-  assert.match(analyzeRoute, /const analysisStartedAt = new Date\(\)/);
+  assert.match(storeVisitAiJobs, /runStoreVisitAnalysis/);
   assert.match(storeVisitAnalysis, /visitAnalysisStartedAt/);
   assert.match(storeVisitAnalysis, /visit_analysis_duration_ms/);
   assert.match(storeVisitAnalysis, /price_image_parallelism:\s*5/);
@@ -238,9 +261,9 @@ test("store visit analysis persists visit-level timing metrics into summary_resu
 });
 
 test("store visit price analysis persists prompt metadata for image and summary debugging", () => {
-  assert.match(storeVisitAi, /PRICE_IMAGE_PROMPT_VERSION/);
-  assert.match(storeVisitAi, /prompt_hash/);
-  assert.match(storeVisitAi, /analysis_metadata/);
+  assert.match(storeVisitAiCore, /PRICE_IMAGE_PROMPT_VERSION/);
+  assert.match(storeVisitAiCore, /prompt_hash/);
+  assert.match(storeVisitAiCore, /analysis_metadata/);
   assert.match(storeVisitAiDebug, /prompt_version/);
   assert.match(storeVisitAiDebug, /prompt_hash/);
   assert.match(storeVisitAiDebug, /metadata/);
@@ -258,7 +281,7 @@ test("single-photo refresh preserves the first whole-visit analysis timing metri
 });
 
 test("store visit refresh forces target price images to bypass cached vision results", () => {
-  assert.match(storeVisitRefreshRoute, /forceAnalyzeImageIds:\s*refreshImageIds/);
+  assert.match(storeVisitAiJobs, /forceAnalyzeImageIds:\s*\[item\.source_image_id\]/);
   assert.match(storeVisitAnalysis, /forceAnalyzeImageIds\?: string\[\]/);
   assert.match(storeVisitAnalysis, /forceAnalyzeImageIds:\s*input\.forceAnalyzeImageIds/);
   assert.match(storeVisitAiDebug, /forceAnalyzeImageIds\?: string\[\]/);
@@ -281,16 +304,39 @@ test("store visit refresh replaces old price impact only after forced AI success
   );
 });
 
-test("store visit refresh persists AI usage metadata for forced image reruns", () => {
+test("store visit Ai persists AI usage metadata into job item summaries", () => {
   assert.match(storeVisitAiDebug, /usage:\s*result\.metadata\.usage/);
-  assert.match(storeVisitRefreshRoute, /forced_image_results/);
-  assert.match(storeVisitRefreshRoute, /usage_present/);
+  assert.match(storeVisitAiJobs, /usage_present/);
+  assert.match(storeVisitAiJobs, /response_id/);
+  assert.match(storeVisitAiJobs, /result_summary/);
+});
+
+test("store visit AI adds durable job routes, atomic RPC claim, and cron sweep", () => {
+  const migration = readMaybe("supabase/migrations/202607060001_store_visit_ai_jobs.sql");
+  assert.match(storeVisitAiJobs, /store_visit_ai_jobs/);
+  assert.match(storeVisitAiJobs, /store_visit_ai_job_items/);
+  assert.match(storeVisitAiJobs, /claim_store_visit_ai_job_item/);
+  assert.match(storeVisitAiJobs, /enqueuePendingStoreVisitInitialAnalysisJobs/);
+  assert.match(migration, /for update skip locked/i);
+  assert.match(migration, /create_store_visit_ai_job/);
+  assert.match(migration, /claim_store_visit_ai_job_item/);
+  assert.match(storeVisitAiJobRoute, /loadStoreVisitAiJob/);
+  assert.match(storeVisitAiJobRoute, /summarizeStoreVisitAiJob/);
+  assert.match(storeVisitAiRunnerRoute, /runStoreVisitAiJob/);
+  assert.match(storeVisitAiRunnerRoute, /CRON_SECRET|requireCronSecret/);
+  assert.match(vercelConfig, /store-visit-ai\/run/);
+  assert.match(migration, /create table if not exists public\.store_visit_ai_jobs/);
+  assert.match(migration, /create table if not exists public\.store_visit_ai_job_items/);
+  assert.match(migration, /where status in \('queued','running'\)/);
+  assert.doesNotMatch(migration, /for all to authenticated using \(true\)/);
+  assert.match(migration, /revoke all on function public\.create_store_visit_ai_job/);
+  assert.match(migration, /grant execute on function public\.claim_store_visit_ai_job_item/);
 });
 
 test("store visit analysis failure path also persists visit-level timing metrics", () => {
-  assert.match(analyzeRoute, /summary_result:\s*\{[\s\S]*analysis_metrics:/);
-  assert.match(analyzeRoute, /visit_analysis_duration_ms/);
-  assert.match(analyzeRoute, /visit_analysis_completed_at/);
+  assert.match(storeVisitAnalysis, /summary_result:\s*\{[\s\S]*analysis_metrics:/);
+  assert.match(storeVisitAnalysis, /visit_analysis_duration_ms/);
+  assert.match(storeVisitAnalysis, /visit_analysis_completed_at/);
 });
 
 test("store visit detail route can reconcile stale analyzing visits after completed analysis metrics exist", () => {
@@ -313,7 +359,7 @@ test("store visit monitor has a dedicated backend navigation entry", () => {
 
 test("store visit monitor page shows summary cards, visit latency metrics, and a default recent-24-hour filter", () => {
   assert.match(storeVisitMonitorPage, /PageShellState/);
-  assert.match(storeVisitMonitorPage, /Recent 24 hours|最近24小时/);
+  assert.match(storeVisitMonitorPage, /Recent 24 hours|鏈€杩?4灏忔椂/);
   assert.match(storeVisitMonitorPage, /P50 visit analysis time/);
   assert.match(storeVisitMonitorPage, /P95 visit analysis time/);
   assert.match(storeVisitMonitorPage, /Full analysis time/);
@@ -355,11 +401,26 @@ test("store visit monitor list places row-level price parsing quality columns af
   );
 });
 
+test("store visit monitor list exposes server-side pagination controls", () => {
+  assert.match(storeVisitMonitorPage, /page_size/);
+  assert.match(storeVisitMonitorPage, /Showing .* of .* visits/);
+  assert.match(storeVisitMonitorPage, /Previous/);
+  assert.match(storeVisitMonitorPage, /Next/);
+});
+
 test("store visit monitor data path includes per-visit price parsing quality metrics", () => {
   assert.match(dataFile, /type StoreVisitMonitorItem = \{[\s\S]*accuracy: number \| null;/);
   assert.match(dataFile, /type StoreVisitMonitorItem = \{[\s\S]*autoApprovalRate: number \| null;/);
   assert.match(dataFile, /type StoreVisitMonitorItem = \{[\s\S]*avgPriceDeviationRate: number \| null;/);
   assert.match(dataFile, /visitQualityById/);
+});
+
+test("store visit monitor data path paginates the analysis list before row quality lookup", () => {
+  assert.match(dataFile, /pagination:\s*\{/);
+  assert.match(dataFile, /normalizeStoreVisitMonitorPagination/);
+  assert.match(dataFile, /storeVisitMonitorDefaultPageSize\s*=\s*50/);
+  assert.match(dataFile, /\.range\(from, to\)/);
+  assert.match(dataFile, /const visitIds = visits\.map/);
 });
 
 test("new H5 store visit requires at least one price-tag image, not only Makuku photos", () => {
@@ -368,11 +429,11 @@ test("new H5 store visit requires at least one price-tag image, not only Makuku 
 });
 
 test("store visit AI uses image-level price parsing and separate display analysis", () => {
-  assert.match(storeVisitAi, /export async function analyzeStoreVisitPriceImage/);
-  assert.match(storeVisitAi, /export async function analyzeStoreVisitDisplayImages/);
+  assert.match(storeVisitAiCore, /export async function analyzeStoreVisitPriceImage/);
+  assert.match(storeVisitAiCore, /export async function analyzeStoreVisitDisplayImages/);
   assert.match(storeVisitAiDebug, /analyzeStoreVisitPriceImage/);
   assert.doesNotMatch(storeVisitAiDebug, /analyzeStoreVisitDisplayImages/);
   assert.doesNotMatch(storeVisitAiDebug, /analyzeStoreVisitImages/);
   assert.match(storeVisitAiDebug, /composeStoreVisitAiResult/);
-  assert.doesNotMatch(storeVisitAi, /Treat all images as ONE store-level observation/);
+  assert.doesNotMatch(storeVisitAiCore, /Treat all images as ONE store-level observation/);
 });

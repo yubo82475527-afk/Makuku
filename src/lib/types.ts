@@ -918,6 +918,54 @@ export type AiPriceReviewJobItem = {
   ai_price_candidates?: AiPriceCandidate | null;
 };
 
+export type StoreVisitAiJobType = "initial_analysis" | "single_image_reanalysis" | "full_visit_reanalysis";
+export type StoreVisitAiJobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+export type StoreVisitAiJobItemStatus = "queued" | "processing" | "succeeded" | "retake_required" | "failed";
+
+export type StoreVisitAiJob = {
+  id: string;
+  visit_id: string;
+  job_type: StoreVisitAiJobType;
+  status: StoreVisitAiJobStatus;
+  request_snapshot: Record<string, unknown>;
+  total_count: number;
+  success_count: number;
+  failed_count: number;
+  retake_required_count: number;
+  remaining_count: number;
+  created_by: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  last_heartbeat_at: string | null;
+  lease_expires_at: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string | null;
+};
+
+export type StoreVisitAiJobItem = {
+  id: string;
+  job_id: string;
+  source_image_id: string;
+  position: number;
+  status: StoreVisitAiJobItemStatus;
+  attempt_count: number;
+  worker_id: string | null;
+  last_heartbeat_at: string | null;
+  lease_expires_at: string | null;
+  error_message: string | null;
+  result_summary: Record<string, unknown>;
+  created_at: string;
+  updated_at: string | null;
+};
+
+export type StoreVisitAiJobSummary = Pick<
+  StoreVisitAiJob,
+  "id" | "job_type" | "status" | "total_count" | "success_count" | "failed_count" | "retake_required_count" | "remaining_count"
+> & {
+  target_image_ids: string[];
+};
+
 export type PromoEvent = {
   id: string;
   competitor_product_id: string;
