@@ -213,8 +213,8 @@ export async function createStoreVisitAiJob(input: {
     job,
     items,
     summary: summarizeStoreVisitAiJob(job, items),
-    reused: Boolean(row.reused),
-    conflict: Boolean(row.conflict),
+    reused: Boolean(row?.reused),
+    conflict: Boolean(row?.conflict),
   };
 }
 

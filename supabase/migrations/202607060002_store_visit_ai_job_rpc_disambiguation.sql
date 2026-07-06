@@ -1,4 +1,6 @@
-create or replace function public.create_store_visit_ai_job(
+drop function if exists public.create_store_visit_ai_job(uuid,text,uuid[],text,jsonb);
+
+create function public.create_store_visit_ai_job(
   p_visit_id uuid,
   p_job_type text,
   p_source_image_ids uuid[],
@@ -78,7 +80,9 @@ begin
 end;
 $$;
 
-create or replace function public.claim_store_visit_ai_job_item(
+drop function if exists public.claim_store_visit_ai_job_item(uuid,text,integer,integer);
+
+create function public.claim_store_visit_ai_job_item(
   p_job_id uuid default null,
   p_worker_id text default null,
   p_max_global_processing integer default 8,

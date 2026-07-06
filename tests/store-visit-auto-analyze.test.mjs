@@ -18,6 +18,7 @@ const storeVisitAnalysis = readFileSync("src/lib/store-visit-analysis.ts", "utf8
 const storeVisitImageMaintenance = readFileSync("src/lib/store-visit-image-maintenance.ts", "utf8");
 const appShell = readFileSync("src/components/app-shell.tsx", "utf8");
 const storeVisitMonitorPage = readFileSync("src/app/[locale]/store-visit-monitor/page.tsx", "utf8");
+const storeVisitMonitorExportRoute = readMaybe("src/app/api/store-visit-monitor/export/route.ts");
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const storeVisitAiJobs = readMaybe("src/lib/store-visit-ai-jobs.ts");
 const storeVisitAiJobRoute = readMaybe("src/app/api/store-visit/ai-jobs/[jobId]/route.ts");
@@ -338,11 +339,13 @@ test("store visit AI adds durable job routes, atomic RPC claim, and cron sweep",
 
 test("store visit AI hotfix migration removes ambiguous job_id output collisions in RPCs", () => {
   const hotfixMigration = readMaybe("supabase/migrations/202607060002_store_visit_ai_job_rpc_disambiguation.sql");
-  assert.match(hotfixMigration, /create or replace function public\.create_store_visit_ai_job/);
+  assert.match(hotfixMigration, /drop function if exists public\.create_store_visit_ai_job\(uuid,text,uuid\[],text,jsonb\);/);
+  assert.match(hotfixMigration, /create function public\.create_store_visit_ai_job/);
   assert.match(hotfixMigration, /returns table\(created_job_id uuid, reused boolean, conflict boolean\)/);
   assert.match(hotfixMigration, /where public\.store_visit_ai_job_items\.job_id = v_active_job\.id/);
   assert.match(hotfixMigration, /select v_active_job\.id, true, coalesce\(v_existing_ids, '\{\}'::uuid\[\]\) <> v_requested_ids/);
-  assert.match(hotfixMigration, /create or replace function public\.claim_store_visit_ai_job_item/);
+  assert.match(hotfixMigration, /drop function if exists public\.claim_store_visit_ai_job_item\(uuid,text,integer,integer\);/);
+  assert.match(hotfixMigration, /create function public\.claim_store_visit_ai_job_item/);
   assert.match(hotfixMigration, /returns table\(claimed_job_id uuid, claimed_item_id uuid\)/);
   assert.match(hotfixMigration, /select updated_item\.job_id as claimed_job_id, updated_item\.id as claimed_item_id/);
 });
@@ -426,10 +429,29 @@ test("store visit monitor list exposes server-side pagination controls", () => {
   assert.match(storeVisitMonitorPage, /Next/);
 });
 
+test("store visit monitor list can export the displayed analysis columns to Excel", () => {
+  assert.match(storeVisitMonitorPage, /store-visit-monitor\/export/);
+  assert.match(storeVisitMonitorPage, /Export Excel/);
+  assert.match(storeVisitMonitorExportRoute, /import \* as XLSX from "xlsx"/);
+  assert.match(storeVisitMonitorExportRoute, /Visit Code/);
+  assert.match(storeVisitMonitorExportRoute, /Average price deviation/);
+  assert.match(storeVisitMonitorExportRoute, /Create time/);
+  assert.match(storeVisitMonitorExportRoute, /Update time/);
+  assert.match(storeVisitMonitorExportRoute, /Content-Disposition/);
+  assert.match(storeVisitMonitorExportRoute, /store-visit-monitor/);
+});
+
+test("store visit monitor detail links open in a new window", () => {
+  assert.match(storeVisitMonitorPage, /Open details/);
+  assert.match(storeVisitMonitorPage, /target="_blank"/);
+  assert.match(storeVisitMonitorPage, /rel="noopener noreferrer"/);
+});
+
 test("store visit monitor data path includes per-visit price parsing quality metrics", () => {
   assert.match(dataFile, /type StoreVisitMonitorItem = \{[\s\S]*accuracy: number \| null;/);
   assert.match(dataFile, /type StoreVisitMonitorItem = \{[\s\S]*autoApprovalRate: number \| null;/);
   assert.match(dataFile, /type StoreVisitMonitorItem = \{[\s\S]*avgPriceDeviationRate: number \| null;/);
+  assert.match(dataFile, /type StoreVisitMonitorItem = \{[\s\S]*updatedAt: string \| null;/);
   assert.match(dataFile, /visitQualityById/);
 });
 

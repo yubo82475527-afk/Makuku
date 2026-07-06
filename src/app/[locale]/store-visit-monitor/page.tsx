@@ -54,6 +54,13 @@ export default async function StoreVisitMonitorPage({
   });
 
   const monitor = result.data;
+  const exportQuery = new URLSearchParams();
+  for (const key of ["visit_code", "store_name", "promoter", "analysis_status", "date_from", "date_to"]) {
+    const value = getFilter(key);
+    if (value) exportQuery.set(key, value);
+  }
+  exportQuery.set("locale", locale);
+  const exportHref = `/api/store-visit-monitor/export?${exportQuery.toString()}`;
   const pageHref = (nextPage: number) => {
     const query = new URLSearchParams();
     for (const key of ["visit_code", "store_name", "promoter", "analysis_status", "date_from", "date_to"]) {
@@ -135,11 +142,21 @@ export default async function StoreVisitMonitorPage({
 
       <Card>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-semibold">Visit analysis list</h2>
-          <div className="text-sm text-slate-500">
-            {monitor.pagination.total === 0
-              ? "0 visits"
-              : `Showing ${monitor.pagination.from}-${monitor.pagination.to} of ${monitor.pagination.total} visits`}
+          <div>
+            <h2 className="font-semibold">Visit analysis list</h2>
+            <div className="mt-1 text-sm text-slate-500">
+              {monitor.pagination.total === 0
+                ? "0 visits"
+                : `Showing ${monitor.pagination.from}-${monitor.pagination.to} of ${monitor.pagination.total} visits`}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href={exportHref}
+              className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Export Excel
+            </Link>
           </div>
         </div>
 
@@ -191,6 +208,8 @@ export default async function StoreVisitMonitorPage({
                     <td className="whitespace-nowrap py-3 pr-3">
                       <Link
                         href={`/${locale}/mobile/offline-capture/${visit.visitId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
                         className="font-medium text-blue-700 underline-offset-2 hover:underline"
                       >
                         Open details

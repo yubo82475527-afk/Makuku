@@ -99,6 +99,7 @@ export type StoreVisitMonitorItem = {
   startedAt: string | null;
   completedAt: string | null;
   createdAt: string;
+  updatedAt: string | null;
 };
 
 export type StoreVisitMonitorSummary = {
@@ -3360,7 +3361,7 @@ function defaultRecent24HoursRange() {
 const storeVisitMonitorDefaultPageSize = 50;
 const storeVisitMonitorMaxPageSize = 100;
 const storeVisitMonitorSummaryLimit = 5000;
-const storeVisitMonitorSelect = "id,visit_code,store_name,visit_date,promoter,uploader_name,analysis_status,visit_status,summary_result,created_at,image_urls";
+const storeVisitMonitorSelect = "id,visit_code,store_name,visit_date,promoter,uploader_name,analysis_status,visit_status,summary_result,created_at,updated_at,image_urls";
 
 function positiveInteger(value: unknown, fallback: number) {
   const parsed = typeof value === "number" ? value : Number(value);
@@ -3461,6 +3462,7 @@ function toMonitorItem(visit: OfflineStoreVisit): StoreVisitMonitorItem {
       ? analysisMetrics.visit_analysis_completed_at
       : null,
     createdAt: visit.created_at,
+    updatedAt: (visit as OfflineStoreVisit & { updated_at?: string | null }).updated_at ?? null,
   };
 }
 
@@ -3487,6 +3489,7 @@ function valuesMatch(left: string | number | null | undefined, right: string | n
 }
 
 type StoreVisitMonitorQualityRow = {
+  id?: string;
   visit_id: string | null;
   status: string;
   review_method?: string | null;
@@ -3498,6 +3501,7 @@ type StoreVisitMonitorQualityRow = {
   matched_entity_type?: string | null;
   matched_entity_id?: string | null;
   net_price_idr?: number | null;
+  created_at?: string | null;
 };
 
 function candidateContributesToQuality(row: StoreVisitMonitorQualityRow) {
@@ -3515,26 +3519,41 @@ function candidateWasAutoApproved(row: StoreVisitMonitorQualityRow) {
   return row.status === "approved" && row.review_method === "auto_rule";
 }
 
+async function loadStoreVisitMonitorQualityRows(visitIds: string[]) {
+  const supabase = createSupabaseServiceClient();
+  const pageSize = 1000;
+  const rows: StoreVisitMonitorQualityRow[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      // Keep the SQL view for downstream consumers; the monitor reads ai_price_candidates directly
+      // so the metrics reflect current row edits immediately without requiring snapshot approval.
+      .from("ai_price_candidates")
+      .select("id,visit_id,status,review_method,candidate_type,h5_lifecycle_status,ai_matched_entity_type,ai_matched_entity_id,ai_net_price_idr,matched_entity_type,matched_entity_id,net_price_idr,created_at")
+      .in("visit_id", visitIds)
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, from + pageSize - 1);
+
+    if (error) return { rows: [] as StoreVisitMonitorQualityRow[], error };
+    const pageRows = (data ?? []) as StoreVisitMonitorQualityRow[];
+    rows.push(...pageRows);
+    if (pageRows.length < pageSize) return { rows, error: null };
+  }
+}
+
 async function getStoreVisitMonitorQuality(visitIds: string[]): Promise<QueryResult<StoreVisitMonitorQuality>> {
   if (!hasSupabaseServiceConfig() || visitIds.length === 0) {
     return { data: emptyStoreVisitMonitorQuality(), error: null, isDemo: !hasSupabaseServiceConfig() };
   }
 
-  const supabase = createSupabaseServiceClient();
-  const { data, error } = await supabase
-    // Keep the SQL view for downstream consumers; the monitor reads ai_price_candidates directly
-    // so the metrics reflect current row edits immediately without requiring snapshot approval.
-    .from("ai_price_candidates")
-    .select("visit_id,status,review_method,candidate_type,h5_lifecycle_status,ai_matched_entity_type,ai_matched_entity_id,ai_net_price_idr,matched_entity_type,matched_entity_id,net_price_idr")
-    .in("visit_id", visitIds)
-    .range(0, 9999);
+  const { rows, error } = await loadStoreVisitMonitorQualityRows(visitIds);
 
   if (isMissingStoreVisitQualityViewError(error) || (error?.message ?? "").includes("ai_matched_entity_type")) {
     return { data: emptyStoreVisitMonitorQuality(), error: null, isDemo: false };
   }
   if (error) return { data: emptyStoreVisitMonitorQuality(), error: error.message, isDemo: false };
 
-  const rows = (data ?? []) as StoreVisitMonitorQualityRow[];
   const activeRows = rows.filter(candidateContributesToQuality);
   const denominator = activeRows.length;
   const deviationRows = activeRows
@@ -3567,12 +3586,7 @@ async function getStoreVisitMonitorVisitQuality(visitIds: string[]): Promise<Que
     return { data: {}, error: null, isDemo: !hasSupabaseServiceConfig() };
   }
 
-  const supabase = createSupabaseServiceClient();
-  const { data, error } = await supabase
-    .from("ai_price_candidates")
-    .select("visit_id,status,review_method,candidate_type,h5_lifecycle_status,ai_matched_entity_type,ai_matched_entity_id,ai_net_price_idr,matched_entity_type,matched_entity_id,net_price_idr")
-    .in("visit_id", visitIds)
-    .range(0, 9999);
+  const { rows, error } = await loadStoreVisitMonitorQualityRows(visitIds);
 
   if (isMissingStoreVisitQualityViewError(error) || (error?.message ?? "").includes("ai_matched_entity_type")) {
     return { data: {}, error: null, isDemo: false };
@@ -3580,7 +3594,7 @@ async function getStoreVisitMonitorVisitQuality(visitIds: string[]): Promise<Que
   if (error) return { data: {}, error: error.message, isDemo: false };
 
   const grouped = new Map<string, { total: number; correct: number; autoApproved: number; deviations: number[] }>();
-  for (const row of (data ?? []) as StoreVisitMonitorQualityRow[]) {
+  for (const row of rows) {
     if (!row.visit_id) continue;
     if (!candidateContributesToQuality(row)) continue;
     const bucket = grouped.get(row.visit_id) ?? { total: 0, correct: 0, autoApproved: 0, deviations: [] };
@@ -3672,8 +3686,8 @@ async function getStoreVisitMonitorRows(filters: StoreVisitMonitorFilters, dateF
   if (summaryResult.error) return { rows: [], summaryRows: [], total: 0, error: summaryResult.error.message, isDemo: false };
 
   return {
-    rows: ((pageResult.data ?? []) as OfflineStoreVisit[]).map(toMonitorItem),
-    summaryRows: ((summaryResult.data ?? []) as OfflineStoreVisit[]).map(toMonitorItem),
+    rows: ((pageResult.data ?? []) as unknown as OfflineStoreVisit[]).map(toMonitorItem),
+    summaryRows: ((summaryResult.data ?? []) as unknown as OfflineStoreVisit[]).map(toMonitorItem),
     total: pageResult.count ?? 0,
     error: null,
     isDemo: false,
@@ -3746,6 +3760,30 @@ export async function getStoreVisitMonitor(
     },
     error: visitsResult.error ?? qualityResult.error ?? visitQualityResult.error,
     isDemo: visitsResult.isDemo || qualityResult.isDemo || visitQualityResult.isDemo,
+  };
+}
+
+export async function getStoreVisitMonitorExport(
+  filters: StoreVisitMonitorFilters = {},
+): Promise<QueryResult<StoreVisitMonitorItem[]>> {
+  const recent24Hours = defaultRecent24HoursRange();
+  const dateFrom = filters.dateFrom || recent24Hours.dateFrom;
+  const dateTo = filters.dateTo || recent24Hours.dateTo;
+  const visitsResult = await getStoreVisitMonitorRows(filters, dateFrom, dateTo);
+  const visits = visitsResult.summaryRows ?? visitsResult.rows;
+  const visitIds = visits.map((visit) => visit.visitId);
+  const visitQualityResult = await getStoreVisitMonitorVisitQuality(visitIds);
+  const visitQualityById = visitQualityResult.data;
+
+  return {
+    data: visits.map((visit) => ({
+      ...visit,
+      accuracy: visitQualityById[visit.visitId]?.accuracy ?? null,
+      autoApprovalRate: visitQualityById[visit.visitId]?.autoApprovalRate ?? null,
+      avgPriceDeviationRate: visitQualityById[visit.visitId]?.avgPriceDeviationRate ?? null,
+    })),
+    error: visitsResult.error ?? visitQualityResult.error,
+    isDemo: visitsResult.isDemo || visitQualityResult.isDemo,
   };
 }
 
