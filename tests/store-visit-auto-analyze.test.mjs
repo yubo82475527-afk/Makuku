@@ -455,6 +455,12 @@ test("store visit monitor data path includes per-visit price parsing quality met
   assert.match(dataFile, /visitQualityById/);
 });
 
+test("store visit monitor falls back when production lacks offline_store_visits.updated_at", () => {
+  assert.match(dataFile, /legacyStoreVisitMonitorSelect/);
+  assert.match(dataFile, /isMissingStoreVisitUpdatedAtError/);
+  assert.match(dataFile, /runQueries\(legacyStoreVisitMonitorSelect\)/);
+});
+
 test("store visit monitor data path paginates the analysis list before row quality lookup", () => {
   assert.match(dataFile, /pagination:\s*\{/);
   assert.match(dataFile, /normalizeStoreVisitMonitorPagination/);

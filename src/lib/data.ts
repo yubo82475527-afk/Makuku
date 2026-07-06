@@ -3362,6 +3362,7 @@ const storeVisitMonitorDefaultPageSize = 50;
 const storeVisitMonitorMaxPageSize = 100;
 const storeVisitMonitorSummaryLimit = 5000;
 const storeVisitMonitorSelect = "id,visit_code,store_name,visit_date,promoter,uploader_name,analysis_status,visit_status,summary_result,created_at,updated_at,image_urls";
+const legacyStoreVisitMonitorSelect = "id,visit_code,store_name,visit_date,promoter,uploader_name,analysis_status,visit_status,summary_result,created_at,image_urls";
 
 function positiveInteger(value: unknown, fallback: number) {
   const parsed = typeof value === "number" ? value : Number(value);
@@ -3392,6 +3393,12 @@ function storeVisitMonitorPagination(page: number, pageSize: number, total: numb
     hasPrevious: page > 1,
     hasNext: page < totalPages,
   };
+}
+
+function isMissingStoreVisitUpdatedAtError(error: { message?: string } | null | undefined) {
+  return (error?.message ?? "").includes("offline_store_visits.updated_at")
+    || (error?.message ?? "").includes("'updated_at' column")
+    || (error?.message ?? "").includes("Could not find the 'updated_at' column");
 }
 
 function filterMonitorItems(items: StoreVisitMonitorItem[], filters: StoreVisitMonitorFilters, dateFrom: string, dateTo: string) {
@@ -3646,42 +3653,49 @@ async function getStoreVisitMonitorRows(filters: StoreVisitMonitorFilters, dateF
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
-  let pageQuery = supabase
-    .from("offline_store_visits")
-    .select(storeVisitMonitorSelect, { count: "exact" })
-    .neq("visit_status", "draft")
-    .gte("visit_date", dateFrom)
-    .lte("visit_date", dateTo)
-    .order("created_at", { ascending: false })
-    .range(from, to);
-  let summaryQuery = supabase
-    .from("offline_store_visits")
-    .select(storeVisitMonitorSelect)
-    .neq("visit_status", "draft")
-    .gte("visit_date", dateFrom)
-    .lte("visit_date", dateTo)
-    .order("created_at", { ascending: false })
-    .range(0, storeVisitMonitorSummaryLimit - 1);
+  const runQueries = async (select: string) => {
+    let pageQuery = supabase
+      .from("offline_store_visits")
+      .select(select, { count: "exact" })
+      .neq("visit_status", "draft")
+      .gte("visit_date", dateFrom)
+      .lte("visit_date", dateTo)
+      .order("created_at", { ascending: false })
+      .range(from, to);
+    let summaryQuery = supabase
+      .from("offline_store_visits")
+      .select(select)
+      .neq("visit_status", "draft")
+      .gte("visit_date", dateFrom)
+      .lte("visit_date", dateTo)
+      .order("created_at", { ascending: false })
+      .range(0, storeVisitMonitorSummaryLimit - 1);
 
-  if (filters.visitCode) {
-    pageQuery = pageQuery.ilike("visit_code", `%${filters.visitCode}%`);
-    summaryQuery = summaryQuery.ilike("visit_code", `%${filters.visitCode}%`);
-  }
-  if (filters.storeName) {
-    pageQuery = pageQuery.ilike("store_name", `%${filters.storeName}%`);
-    summaryQuery = summaryQuery.ilike("store_name", `%${filters.storeName}%`);
-  }
-  if (filters.promoter) {
-    const promoterFilter = `promoter.ilike.%${filters.promoter}%,uploader_name.ilike.%${filters.promoter}%`;
-    pageQuery = pageQuery.or(promoterFilter);
-    summaryQuery = summaryQuery.or(promoterFilter);
-  }
-  if (filters.analysisStatus) {
-    pageQuery = pageQuery.eq("analysis_status", filters.analysisStatus);
-    summaryQuery = summaryQuery.eq("analysis_status", filters.analysisStatus);
-  }
+    if (filters.visitCode) {
+      pageQuery = pageQuery.ilike("visit_code", `%${filters.visitCode}%`);
+      summaryQuery = summaryQuery.ilike("visit_code", `%${filters.visitCode}%`);
+    }
+    if (filters.storeName) {
+      pageQuery = pageQuery.ilike("store_name", `%${filters.storeName}%`);
+      summaryQuery = summaryQuery.ilike("store_name", `%${filters.storeName}%`);
+    }
+    if (filters.promoter) {
+      const promoterFilter = `promoter.ilike.%${filters.promoter}%,uploader_name.ilike.%${filters.promoter}%`;
+      pageQuery = pageQuery.or(promoterFilter);
+      summaryQuery = summaryQuery.or(promoterFilter);
+    }
+    if (filters.analysisStatus) {
+      pageQuery = pageQuery.eq("analysis_status", filters.analysisStatus);
+      summaryQuery = summaryQuery.eq("analysis_status", filters.analysisStatus);
+    }
 
-  const [pageResult, summaryResult] = await Promise.all([pageQuery, summaryQuery]);
+    return Promise.all([pageQuery, summaryQuery]);
+  };
+
+  let [pageResult, summaryResult] = await runQueries(storeVisitMonitorSelect);
+  if (isMissingStoreVisitUpdatedAtError(pageResult.error) || isMissingStoreVisitUpdatedAtError(summaryResult.error)) {
+    [pageResult, summaryResult] = await runQueries(legacyStoreVisitMonitorSelect);
+  }
   if (pageResult.error) return { rows: [], summaryRows: [], total: 0, error: pageResult.error.message, isDemo: false };
   if (summaryResult.error) return { rows: [], summaryRows: [], total: 0, error: summaryResult.error.message, isDemo: false };
 
