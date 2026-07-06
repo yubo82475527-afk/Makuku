@@ -203,9 +203,12 @@ export async function createStoreVisitAiJob(input: {
   });
   if (error) throw new Error(error.message);
 
-  const row = Array.isArray(data) ? data[0] as { job_id?: string; reused?: boolean; conflict?: boolean } | undefined : null;
-  if (!row?.job_id) throw new Error("Failed to create store visit AI job");
-  const { job, items } = await loadStoreVisitAiJob({ jobId: row.job_id, supabase });
+  const row = Array.isArray(data)
+    ? data[0] as { job_id?: string; created_job_id?: string; reused?: boolean; conflict?: boolean } | undefined
+    : null;
+  const rpcJobId = row?.created_job_id ?? row?.job_id ?? null;
+  if (!rpcJobId) throw new Error("Failed to create store visit AI job");
+  const { job, items } = await loadStoreVisitAiJob({ jobId: rpcJobId, supabase });
   return {
     job,
     items,
@@ -259,18 +262,22 @@ async function claimNextItem(input: {
   });
   if (error) throw new Error(error.message);
 
-  const row = Array.isArray(data) ? data[0] as { job_id?: string; item_id?: string } | undefined : null;
-  if (!row?.job_id || !row.item_id) return null;
+  const row = Array.isArray(data)
+    ? data[0] as { job_id?: string; item_id?: string; claimed_job_id?: string; claimed_item_id?: string } | undefined
+    : null;
+  const rpcJobId = row?.claimed_job_id ?? row?.job_id ?? null;
+  const rpcItemId = row?.claimed_item_id ?? row?.item_id ?? null;
+  if (!rpcJobId || !rpcItemId) return null;
   const { data: job, error: jobError } = await input.supabase
     .from("store_visit_ai_jobs")
     .select("*")
-    .eq("id", row.job_id)
+    .eq("id", rpcJobId)
     .single();
   if (jobError || !job) throw new Error(jobError?.message ?? "Claimed AI job not found");
   const { data: item, error: itemError } = await input.supabase
     .from("store_visit_ai_job_items")
     .select("*")
-    .eq("id", row.item_id)
+    .eq("id", rpcItemId)
     .single();
   if (itemError || !item) throw new Error(itemError?.message ?? "Claimed AI job item not found");
   return { job: job as StoreVisitAiJob, item: item as StoreVisitAiJobItem };

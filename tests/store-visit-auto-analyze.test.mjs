@@ -336,6 +336,17 @@ test("store visit AI adds durable job routes, atomic RPC claim, and cron sweep",
   assert.match(migration, /grant execute on function public\.claim_store_visit_ai_job_item/);
 });
 
+test("store visit AI hotfix migration removes ambiguous job_id output collisions in RPCs", () => {
+  const hotfixMigration = readMaybe("supabase/migrations/202607060002_store_visit_ai_job_rpc_disambiguation.sql");
+  assert.match(hotfixMigration, /create or replace function public\.create_store_visit_ai_job/);
+  assert.match(hotfixMigration, /returns table\(created_job_id uuid, reused boolean, conflict boolean\)/);
+  assert.match(hotfixMigration, /where public\.store_visit_ai_job_items\.job_id = v_active_job\.id/);
+  assert.match(hotfixMigration, /select v_active_job\.id, true, coalesce\(v_existing_ids, '\{\}'::uuid\[\]\) <> v_requested_ids/);
+  assert.match(hotfixMigration, /create or replace function public\.claim_store_visit_ai_job_item/);
+  assert.match(hotfixMigration, /returns table\(claimed_job_id uuid, claimed_item_id uuid\)/);
+  assert.match(hotfixMigration, /select updated_item\.job_id as claimed_job_id, updated_item\.id as claimed_item_id/);
+});
+
 test("store visit analysis failure path also persists visit-level timing metrics", () => {
   assert.match(storeVisitAnalysis, /summary_result:\s*\{[\s\S]*analysis_metrics:/);
   assert.match(storeVisitAnalysis, /visit_analysis_duration_ms/);
