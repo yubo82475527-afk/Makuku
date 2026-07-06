@@ -389,6 +389,10 @@ test("store visit monitor data path reads analysis metrics and computes visit la
   assert.match(dataFile, /last 24 hours|24 \* 60 \* 60 \* 1000/);
 });
 
+test("store visit monitor excludes draft zero-image visits from backend analysis monitoring", () => {
+  assert.match(dataFile, /\.neq\("visit_status", "draft"\)/);
+});
+
 test("store visit monitor page adds a compact price parsing quality section with three boss metrics", () => {
   assert.match(storeVisitMonitorPage, /Price parsing quality/);
   assert.match(storeVisitMonitorPage, /Accuracy/);

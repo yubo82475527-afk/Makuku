@@ -3635,6 +3635,7 @@ async function getStoreVisitMonitorRows(filters: StoreVisitMonitorFilters, dateF
   let pageQuery = supabase
     .from("offline_store_visits")
     .select(storeVisitMonitorSelect, { count: "exact" })
+    .neq("visit_status", "draft")
     .gte("visit_date", dateFrom)
     .lte("visit_date", dateTo)
     .order("created_at", { ascending: false })
@@ -3642,6 +3643,7 @@ async function getStoreVisitMonitorRows(filters: StoreVisitMonitorFilters, dateF
   let summaryQuery = supabase
     .from("offline_store_visits")
     .select(storeVisitMonitorSelect)
+    .neq("visit_status", "draft")
     .gte("visit_date", dateFrom)
     .lte("visit_date", dateTo)
     .order("created_at", { ascending: false })
