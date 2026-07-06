@@ -14,9 +14,13 @@ test("price image prompt includes the two-state photo quality gate without addin
   assert.match(storeVisitAi, /pass\|retake_required/);
   assert.match(storeVisitAi, /wide shelf overview/);
   assert.match(storeVisitAi, /rows must be \[\]/i);
-  assert.match(storeVisitAi, /shelf price tags, price labels, or price boards are clearly visible/);
-  assert.match(storeVisitAi, /at least one product-price relationship is visually reliable/);
-  assert.match(storeVisitAi, /heavy blur or glare prevents reading/);
+  assert.match(storeVisitAi, /PHOTO QUALITY PASS GATE/);
+  assert.match(storeVisitAi, /intended price-tag or price-board capture area/);
+  assert.match(storeVisitAi, /product-to-price binding must be reliable/);
+  assert.match(storeVisitAi, /one or two front price tags are readable/);
+  assert.match(storeVisitAi, /most target tags\/rows in the intended capture area/);
+  assert.match(storeVisitAi, /long side-angle shelf shot/);
+  assert.doesNotMatch(storeVisitAi, /at least one product-price relationship is visually reliable/);
   assert.doesNotMatch(storeVisitAi, /OCR|optical character recognition|precheck/i);
   assert.doesNotMatch(storeVisitAi, /\/api\/.*precheck|photo-quality|quality-gate/i);
 });
