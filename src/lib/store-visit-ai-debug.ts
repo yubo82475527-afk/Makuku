@@ -164,9 +164,11 @@ function composeStoreVisitAiResult({
 export async function runStoreVisitAiAnalysisForVisit(input: {
   visitId: string;
   config?: Partial<StoreVisitAiConfig>;
+  forceAnalyzeImageIds?: string[];
 }) {
   const supabase = createSupabaseServiceClient();
   const resolvedConfig = input.config ? normalizeAiConfig(input.config) : await getActiveStoreVisitAiConfig();
+  const forceAnalyzeImageIdSet = new Set((input.forceAnalyzeImageIds ?? []).map((value) => value.trim()).filter(Boolean));
   const { data: visit, error } = await supabase
     .from("offline_store_visits")
     .select("*, offline_visit_images(*)")
@@ -230,7 +232,8 @@ export async function runStoreVisitAiAnalysisForVisit(input: {
       if (!item) return;
       const tableImage = item.tableImage;
       if (!tableImage || !item.imageCategory) continue;
-      if (tableImage.analysis_status === "analyzed" && isPriceImageResult(tableImage.vision_result)) {
+      const forceAnalyze = forceAnalyzeImageIdSet.has(tableImage.id);
+      if (!forceAnalyze && tableImage.analysis_status === "analyzed" && isPriceImageResult(tableImage.vision_result)) {
         const cachedResult = tableImage.vision_result;
         priceImageResults.push({
           imageId: tableImage.id,
@@ -264,6 +267,9 @@ export async function runStoreVisitAiAnalysisForVisit(input: {
             request_url: result.metadata.request_url,
             response_id: result.metadata.response_id ?? null,
             provider_request_id: result.metadata.provider_request_id ?? null,
+            attempt_count: result.metadata.attempt_count,
+            fallback_used: result.metadata.fallback_used,
+            usage: result.metadata.usage,
           },
         };
         priceImageResults.push({

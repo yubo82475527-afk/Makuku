@@ -135,9 +135,9 @@ test("store visit refresh route runs analysis in-request instead of after backgr
   assert.match(storeVisitRefreshRoute, /await runStoreVisitAnalysis\(/);
 });
 
-test("store visit refresh route still resets affected image statuses before rerun", () => {
+test("store visit refresh route marks affected images analyzing without clearing old vision before rerun", () => {
   assert.match(storeVisitRefreshRoute, /from\("offline_visit_images"\)\s*[\s\S]*analysis_status: "analyzing"/);
-  assert.match(storeVisitRefreshRoute, /vision_result: null/);
+  assert.doesNotMatch(storeVisitRefreshRoute, /vision_result: null/);
   assert.match(storeVisitRefreshRoute, /refreshStoreVisitStoredPriceState\(\{[\s\S]*analysisStatusOverride: "analyzing"/);
 });
 
@@ -255,6 +255,36 @@ test("single-photo refresh preserves the first whole-visit analysis timing metri
   assert.match(storeVisitAnalysis, /visit_analysis_started_at: firstVisitAnalysisStartedAt/);
   assert.match(storeVisitAnalysis, /visit_analysis_completed_at: firstVisitAnalysisCompletedAt/);
   assert.match(storeVisitAnalysis, /visit_analysis_duration_ms: firstVisitAnalysisDurationMs/);
+});
+
+test("store visit refresh forces target price images to bypass cached vision results", () => {
+  assert.match(storeVisitRefreshRoute, /forceAnalyzeImageIds:\s*refreshImageIds/);
+  assert.match(storeVisitAnalysis, /forceAnalyzeImageIds\?: string\[\]/);
+  assert.match(storeVisitAnalysis, /forceAnalyzeImageIds:\s*input\.forceAnalyzeImageIds/);
+  assert.match(storeVisitAiDebug, /forceAnalyzeImageIds\?: string\[\]/);
+  assert.match(storeVisitAiDebug, /const forceAnalyzeImageIdSet = new Set/);
+  assert.match(storeVisitAiDebug, /const forceAnalyze = forceAnalyzeImageIdSet\.has\(tableImage\.id\)/);
+  assert.match(storeVisitAiDebug, /!forceAnalyze && tableImage\.analysis_status === "analyzed"/);
+});
+
+test("store visit refresh replaces old price impact only after forced AI success", () => {
+  const invalidateIndex = storeVisitAnalysis.indexOf("await invalidateStoreVisitImagePriceImpact");
+  const runAiIndex = storeVisitAnalysis.indexOf("await runStoreVisitAiAnalysisForVisit");
+  const successIdsIndex = storeVisitAnalysis.indexOf("successfulForcedImageIds");
+  assert.ok(runAiIndex >= 0, "analysis should invoke the AI layer");
+  assert.ok(successIdsIndex > runAiIndex, "successful forced image ids should be derived after AI returns");
+  assert.ok(invalidateIndex > successIdsIndex, "old candidates and snapshots should be invalidated after AI succeeds");
+  assert.equal(
+    storeVisitAnalysis.slice(0, runAiIndex).includes("await invalidateStoreVisitImagePriceImpact"),
+    false,
+    "old candidates and snapshots must not be invalidated before AI returns",
+  );
+});
+
+test("store visit refresh persists AI usage metadata for forced image reruns", () => {
+  assert.match(storeVisitAiDebug, /usage:\s*result\.metadata\.usage/);
+  assert.match(storeVisitRefreshRoute, /forced_image_results/);
+  assert.match(storeVisitRefreshRoute, /usage_present/);
 });
 
 test("store visit analysis failure path also persists visit-level timing metrics", () => {

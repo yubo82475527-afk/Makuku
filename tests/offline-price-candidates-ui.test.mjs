@@ -543,9 +543,11 @@ test("store visit refresh API supports admin-only full visit reanalysis", () => 
   assert.match(storeVisitRefreshRoute, /const fullVisit = body\.full_visit === true/);
   assert.match(storeVisitRefreshRoute, /auth\.session\.role !== "admin"/);
   assert.match(storeVisitRefreshRoute, /Full visit re-analysis requires admin account/);
-  assert.match(storeVisitRefreshRoute, /const refreshImageIds = fullVisit \? fullVisitImageIds : affectedImageIds/);
+  assert.match(storeVisitRefreshRoute, /let refreshImageIds: string\[\] = \[\]/);
   assert.match(storeVisitRefreshRoute, /affectedImageIds: refreshImageIds/);
+  assert.match(storeVisitRefreshRoute, /forceAnalyzeImageIds: refreshImageIds/);
   assert.match(storeVisitRefreshRoute, /\.eq\("visit_id", id\)[\s\S]*\.in\("image_type", \["own_shelf", "competitor_shelf"\]\)/);
+  assert.match(storeVisitRefreshRoute, /\.is\("deleted_at", null\)[\s\S]*\.is\("replaced_by_image_id", null\)/);
 });
 
 test("mobile store visit detail does not crash when selected SKU option is missing", () => {

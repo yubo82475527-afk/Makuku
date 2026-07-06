@@ -59,29 +59,16 @@ export async function runStoreVisitAnalysis(input: {
   visitId: string;
   affectedImageIds?: string[];
   invalidateAffectedImageSnapshots?: boolean;
+  forceAnalyzeImageIds?: string[];
   visitAnalysisStartedAt?: string;
 }) {
   const supabase = createSupabaseServiceClient();
   const visitAnalysisStartedAt = input.visitAnalysisStartedAt ?? new Date().toISOString();
 
-  if (input.invalidateAffectedImageSnapshots && input.affectedImageIds?.length) {
-    await invalidateStoreVisitImagePriceImpact({
-      visitId: input.visitId,
-      imageIds: input.affectedImageIds,
-      lifecycleStatus: "reanalyzed",
-      rejectionReason: "H5 re-analyze replaced the previous price result.",
-      supabase,
-    });
-  } else {
-    await invalidateStoreVisitLegacyUnscopedPriceImpact({
-      visitId: input.visitId,
-      lifecycleStatus: "reanalyzed",
-      rejectionReason: "Visit re-analysis replaced legacy unscoped price results.",
-      supabase,
-    });
-  }
-
-  const aiAnalysis = await runStoreVisitAiAnalysisForVisit({ visitId: input.visitId });
+  const aiAnalysis = await runStoreVisitAiAnalysisForVisit({
+    visitId: input.visitId,
+    forceAnalyzeImageIds: input.forceAnalyzeImageIds,
+  });
   await finalizeStoreVisitImageAnalysisStatuses({
     visitId: input.visitId,
     analyzedImageIds: aiAnalysis.price_image_results.map((item) => item.imageId),
@@ -99,6 +86,35 @@ export async function runStoreVisitAnalysis(input: {
 
   if (aiAnalysis.allPriceImagesFailed && !allFailuresAreRetakeRequired) {
     throw new Error("AI did not return a usable price-tag analysis result. Retry the failed photo later.");
+  }
+
+  const forcedImageIdSet = new Set((input.forceAnalyzeImageIds ?? []).map((value) => value.trim()).filter(Boolean));
+  const retakeRequiredImageIdSet = new Set((aiAnalysis.price_image_retake_required ?? []).map((item) => item.imageId));
+  const successfulForcedImageIds = (aiAnalysis.price_image_results ?? [])
+    .map((item) => item.imageId)
+    .filter((imageId) => forcedImageIdSet.has(imageId) && !retakeRequiredImageIdSet.has(imageId));
+
+  let replacedCandidateCount = 0;
+  let deletedSnapshotCount = 0;
+  if (input.invalidateAffectedImageSnapshots && successfulForcedImageIds.length > 0) {
+    const invalidation = await invalidateStoreVisitImagePriceImpact({
+      visitId: input.visitId,
+      imageIds: successfulForcedImageIds,
+      lifecycleStatus: "reanalyzed",
+      rejectionReason: "H5 re-analyze replaced the previous price result.",
+      supabase,
+    });
+    replacedCandidateCount = invalidation.rejectedCandidateCount;
+    deletedSnapshotCount = invalidation.deletedSnapshotCount;
+  } else if (!input.invalidateAffectedImageSnapshots) {
+    const invalidation = await invalidateStoreVisitLegacyUnscopedPriceImpact({
+      visitId: input.visitId,
+      lifecycleStatus: "reanalyzed",
+      rejectionReason: "Visit re-analysis replaced legacy unscoped price results.",
+      supabase,
+    });
+    replacedCandidateCount = invalidation.rejectedCandidateCount;
+    deletedSnapshotCount = invalidation.deletedSnapshotCount;
   }
 
   const sourceItems = buildSourceItems(aiAnalysis, input.affectedImageIds);
@@ -219,5 +235,21 @@ export async function runStoreVisitAnalysis(input: {
     autoReviewedCount: autoReview.approvedCount,
     visitAnalysisDurationMs,
     aiAnalysis,
+    replacedCandidateCount,
+    deletedSnapshotCount,
+    forcedImageResults: successfulForcedImageIds.map((imageId) => {
+      const result = aiAnalysis.price_image_results.find((item) => item.imageId === imageId);
+      const metadata = result?.metadata && typeof result.metadata === "object" ? result.metadata as Record<string, unknown> : {};
+      return {
+        imageId,
+        responseId: typeof metadata.response_id === "string"
+          ? metadata.response_id
+          : typeof metadata.provider_request_id === "string"
+            ? metadata.provider_request_id
+            : null,
+        usagePresent: metadata.usage != null,
+        rowCount: result?.result.rows.length ?? 0,
+      };
+    }),
   };
 }
