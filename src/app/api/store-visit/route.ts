@@ -57,6 +57,50 @@ function jakartaDateInputValue(date = new Date()) {
   return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
+async function findReusableEmptyDraft(input: {
+  supabase: ReturnType<typeof createSupabaseServiceClient>;
+  storeName: string;
+  city: string;
+  channelType: string;
+  visitDate: string;
+  promoter: string;
+  userId: string | null;
+}) {
+  const select = "*, offline_visit_images(id)";
+  const buildQuery = (includeUploaderUserId: boolean) => {
+    let query = input.supabase
+      .from("offline_store_visits")
+      .select(select)
+      .eq("visit_status", "draft")
+      .eq("visit_date", input.visitDate)
+      .eq("store_name", input.storeName)
+      .eq("city", input.city)
+      .eq("channel_type", input.channelType)
+      .eq("uploader_name", input.promoter)
+      .order("created_at", { ascending: false })
+      .limit(10);
+    if (includeUploaderUserId && input.userId) {
+      query = query.eq("uploader_user_id", input.userId);
+    }
+    return query;
+  };
+
+  let { data, error } = await buildQuery(true);
+  if (error?.message.includes("uploader_user_id")) {
+    const legacyResult = await buildQuery(false);
+    data = legacyResult.data;
+    error = legacyResult.error;
+  }
+  if (error) throw new Error(error.message);
+
+  return ((data ?? []) as Array<Record<string, unknown> & { image_urls?: unknown[] | null; offline_visit_images?: Array<{ id: string }> | null }>)
+    .find((visit) => {
+      const legacyImageCount = Array.isArray(visit.image_urls) ? visit.image_urls.length : 0;
+      const tableImageCount = Array.isArray(visit.offline_visit_images) ? visit.offline_visit_images.length : 0;
+      return legacyImageCount === 0 && tableImageCount === 0;
+    }) ?? null;
+}
+
 async function insertVisit(input: {
   storeName: string;
   city: string;
@@ -73,6 +117,19 @@ async function insertVisit(input: {
   visitStatus: "draft" | "uploaded";
 }) {
   const supabase = createSupabaseServiceClient();
+  const reusableDraft = await findReusableEmptyDraft({
+    supabase,
+    storeName: input.storeName,
+    city: input.city,
+    channelType: input.channelType,
+    visitDate: input.visitDate,
+    promoter: input.promoter,
+    userId: input.userId,
+  });
+  if (reusableDraft) {
+    return { supabase, visit: reusableDraft };
+  }
+
   const payload = {
     store_name: input.storeName,
     region: input.city,

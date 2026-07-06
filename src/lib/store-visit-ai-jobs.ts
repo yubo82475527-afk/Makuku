@@ -15,6 +15,9 @@ const activeJobStatuses = ["queued", "running"] as const;
 const terminalItemStatuses = ["succeeded", "retake_required", "failed"] as const;
 const priceImageTypes = ["own_shelf", "competitor_shelf"] as const;
 const defaultMaxConcurrency = 8;
+const defaultMaxItemsPerRun = 4;
+const defaultMaxRunDurationMs = 240_000;
+const defaultPendingEnqueueLimit = 100;
 
 function nowIso() {
   return new Date().toISOString();
@@ -27,6 +30,21 @@ function cleanIds(values: string[]) {
 function maxConcurrency() {
   const value = Number.parseInt(String(process.env.MAX_STORE_VISIT_AI_CONCURRENCY ?? ""), 10);
   return Number.isFinite(value) && value > 0 ? value : defaultMaxConcurrency;
+}
+
+function maxItemsPerRun() {
+  const value = Number.parseInt(String(process.env.MAX_STORE_VISIT_AI_ITEMS_PER_RUN ?? ""), 10);
+  return Number.isFinite(value) && value > 0 ? value : defaultMaxItemsPerRun;
+}
+
+function maxRunDurationMs() {
+  const value = Number.parseInt(String(process.env.MAX_STORE_VISIT_AI_RUN_BUDGET_MS ?? ""), 10);
+  return Number.isFinite(value) && value > 0 ? value : defaultMaxRunDurationMs;
+}
+
+function pendingEnqueueLimit() {
+  const value = Number.parseInt(String(process.env.STORE_VISIT_AI_PENDING_ENQUEUE_LIMIT ?? ""), 10);
+  return Number.isFinite(value) && value > 0 ? value : defaultPendingEnqueueLimit;
 }
 
 function isMissingAiJobTable(error: { message?: string | null } | null | undefined) {
@@ -433,14 +451,47 @@ export async function runStoreVisitAiJob(input: {
   supabase?: SupabaseServiceClient;
 } = {}) {
   const supabase = input.supabase ?? createSupabaseServiceClient();
-  await enqueuePendingStoreVisitInitialAnalysisJobs({ supabase, limit: 25 });
-  const claimed = await claimNextItem({ supabase, jobId: input.jobId });
-  if (!claimed) return { processed: 0, job: null, items: [] as StoreVisitAiJobItem[], remaining_count: 0 };
+  const enqueueResult = await enqueuePendingStoreVisitInitialAnalysisJobs({
+    supabase,
+    limit: pendingEnqueueLimit(),
+  });
+  const startedAt = Date.now();
+  let processed = 0;
+  let lastJob: StoreVisitAiJob | null = null;
+  let lastItems: StoreVisitAiJobItem[] = [];
 
-  await processItem({ supabase, job: claimed.job, item: claimed.item });
-  const refreshed = await refreshJobCounts(supabase, claimed.job.id);
-  revalidateVisitPaths(claimed.job.visit_id);
-  return { processed: 1, job: refreshed.job, items: refreshed.items, remaining_count: refreshed.job.remaining_count };
+  while (processed < maxItemsPerRun() && (Date.now() - startedAt) < maxRunDurationMs()) {
+    const claimed = await claimNextItem({ supabase, jobId: input.jobId });
+    if (!claimed) break;
+
+    await processItem({ supabase, job: claimed.job, item: claimed.item });
+    const refreshed = await refreshJobCounts(supabase, claimed.job.id);
+    revalidateVisitPaths(claimed.job.visit_id);
+
+    processed += 1;
+    lastJob = refreshed.job;
+    lastItems = refreshed.items;
+
+    if (input.jobId && refreshed.job.remaining_count === 0) break;
+  }
+
+  console.info("[store-visit-ai-jobs] runner completed", {
+    requested_job_id: input.jobId ?? null,
+    processed,
+    enqueued_count: enqueueResult.enqueued_count,
+    skipped_count: enqueueResult.skipped_count,
+    last_job_id: lastJob?.id ?? null,
+    last_job_remaining_count: lastJob?.remaining_count ?? 0,
+  });
+
+  return {
+    processed,
+    job: lastJob,
+    items: lastItems,
+    remaining_count: lastJob?.remaining_count ?? 0,
+    enqueued_count: enqueueResult.enqueued_count,
+    skipped_count: enqueueResult.skipped_count,
+  };
 }
 
 export async function triggerStoreVisitAiJobRunner(input: {

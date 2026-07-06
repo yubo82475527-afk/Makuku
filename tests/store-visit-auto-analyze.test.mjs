@@ -317,6 +317,9 @@ test("store visit AI adds durable job routes, atomic RPC claim, and cron sweep",
   assert.match(storeVisitAiJobs, /store_visit_ai_job_items/);
   assert.match(storeVisitAiJobs, /claim_store_visit_ai_job_item/);
   assert.match(storeVisitAiJobs, /enqueuePendingStoreVisitInitialAnalysisJobs/);
+  assert.match(storeVisitAiJobs, /defaultMaxItemsPerRun = 4/);
+  assert.match(storeVisitAiJobs, /pendingEnqueueLimit/);
+  assert.match(storeVisitAiJobs, /runner completed/);
   assert.match(migration, /for update skip locked/i);
   assert.match(migration, /create_store_visit_ai_job/);
   assert.match(migration, /claim_store_visit_ai_job_item/);

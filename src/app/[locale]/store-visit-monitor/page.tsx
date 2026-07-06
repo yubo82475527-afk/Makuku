@@ -203,39 +203,37 @@ export default async function StoreVisitMonitorPage({
           </div>
         ) : null}
 
-        {monitor.pagination.totalPages > 1 ? (
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4 text-sm">
-            <div className="text-slate-500">
-              Page {monitor.pagination.page} of {monitor.pagination.totalPages}
-            </div>
-            <div className="flex gap-2">
-              {monitor.pagination.hasPrevious ? (
-                <Link
-                  href={pageHref(monitor.pagination.page - 1)}
-                  className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-3 font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  Previous
-                </Link>
-              ) : (
-                <span className="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-slate-50 px-3 font-medium text-slate-400">
-                  Previous
-                </span>
-              )}
-              {monitor.pagination.hasNext ? (
-                <Link
-                  href={pageHref(monitor.pagination.page + 1)}
-                  className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-3 font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  Next
-                </Link>
-              ) : (
-                <span className="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-slate-50 px-3 font-medium text-slate-400">
-                  Next
-                </span>
-              )}
-            </div>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4 text-sm">
+          <div className="text-slate-500">
+            Page {monitor.pagination.page} of {monitor.pagination.totalPages}
           </div>
-        ) : null}
+          <div className="flex gap-2">
+            {monitor.pagination.hasPrevious ? (
+              <Link
+                href={pageHref(monitor.pagination.page - 1)}
+                className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-3 font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Previous
+              </Link>
+            ) : (
+              <span className="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-slate-50 px-3 font-medium text-slate-400">
+                Previous
+              </span>
+            )}
+            {monitor.pagination.hasNext ? (
+              <Link
+                href={pageHref(monitor.pagination.page + 1)}
+                className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-3 font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Next
+              </Link>
+            ) : (
+              <span className="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-slate-50 px-3 font-medium text-slate-400">
+                Next
+              </span>
+            )}
+          </div>
+        </div>
       </Card>
     </>
   );

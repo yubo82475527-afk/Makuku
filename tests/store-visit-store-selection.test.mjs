@@ -7,6 +7,7 @@ const storeVisitsListH5 = readFileSync("src/components/store-visits-list-h5.tsx"
 const storeVisitDetailH5 = readFileSync("src/components/store-visit-detail-h5.tsx", "utf8");
 const storeVisitApi = readFileSync("src/app/api/store-visit/route.ts", "utf8");
 const storeVisitsApi = readFileSync("src/app/api/store-visits/route.ts", "utf8");
+const offlineStoreVisitsApi = readFileSync("src/app/api/offline-store-visits/route.ts", "utf8");
 const storeVisitImagesApi = readFileSync("src/app/api/store-visit/[id]/images/route.ts", "utf8");
 const offlineStoreVisitImagesApi = readFileSync("src/app/api/offline-store-visits/[id]/images/route.ts", "utf8");
 const storeVisitAiDebug = readFileSync("src/lib/store-visit-ai-debug.ts", "utf8");
@@ -243,11 +244,20 @@ test("new H5 store visit submits photos with limited concurrency after creating 
   const listRedirectIndex = storeVisitH5.indexOf('router.replace(`/${locale}/mobile/offline-capture`)');
   assert.ok(createVisitIndex >= 0, "visit should be created before image upload");
   assert.ok(uploadIndex > createVisitIndex, "image upload should start after visit creation");
-  assert.equal(analyzeIndex, -1, "submit page should not wait for analysis after image upload");
+  assert.ok(analyzeIndex > uploadIndex, "submit flow should enqueue AI after image upload finishes");
+  assert.ok(analyzeIndex < listRedirectIndex, "submit flow should enqueue AI before returning to the list");
   assert.ok(listRedirectIndex > uploadIndex, "list redirect should happen after all image uploads complete");
   assert.match(storeVisitH5, /redirectingToList/);
   assert.match(storeVisitH5, /Returning to the visit list|正在返回巡店列表/);
   assert.doesNotMatch(storeVisitH5, /const compressedImages = \[\];[\s\S]+Uploading photo \$\{index \+ 1\}/);
+});
+
+test("store visit create APIs reuse the latest empty draft instead of inserting duplicate zero-image visits", () => {
+  assert.match(storeVisitApi, /async function findReusableEmptyDraft/);
+  assert.match(storeVisitApi, /return \{ supabase, visit: reusableDraft \}/);
+  assert.match(storeVisitApi, /offline_visit_images\(id\)/);
+  assert.match(offlineStoreVisitsApi, /async function findReusableEmptyDraft/);
+  assert.match(offlineStoreVisitsApi, /return Response\.json\(\{ visit: reusableDraft \}\)/);
 });
 
 test("store visit photo uploads allow 20MB originals before high quality compression", () => {
@@ -467,6 +477,10 @@ test("store visits list API counts photo rows even when legacy image_urls is emp
   assert.match(storeVisitsApi, /offline_visit_images\?\.length/);
   assert.match(storeVisitsApi, /Math\.max\(/);
   assert.doesNotMatch(storeVisitsApi, /if \(Array\.isArray\(visit\.image_urls\)\) return visit\.image_urls\.length;/);
+});
+
+test("store visits list API hides draft visits so users only see submitted visits", () => {
+  assert.match(storeVisitsApi, /\.neq\("visit_status", "draft"\)/);
 });
 
 test("mobile visit list summarizes parsed brands by sku count", () => {

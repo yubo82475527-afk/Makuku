@@ -37,6 +37,10 @@ function isVisitOnToday(visit: OfflineStoreVisit, todayVisitDate: string, start:
   return visit.created_at >= start && visit.created_at < end;
 }
 
+function isVisibleVisit(visit: OfflineStoreVisit) {
+  return visit.visit_status !== "draft";
+}
+
 function storeDedupKey(visit: Pick<OfflineStoreVisit, "store_id" | "store_name" | "region" | "channel" | "city" | "channel_type">) {
   if (visit.store_id) return `store:${visit.store_id}`;
   return [
@@ -58,6 +62,7 @@ async function loadTodayRowsWithVisitDate(params: {
     .from("offline_store_visits")
     .select("store_id,store_name,region,channel,city,channel_type")
     .eq("uploader_user_id", params.userId)
+    .neq("visit_status", "draft")
     .eq("visit_date", params.todayVisitDate);
 
   const legacyUserResult = await params.supabase
@@ -65,6 +70,7 @@ async function loadTodayRowsWithVisitDate(params: {
     .select("store_id,store_name,region,channel,city,channel_type")
     .eq("user_id", params.userId)
     .is("uploader_user_id", null)
+    .neq("visit_status", "draft")
     .eq("visit_date", params.todayVisitDate);
 
   return {
@@ -87,6 +93,7 @@ async function loadLegacyTodayRowsWithoutVisitDate(params: {
     .from("offline_store_visits")
     .select("store_id,store_name,region,channel,city,channel_type")
     .eq("uploader_user_id", params.userId)
+    .neq("visit_status", "draft")
     .is("visit_date", null)
     .gte("created_at", params.start)
     .lt("created_at", params.end);
@@ -96,6 +103,7 @@ async function loadLegacyTodayRowsWithoutVisitDate(params: {
     .select("store_id,store_name,region,channel,city,channel_type")
     .eq("user_id", params.userId)
     .is("uploader_user_id", null)
+    .neq("visit_status", "draft")
     .is("visit_date", null)
     .gte("created_at", params.start)
     .lt("created_at", params.end);
@@ -164,6 +172,7 @@ function serializeVisit(visit: OfflineStoreVisit, activeAiJob?: StoreVisitAiJobS
 function filterDemoVisits(userId: string) {
   return demoOfflineStoreVisits
     .filter((visit) => visit.user_id === userId || visit.uploader_user_id === userId)
+    .filter(isVisibleVisit)
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 }
 
@@ -204,6 +213,7 @@ export async function GET(request: Request) {
       .from("offline_store_visits")
       .select("id,store_id,store_name,region,channel,city,province,city_name,district,channel_type,visit_date,visit_status,analysis_status,analysis_error,ai_result,created_at,image_urls,offline_visit_images(id)", { count: "exact" })
       .or(`user_id.eq.${userId},uploader_user_id.eq.${userId}`)
+      .neq("visit_status", "draft")
       .order("created_at", { ascending: false })
       .range(from, fetchTo);
 
@@ -212,6 +222,7 @@ export async function GET(request: Request) {
         .from("offline_store_visits")
         .select("id,store_id,store_name,region,channel,city,province,city_name,district,channel_type,visit_date,visit_status,analysis_status,analysis_error,ai_result,created_at,image_urls,offline_visit_images(id)", { count: "exact" })
         .eq("uploader_user_id", userId)
+        .neq("visit_status", "draft")
         .order("created_at", { ascending: false })
         .range(from, fetchTo);
     }
