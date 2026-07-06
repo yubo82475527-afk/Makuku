@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { invalidateStoreVisitImagePriceImpact, refreshStoreVisitStoredPriceState } from "@/lib/store-visit-image-maintenance";
+import { isSupportedStoreVisitImageFile, unsupportedStoreVisitImageFormatMessage } from "@/lib/store-visit-image-errors";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import { requireAppSession } from "@/lib/auth-session";
 import type { OfflineImageType, OfflineStoreVisit, StoreVisitImageCategory } from "@/lib/types";
@@ -62,8 +63,13 @@ export async function POST(request: Request, ctx: RouteContext) {
     if (!isImageCategory(category)) {
       return Response.json({ error: "Invalid image category" }, { status: 400 });
     }
-    if (!file.type.startsWith("image/")) {
-      return Response.json({ error: "Only image files are supported" }, { status: 400 });
+    const isImageMimeType = file.type.startsWith("image/");
+    if (!isImageMimeType || !isSupportedStoreVisitImageFile({ contentType: file.type, fileName: file.name })) {
+      return Response.json({
+        error: isImageMimeType
+          ? unsupportedStoreVisitImageFormatMessage(file.name)
+          : "Only image files are supported",
+      }, { status: 400 });
     }
     if (file.size > maxFileSizeBytes) {
       return Response.json({ error: "Image must be 20MB or smaller" }, { status: 400 });

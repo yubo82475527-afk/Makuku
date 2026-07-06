@@ -1,6 +1,7 @@
 import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { isAllowedAdminRole, requireAppSession } from "@/lib/auth-session";
+import { isSupportedStoreVisitImageFile, unsupportedStoreVisitImageFormatMessage } from "@/lib/store-visit-image-errors";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import {
   createStoreVisitAiJob,
@@ -16,6 +17,8 @@ type RouteContext = {
 type RefreshImageRow = {
   id: string;
   image_type: string | null;
+  content_type?: string | null;
+  file_name?: string | null;
   deleted_at?: string | null;
   replaced_by_image_id?: string | null;
 };
@@ -74,15 +77,17 @@ export async function POST(request: Request, ctx: RouteContext) {
     }
 
     let refreshImageIds: string[] = [];
+    let refreshImages: RefreshImageRow[] = [];
     if (fullVisit) {
       const { data: fullVisitImages, error: fullVisitImagesError } = await supabase
         .from("offline_visit_images")
-        .select("id,image_type,deleted_at,replaced_by_image_id")
+        .select("id,image_type,file_name,content_type,deleted_at,replaced_by_image_id")
         .eq("visit_id", id)
         .in("image_type", ["own_shelf", "competitor_shelf"])
         .is("deleted_at", null)
         .is("replaced_by_image_id", null);
       if (fullVisitImagesError) return Response.json({ error: fullVisitImagesError.message }, { status: 500 });
+      refreshImages = (fullVisitImages ?? []) as RefreshImageRow[];
       refreshImageIds = uniqueIds((fullVisitImages ?? []).map((image) => String((image as { id?: unknown }).id ?? "")));
       if (refreshImageIds.length === 0) {
         return Response.json({ error: "No price-tag photos found for full visit AI analysis" }, { status: 400 });
@@ -90,19 +95,19 @@ export async function POST(request: Request, ctx: RouteContext) {
     } else {
       const { data: affectedImages, error: affectedImagesError } = await supabase
         .from("offline_visit_images")
-        .select("id,image_type,deleted_at,replaced_by_image_id")
+        .select("id,image_type,file_name,content_type,deleted_at,replaced_by_image_id")
         .eq("visit_id", id)
         .in("id", affectedImageIds);
       if (affectedImagesError) return Response.json({ error: affectedImagesError.message }, { status: 500 });
 
-      const imageRows = (affectedImages ?? []) as RefreshImageRow[];
-      const foundIds = new Set(imageRows.map((image) => image.id));
+      refreshImages = (affectedImages ?? []) as RefreshImageRow[];
+      const foundIds = new Set(refreshImages.map((image) => image.id));
       const missingIds = affectedImageIds.filter((imageId) => !foundIds.has(imageId));
       if (missingIds.length > 0) {
         return Response.json({ error: "Some requested photos were not found for this visit.", missing_image_ids: missingIds }, { status: 404 });
       }
 
-      const inactiveOrNonPriceIds = imageRows.filter((image) => !isActivePriceImage(image)).map((image) => image.id);
+      const inactiveOrNonPriceIds = refreshImages.filter((image) => !isActivePriceImage(image)).map((image) => image.id);
       if (inactiveOrNonPriceIds.length > 0) {
         return Response.json({
           error: "Only active price-tag photos can be Analyzed.",
@@ -110,6 +115,15 @@ export async function POST(request: Request, ctx: RouteContext) {
         }, { status: 400 });
       }
       refreshImageIds = affectedImageIds;
+    }
+
+    const unsupportedImage = refreshImages
+      .find((image) => !isSupportedStoreVisitImageFile({ contentType: image.content_type, fileName: image.file_name }));
+    if (unsupportedImage) {
+      return Response.json({
+        error: unsupportedStoreVisitImageFormatMessage(unsupportedImage.file_name),
+        invalid_image_ids: [unsupportedImage.id],
+      }, { status: 400 });
     }
 
     const created = await createStoreVisitAiJob({

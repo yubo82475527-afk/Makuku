@@ -7,6 +7,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { withMinimumDelay } from "@/lib/async-ui";
 import { formatIdr, formatShortImageId } from "@/lib/format";
 import type { Locale } from "@/lib/i18n/config";
+import { isSupportedStoreVisitImageFile, summarizeStoreVisitImageError, unsupportedStoreVisitImageFormatMessage } from "@/lib/store-visit-image-errors";
 import { getMobileCopy, mobileAnalysisStatusLabel, mobileImageCategoryLabel } from "@/lib/mobile-i18n";
 import type {
   AiPriceCandidate,
@@ -122,6 +123,11 @@ type ReanalyzeConfirmState = {
   label: string;
 };
 
+type GroupedSystemFailedImage = {
+  message: string;
+  images: OfflineVisitImage[];
+};
+
 function isActiveAiJob(job: StoreVisitAiJobSummary | null | undefined) {
   return job?.status === "queued" || job?.status === "running";
 }
@@ -215,6 +221,9 @@ function loadImage(file: File) {
 async function prepareImageForUpload(file: File) {
   if (!file.type.startsWith("image/")) {
     throw new Error(`${file.name} is not an image.`);
+  }
+  if (!isSupportedStoreVisitImageFile({ contentType: file.type, fileName: file.name })) {
+    throw new Error(unsupportedStoreVisitImageFormatMessage(file.name));
   }
   if (file.size <= maxUploadBytes) return file;
 
@@ -959,6 +968,23 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   const visitAnalysisInProgress = analyzing || fullVisitReanalyzing || fullVisitAiActive || (status === "analyzing" && !hasAnalyzingPriceImage);
   const businessRetakeImages = (visit?.offline_visit_images ?? []).filter(isRetakeRequiredPriceImage);
   const systemFailedImages = (visit?.offline_visit_images ?? []).filter((image) => image.analysis_status === "failed" && !isRetakeRequiredPriceImage(image) && (image.analysis_error || image.error_message));
+  const groupedSystemFailedImages = useMemo(() => {
+    const groups = new Map<string, { message: string; images: OfflineVisitImage[] }>();
+    for (const image of systemFailedImages) {
+      const message = summarizeStoreVisitImageError({
+        error: image.analysis_error ?? image.error_message ?? "",
+        contentType: image.content_type,
+        fileName: image.file_name,
+      });
+      const existing = groups.get(message);
+      if (existing) {
+        existing.images.push(image);
+      } else {
+        groups.set(message, { message, images: [image] });
+      }
+    }
+    return Array.from(groups.values()) as GroupedSystemFailedImage[];
+  }, [systemFailedImages]);
   const canRunWholeVisitAnalysis = status === "pending" && visit?.visit_status === "uploaded";
   const canRunFullVisitAi = appUserRole === "admin";
   const updateLocked = analysisPhase !== "idle" || fullVisitAiActive;
@@ -1309,19 +1335,25 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
               {visit.analysis_error && status !== "partial" && status !== "action_required" ? <p className="mt-3 text-sm text-red-600">{copy.aiAnalysisFailed}: {visit.analysis_error}</p> : null}
               {systemFailedImages.length > 0 ? (
                 <div className="mt-3 space-y-2">
-                  {systemFailedImages.map((image, index) => {
-                    const systemError = image.analysis_error ?? image.error_message ?? "";
+                  {groupedSystemFailedImages.map(({ message, images }, index) => {
+                    const primaryImageId = images[0]?.id ?? `system-error-${index}`;
+                    const imageLabels = images.map((image) => formatImageShortCode(image.id)).join(", ");
                     return (
-                      <details key={image.id} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                      <details key={`${primaryImageId}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
                         <summary className="cursor-pointer font-semibold">{text.systemError} {index + 1}</summary>
-                        <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-white p-2 text-[11px] text-slate-700">{systemError}</pre>
+                        {images.length > 1 ? (
+                          <p className="mt-2 text-[11px] text-slate-500">{images.length} photos: {imageLabels}</p>
+                        ) : (
+                          <p className="mt-2 text-[11px] text-slate-500">{imageLabels}</p>
+                        )}
+                        <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-white p-2 text-[11px] text-slate-700">{message}</pre>
                         <button
                           type="button"
-                          onClick={() => copySystemError(image.id, systemError)}
+                          onClick={() => copySystemError(primaryImageId, message)}
                           className="mt-2 inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-700"
                         >
-                          {copiedErrorId === image.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                          {copiedErrorId === image.id ? text.copiedSystemError : text.copySystemError}
+                          {copiedErrorId === primaryImageId ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                          {copiedErrorId === primaryImageId ? text.copiedSystemError : text.copySystemError}
                         </button>
                       </details>
                     );
