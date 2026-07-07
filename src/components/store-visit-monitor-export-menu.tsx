@@ -1,7 +1,7 @@
 "use client";
 
 import { Download, Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ToggleEvent } from "react";
 
 type ExportJob = {
   id: string;
@@ -21,44 +21,60 @@ function formatTime(value: string) {
 
 export function StoreVisitMonitorExportMenu({ locale }: { locale: string }) {
   const [jobs, setJobs] = useState<ExportJob[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let disposed = false;
-
-    async function loadJobs() {
-      try {
-        const response = await fetch("/api/store-visit-monitor/export-jobs", { cache: "no-store" });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload.error ?? "Failed to load export tasks");
-        if (disposed) return;
-        setJobs(Array.isArray(payload.jobs) ? payload.jobs as ExportJob[] : []);
-        setError(null);
-      } catch (nextError) {
-        if (!disposed) setError(nextError instanceof Error ? nextError.message : "Failed to load export tasks");
-      } finally {
-        if (!disposed) setLoading(false);
-      }
+  const loadJobs = useCallback(async (isDisposed: () => boolean) => {
+    setLoading(true);
+    try {
+      const response = await fetch("/api/store-visit-monitor/export-jobs", { cache: "no-store" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error ?? "Failed to load export tasks");
+      if (isDisposed()) return;
+      setJobs(Array.isArray(payload.jobs) ? payload.jobs as ExportJob[] : []);
+      setError(null);
+    } catch (nextError) {
+      if (!isDisposed()) setError(nextError instanceof Error ? nextError.message : "Failed to load export tasks");
+    } finally {
+      if (!isDisposed()) setLoading(false);
     }
+  }, []);
 
-    void loadJobs();
+  useEffect(() => {
+    if (!open) return;
+    let disposed = false;
+    void loadJobs(() => disposed);
+    return () => {
+      disposed = true;
+    };
+  }, [loadJobs, open]);
+
+  useEffect(() => {
+    const shouldPoll = open && jobs.some((job) => job.status === "queued" || job.status === "running");
+    if (!shouldPoll) return;
+
+    let disposed = false;
     const timer = window.setInterval(() => {
-      void loadJobs();
+      void loadJobs(() => disposed);
     }, 10000);
 
     return () => {
       disposed = true;
       window.clearInterval(timer);
     };
-  }, []);
+  }, [jobs, loadJobs, open]);
+
+  function handleToggle(event: ToggleEvent<HTMLDetailsElement>) {
+    setOpen(event.currentTarget.open);
+  }
 
   const runningCount = jobs.filter((job) => job.status === "queued" || job.status === "running").length;
   const title = locale === "zh" ? "Exports" : "Exports";
   const emptyText = locale === "zh" ? "No export tasks yet" : "No export tasks yet";
 
   return (
-    <details className="relative shrink-0">
+    <details className="relative shrink-0" onToggle={handleToggle}>
       <summary className="inline-flex h-8 cursor-pointer list-none items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
         <span>{title}</span>
         {runningCount > 0 ? (

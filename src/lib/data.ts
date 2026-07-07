@@ -75,6 +75,7 @@ export type StoreVisitMonitorFilters = {
   storeName?: string;
   promoter?: string;
   analysisStatus?: string;
+  includeQuality?: boolean;
   limit?: number;
   page?: number;
   pageSize?: number;
@@ -3526,6 +3527,67 @@ function candidateWasAutoApproved(row: StoreVisitMonitorQualityRow) {
   return row.status === "approved" && row.review_method === "auto_rule";
 }
 
+function summarizeStoreVisitMonitorQualityRows(rows: StoreVisitMonitorQualityRow[]): StoreVisitMonitorQuality {
+  const activeRows = rows.filter(candidateContributesToQuality);
+  const denominator = activeRows.length;
+  const deviationRows = activeRows
+    .map((row) => {
+      if (typeof row.ai_net_price_idr !== "number" || !Number.isFinite(row.ai_net_price_idr)) return null;
+      if (typeof row.net_price_idr !== "number" || !Number.isFinite(row.net_price_idr) || row.net_price_idr <= 0) return null;
+      return Math.abs(row.ai_net_price_idr - row.net_price_idr) / row.net_price_idr;
+    })
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+
+  return {
+    accuracy: denominator > 0
+      ? activeRows.filter(candidateMatchesOriginalAi).length / denominator
+      : null,
+    autoApprovalRate: denominator > 0
+      ? activeRows.filter(candidateWasAutoApproved).length / denominator
+      : null,
+    avgPriceDeviationRate: deviationRows.length > 0
+      ? deviationRows.reduce((sum, value) => sum + value, 0) / deviationRows.length
+      : null,
+  };
+}
+
+function buildStoreVisitMonitorVisitQuality(rows: StoreVisitMonitorQualityRow[]): Record<string, StoreVisitMonitorQuality> {
+  const grouped = new Map<string, { total: number; correct: number; autoApproved: number; deviations: number[] }>();
+  for (const row of rows) {
+    if (!row.visit_id) continue;
+    if (!candidateContributesToQuality(row)) continue;
+    const bucket = grouped.get(row.visit_id) ?? { total: 0, correct: 0, autoApproved: 0, deviations: [] };
+    bucket.total += 1;
+    if (candidateMatchesOriginalAi(row)) {
+      bucket.correct += 1;
+    }
+    if (candidateWasAutoApproved(row)) bucket.autoApproved += 1;
+    if (
+      typeof row.ai_net_price_idr === "number"
+      && Number.isFinite(row.ai_net_price_idr)
+      && typeof row.net_price_idr === "number"
+      && Number.isFinite(row.net_price_idr)
+      && row.net_price_idr > 0
+    ) {
+      bucket.deviations.push(Math.abs(row.ai_net_price_idr - row.net_price_idr) / row.net_price_idr);
+    }
+    grouped.set(row.visit_id, bucket);
+  }
+
+  return Object.fromEntries(
+    Array.from(grouped.entries()).map(([visitId, bucket]) => [
+      visitId,
+      {
+        accuracy: bucket.total > 0 ? bucket.correct / bucket.total : null,
+        autoApprovalRate: bucket.total > 0 ? bucket.autoApproved / bucket.total : null,
+        avgPriceDeviationRate: bucket.deviations.length > 0
+          ? bucket.deviations.reduce((sum, value) => sum + value, 0) / bucket.deviations.length
+          : null,
+      },
+    ]),
+  ) as Record<string, StoreVisitMonitorQuality>;
+}
+
 async function loadStoreVisitMonitorQualityRows(visitIds: string[]) {
   const supabase = createSupabaseServiceClient();
   const pageSize = 1000;
@@ -3561,28 +3623,8 @@ async function getStoreVisitMonitorQuality(visitIds: string[]): Promise<QueryRes
   }
   if (error) return { data: emptyStoreVisitMonitorQuality(), error: error.message, isDemo: false };
 
-  const activeRows = rows.filter(candidateContributesToQuality);
-  const denominator = activeRows.length;
-  const deviationRows = activeRows
-    .map((row) => {
-      if (typeof row.ai_net_price_idr !== "number" || !Number.isFinite(row.ai_net_price_idr)) return null;
-      if (typeof row.net_price_idr !== "number" || !Number.isFinite(row.net_price_idr) || row.net_price_idr <= 0) return null;
-      return Math.abs(row.ai_net_price_idr - row.net_price_idr) / row.net_price_idr;
-    })
-    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
-
   return {
-    data: {
-      accuracy: denominator > 0
-        ? activeRows.filter(candidateMatchesOriginalAi).length / denominator
-        : null,
-      autoApprovalRate: denominator > 0
-        ? activeRows.filter(candidateWasAutoApproved).length / denominator
-        : null,
-      avgPriceDeviationRate: deviationRows.length > 0
-        ? deviationRows.reduce((sum, value) => sum + value, 0) / deviationRows.length
-        : null,
-    },
+    data: summarizeStoreVisitMonitorQualityRows(rows),
     error: null,
     isDemo: false,
   };
@@ -3600,43 +3642,47 @@ async function getStoreVisitMonitorVisitQuality(visitIds: string[]): Promise<Que
   }
   if (error) return { data: {}, error: error.message, isDemo: false };
 
-  const grouped = new Map<string, { total: number; correct: number; autoApproved: number; deviations: number[] }>();
-  for (const row of rows) {
-    if (!row.visit_id) continue;
-    if (!candidateContributesToQuality(row)) continue;
-    const bucket = grouped.get(row.visit_id) ?? { total: 0, correct: 0, autoApproved: 0, deviations: [] };
-    bucket.total += 1;
-    if (candidateMatchesOriginalAi(row)) {
-      bucket.correct += 1;
-    }
-    if (candidateWasAutoApproved(row)) bucket.autoApproved += 1;
-    if (
-      typeof row.ai_net_price_idr === "number"
-      && Number.isFinite(row.ai_net_price_idr)
-      && typeof row.net_price_idr === "number"
-      && Number.isFinite(row.net_price_idr)
-      && row.net_price_idr > 0
-    ) {
-      bucket.deviations.push(Math.abs(row.ai_net_price_idr - row.net_price_idr) / row.net_price_idr);
-    }
-    grouped.set(row.visit_id, bucket);
+  return {
+    data: buildStoreVisitMonitorVisitQuality(rows),
+    error: null,
+    isDemo: false,
+  };
+}
+
+async function getStoreVisitMonitorQualityBundle(visitIds: string[]): Promise<QueryResult<{
+  quality: StoreVisitMonitorQuality;
+  visitQualityById: Record<string, StoreVisitMonitorQuality>;
+}>> {
+  if (!hasSupabaseServiceConfig() || visitIds.length === 0) {
+    return {
+      data: { quality: emptyStoreVisitMonitorQuality(), visitQualityById: {} },
+      error: null,
+      isDemo: !hasSupabaseServiceConfig(),
+    };
   }
 
-  const visitQualityById = Object.fromEntries(
-    Array.from(grouped.entries()).map(([visitId, bucket]) => [
-      visitId,
-      {
-        accuracy: bucket.total > 0 ? bucket.correct / bucket.total : null,
-        autoApprovalRate: bucket.total > 0 ? bucket.autoApproved / bucket.total : null,
-        avgPriceDeviationRate: bucket.deviations.length > 0
-          ? bucket.deviations.reduce((sum, value) => sum + value, 0) / bucket.deviations.length
-          : null,
-      },
-    ]),
-  ) as Record<string, StoreVisitMonitorQuality>;
+  const { rows, error } = await loadStoreVisitMonitorQualityRows(visitIds);
+
+  if (isMissingStoreVisitQualityViewError(error) || (error?.message ?? "").includes("ai_matched_entity_type")) {
+    return {
+      data: { quality: emptyStoreVisitMonitorQuality(), visitQualityById: {} },
+      error: null,
+      isDemo: false,
+    };
+  }
+  if (error) {
+    return {
+      data: { quality: emptyStoreVisitMonitorQuality(), visitQualityById: {} },
+      error: error.message,
+      isDemo: false,
+    };
+  }
 
   return {
-    data: visitQualityById,
+    data: {
+      quality: summarizeStoreVisitMonitorQualityRows(rows),
+      visitQualityById: buildStoreVisitMonitorVisitQuality(rows),
+    },
     error: null,
     isDemo: false,
   };
@@ -3651,18 +3697,21 @@ async function getStoreVisitMonitorRows(filters: StoreVisitMonitorFilters, dateF
   const supabase = createSupabaseServiceClient();
   const { page, pageSize } = normalizeStoreVisitMonitorPagination(filters);
   const from = (page - 1) * pageSize;
-  const to = from + pageSize - 1;
+  const includeExactCount = filters.includeQuality !== false;
+  const to = includeExactCount ? from + pageSize - 1 : from + pageSize;
 
   const runQuery = async (select: string) => {
+    const query = supabase
+      .from("offline_store_visits")
+      .select(select, includeExactCount ? { count: "exact" } : undefined)
+      .neq("visit_status", "draft")
+      .gte("visit_date", dateFrom)
+      .lte("visit_date", dateTo)
+      .order("created_at", { ascending: false })
+      .range(from, to);
+
     return applyStoreVisitMonitorRowFilters(
-      supabase
-        .from("offline_store_visits")
-        .select(select, { count: "exact" })
-        .neq("visit_status", "draft")
-        .gte("visit_date", dateFrom)
-        .lte("visit_date", dateTo)
-        .order("created_at", { ascending: false })
-        .range(from, to),
+      query,
       filters,
     );
   };
@@ -3672,10 +3721,13 @@ async function getStoreVisitMonitorRows(filters: StoreVisitMonitorFilters, dateF
     pageResult = await runQuery(legacyStoreVisitMonitorSelect);
   }
   if (pageResult.error) return { rows: [], total: 0, error: pageResult.error.message, isDemo: false };
+  const fetchedRows = ((pageResult.data ?? []) as unknown as OfflineStoreVisit[]).map(toMonitorItem);
+  const hasMoreRows = !includeExactCount && fetchedRows.length > pageSize;
+  const rows = hasMoreRows ? fetchedRows.slice(0, pageSize) : fetchedRows;
 
   return {
-    rows: ((pageResult.data ?? []) as unknown as OfflineStoreVisit[]).map(toMonitorItem),
-    total: pageResult.count ?? 0,
+    rows,
+    total: includeExactCount ? (pageResult.count ?? rows.length) : from + rows.length + (hasMoreRows ? 1 : 0),
     error: null,
     isDemo: false,
   };
@@ -3820,16 +3872,15 @@ export async function getStoreVisitMonitor(
   };
 
   const visitIds = visits.map((visit) => visit.visitId);
-  const [qualityResult, visitQualityResult] = await Promise.all([
-    getStoreVisitMonitorQuality(visitIds),
-    getStoreVisitMonitorVisitQuality(visitIds),
-  ]);
-  const quality = {
-    accuracy: qualityResult.data.accuracy,
-    autoApprovalRate: qualityResult.data.autoApprovalRate,
-    avgPriceDeviationRate: qualityResult.data.avgPriceDeviationRate,
-  };
-  const visitQualityById = visitQualityResult.data;
+  const qualityResult = filters.includeQuality === false
+    ? {
+      data: { quality: emptyStoreVisitMonitorQuality(), visitQualityById: {} },
+      error: null,
+      isDemo: false,
+    }
+    : await getStoreVisitMonitorQualityBundle(visitIds);
+  const quality = qualityResult.data.quality;
+  const visitQualityById = qualityResult.data.visitQualityById;
   const visitsWithQuality = visits.map((visit) => ({
     ...visit,
     accuracy: visitQualityById[visit.visitId]?.accuracy ?? null,
@@ -3853,8 +3904,8 @@ export async function getStoreVisitMonitor(
         isDefaultRecent24Hours,
       },
     },
-    error: visitsResult.error ?? qualityResult.error ?? visitQualityResult.error,
-    isDemo: visitsResult.isDemo || qualityResult.isDemo || visitQualityResult.isDemo,
+    error: visitsResult.error ?? qualityResult.error,
+    isDemo: visitsResult.isDemo || qualityResult.isDemo,
   };
 }
 

@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { runStoreVisitAnalysis } from "@/lib/store-visit-analysis";
 import { refreshStoreVisitStoredPriceState } from "@/lib/store-visit-image-maintenance";
+import { syncStoreVisitPriceCandidatesFromImages } from "@/lib/store-visit-price-candidate-sync";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import type {
   StoreVisitAiJob,
@@ -18,6 +19,7 @@ const defaultMaxConcurrency = 8;
 const defaultMaxItemsPerRun = 4;
 const defaultMaxRunDurationMs = 240_000;
 const defaultPendingEnqueueLimit = 100;
+const minimumInitialAnalysisImageAgeMs = 60_000;
 
 function nowIso() {
   return new Date().toISOString();
@@ -247,6 +249,12 @@ async function refreshJobCounts(supabase: SupabaseServiceClient, jobId: string) 
     .select("*")
     .single();
   if (updateError || !job) throw new Error(updateError?.message ?? "Failed to refresh store visit AI job counts");
+  if (completed) {
+    await syncStoreVisitPriceCandidatesFromImages({
+      visitId: String((job as StoreVisitAiJob).visit_id),
+      supabase,
+    });
+  }
   return { job: job as StoreVisitAiJob, items: (items ?? []) as StoreVisitAiJobItem[] };
 }
 
@@ -338,6 +346,11 @@ async function processItem(input: {
       invalidateAffectedImageSnapshots: isRerun,
       forceAnalyzeImageIds: [item.source_image_id],
     });
+    const syncResult = await syncStoreVisitPriceCandidatesFromImages({
+      visitId: job.visit_id,
+      imageIds: [item.source_image_id],
+      supabase,
+    });
 
     const retake = result.aiAnalysis.price_image_retake_required.find((entry) => entry.imageId === item.source_image_id);
     const forcedResult = result.forcedImageResults.find((entry) => entry.imageId === item.source_image_id);
@@ -348,6 +361,8 @@ async function processItem(input: {
       row_count: forcedResult?.rowCount ?? 0,
       replaced_candidate_count: result.replacedCandidateCount,
       deleted_snapshot_count: result.deletedSnapshotCount,
+      synced_candidate_count: syncResult.inserted_count,
+      eligible_candidate_row_count: syncResult.eligible_row_count,
       retake_reasons: retake?.reasons ?? null,
       retake_message: retake?.message ?? null,
     };
@@ -423,7 +438,7 @@ export async function enqueuePendingStoreVisitInitialAnalysisJobs(input: {
   const supabase = input.supabase ?? createSupabaseServiceClient();
   const { data: visits, error } = await supabase
     .from("offline_store_visits")
-    .select("id,offline_visit_images(id,image_type,deleted_at,replaced_by_image_id)")
+    .select("id,offline_visit_images(id,image_type,deleted_at,replaced_by_image_id,created_at)")
     .eq("visit_status", "uploaded")
     .or("analysis_status.is.null,analysis_status.eq.pending")
     .order("created_at", { ascending: true })
@@ -433,11 +448,19 @@ export async function enqueuePendingStoreVisitInitialAnalysisJobs(input: {
 
   let enqueuedCount = 0;
   let skippedCount = 0;
-  for (const visit of (visits ?? []) as { id: string; offline_visit_images?: Array<{ id: string; image_type: string; deleted_at: string | null; replaced_by_image_id: string | null }> }[]) {
-    const imageIds = cleanIds((visit.offline_visit_images ?? [])
-      .filter((image) => priceImageTypes.includes(image.image_type as (typeof priceImageTypes)[number]) && !image.deleted_at && !image.replaced_by_image_id)
-      .map((image) => image.id));
+  for (const visit of (visits ?? []) as { id: string; offline_visit_images?: Array<{ id: string; image_type: string; deleted_at: string | null; replaced_by_image_id: string | null; created_at: string | null }> }[]) {
+    const imageRows = (visit.offline_visit_images ?? [])
+      .filter((image) => priceImageTypes.includes(image.image_type as (typeof priceImageTypes)[number]) && !image.deleted_at && !image.replaced_by_image_id);
+    const imageIds = cleanIds(imageRows.map((image) => image.id));
     if (imageIds.length === 0) {
+      skippedCount += 1;
+      continue;
+    }
+    const latestImageCreatedAt = imageRows
+      .map((image) => new Date(image.created_at ?? "").getTime())
+      .filter((value) => Number.isFinite(value))
+      .sort((left, right) => right - left)[0] ?? 0;
+    if (latestImageCreatedAt > 0 && Date.now() - latestImageCreatedAt < minimumInitialAnalysisImageAgeMs) {
       skippedCount += 1;
       continue;
     }

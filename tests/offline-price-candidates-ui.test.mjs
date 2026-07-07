@@ -23,6 +23,8 @@ const competitorsRoute = readFileSync("src/app/api/competitors/route.ts", "utf8"
 const storeVisitMatchOptionsRoute = readFileSync("src/app/api/store-visit/match-options/route.ts", "utf8");
 const candidateExportRoute = readFileSync("src/app/api/ai-price-candidates/export/route.ts", "utf8");
 const storeVisitAiJobRoute = readMaybe("src/app/api/store-visit/ai-jobs/[jobId]/route.ts");
+const aiPriceCandidatesLib = readFileSync("src/lib/ai-price-candidates.ts", "utf8");
+const h5RowIdentityMigration = readMaybe("supabase/migrations/202607070002_ai_price_candidates_h5_row_identity.sql");
 
 test("photo price review keeps compact date filter and export action", () => {
   assert.doesNotMatch(candidatesPage, /SelectInput/);
@@ -34,6 +36,29 @@ test("photo price review keeps compact date filter and export action", () => {
   assert.match(candidatesPage, /Export CSV/);
   assert.doesNotMatch(candidatesPage, /TextInput name="date_from"/);
   assert.doesNotMatch(candidatesPage, /TextInput name="date_to"/);
+});
+
+test("store visit price candidate generation exposes reusable H5 row helpers", () => {
+  assert.match(aiPriceCandidatesLib, /export type AiPriceCandidateSourceItem/);
+  assert.match(aiPriceCandidatesLib, /export function isH5VisiblePriceCandidate/);
+  assert.match(aiPriceCandidatesLib, /export async function buildAiPriceCandidateRows/);
+  assert.match(aiPriceCandidatesLib, /export async function insertAiPriceCandidateRows/);
+});
+
+test("mobile store visit detail repairs missing price candidates before returning rows", () => {
+  assert.match(storeVisitRoute, /syncStoreVisitPriceCandidatesFromImages/);
+  assert.match(storeVisitRoute, /await syncStoreVisitPriceCandidatesFromImages\(\{[\s\S]*visitId: id,[\s\S]*supabase,[\s\S]*\}\)/);
+  assert.match(storeVisitRoute, /loadVisitWithFallback/);
+});
+
+test("store visit refresh reconciles candidates for affected images", () => {
+  assert.match(storeVisitRefreshRoute, /syncStoreVisitPriceCandidatesFromImages/);
+  assert.match(storeVisitRefreshRoute, /imageIds: refreshImageIds/);
+});
+
+test("ai price candidates enforce active H5 row identity", () => {
+  assert.match(h5RowIdentityMigration, /idx_ai_price_candidates_h5_active_row/);
+  assert.match(h5RowIdentityMigration, /visit_id, source_image_id, source_row_index/);
 });
 
 test("photo price review uses a paginated review table instead of evidence cards", () => {

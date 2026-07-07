@@ -28,11 +28,11 @@ type RankedSkuCandidate<T> = {
 type CandidateInput = {
   visitId: string;
   aiResult: StoreVisitAiResult;
-  sourceItems?: SourceItem[];
+  sourceItems?: AiPriceCandidateSourceItem[];
   affectedImageIds?: string[];
 };
 
-type SourceItem = {
+export type AiPriceCandidateSourceItem = {
   brand: string;
   product: string;
   price: string;
@@ -246,7 +246,7 @@ function normalizePromoType(value: string | null | undefined) {
   return text;
 }
 
-function isH5VisiblePriceCandidate(item: SourceItem) {
+export function isH5VisiblePriceCandidate(item: AiPriceCandidateSourceItem) {
   if (!item.sourceImageId) return false;
   if (!item.product) return false;
   if (item.tag === "ANOMALY") return false;
@@ -260,7 +260,7 @@ function candidateKey({
   matchedEntityId,
   netPrice,
 }: {
-  item: SourceItem;
+  item: AiPriceCandidateSourceItem;
   matchedEntityType: "material_master" | "competitor_product" | "unmatched";
   matchedEntityId: string | null;
   netPrice: number | null;
@@ -414,7 +414,7 @@ function pickBestCompetitor(candidate: { brand: string; product: string; pieceCo
   return best;
 }
 
-function isPriceCandidate(item: SourceItem) {
+function isPriceCandidate(item: AiPriceCandidateSourceItem) {
   if (!item.product) return false;
   if (item.tag === "ANOMALY") return false;
   if (hasNonPricePromotionText(item)) return false;
@@ -422,7 +422,7 @@ function isPriceCandidate(item: SourceItem) {
 }
 
 function sourceItems(aiResult: StoreVisitAiResult) {
-  const keySkuItems: SourceItem[] = aiResult.price_insights.key_sku_prices.map((item) => ({
+  const keySkuItems: AiPriceCandidateSourceItem[] = aiResult.price_insights.key_sku_prices.map((item) => ({
     brand: item.brand,
     product: item.product,
     price: item.price,
@@ -445,7 +445,7 @@ function sourceItems(aiResult: StoreVisitAiResult) {
 
   const rawItems = aiResult.raw_extraction.detected_items
     .filter((item) => item.type === "SKU" || item.type === "PROMO")
-    .map((item): SourceItem => ({
+    .map((item): AiPriceCandidateSourceItem => ({
       brand: item.brand,
       product: item.product,
       price: item.price,
@@ -463,29 +463,166 @@ function sourceItems(aiResult: StoreVisitAiResult) {
   return [...keySkuItems, ...rawItems];
 }
 
-export async function generateAiPriceCandidates(input: CandidateInput) {
-  if (!hasSupabaseServiceConfig()) return [];
-  const supabase = createSupabaseServiceClient();
-  const items = (input.sourceItems?.map((item) => ({
-    ...item,
-    piece_count: normalizePieceCountFromEvidence(item.piece_count, item.raw_piece_count_text, item.product),
-  })).filter(isH5VisiblePriceCandidate)) ?? sourceItems(input.aiResult);
+function buildAiPriceCandidateRow(input: {
+  visitId: string;
+  item: AiPriceCandidateSourceItem;
+  materials: MaterialMaster[];
+  products: CompetitorProduct[];
+}) {
+  const { item } = input;
+  const parsedPrice = parseCandidatePrice(item.price);
+  const pieceCount = normalizePieceCountFromEvidence(item.piece_count, item.raw_piece_count_text, item.product);
+  const visiblePricePerPiece = parseCandidatePrice(item.raw_price_per_piece_text) ?? item.visible_price_per_piece_idr ?? null;
+  const reconciledPrices = reconcilePackagePriceMetrics({
+    listPriceIdr: parseCandidatePrice(item.list_price) ?? parsedPrice,
+    packagePriceIdr: parseCandidatePrice(item.package_price) ?? parsedPrice,
+    netPriceIdr: parseCandidatePrice(item.net_price) ?? parsedPrice,
+    pieceCount,
+    visiblePricePerPieceIdr: visiblePricePerPiece,
+    listPriceText: item.list_price,
+    packagePriceText: item.package_price,
+    netPriceText: item.net_price,
+    visiblePricePerPieceText: item.raw_price_per_piece_text,
+    pieceCountText: item.raw_piece_count_text,
+    skuText: item.product,
+  });
+  const listPrice = reconciledPrices.listPriceIdr ?? parsedPrice;
+  const packagePrice = reconciledPrices.packagePriceIdr ?? parsedPrice;
+  const netPrice = reconciledPrices.netPriceIdr ?? parsedPrice;
+  const pricePerPiece = reconciledPrices.pricePerPieceIdr;
+  const warnings: Warning[] = [];
+  if (!item.brand) warnings.push({ type: "MISSING_DATA", message: "AI did not extract a brand." });
+  if (!item.product) warnings.push({ type: "MISSING_DATA", message: "AI did not extract a product name." });
+  if (!parsedPrice) warnings.push({ type: "MISSING_DATA", message: "AI price could not be parsed into a number." });
+  if (!pieceCount) warnings.push({ type: "MISSING_DATA", message: "Missing piece count; per-piece price cannot be calculated." });
+  if (item.confidence === null) warnings.push({ type: "PARSE_RISK", message: "Legacy visual association confidence is missing; manual review required." });
+  if (item.confidence !== null && item.confidence < 0.5) warnings.push({ type: "LOW_CONFIDENCE", message: "AI extraction confidence is below 50%." });
+  if (reconciledPrices.warningMessage) {
+    warnings.push({ type: "PARSE_RISK", message: reconciledPrices.warningMessage });
+  }
+
+  const isOwnBrandCandidate = isMakukuBrand(item.brand);
+  const materialMatch = isOwnBrandCandidate
+    ? pickBestMaterial({ brand: item.brand, product: item.product, parsedPrice, pieceCount }, input.materials)
+    : null;
+  const competitorMatch = !materialMatch && !isOwnBrandCandidate
+    ? pickBestCompetitor({ brand: item.brand, product: item.product, pieceCount }, input.products)
+    : null;
+  const matchScore = materialMatch?.score ?? competitorMatch?.score ?? 0;
+  const matchedEntityType = materialMatch ? "material_master" : competitorMatch ? "competitor_product" : "unmatched";
+  const matchedEntityId = materialMatch?.item.tenant_sku_code ?? competitorMatch?.item.id ?? null;
+  const itemCandidateKey = candidateKey({
+    item,
+    matchedEntityType,
+    matchedEntityId,
+    netPrice,
+  });
+  if (matchScore < 0.65) warnings.push({ type: "LOW_CONFIDENCE", message: "No reliable product/master-data match found." });
+
+  return {
+    visit_id: input.visitId,
+    candidate_key: itemCandidateKey,
+    source_image_id: item.sourceImageId ?? null,
+    source_image_path: item.sourceImagePath ?? null,
+    source_row_index: item.sourceRowIndex ?? null,
+    raw_brand: item.brand,
+    raw_product: item.product,
+    raw_price: item.price,
+    ai_matched_entity_type: matchedEntityType,
+    ai_matched_entity_id: matchedEntityId,
+    ai_matched_label: materialMatch ? materialLabel(materialMatch.item) : competitorMatch ? competitorLabel(competitorMatch.item) : null,
+    ai_list_price_idr: listPrice,
+    ai_package_price_idr: packagePrice,
+    ai_net_price_idr: netPrice,
+    ai_piece_count: pieceCount,
+    ai_price_per_piece: pricePerPiece,
+    ai_promo_type: normalizePromoType(item.promo_type),
+    parsed_price_idr: netPrice,
+    list_price_idr: listPrice,
+    package_price_idr: packagePrice,
+    net_price_idr: netPrice,
+    raw_piece_count_text: item.raw_piece_count_text ?? null,
+    raw_package_price_text: item.raw_package_price_text ?? null,
+    raw_net_price_text: item.raw_net_price_text ?? null,
+    raw_price_per_piece_text: item.raw_price_per_piece_text ?? null,
+    visible_price_per_piece_idr: reconciledPrices.visiblePricePerPieceIdr,
+    price_basis: reconciledPrices.priceBasis,
+    promo_type: normalizePromoType(item.promo_type),
+    piece_count: pieceCount,
+    price_per_piece: pricePerPiece,
+    candidate_type: item.type,
+    ai_confidence: item.confidence,
+    legacy_confidence_fallback: item.legacy_confidence_fallback ?? item.confidence === null,
+    price_evidence_status: item.price_evidence_status ?? reconciledPrices.priceEvidenceStatus,
+    price_evidence_confidence: item.price_evidence_confidence ?? reconciledPrices.priceEvidenceConfidence,
+    price_evidence_detail: item.price_evidence_detail ?? reconciledPrices.priceEvidenceDetail,
+    conflicts: item.conflicts ?? reconciledPrices.conflicts,
+    review_decision: item.review_decision ?? reconciledPrices.reviewDecision,
+    matched_entity_type: matchedEntityType,
+    matched_entity_id: matchedEntityId,
+    matched_label: materialMatch ? materialLabel(materialMatch.item) : competitorMatch ? competitorLabel(competitorMatch.item) : null,
+    match_score: matchScore,
+    warnings,
+    status: "pending",
+  };
+}
+
+type AiPriceCandidateInsertRow = ReturnType<typeof buildAiPriceCandidateRow>;
+type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceClient>;
+
+export async function buildAiPriceCandidateRows(input: {
+  visitId: string;
+  sourceItems: AiPriceCandidateSourceItem[];
+  supabase?: SupabaseServiceClient;
+}) {
+  const supabase = input.supabase ?? createSupabaseServiceClient();
+  const items = input.sourceItems
+    .map((item) => ({
+      ...item,
+      piece_count: normalizePieceCountFromEvidence(item.piece_count, item.raw_piece_count_text, item.product),
+    }))
+    .filter(isH5VisiblePriceCandidate);
   const scopedItems = items.filter((item) => item.sourceImageId);
   if (scopedItems.length === 0) return [];
 
-  if (input.affectedImageIds && input.affectedImageIds.length > 0) {
-    await supabase
-      .from("ai_price_candidates")
-      .delete()
-      .eq("visit_id", input.visitId)
-      .in("source_image_id", input.affectedImageIds)
-      .neq("status", "approved");
-  } else {
-    await supabase
-      .from("ai_price_candidates")
-      .delete()
-      .eq("visit_id", input.visitId)
-      .neq("status", "approved");
+  const [{ data: materials }, { data: products }] = await Promise.all([
+    supabase.from("material_master").select("*").limit(5000),
+    supabase.from("competitor_products").select("*, brands(id,name)").limit(5000),
+  ]);
+
+  return scopedItems.map((item) => buildAiPriceCandidateRow({
+    visitId: input.visitId,
+    item,
+    materials: (materials ?? []) as MaterialMaster[],
+    products: (products ?? []) as CompetitorProduct[],
+  }));
+}
+
+export async function insertAiPriceCandidateRows(input: {
+  visitId: string;
+  rows: AiPriceCandidateInsertRow[];
+  affectedImageIds?: string[];
+  preserveExistingCandidates?: boolean;
+  supabase?: SupabaseServiceClient;
+}) {
+  const supabase = input.supabase ?? createSupabaseServiceClient();
+  if (input.rows.length === 0) return [];
+
+  if (!input.preserveExistingCandidates) {
+    if (input.affectedImageIds && input.affectedImageIds.length > 0) {
+      await supabase
+        .from("ai_price_candidates")
+        .delete()
+        .eq("visit_id", input.visitId)
+        .in("source_image_id", input.affectedImageIds)
+        .neq("status", "approved");
+    } else {
+      await supabase
+        .from("ai_price_candidates")
+        .delete()
+        .eq("visit_id", input.visitId)
+        .neq("status", "approved");
+    }
   }
 
   const { data: activeCandidateRows, error: activeCandidateError } = await supabase
@@ -501,111 +638,8 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
     .filter(Boolean) as string[];
   const existingActiveKeys = new Set(activeCandidateKeys);
 
-  const [{ data: materials }, { data: products }] = await Promise.all([
-    supabase.from("material_master").select("*").limit(5000),
-    supabase.from("competitor_products").select("*, brands(id,name)").limit(5000),
-  ]);
-
-  const candidateRows = scopedItems.map((item) => {
-    const parsedPrice = parseCandidatePrice(item.price);
-    const pieceCount = normalizePieceCountFromEvidence(item.piece_count, item.raw_piece_count_text, item.product);
-    const visiblePricePerPiece = parseCandidatePrice(item.raw_price_per_piece_text) ?? item.visible_price_per_piece_idr ?? null;
-    const reconciledPrices = reconcilePackagePriceMetrics({
-      listPriceIdr: parseCandidatePrice(item.list_price) ?? parsedPrice,
-      packagePriceIdr: parseCandidatePrice(item.package_price) ?? parsedPrice,
-      netPriceIdr: parseCandidatePrice(item.net_price) ?? parsedPrice,
-      pieceCount,
-      visiblePricePerPieceIdr: visiblePricePerPiece,
-      listPriceText: item.list_price,
-      packagePriceText: item.package_price,
-      netPriceText: item.net_price,
-      visiblePricePerPieceText: item.raw_price_per_piece_text,
-      pieceCountText: item.raw_piece_count_text,
-      skuText: item.product,
-    });
-    const listPrice = reconciledPrices.listPriceIdr ?? parsedPrice;
-    const packagePrice = reconciledPrices.packagePriceIdr ?? parsedPrice;
-    const netPrice = reconciledPrices.netPriceIdr ?? parsedPrice;
-    const pricePerPiece = reconciledPrices.pricePerPieceIdr;
-    const warnings: Warning[] = [];
-    if (!item.brand) warnings.push({ type: "MISSING_DATA", message: "AI did not extract a brand." });
-    if (!item.product) warnings.push({ type: "MISSING_DATA", message: "AI did not extract a product name." });
-    if (!parsedPrice) warnings.push({ type: "MISSING_DATA", message: "AI price could not be parsed into a number." });
-    if (!pieceCount) warnings.push({ type: "MISSING_DATA", message: "Missing piece count; per-piece price cannot be calculated." });
-    if (item.confidence === null) warnings.push({ type: "PARSE_RISK", message: "Legacy visual association confidence is missing; manual review required." });
-    if (item.confidence !== null && item.confidence < 0.5) warnings.push({ type: "LOW_CONFIDENCE", message: "AI extraction confidence is below 50%." });
-    if (reconciledPrices.warningMessage) {
-      warnings.push({ type: "PARSE_RISK", message: reconciledPrices.warningMessage });
-    }
-
-    const isOwnBrandCandidate = isMakukuBrand(item.brand);
-    const materialMatch = isOwnBrandCandidate
-      ? pickBestMaterial({ brand: item.brand, product: item.product, parsedPrice, pieceCount }, (materials ?? []) as MaterialMaster[])
-      : null;
-    const competitorMatch = !materialMatch && !isOwnBrandCandidate
-      ? pickBestCompetitor({ brand: item.brand, product: item.product, pieceCount }, (products ?? []) as CompetitorProduct[])
-      : null;
-    const matchScore = materialMatch?.score ?? competitorMatch?.score ?? 0;
-    const matchedEntityType = materialMatch ? "material_master" : competitorMatch ? "competitor_product" : "unmatched";
-    const matchedEntityId = materialMatch?.item.tenant_sku_code ?? competitorMatch?.item.id ?? null;
-    const itemCandidateKey = candidateKey({
-      item,
-      matchedEntityType,
-      matchedEntityId,
-      netPrice,
-    });
-    if (matchScore < 0.65) warnings.push({ type: "LOW_CONFIDENCE", message: "No reliable product/master-data match found." });
-
-    return {
-      visit_id: input.visitId,
-      candidate_key: itemCandidateKey,
-      source_image_id: item.sourceImageId ?? null,
-      source_image_path: item.sourceImagePath ?? null,
-      source_row_index: item.sourceRowIndex ?? null,
-      raw_brand: item.brand,
-      raw_product: item.product,
-      raw_price: item.price,
-      ai_matched_entity_type: matchedEntityType,
-      ai_matched_entity_id: matchedEntityId,
-      ai_matched_label: materialMatch ? materialLabel(materialMatch.item) : competitorMatch ? competitorLabel(competitorMatch.item) : null,
-      ai_list_price_idr: listPrice,
-      ai_package_price_idr: packagePrice,
-      ai_net_price_idr: netPrice,
-      ai_piece_count: pieceCount,
-      ai_price_per_piece: pricePerPiece,
-      ai_promo_type: normalizePromoType(item.promo_type),
-      parsed_price_idr: netPrice,
-      list_price_idr: listPrice,
-      package_price_idr: packagePrice,
-      net_price_idr: netPrice,
-      raw_piece_count_text: item.raw_piece_count_text ?? null,
-      raw_package_price_text: item.raw_package_price_text ?? null,
-      raw_net_price_text: item.raw_net_price_text ?? null,
-      raw_price_per_piece_text: item.raw_price_per_piece_text ?? null,
-      visible_price_per_piece_idr: reconciledPrices.visiblePricePerPieceIdr,
-      price_basis: reconciledPrices.priceBasis,
-      promo_type: normalizePromoType(item.promo_type),
-      piece_count: pieceCount,
-      price_per_piece: pricePerPiece,
-      candidate_type: item.type,
-      ai_confidence: item.confidence,
-      legacy_confidence_fallback: item.legacy_confidence_fallback ?? item.confidence === null,
-      price_evidence_status: item.price_evidence_status ?? reconciledPrices.priceEvidenceStatus,
-      price_evidence_confidence: item.price_evidence_confidence ?? reconciledPrices.priceEvidenceConfidence,
-      price_evidence_detail: item.price_evidence_detail ?? reconciledPrices.priceEvidenceDetail,
-      conflicts: item.conflicts ?? reconciledPrices.conflicts,
-      review_decision: item.review_decision ?? reconciledPrices.reviewDecision,
-      matched_entity_type: matchedEntityType,
-      matched_entity_id: matchedEntityId,
-      matched_label: materialMatch ? materialLabel(materialMatch.item) : competitorMatch ? competitorLabel(competitorMatch.item) : null,
-      match_score: matchScore,
-      warnings,
-      status: "pending",
-    };
-  });
-
   const seenInsertKeys = new Set<string>();
-  const rows = candidateRows.filter((row) => {
+  const rows = input.rows.filter((row) => {
     if (existingActiveKeys.has(row.candidate_key) || seenInsertKeys.has(row.candidate_key)) return false;
     seenInsertKeys.add(row.candidate_key);
     return true;
@@ -636,4 +670,20 @@ export async function generateAiPriceCandidates(input: CandidateInput) {
   }
   if (error) throw new Error(error.message);
   return (data ?? []) as AiPriceCandidate[];
+}
+
+export async function generateAiPriceCandidates(input: CandidateInput) {
+  if (!hasSupabaseServiceConfig()) return [];
+  const supabase = createSupabaseServiceClient();
+  const rows = await buildAiPriceCandidateRows({
+    visitId: input.visitId,
+    sourceItems: input.sourceItems ?? sourceItems(input.aiResult),
+    supabase,
+  });
+  return insertAiPriceCandidateRows({
+    visitId: input.visitId,
+    rows,
+    affectedImageIds: input.affectedImageIds,
+    supabase,
+  });
 }

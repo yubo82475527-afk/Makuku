@@ -17,13 +17,18 @@ const storeVisitAiDebug = readFileSync("src/lib/store-visit-ai-debug.ts", "utf8"
 const storeVisitAnalysis = readFileSync("src/lib/store-visit-analysis.ts", "utf8");
 const storeVisitImageMaintenance = readFileSync("src/lib/store-visit-image-maintenance.ts", "utf8");
 const appShell = readFileSync("src/components/app-shell.tsx", "utf8");
-const storeVisitMonitorPage = readFileSync("src/app/[locale]/store-visit-monitor/page.tsx", "utf8");
+const storeVisitMonitorServerPage = readFileSync("src/app/[locale]/store-visit-monitor/page.tsx", "utf8");
+const storeVisitMonitorClient = readFileSync("src/components/store-visit-monitor-client.tsx", "utf8");
+const storeVisitMonitorPage = `${storeVisitMonitorServerPage}\n${storeVisitMonitorClient}`;
+const storeVisitMonitorRoute = readMaybe("src/app/api/store-visit-monitor/route.ts");
 const storeVisitMonitorExportRoute = readMaybe("src/app/api/store-visit-monitor/export/route.ts");
 const storeVisitMonitorExportJobsRoute = readMaybe("src/app/api/store-visit-monitor/export-jobs/route.ts");
 const storeVisitMonitorExportJobRoute = readMaybe("src/app/api/store-visit-monitor/export-jobs/[jobId]/route.ts");
 const storeVisitMonitorExportDownloadRoute = readMaybe("src/app/api/store-visit-monitor/export-jobs/[jobId]/download/route.ts");
 const storeVisitMonitorExportRunnerRoute = readMaybe("src/app/api/internal/store-visit-monitor/export-jobs/run/route.ts");
+const storeVisitMonitorLoading = readMaybe("src/app/[locale]/store-visit-monitor/loading.tsx");
 const storeVisitMonitorExportButton = readMaybe("src/components/store-visit-monitor-export-button.tsx");
+const storeVisitMonitorExportMenu = readMaybe("src/components/store-visit-monitor-export-menu.tsx");
 const storeVisitMonitorExportJobs = readMaybe("src/lib/store-visit-monitor-export-jobs.ts");
 const storeVisitMonitorExportMigration = readMaybe("supabase/migrations/202607070001_store_visit_monitor_export_jobs.sql");
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
@@ -49,6 +54,27 @@ test("mobile visit list auto-starts uploaded pending visits once per page sessio
   assert.match(storeVisitsListH5, /visit\.analysis_status === "pending"/);
   assert.match(storeVisitsListH5, /autoAnalysisAttemptedIds/);
   assert.match(storeVisitsListH5, /fetch\("\/api\/store-visit\/analyze"/);
+});
+
+test("store visit AI jobs reconcile persisted price rows into candidates after item success", () => {
+  assert.match(storeVisitAiJobs, /syncStoreVisitPriceCandidatesFromImages/);
+  assert.match(storeVisitAiJobs, /imageIds: \[item\.source_image_id\]/);
+  assert.match(storeVisitAiJobs, /synced_candidate_count/);
+  assert.match(storeVisitAiJobs, /eligible_candidate_row_count/);
+});
+
+test("store visit AI watchdog waits for stable uploads before creating initial jobs", () => {
+  assert.match(storeVisitAiJobs, /minimumInitialAnalysisImageAgeMs/);
+  assert.match(storeVisitAiJobs, /latestImageCreatedAt/);
+});
+
+test("internal store visit candidate sync endpoint and script exist", () => {
+  const endpoint = readMaybe("src/app/api/internal/store-visit/price-candidates/sync/route.ts");
+  const script = readMaybe("scripts/sync-store-visit-price-candidates.mjs");
+  assert.match(endpoint, /syncStoreVisitPriceCandidatesFromImages/);
+  assert.match(endpoint, /INTERNAL_JOB_SECRET/);
+  assert.match(script, /sync-store-visit-price-candidates/);
+  assert.match(script, /visit_code/);
 });
 
 test("H5 list does not expose manual whole-visit Ai after initial analysis", () => {
@@ -102,9 +128,10 @@ test("store visit analysis only generates candidates that are bound to a source 
 
 test("store visit analysis keeps all visible H5 image rows as candidates even when confidence is low or brand is missing", () => {
   const candidateService = readFileSync("src/lib/ai-price-candidates.ts", "utf8");
-  assert.match(candidateService, /function isH5VisiblePriceCandidate/);
+  assert.match(candidateService, /export function isH5VisiblePriceCandidate/);
+  assert.match(candidateService, /export async function buildAiPriceCandidateRows/);
   assert.match(candidateService, /const scopedItems = items\.filter\(\(item\) => item\.sourceImageId\)/);
-  assert.match(candidateService, /const items = \(input\.sourceItems\?\.map\([\s\S]*\)\.filter\(isH5VisiblePriceCandidate\)\)/);
+  assert.match(candidateService, /const items = input\.sourceItems[\s\S]*\.filter\(isH5VisiblePriceCandidate\)/);
   assert.doesNotMatch(candidateService, /if \(item\.confidence !== null && item\.confidence < 0\.4\) return false/);
   assert.doesNotMatch(candidateService, /if \(!item\.brand \|\| !item\.product\) return false/);
 });
@@ -525,12 +552,42 @@ test("store visit monitor export menu loads current-user jobs and exposes comple
   assert.match(storeVisitMonitorExportJobs, /createSignedUrl/);
 });
 
+test("store visit monitor export menu does not poll jobs until the menu is opened", () => {
+  assert.match(storeVisitMonitorExportMenu, /onToggle=\{handleToggle\}/);
+  assert.match(storeVisitMonitorExportMenu, /if \(!open\) return;/);
+  assert.match(storeVisitMonitorExportMenu, /const shouldPoll = open && jobs\.some/);
+  assert.doesNotMatch(storeVisitMonitorExportMenu, /void loadJobs\(\);\s*const timer = window\.setInterval/);
+});
+
+test("store visit monitor route has an immediate loading shell for slow RSC navigation", () => {
+  assert.match(storeVisitMonitorLoading, /Store Visit Monitor/);
+  assert.match(storeVisitMonitorLoading, /animate-pulse/);
+  assert.match(storeVisitMonitorServerPage, /StoreVisitMonitorClient/);
+  assert.doesNotMatch(storeVisitMonitorServerPage, /getStoreVisitMonitor/);
+  assert.match(storeVisitMonitorServerPage, /queryString=\{queryString\.slice\(1\)\}/);
+  assert.match(storeVisitMonitorClient, /const monitorUrl = `\/api\/store-visit-monitor/);
+  assert.match(storeVisitMonitorClient, /fetch\(monitorUrl/);
+  assert.match(storeVisitMonitorClient, /include_quality=1/);
+  assert.doesNotMatch(storeVisitMonitorClient, /useSearchParams/);
+  assert.match(storeVisitMonitorRoute, /getStoreVisitMonitor/);
+  assert.match(storeVisitMonitorRoute, /includeQuality: url\.searchParams\.get\("include_quality"\) === "1"/);
+  assert.match(storeVisitMonitorRoute, /process\.env\.NODE_ENV !== "production"/);
+  assert.match(storeVisitMonitorRoute, /isAllowedAdminRole\(localSession\.role\)/);
+});
+
 test("store visit monitor data path includes per-visit price parsing quality metrics", () => {
   assert.match(dataFile, /type StoreVisitMonitorItem = \{[\s\S]*accuracy: number \| null;/);
   assert.match(dataFile, /type StoreVisitMonitorItem = \{[\s\S]*autoApprovalRate: number \| null;/);
   assert.match(dataFile, /type StoreVisitMonitorItem = \{[\s\S]*avgPriceDeviationRate: number \| null;/);
   assert.match(dataFile, /type StoreVisitMonitorItem = \{[\s\S]*updatedAt: string \| null;/);
   assert.match(dataFile, /visitQualityById/);
+});
+
+test("store visit monitor page derives aggregate and row quality from one quality query", () => {
+  assert.match(dataFile, /getStoreVisitMonitorQualityBundle/);
+  assert.match(dataFile, /filters\.includeQuality === false/);
+  assert.match(dataFile, /: await getStoreVisitMonitorQualityBundle\(visitIds\)/);
+  assert.doesNotMatch(dataFile, /Promise\.all\(\[\s*getStoreVisitMonitorQuality\(visitIds\),\s*getStoreVisitMonitorVisitQuality\(visitIds\),\s*\]\)/);
 });
 
 test("store visit monitor falls back when production lacks offline_store_visits.updated_at", () => {

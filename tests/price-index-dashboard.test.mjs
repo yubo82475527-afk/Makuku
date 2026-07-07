@@ -6,6 +6,18 @@ const nextConfig = readFileSync("next.config.ts", "utf8");
 const appShell = readFileSync("src/components/app-shell.tsx", "utf8");
 const localeShellLayout = readFileSync("src/components/locale-shell-layout.tsx", "utf8");
 const dashboardPage = readFileSync("src/app/[locale]/dashboard/page.tsx", "utf8");
+const dashboardClient = existsSync("src/components/dashboard-client.tsx")
+  ? readFileSync("src/components/dashboard-client.tsx", "utf8")
+  : "";
+const dashboardContent = existsSync("src/components/dashboard-content.tsx")
+  ? readFileSync("src/components/dashboard-content.tsx", "utf8")
+  : "";
+const dashboardData = existsSync("src/lib/dashboard-data.ts")
+  ? readFileSync("src/lib/dashboard-data.ts", "utf8")
+  : "";
+const dashboardRoute = existsSync("src/app/api/dashboard/route.ts")
+  ? readFileSync("src/app/api/dashboard/route.ts", "utf8")
+  : "";
 const pricesPage = readFileSync("src/app/[locale]/prices/page.tsx", "utf8");
 const photoReviewPage = readFileSync("src/app/[locale]/offline-price-candidates/page.tsx", "utf8");
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
@@ -54,19 +66,19 @@ test("location reverse and offline stores support structured province city distr
 });
 
 test("dashboard now combines price index, exception follow-up, and execution sections", () => {
-  assert.match(dashboardPage, /Price Index/);
-  assert.match(dashboardPage, /Exception Follow-up/);
-  assert.match(dashboardPage, /Promoter Execution/);
-  assert.match(dashboardPage, /PriceIndexTreeTable/);
-  assert.match(dashboardPage, /flattenProblemStoreRows/);
-  assert.match(dashboardPage, /buildExecutionBoard/);
-  assert.match(dashboardPage, /name="month"/);
-  assert.match(dashboardPage, /name="organization"/);
-  assert.match(dashboardPage, /name="ownSeries"/);
-  assert.doesNotMatch(dashboardPage, /name="sku"/);
-  assert.doesNotMatch(dashboardPage, /name="benchmarkRuleId"/);
-  assert.match(dashboardPage, /name="exceptionProvince"/);
-  assert.match(dashboardPage, /name="executionMonth"/);
+  assert.match(dashboardContent, /Price Index/);
+  assert.match(dashboardContent, /Exception Follow-up/);
+  assert.match(dashboardContent, /Promoter Execution/);
+  assert.match(dashboardContent, /PriceIndexTreeTable/);
+  assert.match(dashboardContent, /flattenProblemStoreRows/);
+  assert.match(dashboardData, /buildExecutionBoard/);
+  assert.match(dashboardContent, /name="month"/);
+  assert.match(dashboardContent, /name="organization"/);
+  assert.match(dashboardContent, /name="ownSeries"/);
+  assert.doesNotMatch(dashboardContent, /name="sku"/);
+  assert.doesNotMatch(dashboardContent, /name="benchmarkRuleId"/);
+  assert.match(dashboardContent, /name="exceptionProvince"/);
+  assert.match(dashboardContent, /name="executionMonth"/);
   assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /PRICE\/PCS \{week\.label\}/);
   assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /CombinedMetricCell/);
   assert.doesNotMatch(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /function PriceCell/);
@@ -107,17 +119,17 @@ test("dashboard derived data calculates weekly coefficients from own and benchma
 });
 
 test("dashboard exception and execution sections reuse current data sources before dedicated aggregate tables exist", () => {
-  assert.match(dashboardPage, /getProductSegmentBattles/);
-  assert.match(dashboardPage, /getAlerts/);
-  assert.match(dashboardPage, /getOfflineStoreVisits/);
-  assert.match(dashboardPage, /problemStoreCount/);
-  assert.match(dashboardPage, /visitWeekKey/);
-  assert.match(dashboardPage, /actualVisitCount/);
-  assert.match(dashboardPage, /completionRate/);
-  assert.match(dashboardPage, /normalizeExecutionOrganization/);
-  assert.match(dashboardPage, /formatExecutionRegionLabel/);
-  assert.match(dashboardPage, /formatLooseRegionText/);
-  assert.match(dashboardPage, /includeImageUrls:\s*false/);
+  assert.match(dashboardData, /getProductSegmentBattles/);
+  assert.match(dashboardData, /getAlerts/);
+  assert.match(dashboardData, /getOfflineStoreVisits/);
+  assert.match(dashboardContent, /problemStoreCount/);
+  assert.match(dashboardData, /visitWeekKey/);
+  assert.match(dashboardData, /actualVisitCount/);
+  assert.match(dashboardData, /completionRate/);
+  assert.match(dashboardData, /normalizeExecutionOrganization/);
+  assert.match(dashboardContent, /formatExecutionRegionLabel/);
+  assert.match(dashboardContent, /formatLooseRegionText/);
+  assert.match(dashboardData, /includeImageUrls:\s*false/);
   assert.match(dataFile, /includeImageUrls\?: boolean/);
   assert.match(dataFile, /if \(filters\.includeImageUrls === false\)/);
 });
@@ -211,6 +223,21 @@ test("dashboard and prices expose streaming loading states for fast shell transi
   assert.equal(existsSync("src/app/[locale]/dashboard/loading.tsx"), true);
   assert.equal(existsSync("src/app/[locale]/prices/loading.tsx"), true);
   assert.equal(existsSync("src/app/[locale]/offline-price-candidates/loading.tsx"), true);
+});
+
+test("dashboard uses a light server shell and abortable client data loading", () => {
+  assert.match(dashboardPage, /DashboardClient/);
+  assert.doesNotMatch(dashboardPage, /getWeeklyPriceCoefficientBoard/);
+  assert.doesNotMatch(dashboardPage, /getProductSegmentBattles/);
+  assert.doesNotMatch(dashboardPage, /getOfflineStoreVisits/);
+  assert.match(dashboardClient, /new AbortController\(\)/);
+  assert.match(dashboardClient, /controller\.abort\(\)/);
+  assert.match(dashboardClient, /`\/api\/dashboard\?/);
+  assert.match(dashboardClient, /section", section/);
+  assert.match(dashboardRoute, /getDashboardData/);
+  assert.match(dashboardRoute, /section === "price"/);
+  assert.match(dashboardRoute, /section === "exceptions"/);
+  assert.match(dashboardRoute, /section === "execution"/);
 });
 
 test("photo price review uses the same client-side shell navigation path as the other backend pages", () => {

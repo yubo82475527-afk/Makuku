@@ -7,6 +7,7 @@ import {
   createStoreVisitAiJob,
   triggerStoreVisitAiJobRunner,
 } from "@/lib/store-visit-ai-jobs";
+import { syncStoreVisitPriceCandidatesFromImages } from "@/lib/store-visit-price-candidate-sync";
 
 export const maxDuration = 60;
 
@@ -163,6 +164,11 @@ export async function POST(request: Request, ctx: RouteContext) {
 
     revalidateVisitPaths(id);
     after(() => triggerStoreVisitAiJobRunner({ requestUrl: request.url, jobId: created.job?.id }));
+    const syncResult = await syncStoreVisitPriceCandidatesFromImages({
+      visitId: id,
+      imageIds: refreshImageIds,
+      supabase,
+    });
 
     return Response.json({
       queued: true,
@@ -172,6 +178,7 @@ export async function POST(request: Request, ctx: RouteContext) {
       job: created.job,
       active_ai_job: created.summary,
       reused: created.reused,
+      candidate_sync: syncResult,
     });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
