@@ -3360,7 +3360,6 @@ function defaultRecent24HoursRange() {
 
 const storeVisitMonitorDefaultPageSize = 50;
 const storeVisitMonitorMaxPageSize = 100;
-const storeVisitMonitorSummaryLimit = 5000;
 const storeVisitMonitorExportBatchSize = 500;
 const storeVisitMonitorSelect = "id,visit_code,store_name,visit_date,promoter,uploader_name,analysis_status,visit_status,summary_result,created_at,updated_at,image_urls";
 const legacyStoreVisitMonitorSelect = "id,visit_code,store_name,visit_date,promoter,uploader_name,analysis_status,visit_status,summary_result,created_at,image_urls";
@@ -3654,8 +3653,8 @@ async function getStoreVisitMonitorRows(filters: StoreVisitMonitorFilters, dateF
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
-  const runQueries = async (select: string) => {
-    const pageQuery = applyStoreVisitMonitorRowFilters(
+  const runQuery = async (select: string) => {
+    return applyStoreVisitMonitorRowFilters(
       supabase
         .from("offline_store_visits")
         .select(select, { count: "exact" })
@@ -3666,31 +3665,16 @@ async function getStoreVisitMonitorRows(filters: StoreVisitMonitorFilters, dateF
         .range(from, to),
       filters,
     );
-    const summaryQuery = applyStoreVisitMonitorRowFilters(
-      supabase
-        .from("offline_store_visits")
-        .select(select)
-        .neq("visit_status", "draft")
-        .gte("visit_date", dateFrom)
-        .lte("visit_date", dateTo)
-        .order("created_at", { ascending: false })
-        .range(0, storeVisitMonitorSummaryLimit - 1),
-      filters,
-    );
-
-    return Promise.all([pageQuery, summaryQuery]);
   };
 
-  let [pageResult, summaryResult] = await runQueries(storeVisitMonitorSelect);
-  if (isMissingStoreVisitUpdatedAtError(pageResult.error) || isMissingStoreVisitUpdatedAtError(summaryResult.error)) {
-    [pageResult, summaryResult] = await runQueries(legacyStoreVisitMonitorSelect);
+  let pageResult = await runQuery(storeVisitMonitorSelect);
+  if (isMissingStoreVisitUpdatedAtError(pageResult.error)) {
+    pageResult = await runQuery(legacyStoreVisitMonitorSelect);
   }
-  if (pageResult.error) return { rows: [], summaryRows: [], total: 0, error: pageResult.error.message, isDemo: false };
-  if (summaryResult.error) return { rows: [], summaryRows: [], total: 0, error: summaryResult.error.message, isDemo: false };
+  if (pageResult.error) return { rows: [], total: 0, error: pageResult.error.message, isDemo: false };
 
   return {
     rows: ((pageResult.data ?? []) as unknown as OfflineStoreVisit[]).map(toMonitorItem),
-    summaryRows: ((summaryResult.data ?? []) as unknown as OfflineStoreVisit[]).map(toMonitorItem),
     total: pageResult.count ?? 0,
     error: null,
     isDemo: false,
@@ -3772,7 +3756,7 @@ export async function getStoreVisitMonitor(
   const { page, pageSize } = normalizeStoreVisitMonitorPagination(filters);
   const visitsResult = await getStoreVisitMonitorRows(filters, dateFrom, dateTo);
   const visits = visitsResult.rows;
-  const summaryVisits = visitsResult.summaryRows ?? visits;
+  const summaryVisits = visits;
 
   const durations = summaryVisits
     .map((visit) => visit.fullAnalysisTimeMs)
