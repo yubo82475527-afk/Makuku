@@ -14,11 +14,22 @@ async function canReadVisitJob(input: {
 }) {
   if (isAllowedAdminRole(input.role)) return true;
   const supabase = createSupabaseServiceClient();
-  const { data, error } = await supabase
+  const current = await supabase
     .from("offline_store_visits")
     .select("id,user_id,uploader_user_id")
     .eq("id", input.visitId)
     .single();
+  let data = current.data;
+  let error = current.error;
+  if (error?.message.includes("user_id")) {
+    const legacy = await supabase
+      .from("offline_store_visits")
+      .select("id,uploader_user_id")
+      .eq("id", input.visitId)
+      .single();
+    data = legacy.data ? { ...legacy.data, user_id: null } : legacy.data;
+    error = legacy.error;
+  }
   if (error || !data) return false;
   const row = data as { user_id?: string | null; uploader_user_id?: string | null };
   return row.user_id === input.userId || row.uploader_user_id === input.userId;

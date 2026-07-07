@@ -1,12 +1,13 @@
 "use client";
 
-import { AppShell, type HeaderUser } from "@/components/app-shell";
+import { useContext, useEffect } from "react";
+import { AppShellContext, type HeaderUser } from "@/components/app-shell";
 import type { Locale } from "@/lib/i18n/config";
 import type { Dictionary } from "@/lib/i18n/get-dictionary";
 
 export function PageShellState({
-  locale,
-  dict,
+  locale: _locale,
+  dict: _dict,
   title,
   currentPath,
   isDemo,
@@ -19,16 +20,12 @@ export function PageShellState({
   isDemo?: boolean;
   headerUser?: HeaderUser | null;
 }) {
-  return (
-    <AppShell
-      locale={locale}
-      dict={dict}
-      title={title}
-      currentPath={currentPath}
-      isDemo={isDemo}
-      headerUser={headerUser}
-    >
-      {null}
-    </AppShell>
-  );
+  const shellContext = useContext(AppShellContext);
+  const setShellState = shellContext?.setShellState;
+
+  useEffect(() => {
+    setShellState?.({ title, currentPath, isDemo, headerUser });
+  }, [currentPath, headerUser, isDemo, setShellState, title]);
+
+  return null;
 }

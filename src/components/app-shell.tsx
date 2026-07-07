@@ -18,9 +18,10 @@ import {
 import Link from "next/link";
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
-  useLayoutEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -47,7 +48,20 @@ type AppShellContextValue = {
   setShellState: (state: ShellState) => void;
 };
 
-const AppShellContext = createContext<AppShellContextValue | null>(null);
+export const AppShellContext = createContext<AppShellContextValue | null>(null);
+
+function isSameHeaderUser(a: HeaderUser | null | undefined, b: HeaderUser | null | undefined) {
+  return (a?.displayName ?? null) === (b?.displayName ?? null) && (a?.role ?? null) === (b?.role ?? null);
+}
+
+function isSameShellState(a: ShellState, b: ShellState) {
+  return (
+    a.title === b.title &&
+    a.currentPath === b.currentPath &&
+    Boolean(a.isDemo) === Boolean(b.isDemo) &&
+    isSameHeaderUser(a.headerUser, b.headerUser)
+  );
+}
 
 const navGroups = [
   {
@@ -268,7 +282,7 @@ function AppShellStateSync({
   headerUser,
   setShellState,
 }: ShellState & AppShellContextValue) {
-  useLayoutEffect(() => {
+  useEffect(() => {
     setShellState({ title, currentPath, isDemo, headerUser });
   }, [currentPath, headerUser, isDemo, setShellState, title]);
   return null;
@@ -298,6 +312,12 @@ export function AppShell({
     isDemo,
     headerUser,
   });
+  const updateShellState = useCallback((nextState: ShellState) => {
+    setShellState((current) => {
+      return isSameShellState(current, nextState) ? current : nextState;
+    });
+  }, []);
+  const shellContextValue = useMemo(() => ({ setShellState: updateShellState }), [updateShellState]);
 
   if (shellContext) {
     return (
@@ -315,7 +335,7 @@ export function AppShell({
   }
 
   return (
-    <AppShellContext.Provider value={{ setShellState }}>
+    <AppShellContext.Provider value={shellContextValue}>
       <AppShellFrame locale={locale} dict={dict} state={shellState}>
         {children}
       </AppShellFrame>

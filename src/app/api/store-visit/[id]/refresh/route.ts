@@ -42,6 +42,25 @@ function revalidateVisitPaths(visitId: string) {
   revalidatePath(`/en/mobile/offline-capture/${visitId}`);
 }
 
+async function loadVisitAccessRow(supabase: ReturnType<typeof createSupabaseServiceClient>, visitId: string) {
+  const current = await supabase
+    .from("offline_store_visits")
+    .select("id,analysis_status,user_id,uploader_user_id")
+    .eq("id", visitId)
+    .single();
+  if (!current.error || !current.error.message.includes("user_id")) return current;
+
+  const legacy = await supabase
+    .from("offline_store_visits")
+    .select("id,analysis_status,uploader_user_id")
+    .eq("id", visitId)
+    .single();
+  return {
+    data: legacy.data ? { ...legacy.data, user_id: null } : legacy.data,
+    error: legacy.error,
+  };
+}
+
 export async function POST(request: Request, ctx: RouteContext) {
   const auth = await requireAppSession(request);
   if (auth.response) return auth.response;
@@ -62,11 +81,7 @@ export async function POST(request: Request, ctx: RouteContext) {
     }
 
     const supabase = createSupabaseServiceClient();
-    const { data: visit, error: visitError } = await supabase
-      .from("offline_store_visits")
-      .select("id,analysis_status,user_id,uploader_user_id")
-      .eq("id", id)
-      .single();
+    const { data: visit, error: visitError } = await loadVisitAccessRow(supabase, id);
     if (visitError || !visit) return Response.json({ error: visitError?.message ?? "Visit not found" }, { status: 404 });
     const visitRow = visit as { user_id?: string | null; uploader_user_id?: string | null };
     const canRefreshVisit = isAllowedAdminRole(auth.session.role)
