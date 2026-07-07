@@ -6,7 +6,7 @@ export function parseIdrPrice(value: string | number | null | undefined) {
   const raw = String(value ?? "").trim();
   if (!raw) return null;
 
-  const cleaned = raw.replace(/[^\d.,]/g, "");
+  const cleaned = raw.replace(/[^\d.,]/g, "").replace(/^[.,]+|[.,]+$/g, "");
   if (!cleaned) return null;
 
   const hasDot = cleaned.includes(".");

@@ -82,6 +82,13 @@ const priceUtils = loadPriceUtils();
 const storeVisitAi = loadStoreVisitAi(priceUtils);
 const rowEvidenceMigration = readFileSync("supabase/migrations/202607020002_ai_price_candidate_row_evidence.sql", "utf8");
 
+test("parseIdrPrice preserves Indonesian shelf-tag package amounts with Rp prefix and trailing dash", () => {
+  assert.equal(priceUtils.parseIdrPrice("Rp.93,550-"), 93550);
+  assert.equal(priceUtils.parseIdrPrice("Rp.78,700-"), 78700);
+  assert.equal(priceUtils.parseIdrPrice("83,000.-"), 83000);
+  assert.equal(priceUtils.parseIdrPrice("69,825."), 69825);
+});
+
 test("price amount-scale guard repairs package prices that were divided by piece count", () => {
   const result = priceUtils.reconcilePackagePriceMetrics({
     listPriceIdr: 56000,
