@@ -21,6 +21,16 @@ test("AI candidate generation assigns stable candidate keys for idempotent reana
   assert.match(candidateService, /matchedEntityId \?\? ""/);
 });
 
+test("AI candidate generation keeps image row identity even when net price is not parseable", () => {
+  assert.match(candidateService, /if \(item\.sourceImageId\) \{/);
+  assert.doesNotMatch(candidateService, /if \(item\.sourceImageId && netPrice\) \{/);
+});
+
+test("AI candidate generation keeps H5 rows with structured price signals", () => {
+  assert.match(candidateService, /function hasH5VisiblePriceSignal/);
+  assert.match(candidateService, /if \(item\.sourceImageId\) return hasH5VisiblePriceSignal\(item\);/);
+});
+
 test("AI candidate generation deduplicates candidate keys before inserting", () => {
   assert.match(candidateService, /const seenInsertKeys = new Set<string>\(\)/);
   assert.match(candidateService, /if \(existingActiveKeys\.has\(row\.candidate_key\) \|\| seenInsertKeys\.has\(row\.candidate_key\)\) return false;/);
@@ -130,8 +140,7 @@ test("AI candidate generation scopes inserts to image-backed rows without legacy
   assert.match(candidateService, /promo_type/);
   assert.match(candidateService, /const scopedItems = items\.filter\(\(item\) => item\.sourceImageId\)/);
   assert.match(candidateService, /if \(scopedItems\.length === 0\) return \[\]/);
-  assert.match(candidateService, /const candidateRows = scopedItems\.map/);
-  assert.match(candidateService, /const rows = candidateRows\.filter/);
+  assert.match(candidateService, /return scopedItems\.map/);
   assert.match(candidateService, /const legacyRows = rows\.map/);
   assert.match(candidateService, /source_row_index: _sourceRowIndex/);
   assert.doesNotMatch(candidateService, /error\?\.message\.includes\("ai_price_candidates"\)\)\s*\{\s*return \[\]/);

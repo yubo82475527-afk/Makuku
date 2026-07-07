@@ -246,11 +246,24 @@ function normalizePromoType(value: string | null | undefined) {
   return text;
 }
 
+function hasH5VisiblePriceSignal(item: AiPriceCandidateSourceItem) {
+  return [
+    item.price,
+    item.list_price,
+    item.package_price,
+    item.net_price,
+    item.raw_package_price_text,
+    item.raw_net_price_text,
+    item.raw_price_per_piece_text,
+  ].some((value) => String(value ?? "").trim() !== "")
+    || item.visible_price_per_piece_idr !== null && item.visible_price_per_piece_idr !== undefined;
+}
+
 export function isH5VisiblePriceCandidate(item: AiPriceCandidateSourceItem) {
-  if (!item.sourceImageId) return false;
   if (!item.product) return false;
   if (item.tag === "ANOMALY") return false;
   if (hasNonPricePromotionText(item)) return false;
+  if (item.sourceImageId) return hasH5VisiblePriceSignal(item);
   return parseCandidatePrice(item.price) !== null;
 }
 
@@ -265,14 +278,14 @@ function candidateKey({
   matchedEntityId: string | null;
   netPrice: number | null;
 }) {
-  if (item.sourceImageId && netPrice) {
+  if (item.sourceImageId) {
     return [
       "image_entity_price",
       item.sourceImageId,
       String(item.sourceRowIndex ?? ""),
       matchedEntityType,
       matchedEntityId ?? "",
-      String(netPrice),
+      String(netPrice ?? parseCandidatePrice(item.price) ?? item.price),
     ].join("|");
   }
   const parsedPrice = netPrice ?? parseCandidatePrice(item.price);
