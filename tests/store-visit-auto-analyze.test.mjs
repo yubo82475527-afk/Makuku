@@ -429,6 +429,21 @@ test("store visit monitor list exposes server-side pagination controls", () => {
   assert.match(storeVisitMonitorPage, /Next/);
 });
 
+test("store visit monitor filter bar uses the compact labeled input pattern from photo price review", () => {
+  assert.match(storeVisitMonitorPage, /className="grid gap-3 md:grid-cols-\[minmax\(180px,1fr\)_minmax\(220px,1\.1fr\)_minmax\(180px,1fr\)_minmax\(180px,220px\)\]"/);
+  assert.match(storeVisitMonitorPage, /className="flex min-h-10 items-center rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus-within:border-slate-500 focus-within:ring-2 focus-within:ring-slate-200"/);
+  assert.doesNotMatch(storeVisitMonitorPage, /<SelectInput name="page_size"/);
+});
+
+test("store visit monitor pagination row contains page size and page counter together", () => {
+  assert.match(storeVisitMonitorPage, /<form method="get" className="flex items-center gap-2">[\s\S]*name="page_size"/);
+  assert.match(storeVisitMonitorPage, /copy hidden filters into the page-size form|Page \{monitor\.pagination\.page\} of \{monitor\.pagination\.totalPages\}/);
+  assert.match(
+    storeVisitMonitorPage,
+    /<div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4 text-sm">[\s\S]*name="page_size"[\s\S]*Previous[\s\S]*Page \{monitor\.pagination\.page\} of \{monitor\.pagination\.totalPages\}[\s\S]*Next/s,
+  );
+});
+
 test("store visit monitor list can export the displayed analysis columns to Excel", () => {
   assert.match(storeVisitMonitorPage, /store-visit-monitor\/export/);
   assert.match(storeVisitMonitorPage, /Export Excel/);
@@ -439,6 +454,12 @@ test("store visit monitor list can export the displayed analysis columns to Exce
   assert.match(storeVisitMonitorExportRoute, /Update time/);
   assert.match(storeVisitMonitorExportRoute, /Content-Disposition/);
   assert.match(storeVisitMonitorExportRoute, /store-visit-monitor/);
+});
+
+test("store visit monitor export uses a dedicated paged row loader instead of the summary query path", () => {
+  assert.match(dataFile, /async function getStoreVisitMonitorExportRows/);
+  assert.match(dataFile, /export async function getStoreVisitMonitorExport[\s\S]*getStoreVisitMonitorExportRows/);
+  assert.doesNotMatch(dataFile, /export async function getStoreVisitMonitorExport[\s\S]*getStoreVisitMonitorRows\(filters, dateFrom, dateTo\)/);
 });
 
 test("store visit monitor detail links open in a new window", () => {

@@ -1,6 +1,7 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { PageShellState } from "@/components/page-shell-state";
-import { Badge, Button, Card, DataNotice, EmptyState, MetricCard, SelectInput, TextInput } from "@/components/ui";
+import { Badge, Button, Card, DataNotice, EmptyState, MetricCard } from "@/components/ui";
 import { formatJakartaTime, formatPercent } from "@/lib/format";
 import { getPageI18n } from "@/lib/i18n/server";
 import { getStoreVisitMonitor } from "@/lib/data";
@@ -25,6 +26,8 @@ function readPositiveInt(value: string, fallback: number) {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
+
+const monitorFilterKeys = ["visit_code", "store_name", "promoter", "analysis_status", "date_from", "date_to"] as const;
 
 export default async function StoreVisitMonitorPage({
   params,
@@ -55,7 +58,7 @@ export default async function StoreVisitMonitorPage({
 
   const monitor = result.data;
   const exportQuery = new URLSearchParams();
-  for (const key of ["visit_code", "store_name", "promoter", "analysis_status", "date_from", "date_to"]) {
+  for (const key of monitorFilterKeys) {
     const value = getFilter(key);
     if (value) exportQuery.set(key, value);
   }
@@ -63,7 +66,7 @@ export default async function StoreVisitMonitorPage({
   const exportHref = `/api/store-visit-monitor/export?${exportQuery.toString()}`;
   const pageHref = (nextPage: number) => {
     const query = new URLSearchParams();
-    for (const key of ["visit_code", "store_name", "promoter", "analysis_status", "date_from", "date_to"]) {
+    for (const key of monitorFilterKeys) {
       const value = getFilter(key);
       if (value) query.set(key, value);
     }
@@ -111,26 +114,20 @@ export default async function StoreVisitMonitorPage({
       </Card>
 
       <Card className="mb-4">
-        <form className="grid gap-3 md:grid-cols-8">
-          <TextInput name="visit_code" placeholder="Visit code" defaultValue={getFilter("visit_code")} />
-          <TextInput name="store_name" placeholder="Store name" defaultValue={getFilter("store_name")} />
-          <TextInput name="promoter" placeholder="Promoter" defaultValue={getFilter("promoter")} />
-          <SelectInput name="analysis_status" defaultValue={getFilter("analysis_status")}>
-            <option value="">Analysis status</option>
+        <form className="grid gap-3 md:grid-cols-[minmax(180px,1fr)_minmax(220px,1.1fr)_minmax(180px,1fr)_minmax(180px,220px)]">
+          <LabeledTextFilter label="Visit code" name="visit_code" placeholder="Search visit" defaultValue={getFilter("visit_code")} />
+          <LabeledTextFilter label="Store name" name="store_name" placeholder="Search store" defaultValue={getFilter("store_name")} />
+          <LabeledTextFilter label="Promoter" name="promoter" placeholder="Search promoter" defaultValue={getFilter("promoter")} />
+          <LabeledSelectFilter label="Analysis status" name="analysis_status" defaultValue={getFilter("analysis_status")}>
+            <option value="">All status</option>
             <option value="pending">pending</option>
             <option value="analyzing">analyzing</option>
             <option value="completed">completed</option>
             <option value="partial">partial</option>
             <option value="action_required">action_required</option>
             <option value="failed">failed</option>
-          </SelectInput>
-          <TextInput name="date_from" type="date" defaultValue={monitor.filters.dateFrom} />
-          <TextInput name="date_to" type="date" defaultValue={monitor.filters.dateTo} />
-          <SelectInput name="page_size" defaultValue={String(monitor.pagination.pageSize)}>
-            <option value="25">25 / page</option>
-            <option value="50">50 / page</option>
-            <option value="100">100 / page</option>
-          </SelectInput>
+          </LabeledSelectFilter>
+          <DateRangeFilter dateFrom={monitor.filters.dateFrom} dateTo={monitor.filters.dateTo} />
           <div className="flex gap-2">
             <Button type="submit">Filter</Button>
             <Link href={`/${locale}/store-visit-monitor`} className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
@@ -223,10 +220,29 @@ export default async function StoreVisitMonitorPage({
         ) : null}
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4 text-sm">
-          <div className="text-slate-500">
-            Page {monitor.pagination.page} of {monitor.pagination.totalPages}
+          <div className="text-slate-600">
+            {monitor.pagination.from}-{monitor.pagination.to} / {monitor.pagination.total}
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <form method="get" className="flex items-center gap-2">
+              {monitorFilterKeys.map((key) => {
+                const value = getFilter(key);
+                return value ? <input key={key} type="hidden" name={key} value={value} /> : null;
+              })}
+              <select
+                name="page_size"
+                defaultValue={String(monitor.pagination.pageSize)}
+                className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none focus:border-slate-500"
+              >
+                <option value="25">25 / page</option>
+                <option value="50">50 / page</option>
+                <option value="100">100 / page</option>
+              </select>
+              <input type="hidden" name="page" value="1" />
+              <Button type="submit" className="bg-white text-slate-700 hover:bg-slate-50 border border-slate-300">
+                Apply
+              </Button>
+            </form>
             {monitor.pagination.hasPrevious ? (
               <Link
                 href={pageHref(monitor.pagination.page - 1)}
@@ -239,6 +255,9 @@ export default async function StoreVisitMonitorPage({
                 Previous
               </span>
             )}
+            <span className="inline-flex h-9 items-center px-2 text-slate-600">
+              Page {monitor.pagination.page} of {monitor.pagination.totalPages}
+            </span>
             {monitor.pagination.hasNext ? (
               <Link
                 href={pageHref(monitor.pagination.page + 1)}
@@ -255,5 +274,77 @@ export default async function StoreVisitMonitorPage({
         </div>
       </Card>
     </>
+  );
+}
+
+function LabeledTextFilter({
+  label,
+  name,
+  placeholder,
+  defaultValue,
+}: {
+  label: string;
+  name: string;
+  placeholder: string;
+  defaultValue: string;
+}) {
+  return (
+    <label className="flex min-h-10 items-center rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus-within:border-slate-500 focus-within:ring-2 focus-within:ring-slate-200">
+      <span className="mr-2 shrink-0 text-xs font-medium text-slate-500">{label}</span>
+      <input
+        name={name}
+        defaultValue={defaultValue}
+        placeholder={placeholder}
+        className="min-w-0 flex-1 bg-transparent py-2 outline-none"
+      />
+    </label>
+  );
+}
+
+function LabeledSelectFilter({
+  label,
+  name,
+  defaultValue,
+  children,
+}: {
+  label: string;
+  name: string;
+  defaultValue: string;
+  children: ReactNode;
+}) {
+  return (
+    <label className="flex min-h-10 items-center rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus-within:border-slate-500 focus-within:ring-2 focus-within:ring-slate-200">
+      <span className="mr-2 shrink-0 text-xs font-medium text-slate-500">{label}</span>
+      <select
+        name={name}
+        defaultValue={defaultValue}
+        className="min-w-0 flex-1 bg-transparent py-2 outline-none"
+      >
+        {children}
+      </select>
+    </label>
+  );
+}
+
+function DateRangeFilter({ dateFrom, dateTo }: { dateFrom: string; dateTo: string }) {
+  return (
+    <fieldset aria-label="Visit date range" className="flex min-h-10 items-center rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus-within:border-slate-500 focus-within:ring-2 focus-within:ring-slate-200">
+      <span className="mr-2 shrink-0 text-xs font-medium text-slate-500">Visit date range</span>
+      <input
+        name="date_from"
+        type="date"
+        defaultValue={dateFrom}
+        aria-label="Start date"
+        className="min-w-0 flex-1 bg-transparent py-2 outline-none [color-scheme:light]"
+      />
+      <span className="mx-2 shrink-0 text-xs font-medium text-slate-400">to</span>
+      <input
+        name="date_to"
+        type="date"
+        defaultValue={dateTo}
+        aria-label="End date"
+        className="min-w-0 flex-1 bg-transparent py-2 outline-none [color-scheme:light]"
+      />
+    </fieldset>
   );
 }

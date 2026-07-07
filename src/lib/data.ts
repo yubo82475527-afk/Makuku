@@ -3361,6 +3361,7 @@ function defaultRecent24HoursRange() {
 const storeVisitMonitorDefaultPageSize = 50;
 const storeVisitMonitorMaxPageSize = 100;
 const storeVisitMonitorSummaryLimit = 5000;
+const storeVisitMonitorExportBatchSize = 500;
 const storeVisitMonitorSelect = "id,visit_code,store_name,visit_date,promoter,uploader_name,analysis_status,visit_status,summary_result,created_at,updated_at,image_urls";
 const legacyStoreVisitMonitorSelect = "id,visit_code,store_name,visit_date,promoter,uploader_name,analysis_status,visit_status,summary_result,created_at,image_urls";
 
@@ -3654,40 +3655,28 @@ async function getStoreVisitMonitorRows(filters: StoreVisitMonitorFilters, dateF
   const to = from + pageSize - 1;
 
   const runQueries = async (select: string) => {
-    let pageQuery = supabase
-      .from("offline_store_visits")
-      .select(select, { count: "exact" })
-      .neq("visit_status", "draft")
-      .gte("visit_date", dateFrom)
-      .lte("visit_date", dateTo)
-      .order("created_at", { ascending: false })
-      .range(from, to);
-    let summaryQuery = supabase
-      .from("offline_store_visits")
-      .select(select)
-      .neq("visit_status", "draft")
-      .gte("visit_date", dateFrom)
-      .lte("visit_date", dateTo)
-      .order("created_at", { ascending: false })
-      .range(0, storeVisitMonitorSummaryLimit - 1);
-
-    if (filters.visitCode) {
-      pageQuery = pageQuery.ilike("visit_code", `%${filters.visitCode}%`);
-      summaryQuery = summaryQuery.ilike("visit_code", `%${filters.visitCode}%`);
-    }
-    if (filters.storeName) {
-      pageQuery = pageQuery.ilike("store_name", `%${filters.storeName}%`);
-      summaryQuery = summaryQuery.ilike("store_name", `%${filters.storeName}%`);
-    }
-    if (filters.promoter) {
-      const promoterFilter = `promoter.ilike.%${filters.promoter}%,uploader_name.ilike.%${filters.promoter}%`;
-      pageQuery = pageQuery.or(promoterFilter);
-      summaryQuery = summaryQuery.or(promoterFilter);
-    }
-    if (filters.analysisStatus) {
-      pageQuery = pageQuery.eq("analysis_status", filters.analysisStatus);
-      summaryQuery = summaryQuery.eq("analysis_status", filters.analysisStatus);
-    }
+    const pageQuery = applyStoreVisitMonitorRowFilters(
+      supabase
+        .from("offline_store_visits")
+        .select(select, { count: "exact" })
+        .neq("visit_status", "draft")
+        .gte("visit_date", dateFrom)
+        .lte("visit_date", dateTo)
+        .order("created_at", { ascending: false })
+        .range(from, to),
+      filters,
+    );
+    const summaryQuery = applyStoreVisitMonitorRowFilters(
+      supabase
+        .from("offline_store_visits")
+        .select(select)
+        .neq("visit_status", "draft")
+        .gte("visit_date", dateFrom)
+        .lte("visit_date", dateTo)
+        .order("created_at", { ascending: false })
+        .range(0, storeVisitMonitorSummaryLimit - 1),
+      filters,
+    );
 
     return Promise.all([pageQuery, summaryQuery]);
   };
@@ -3706,6 +3695,71 @@ async function getStoreVisitMonitorRows(filters: StoreVisitMonitorFilters, dateF
     error: null,
     isDemo: false,
   };
+}
+
+function applyStoreVisitMonitorRowFilters<T>(query: T, filters: StoreVisitMonitorFilters): T {
+  let nextQuery = query as T & {
+    ilike: (column: string, pattern: string) => typeof nextQuery;
+    or: (filters: string) => typeof nextQuery;
+    eq: (column: string, value: string) => typeof nextQuery;
+  };
+
+  if (filters.visitCode) {
+    nextQuery = nextQuery.ilike("visit_code", `%${filters.visitCode}%`);
+  }
+  if (filters.storeName) {
+    nextQuery = nextQuery.ilike("store_name", `%${filters.storeName}%`);
+  }
+  if (filters.promoter) {
+    const promoterFilter = `promoter.ilike.%${filters.promoter}%,uploader_name.ilike.%${filters.promoter}%`;
+    nextQuery = nextQuery.or(promoterFilter);
+  }
+  if (filters.analysisStatus) {
+    nextQuery = nextQuery.eq("analysis_status", filters.analysisStatus);
+  }
+
+  return nextQuery;
+}
+
+async function getStoreVisitMonitorExportRows(filters: StoreVisitMonitorFilters, dateFrom: string, dateTo: string) {
+  if (!hasSupabaseServiceConfig()) {
+    const sorted = sortMonitorItems(filterMonitorItems(demoOfflineStoreVisits.map(toMonitorItem), filters, dateFrom, dateTo));
+    return { rows: sorted, error: null, isDemo: true };
+  }
+
+  const supabase = createSupabaseServiceClient();
+
+  const loadRows = async (select: string) => {
+    const rows: OfflineStoreVisit[] = [];
+
+    for (let from = 0; ; from += storeVisitMonitorExportBatchSize) {
+      const { data, error } = await applyStoreVisitMonitorRowFilters(
+        supabase
+          .from("offline_store_visits")
+          .select(select)
+          .neq("visit_status", "draft")
+          .gte("visit_date", dateFrom)
+          .lte("visit_date", dateTo)
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false })
+          .range(from, from + storeVisitMonitorExportBatchSize - 1),
+        filters,
+      );
+
+      if (error) return { rows: [] as StoreVisitMonitorItem[], error: error.message, isDemo: false };
+      const pageRows = (data ?? []) as OfflineStoreVisit[];
+      rows.push(...pageRows);
+      if (pageRows.length < storeVisitMonitorExportBatchSize) {
+        return { rows: rows.map(toMonitorItem), error: null, isDemo: false };
+      }
+    }
+  };
+
+  let exportResult = await loadRows(storeVisitMonitorSelect);
+  if (isMissingStoreVisitUpdatedAtError(exportResult.error ? { message: exportResult.error } : null)) {
+    exportResult = await loadRows(legacyStoreVisitMonitorSelect);
+  }
+  return exportResult;
 }
 
 export async function getStoreVisitMonitor(
@@ -3783,8 +3837,8 @@ export async function getStoreVisitMonitorExport(
   const recent24Hours = defaultRecent24HoursRange();
   const dateFrom = filters.dateFrom || recent24Hours.dateFrom;
   const dateTo = filters.dateTo || recent24Hours.dateTo;
-  const visitsResult = await getStoreVisitMonitorRows(filters, dateFrom, dateTo);
-  const visits = visitsResult.summaryRows ?? visitsResult.rows;
+  const visitsResult = await getStoreVisitMonitorExportRows(filters, dateFrom, dateTo);
+  const visits = visitsResult.rows;
   const visitIds = visits.map((visit) => visit.visitId);
   const visitQualityResult = await getStoreVisitMonitorVisitQuality(visitIds);
   const visitQualityById = visitQualityResult.data;
