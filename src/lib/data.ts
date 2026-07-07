@@ -3705,45 +3705,88 @@ function applyStoreVisitMonitorRowFilters<T>(query: T, filters: StoreVisitMonito
   return nextQuery;
 }
 
-async function getStoreVisitMonitorExportRows(filters: StoreVisitMonitorFilters, dateFrom: string, dateTo: string) {
+export async function getStoreVisitMonitorExportCount(
+  filters: StoreVisitMonitorFilters = {},
+  dateFrom: string,
+  dateTo: string,
+): Promise<QueryResult<number>> {
   if (!hasSupabaseServiceConfig()) {
     const sorted = sortMonitorItems(filterMonitorItems(demoOfflineStoreVisits.map(toMonitorItem), filters, dateFrom, dateTo));
-    return { rows: sorted, error: null, isDemo: true };
+    return { data: sorted.length, error: null, isDemo: true };
   }
 
   const supabase = createSupabaseServiceClient();
+  const runCount = async (select: string) => applyStoreVisitMonitorRowFilters(
+    supabase
+      .from("offline_store_visits")
+      .select(select, { count: "exact", head: true })
+      .neq("visit_status", "draft")
+      .gte("visit_date", dateFrom)
+      .lte("visit_date", dateTo),
+    filters,
+  );
 
-  const loadRows = async (select: string) => {
-    const rows: OfflineStoreVisit[] = [];
+  let result = await runCount("id");
+  if (isMissingStoreVisitUpdatedAtError(result.error)) {
+    result = await runCount("id");
+  }
+  if (result.error) return { data: 0, error: result.error.message, isDemo: false };
+  return { data: result.count ?? 0, error: null, isDemo: false };
+}
 
-    for (let from = 0; ; from += storeVisitMonitorExportBatchSize) {
-      const { data, error } = await applyStoreVisitMonitorRowFilters(
-        supabase
-          .from("offline_store_visits")
-          .select(select)
-          .neq("visit_status", "draft")
-          .gte("visit_date", dateFrom)
-          .lte("visit_date", dateTo)
-          .order("created_at", { ascending: false })
-          .order("id", { ascending: false })
-          .range(from, from + storeVisitMonitorExportBatchSize - 1),
-        filters,
-      );
+export async function getStoreVisitMonitorExportBatch(
+  filters: StoreVisitMonitorFilters = {},
+  dateFrom: string,
+  dateTo: string,
+  offset: number,
+  limit: number,
+): Promise<QueryResult<StoreVisitMonitorItem[]>> {
+  if (!hasSupabaseServiceConfig()) {
+    const sorted = sortMonitorItems(filterMonitorItems(demoOfflineStoreVisits.map(toMonitorItem), filters, dateFrom, dateTo));
+    return { data: sorted.slice(offset, offset + limit), error: null, isDemo: true };
+  }
 
-      if (error) return { rows: [] as StoreVisitMonitorItem[], error: error.message, isDemo: false };
-      const pageRows = (data ?? []) as unknown as OfflineStoreVisit[];
-      rows.push(...pageRows);
-      if (pageRows.length < storeVisitMonitorExportBatchSize) {
-        return { rows: rows.map(toMonitorItem), error: null, isDemo: false };
-      }
-    }
+  const supabase = createSupabaseServiceClient();
+  const runBatch = async (select: string) => {
+    const { data, error } = await applyStoreVisitMonitorRowFilters(
+      supabase
+        .from("offline_store_visits")
+        .select(select)
+        .neq("visit_status", "draft")
+        .gte("visit_date", dateFrom)
+        .lte("visit_date", dateTo)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(offset, offset + limit - 1),
+      filters,
+    );
+    if (error) return { rows: [] as StoreVisitMonitorItem[], error: error.message, isDemo: false };
+    return {
+      rows: ((data ?? []) as unknown as OfflineStoreVisit[]).map(toMonitorItem),
+      error: null,
+      isDemo: false,
+    };
   };
 
-  let exportResult = await loadRows(storeVisitMonitorSelect);
+  let exportResult = await runBatch(storeVisitMonitorSelect);
   if (isMissingStoreVisitUpdatedAtError(exportResult.error ? { message: exportResult.error } : null)) {
-    exportResult = await loadRows(legacyStoreVisitMonitorSelect);
+    exportResult = await runBatch(legacyStoreVisitMonitorSelect);
   }
-  return exportResult;
+  if (exportResult.error) return { data: [], error: exportResult.error, isDemo: exportResult.isDemo };
+
+  const visitIds = exportResult.rows.map((visit) => visit.visitId);
+  const visitQualityResult = await getStoreVisitMonitorVisitQuality(visitIds);
+  const visitQualityById = visitQualityResult.data;
+  return {
+    data: exportResult.rows.map((visit) => ({
+      ...visit,
+      accuracy: visitQualityById[visit.visitId]?.accuracy ?? null,
+      autoApprovalRate: visitQualityById[visit.visitId]?.autoApprovalRate ?? null,
+      avgPriceDeviationRate: visitQualityById[visit.visitId]?.avgPriceDeviationRate ?? null,
+    })),
+    error: visitQualityResult.error,
+    isDemo: exportResult.isDemo || visitQualityResult.isDemo,
+  };
 }
 
 export async function getStoreVisitMonitor(
@@ -3821,21 +3864,23 @@ export async function getStoreVisitMonitorExport(
   const recent24Hours = defaultRecent24HoursRange();
   const dateFrom = filters.dateFrom || recent24Hours.dateFrom;
   const dateTo = filters.dateTo || recent24Hours.dateTo;
-  const visitsResult = await getStoreVisitMonitorExportRows(filters, dateFrom, dateTo);
-  const visits = visitsResult.rows;
-  const visitIds = visits.map((visit) => visit.visitId);
-  const visitQualityResult = await getStoreVisitMonitorVisitQuality(visitIds);
-  const visitQualityById = visitQualityResult.data;
+  const countResult = await getStoreVisitMonitorExportCount(filters, dateFrom, dateTo);
+  if (countResult.error) return { data: [], error: countResult.error, isDemo: countResult.isDemo };
+  const rows: StoreVisitMonitorItem[] = [];
+
+  for (let offset = 0; offset < countResult.data; offset += storeVisitMonitorExportBatchSize) {
+    const batchResult = await getStoreVisitMonitorExportBatch(filters, dateFrom, dateTo, offset, storeVisitMonitorExportBatchSize);
+    if (batchResult.error) {
+      return { data: rows, error: batchResult.error, isDemo: batchResult.isDemo };
+    }
+    rows.push(...batchResult.data);
+    if (batchResult.data.length < storeVisitMonitorExportBatchSize) break;
+  }
 
   return {
-    data: visits.map((visit) => ({
-      ...visit,
-      accuracy: visitQualityById[visit.visitId]?.accuracy ?? null,
-      autoApprovalRate: visitQualityById[visit.visitId]?.autoApprovalRate ?? null,
-      avgPriceDeviationRate: visitQualityById[visit.visitId]?.avgPriceDeviationRate ?? null,
-    })),
-    error: visitsResult.error ?? visitQualityResult.error,
-    isDemo: visitsResult.isDemo || visitQualityResult.isDemo,
+    data: rows,
+    error: null,
+    isDemo: countResult.isDemo,
   };
 }
 

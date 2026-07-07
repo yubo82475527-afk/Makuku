@@ -19,6 +19,13 @@ const storeVisitImageMaintenance = readFileSync("src/lib/store-visit-image-maint
 const appShell = readFileSync("src/components/app-shell.tsx", "utf8");
 const storeVisitMonitorPage = readFileSync("src/app/[locale]/store-visit-monitor/page.tsx", "utf8");
 const storeVisitMonitorExportRoute = readMaybe("src/app/api/store-visit-monitor/export/route.ts");
+const storeVisitMonitorExportJobsRoute = readMaybe("src/app/api/store-visit-monitor/export-jobs/route.ts");
+const storeVisitMonitorExportJobRoute = readMaybe("src/app/api/store-visit-monitor/export-jobs/[jobId]/route.ts");
+const storeVisitMonitorExportDownloadRoute = readMaybe("src/app/api/store-visit-monitor/export-jobs/[jobId]/download/route.ts");
+const storeVisitMonitorExportRunnerRoute = readMaybe("src/app/api/internal/store-visit-monitor/export-jobs/run/route.ts");
+const storeVisitMonitorExportButton = readMaybe("src/components/store-visit-monitor-export-button.tsx");
+const storeVisitMonitorExportJobs = readMaybe("src/lib/store-visit-monitor-export-jobs.ts");
+const storeVisitMonitorExportMigration = readMaybe("supabase/migrations/202607070001_store_visit_monitor_export_jobs.sql");
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const storeVisitAiJobs = readMaybe("src/lib/store-visit-ai-jobs.ts");
 const storeVisitAiJobRoute = readMaybe("src/app/api/store-visit/ai-jobs/[jobId]/route.ts");
@@ -445,8 +452,7 @@ test("store visit monitor pagination row contains page size and page counter tog
 });
 
 test("store visit monitor list can export the displayed analysis columns to Excel", () => {
-  assert.match(storeVisitMonitorPage, /store-visit-monitor\/export/);
-  assert.match(storeVisitMonitorPage, /Export Excel/);
+  assert.match(storeVisitMonitorPage, /StoreVisitMonitorExportButton/);
   assert.match(storeVisitMonitorExportRoute, /import \* as XLSX from "xlsx"/);
   assert.match(storeVisitMonitorExportRoute, /Visit Code/);
   assert.match(storeVisitMonitorExportRoute, /Average price deviation/);
@@ -456,16 +462,50 @@ test("store visit monitor list can export the displayed analysis columns to Exce
   assert.match(storeVisitMonitorExportRoute, /store-visit-monitor/);
 });
 
+test("store visit monitor export jobs persist filter state and progress in a dedicated table", () => {
+  assert.match(storeVisitMonitorExportMigration, /create table if not exists public\.store_visit_monitor_export_jobs/i);
+  assert.match(storeVisitMonitorExportMigration, /status text not null/i);
+  assert.match(storeVisitMonitorExportMigration, /filters jsonb not null/i);
+  assert.match(storeVisitMonitorExportMigration, /total_rows integer not null default 0/i);
+  assert.match(storeVisitMonitorExportMigration, /exported_rows integer not null default 0/i);
+  assert.match(storeVisitMonitorExportMigration, /file_path text null/i);
+});
+
+test("store visit monitor export job APIs include create, poll, download, and internal runner routes", () => {
+  assert.match(storeVisitMonitorExportJobsRoute, /export async function POST/);
+  assert.match(storeVisitMonitorExportJobRoute, /export async function GET/);
+  assert.match(storeVisitMonitorExportDownloadRoute, /export async function GET/);
+  assert.match(storeVisitMonitorExportRunnerRoute, /runStoreVisitMonitorExportJob/);
+  assert.match(storeVisitMonitorExportRunnerRoute, /triggerStoreVisitMonitorExportJobRunner/);
+});
+
+test("store visit monitor export backend strips pagination and runs a storage-backed background job", () => {
+  assert.match(storeVisitMonitorExportJobs, /store_visit_monitor_export_jobs/);
+  assert.match(storeVisitMonitorExportJobs, /page_size/);
+  assert.match(storeVisitMonitorExportJobs, /delete filters\.page_size|page_size: undefined/);
+  assert.match(storeVisitMonitorExportJobs, /delete filters\.page|page: undefined/);
+  assert.match(storeVisitMonitorExportJobs, /storage/i);
+  assert.match(storeVisitMonitorExportJobs, /exported_rows/);
+  assert.match(storeVisitMonitorExportJobs, /file_path/);
+  assert.match(dataFile, /getStoreVisitMonitorExportBatch/);
+});
+
 test("store visit monitor export uses a dedicated paged row loader instead of the summary query path", () => {
-  assert.match(dataFile, /async function getStoreVisitMonitorExportRows/);
-  assert.match(dataFile, /export async function getStoreVisitMonitorExport[\s\S]*getStoreVisitMonitorExportRows/);
-  assert.doesNotMatch(dataFile, /export async function getStoreVisitMonitorExport[\s\S]*getStoreVisitMonitorRows\(filters, dateFrom, dateTo\)/);
+  assert.match(dataFile, /export async function getStoreVisitMonitorExportBatch/);
+  assert.match(dataFile, /export async function getStoreVisitMonitorExport[\s\S]*getStoreVisitMonitorExportBatch/);
 });
 
 test("store visit monitor detail links open in a new window", () => {
   assert.match(storeVisitMonitorPage, /Open details/);
   assert.match(storeVisitMonitorPage, /target="_blank"/);
   assert.match(storeVisitMonitorPage, /rel="noopener noreferrer"/);
+});
+
+test("store visit monitor page uses a client export button with job polling and completed download state", () => {
+  assert.match(storeVisitMonitorPage, /StoreVisitMonitorExportButton/);
+  assert.match(storeVisitMonitorExportButton, /fetch\("\/api\/store-visit-monitor\/export-jobs"/);
+  assert.match(storeVisitMonitorExportButton, /setInterval|setTimeout/);
+  assert.match(storeVisitMonitorExportButton, /Preparing export|Exporting|Download file/);
 });
 
 test("store visit monitor data path includes per-visit price parsing quality metrics", () => {

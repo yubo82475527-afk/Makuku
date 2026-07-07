@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { PageShellState } from "@/components/page-shell-state";
+import { StoreVisitMonitorExportButton } from "@/components/store-visit-monitor-export-button";
 import { Badge, Button, Card, DataNotice, EmptyState, MetricCard } from "@/components/ui";
 import { formatJakartaTime, formatPercent } from "@/lib/format";
 import { getPageI18n } from "@/lib/i18n/server";
@@ -57,13 +58,9 @@ export default async function StoreVisitMonitorPage({
   });
 
   const monitor = result.data;
-  const exportQuery = new URLSearchParams();
-  for (const key of monitorFilterKeys) {
-    const value = getFilter(key);
-    if (value) exportQuery.set(key, value);
-  }
-  exportQuery.set("locale", locale);
-  const exportHref = `/api/store-visit-monitor/export?${exportQuery.toString()}`;
+  const exportFilters = Object.fromEntries(
+    monitorFilterKeys.map((key) => [key, getFilter(key)]).filter(([, value]) => value),
+  ) as Record<string, string>;
   const pageHref = (nextPage: number) => {
     const query = new URLSearchParams();
     for (const key of monitorFilterKeys) {
@@ -148,12 +145,7 @@ export default async function StoreVisitMonitorPage({
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href={exportHref}
-              className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-              Export Excel
-            </Link>
+            <StoreVisitMonitorExportButton locale={locale} filters={exportFilters} />
           </div>
         </div>
 
