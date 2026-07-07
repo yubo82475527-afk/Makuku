@@ -3747,7 +3747,7 @@ async function getStoreVisitMonitorExportRows(filters: StoreVisitMonitorFilters,
       );
 
       if (error) return { rows: [] as StoreVisitMonitorItem[], error: error.message, isDemo: false };
-      const pageRows = (data ?? []) as OfflineStoreVisit[];
+      const pageRows = (data ?? []) as unknown as OfflineStoreVisit[];
       rows.push(...pageRows);
       if (pageRows.length < storeVisitMonitorExportBatchSize) {
         return { rows: rows.map(toMonitorItem), error: null, isDemo: false };
