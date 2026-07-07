@@ -190,16 +190,19 @@ export async function listStoreVisitMonitorExportJobs(input: {
   return (data ?? []) as StoreVisitMonitorExportJob[];
 }
 
-export async function downloadStoreVisitMonitorExportFile(input: {
+export async function createStoreVisitMonitorExportSignedUrl(input: {
   filePath: string;
+  downloadName?: string;
   supabase?: SupabaseServiceClient;
 }) {
   const supabase = input.supabase ?? createSupabaseServiceClient();
   const { data, error } = await supabase.storage
     .from(storeVisitMonitorExportBucket)
-    .download(input.filePath);
-  if (error || !data) throw new Error(error?.message ?? "Failed to download export file");
-  return data;
+    .createSignedUrl(input.filePath, 60 * 30, {
+      download: input.downloadName ?? true,
+    });
+  if (error || !data?.signedUrl) throw new Error(error?.message ?? "Failed to create export signed URL");
+  return data.signedUrl;
 }
 
 export async function runStoreVisitMonitorExportJob(input: {

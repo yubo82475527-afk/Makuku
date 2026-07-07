@@ -521,8 +521,8 @@ test("store visit monitor export menu loads current-user jobs and exposes comple
   assert.match(storeVisitMonitorExportJobsRoute, /download_url/);
   assert.match(storeVisitMonitorExportJobs, /listStoreVisitMonitorExportJobs/);
   assert.match(storeVisitMonitorExportJobs, /downloadName/);
-  assert.match(storeVisitMonitorExportDownloadRoute, /Content-Disposition/);
-  assert.match(storeVisitMonitorExportJobs, /download\(/);
+  assert.match(storeVisitMonitorExportDownloadRoute, /Response\.redirect/);
+  assert.match(storeVisitMonitorExportJobs, /createSignedUrl/);
 });
 
 test("store visit monitor data path includes per-visit price parsing quality metrics", () => {
