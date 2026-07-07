@@ -27,6 +27,7 @@ import {
 import { localeLabels, replacePathLocale, type Locale } from "@/lib/i18n/config";
 import type { Dictionary } from "@/lib/i18n/get-dictionary";
 import { writeLocalePreferenceCookie } from "@/lib/locale-preference";
+import { StoreVisitMonitorExportMenu } from "@/components/store-visit-monitor-export-menu";
 
 const sidebarStorageKey = "makuku_sidebar_collapsed";
 
@@ -222,6 +223,7 @@ function AppShellFrame({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {state.headerUser ? <StoreVisitMonitorExportMenu locale={locale} /> : null}
             {state.headerUser ? (
               <div className="hidden items-center gap-2 text-xs text-slate-600 sm:flex">
                 <span className="max-w-32 truncate font-medium text-slate-800">{state.headerUser.displayName}</span>

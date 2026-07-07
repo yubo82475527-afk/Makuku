@@ -14,6 +14,7 @@ const exportJobStatuses = ["queued", "running"] as const;
 const storeVisitMonitorExportBucket = "store-visits";
 const storeVisitMonitorExportPrefix = "store-visit-monitor-exports";
 const storeVisitMonitorExportBatchSize = 500;
+const storeVisitMonitorExportHistoryLimit = 12;
 
 function nowIso() {
   return new Date().toISOString();
@@ -67,6 +68,18 @@ function downloadName(job: StoreVisitMonitorExportJob) {
   const dateTo = normalizeFilterValue(filters.date_to);
   const range = dateFrom && dateTo ? `${dateFrom}-${dateTo}` : new Date().toISOString().slice(0, 10);
   return `store-visit-monitor-${range}.xlsx`;
+}
+
+export function getStoreVisitMonitorExportDownloadName(job: StoreVisitMonitorExportJob) {
+  return downloadName(job);
+}
+
+export function getStoreVisitMonitorExportDownloadPath(jobId: string) {
+  return `/api/store-visit-monitor/export-jobs/${jobId}/download`;
+}
+
+function buildExportJobQuery(supabase: SupabaseServiceClient) {
+  return supabase.from("store_visit_monitor_export_jobs").select("*");
 }
 
 function buildWorkbookBuffer(input: { locale: string; rows: Awaited<ReturnType<typeof getStoreVisitMonitorExportBatch>>["data"] }) {
@@ -151,45 +164,42 @@ export async function createStoreVisitMonitorExportJob(input: {
 
 export async function loadStoreVisitMonitorExportJob(input: {
   jobId: string;
+  requestedBy?: string | null;
   supabase?: SupabaseServiceClient;
 }) {
   const supabase = input.supabase ?? createSupabaseServiceClient();
-  const { data, error } = await supabase
-    .from("store_visit_monitor_export_jobs")
-    .select("*")
-    .eq("id", input.jobId)
-    .single();
+  let query = buildExportJobQuery(supabase).eq("id", input.jobId);
+  if (input.requestedBy) query = query.eq("requested_by", input.requestedBy);
+  const { data, error } = await query.single();
   if (error || !data) throw new Error(error?.message ?? "Store Visit Monitor export job not found");
   return data as StoreVisitMonitorExportJob;
 }
 
-export async function createStoreVisitMonitorExportSignedUrl(input: {
+export async function listStoreVisitMonitorExportJobs(input: {
+  requestedBy: string;
+  limit?: number;
+  supabase?: SupabaseServiceClient;
+}) {
+  const supabase = input.supabase ?? createSupabaseServiceClient();
+  const limit = Math.max(1, Math.min(input.limit ?? storeVisitMonitorExportHistoryLimit, storeVisitMonitorExportHistoryLimit));
+  const { data, error } = await buildExportJobQuery(supabase)
+    .eq("requested_by", input.requestedBy)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as StoreVisitMonitorExportJob[];
+}
+
+export async function downloadStoreVisitMonitorExportFile(input: {
   filePath: string;
   supabase?: SupabaseServiceClient;
 }) {
   const supabase = input.supabase ?? createSupabaseServiceClient();
   const { data, error } = await supabase.storage
     .from(storeVisitMonitorExportBucket)
-    .createSignedUrl(input.filePath, 60 * 30, {
-      download: downloadName({
-        id: "",
-        status: "completed",
-        filters: {},
-        locale: "zh",
-        requested_by: null,
-        total_rows: 0,
-        exported_rows: 0,
-        file_path: input.filePath,
-        file_size_bytes: null,
-        error_message: null,
-        started_at: null,
-        completed_at: null,
-        created_at: "",
-        updated_at: null,
-      }),
-    });
-  if (error || !data?.signedUrl) throw new Error(error?.message ?? "Failed to create signed URL");
-  return data.signedUrl;
+    .download(input.filePath);
+  if (error || !data) throw new Error(error?.message ?? "Failed to download export file");
+  return data;
 }
 
 export async function runStoreVisitMonitorExportJob(input: {

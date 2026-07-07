@@ -472,6 +472,7 @@ test("store visit monitor export jobs persist filter state and progress in a ded
 });
 
 test("store visit monitor export job APIs include create, poll, download, and internal runner routes", () => {
+  assert.match(storeVisitMonitorExportJobsRoute, /export async function GET/);
   assert.match(storeVisitMonitorExportJobsRoute, /export async function POST/);
   assert.match(storeVisitMonitorExportJobRoute, /export async function GET/);
   assert.match(storeVisitMonitorExportDownloadRoute, /export async function GET/);
@@ -501,11 +502,27 @@ test("store visit monitor detail links open in a new window", () => {
   assert.match(storeVisitMonitorPage, /rel="noopener noreferrer"/);
 });
 
-test("store visit monitor page uses a client export button with job polling and completed download state", () => {
+test("store visit monitor page uses a client export button that only creates the job and shows a success hint", () => {
   assert.match(storeVisitMonitorPage, /StoreVisitMonitorExportButton/);
   assert.match(storeVisitMonitorExportButton, /fetch\("\/api\/store-visit-monitor\/export-jobs"/);
-  assert.match(storeVisitMonitorExportButton, /setInterval|setTimeout/);
-  assert.match(storeVisitMonitorExportButton, /Preparing export|Exporting|Download file/);
+  assert.doesNotMatch(storeVisitMonitorExportButton, /setInterval|setTimeout/);
+  assert.match(storeVisitMonitorExportButton, /Export task created|Task created/);
+  assert.match(storeVisitMonitorExportButton, /<button/);
+});
+
+test("app shell exposes a top-header export history entry near the language switcher", () => {
+  assert.match(appShell, /StoreVisitMonitorExportMenu/);
+  assert.match(appShell, /replacePathLocale/);
+  assert.match(appShell, /state\.headerUser \? <StoreVisitMonitorExportMenu locale=\{locale\} \/> : null/);
+});
+
+test("store visit monitor export menu loads current-user jobs and exposes completed downloads", () => {
+  assert.match(storeVisitMonitorExportJobsRoute, /requested_by/);
+  assert.match(storeVisitMonitorExportJobsRoute, /download_url/);
+  assert.match(storeVisitMonitorExportJobs, /listStoreVisitMonitorExportJobs/);
+  assert.match(storeVisitMonitorExportJobs, /downloadName/);
+  assert.match(storeVisitMonitorExportDownloadRoute, /Content-Disposition/);
+  assert.match(storeVisitMonitorExportJobs, /download\(/);
 });
 
 test("store visit monitor data path includes per-visit price parsing quality metrics", () => {
