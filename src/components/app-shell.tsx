@@ -223,7 +223,7 @@ function AppShellFrame({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {state.headerUser ? <StoreVisitMonitorExportMenu locale={locale} /> : null}
+            <StoreVisitMonitorExportMenu locale={locale} />
             {state.headerUser ? (
               <div className="hidden items-center gap-2 text-xs text-slate-600 sm:flex">
                 <span className="max-w-32 truncate font-medium text-slate-800">{state.headerUser.displayName}</span>

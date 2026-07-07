@@ -513,7 +513,7 @@ test("store visit monitor page uses a client export button that only creates the
 test("app shell exposes a top-header export history entry near the language switcher", () => {
   assert.match(appShell, /StoreVisitMonitorExportMenu/);
   assert.match(appShell, /replacePathLocale/);
-  assert.match(appShell, /state\.headerUser \? <StoreVisitMonitorExportMenu locale=\{locale\} \/> : null/);
+  assert.match(appShell, /<StoreVisitMonitorExportMenu locale=\{locale\} \/>/);
 });
 
 test("store visit monitor export menu loads current-user jobs and exposes completed downloads", () => {
