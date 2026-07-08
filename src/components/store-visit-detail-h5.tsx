@@ -139,6 +139,10 @@ function isActiveAiJob(job: StoreVisitAiJobSummary | null | undefined) {
   return job?.status === "queued" || job?.status === "running";
 }
 
+function isPriceImageType(imageType: OfflineVisitImage["image_type"] | null | undefined) {
+  return imageType === "own_shelf" || imageType === "competitor_shelf";
+}
+
 const maxUploadBytes = 20 * 1024 * 1024;
 const compressionMaxSide = 3000;
 const compressionQuality = 0.9;
@@ -680,6 +684,8 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   const [matchOptions, setMatchOptions] = useState<MatchOptionState>({ materials: [], products: [] });
   const [matchOptionsLoading, setMatchOptionsLoading] = useState(false);
   const [matchOptionsError, setMatchOptionsError] = useState<string | null>(null);
+  const [storedPreviewOverrides, setStoredPreviewOverrides] = useState<Record<string, string>>({});
+  const [storedPreviewRefreshAttempts, setStoredPreviewRefreshAttempts] = useState<Record<string, boolean>>({});
   const cameraRetakeInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const albumRetakeInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -687,7 +693,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
     if (!options?.preserveLoading) setLoading(true);
     setError(null);
     try {
-      const res = await withMinimumDelay(fetch(`/api/store-visit/${id}`), 300);
+      const res = await withMinimumDelay(fetch(`/api/store-visit/${id}`, { cache: "no-store" }), 300);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(data.error ?? copy.loadVisitFailed);
@@ -714,12 +720,27 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
     } else if (input.path) {
       params.set("path", input.path);
     }
-    const response = await fetch(`/api/store-visit/${id}/image-url?${params.toString()}`);
+    const response = await fetch(`/api/store-visit/${id}/image-url?${params.toString()}`, { cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || typeof payload.url !== "string" || !payload.url) {
       throw new Error(copy.loadVisitFailed);
     }
     return payload.url;
+  }
+
+  async function handleStoredThumbnailError(input: { imageId: string; path: string }) {
+    if (storedPreviewOverrides[input.imageId]) return;
+    if (!storedPreviewRefreshAttempts[input.imageId]) {
+      setStoredPreviewRefreshAttempts((current) => ({ ...current, [input.imageId]: true }));
+      await loadVisit({ preserveLoading: true });
+      return;
+    }
+    try {
+      const originalUrl = await fetchOriginalImageUrl({ imageId: input.imageId, path: input.path });
+      setStoredPreviewOverrides((current) => ({ ...current, [input.imageId]: originalUrl }));
+    } catch {
+      // Keep the broken thumbnail state visible rather than masking load failures.
+    }
   }
 
   async function openStoredImagePreview(input: { imageId?: string; path: string; label: string }) {
@@ -1005,7 +1026,8 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   ), [activeAiJob?.target_image_ids]);
   const fullVisitAiActive = activeAiJob?.job_type === "full_visit_reanalysis";
   const hasPendingOrAnalyzingImage = (visit?.offline_visit_images ?? []).some((image) => image.analysis_status === "pending" || image.analysis_status === "analyzing");
-  const visitAnalysisInProgress = analyzing || fullVisitReanalyzing || fullVisitAiActive || hasPendingOrAnalyzingImage || status === "analyzing";
+  const hasPendingOrAnalyzingPriceImage = (visit?.offline_visit_images ?? []).some((image) => isPriceImageType(image.image_type) && (image.analysis_status === "pending" || image.analysis_status === "analyzing"));
+  const visitAnalysisInProgress = analyzing || fullVisitReanalyzing || fullVisitAiActive || hasPendingOrAnalyzingPriceImage || status === "analyzing";
   const businessRetakeImages = (visit?.offline_visit_images ?? []).filter(isRetakeRequiredPriceImage);
   const systemFailedImages = (visit?.offline_visit_images ?? []).filter((image) => image.analysis_status === "failed" && !isRetakeRequiredPriceImage(image) && (image.analysis_error || image.error_message));
   const groupedSystemFailedImages = useMemo(() => {
@@ -1425,6 +1447,8 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   candidates={visit?.ai_price_candidates ?? []}
                   onPreview={({ url, label }) => openDirectPreview(url, label)}
                   onPreviewStored={({ imageId, path, label }) => void openStoredImagePreview({ imageId, path, label })}
+                  resolveStoredPreviewUrl={(imageId, fallbackUrl) => storedPreviewOverrides[imageId] ?? fallbackUrl}
+                  onStoredPreviewError={({ imageId, path }) => void handleStoredThumbnailError({ imageId, path })}
                   deletingImageIds={deletingImageIds}
                   retryingImageIds={retryingImageIds}
                   aiJobImageIds={activeAiJob?.target_image_ids ?? []}
@@ -1458,6 +1482,8 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   candidates={visit?.ai_price_candidates ?? []}
                   onPreview={({ url, label }) => openDirectPreview(url, label)}
                   onPreviewStored={({ imageId, path, label }) => void openStoredImagePreview({ imageId, path, label })}
+                  resolveStoredPreviewUrl={(imageId, fallbackUrl) => storedPreviewOverrides[imageId] ?? fallbackUrl}
+                  onStoredPreviewError={({ imageId, path }) => void handleStoredThumbnailError({ imageId, path })}
                   deletingImageIds={deletingImageIds}
                   retryingImageIds={retryingImageIds}
                   aiJobImageIds={activeAiJob?.target_image_ids ?? []}
@@ -1514,7 +1540,15 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                       {item.signedImage?.url ? (
                         <>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={item.signedImage.url} alt={`${text.photoPrefix}${index + 1}`} className="h-full w-full object-cover" />
+                          <img
+                            src={storedPreviewOverrides[item.image.id] ?? item.signedImage.url}
+                            alt={`${text.photoPrefix}${index + 1}`}
+                            className="h-full w-full object-cover"
+                            onError={() => void handleStoredThumbnailError({
+                              imageId: item.image.id,
+                              path: item.signedImage?.path ?? item.image.image_path,
+                            })}
+                          />
                         </>
                       ) : null}
                     </button>
@@ -1890,6 +1924,8 @@ function PriceSectionGroup({
   aiJobImageIds,
   onPreview,
   onPreviewStored,
+  resolveStoredPreviewUrl,
+  onStoredPreviewError,
   onOpenActions,
   onOpenRowActions,
   onConfirmRow,
@@ -1915,6 +1951,8 @@ function PriceSectionGroup({
   aiJobImageIds: string[];
   onPreview: (image: { url: string; label: string }) => void;
   onPreviewStored: (image: { imageId?: string; path: string; label: string }) => void;
+  resolveStoredPreviewUrl: (imageId: string, fallbackUrl: string | null) => string | null;
+  onStoredPreviewError: (image: { imageId: string; path: string }) => void;
   onOpenActions: (imageId: string, category: "makuku_shelf" | "competitor_shelf", label: string) => void;
   onOpenRowActions: (section: PriceParseSection, row: StoreVisitPriceImageAnalysis["rows"][number], rowIndex: number, candidate: AiPriceCandidate) => void;
   onConfirmRow: (candidateId: string) => void;
@@ -1942,7 +1980,7 @@ function PriceSectionGroup({
         <div key={section.image.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
           {(() => {
             const sectionLocalUpload = localUploadsByImageId[section.image.id];
-            const previewUrl = sectionLocalUpload?.previewUrl ?? section.signedImage?.url ?? null;
+            const previewUrl = sectionLocalUpload?.previewUrl ?? resolveStoredPreviewUrl(section.image.id, section.signedImage?.url ?? null);
             const isProcessingRetake = sectionLocalUpload?.mode === "retake";
             const isAnalyzingImage = section.image.analysis_status === "analyzing";
             const isReanalyzingImage = aiJobImageIds.includes(section.image.id);
@@ -2050,7 +2088,19 @@ function PriceSectionGroup({
                   aria-label={text.expandPhoto}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={previewUrl} alt={`${text.photoPrefix}${index + 1}`} className={`h-full w-full object-cover ${isProcessingRetake ? "opacity-80" : ""}`} />
+                  <img
+                    src={previewUrl}
+                    alt={`${text.photoPrefix}${index + 1}`}
+                    className={`h-full w-full object-cover ${isProcessingRetake ? "opacity-80" : ""}`}
+                    onError={() => {
+                      if (!sectionLocalUpload?.previewUrl) {
+                        void onStoredPreviewError({
+                          imageId: section.image.id,
+                          path: section.signedImage?.path ?? section.image.image_path,
+                        });
+                      }
+                    }}
+                  />
                 </button>
               ) : null}
             </div>
