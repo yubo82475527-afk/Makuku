@@ -684,7 +684,6 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   const [matchOptions, setMatchOptions] = useState<MatchOptionState>({ materials: [], products: [] });
   const [matchOptionsLoading, setMatchOptionsLoading] = useState(false);
   const [matchOptionsError, setMatchOptionsError] = useState<string | null>(null);
-  const [storedPreviewOverrides, setStoredPreviewOverrides] = useState<Record<string, string>>({});
   const [storedPreviewRefreshAttempts, setStoredPreviewRefreshAttempts] = useState<Record<string, boolean>>({});
   const cameraRetakeInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const albumRetakeInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -728,18 +727,10 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
     return payload.url;
   }
 
-  async function handleStoredThumbnailError(input: { imageId: string; path: string }) {
-    if (storedPreviewOverrides[input.imageId]) return;
+  async function handleStoredThumbnailError(input: { imageId: string }) {
     if (!storedPreviewRefreshAttempts[input.imageId]) {
       setStoredPreviewRefreshAttempts((current) => ({ ...current, [input.imageId]: true }));
       await loadVisit({ preserveLoading: true });
-      return;
-    }
-    try {
-      const originalUrl = await fetchOriginalImageUrl({ imageId: input.imageId, path: input.path });
-      setStoredPreviewOverrides((current) => ({ ...current, [input.imageId]: originalUrl }));
-    } catch {
-      // Keep the broken thumbnail state visible rather than masking load failures.
     }
   }
 
@@ -1447,8 +1438,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   candidates={visit?.ai_price_candidates ?? []}
                   onPreview={({ url, label }) => openDirectPreview(url, label)}
                   onPreviewStored={({ imageId, path, label }) => void openStoredImagePreview({ imageId, path, label })}
-                  resolveStoredPreviewUrl={(imageId, fallbackUrl) => storedPreviewOverrides[imageId] ?? fallbackUrl}
-                  onStoredPreviewError={({ imageId, path }) => void handleStoredThumbnailError({ imageId, path })}
+                  onStoredPreviewError={({ imageId }) => void handleStoredThumbnailError({ imageId })}
                   deletingImageIds={deletingImageIds}
                   retryingImageIds={retryingImageIds}
                   aiJobImageIds={activeAiJob?.target_image_ids ?? []}
@@ -1482,8 +1472,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   candidates={visit?.ai_price_candidates ?? []}
                   onPreview={({ url, label }) => openDirectPreview(url, label)}
                   onPreviewStored={({ imageId, path, label }) => void openStoredImagePreview({ imageId, path, label })}
-                  resolveStoredPreviewUrl={(imageId, fallbackUrl) => storedPreviewOverrides[imageId] ?? fallbackUrl}
-                  onStoredPreviewError={({ imageId, path }) => void handleStoredThumbnailError({ imageId, path })}
+                  onStoredPreviewError={({ imageId }) => void handleStoredThumbnailError({ imageId })}
                   deletingImageIds={deletingImageIds}
                   retryingImageIds={retryingImageIds}
                   aiJobImageIds={activeAiJob?.target_image_ids ?? []}
@@ -1541,13 +1530,10 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                         <>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
-                            src={storedPreviewOverrides[item.image.id] ?? item.signedImage.url}
+                            src={item.signedImage.url}
                             alt={`${text.photoPrefix}${index + 1}`}
                             className="h-full w-full object-cover"
-                            onError={() => void handleStoredThumbnailError({
-                              imageId: item.image.id,
-                              path: item.signedImage?.path ?? item.image.image_path,
-                            })}
+                            onError={() => void handleStoredThumbnailError({ imageId: item.image.id })}
                           />
                         </>
                       ) : null}
@@ -1924,7 +1910,6 @@ function PriceSectionGroup({
   aiJobImageIds,
   onPreview,
   onPreviewStored,
-  resolveStoredPreviewUrl,
   onStoredPreviewError,
   onOpenActions,
   onOpenRowActions,
@@ -1951,8 +1936,7 @@ function PriceSectionGroup({
   aiJobImageIds: string[];
   onPreview: (image: { url: string; label: string }) => void;
   onPreviewStored: (image: { imageId?: string; path: string; label: string }) => void;
-  resolveStoredPreviewUrl: (imageId: string, fallbackUrl: string | null) => string | null;
-  onStoredPreviewError: (image: { imageId: string; path: string }) => void;
+  onStoredPreviewError: (image: { imageId: string }) => void;
   onOpenActions: (imageId: string, category: "makuku_shelf" | "competitor_shelf", label: string) => void;
   onOpenRowActions: (section: PriceParseSection, row: StoreVisitPriceImageAnalysis["rows"][number], rowIndex: number, candidate: AiPriceCandidate) => void;
   onConfirmRow: (candidateId: string) => void;
@@ -1980,7 +1964,7 @@ function PriceSectionGroup({
         <div key={section.image.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
           {(() => {
             const sectionLocalUpload = localUploadsByImageId[section.image.id];
-            const previewUrl = sectionLocalUpload?.previewUrl ?? resolveStoredPreviewUrl(section.image.id, section.signedImage?.url ?? null);
+            const previewUrl = sectionLocalUpload?.previewUrl ?? section.signedImage?.url ?? null;
             const isProcessingRetake = sectionLocalUpload?.mode === "retake";
             const isAnalyzingImage = section.image.analysis_status === "analyzing";
             const isReanalyzingImage = aiJobImageIds.includes(section.image.id);
@@ -2094,10 +2078,7 @@ function PriceSectionGroup({
                     className={`h-full w-full object-cover ${isProcessingRetake ? "opacity-80" : ""}`}
                     onError={() => {
                       if (!sectionLocalUpload?.previewUrl) {
-                        void onStoredPreviewError({
-                          imageId: section.image.id,
-                          path: section.signedImage?.path ?? section.image.image_path,
-                        });
+                        void onStoredPreviewError({ imageId: section.image.id });
                       }
                     }}
                   />

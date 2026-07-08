@@ -22,7 +22,7 @@ async function attachImageUrls(visit: OfflineStoreVisit) {
       return {
         ...image,
         image_url: data?.signedUrl ?? null,
-        thumbnail_url: thumbnailResult.data?.signedUrl ?? data?.signedUrl ?? null,
+        thumbnail_url: thumbnailResult.data?.signedUrl ?? null,
       };
     })),
   };

@@ -4017,10 +4017,7 @@ async function attachVisitImageUrls(visits: OfflineStoreVisit[]) {
       const thumbnailResult = await supabase.storage
         .from("store-visits")
         .createSignedUrl(thumbnailPath, 60 * 60);
-      const { data } = await supabase.storage
-        .from("store-visits")
-        .createSignedUrl(path, 60 * 60);
-      return { path, url: thumbnailResult.data?.signedUrl ?? data?.signedUrl ?? null, category: categories[index] };
+      return { path, url: thumbnailResult.data?.signedUrl ?? null, category: categories[index] };
     }));
 
     return {
@@ -4037,7 +4034,7 @@ async function attachVisitImageUrls(visits: OfflineStoreVisit[]) {
         return {
           ...image,
           image_url: data?.signedUrl ?? null,
-          thumbnail_url: thumbnailResult.data?.signedUrl ?? data?.signedUrl ?? null,
+          thumbnail_url: thumbnailResult.data?.signedUrl ?? null,
         };
       })),
     };

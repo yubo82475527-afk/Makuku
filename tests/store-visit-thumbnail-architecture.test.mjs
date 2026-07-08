@@ -45,7 +45,8 @@ test("upload routes generate and persist thumbnails for new images", () => {
 
 test("detail routes sign thumbnails first and expose per-image original URL endpoints", () => {
   assert.match(storeVisitDetailRoute, /thumbnail_path/);
-  assert.match(storeVisitDetailRoute, /preferredPath: thumbnailPath/);
+  assert.match(storeVisitDetailRoute, /createSignedThumbnailUrl/);
+  assert.match(storeVisitDetailRoute, /thumbnailPath,/);
   assert.match(storeVisitDetailRoute, /requireAppSession\(request\)/);
   assert.match(offlineVisitDetailRoute, /thumbnail_path/);
   assert.match(offlineVisitDetailRoute, /requireAppSession\(request\)/);
@@ -64,6 +65,15 @@ test("thumbnail UIs lazy-load originals only when the user opens a preview", () 
   assert.match(thumbnailGallery, /fetchOriginalImageUrl/);
   assert.match(aiPriceCandidatesWorkbench, /fetchOriginalImageUrl/);
   assert.match(aiPriceCandidatesWorkbench, /setActiveImage\(\{ status: "loading"/);
+});
+
+test("detail thumbnails never silently fall back to originals inside the page", () => {
+  assert.doesNotMatch(storeVisitDetailRoute, /fallbackPath:\s*path/);
+  assert.doesNotMatch(storeVisitDetailRoute, /fallbackPath:\s*image\.image_path/);
+  assert.doesNotMatch(offlineVisitDetailRoute, /thumbnailResult\.data\?\.signedUrl\s*\?\?\s*data\?\.signedUrl/);
+  assert.doesNotMatch(storeVisitDetailH5, /setStoredPreviewOverrides/);
+  assert.doesNotMatch(storeVisitDetailH5, /const originalUrl = await fetchOriginalImageUrl/);
+  assert.doesNotMatch(mobileOfflineApp, /image\.thumbnail_url\s*\?\?\s*image\.image_url/);
 });
 
 test("waiting-screen polling stays lightweight and a backfill script exists for history", () => {

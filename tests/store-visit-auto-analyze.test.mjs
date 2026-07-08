@@ -212,18 +212,19 @@ test("H5 detail only shows whole-visit analysis before the first run and keeps s
   assert.match(storeVisitDetailH5, /const visitAnalysisInProgress = analyzing \|\| fullVisitReanalyzing \|\| fullVisitAiActive \|\| hasPendingOrAnalyzingPriceImage \|\| status === "analyzing"/);
   assert.match(storeVisitDetailH5, /const canRunWholeVisitAnalysis = status === "pending" && visit\?\.visit_status === "uploaded" && !hasPendingOrAnalyzingImage && !activeAiJob/);
   assert.match(storeVisitDetailH5, /const canShowFullVisitReanalysis = canRunFullVisitAi && status !== "pending" && !hasPendingOrAnalyzingImage/);
-  assert.match(storeVisitDetailH5, /function PriceSectionGroup\(\{[\s\S]*onPreview,\s*onPreviewStored,\s*resolveStoredPreviewUrl,\s*onStoredPreviewError,\s*onOpenActions,/);
+  assert.match(storeVisitDetailH5, /function PriceSectionGroup\(\{[\s\S]*onPreview,\s*onPreviewStored,\s*onStoredPreviewError,\s*onOpenActions,/);
   assert.doesNotMatch(storeVisitDetailH5, /retryable && systemFailedImages\.length === 0/);
   assert.match(storeVisitDetailH5, /retryExistingImageAnalysis/);
   assert.match(storeVisitDetailH5, /replaces_image_id/);
 });
 
-test("H5 detail fetches fresh visit thumbnails and retries broken stored previews", () => {
+test("H5 detail fetches fresh visit thumbnails and retries broken stored thumbnails without switching the page to originals", () => {
   assert.match(storeVisitDetailH5, /withMinimumDelay\(fetch\(`\/api\/store-visit\/\$\{id\}`, \{ cache: "no-store" \}\), 300\)/);
-  assert.match(storeVisitDetailH5, /const \[storedPreviewOverrides, setStoredPreviewOverrides\] = useState<Record<string, string>>\(\{\}\)/);
-  assert.match(storeVisitDetailH5, /async function handleStoredThumbnailError\(input: \{ imageId: string; path: string \}\)/);
-  assert.match(storeVisitDetailH5, /onStoredPreviewError: \(image: \{ imageId: string; path: string \}\) => void;/);
+  assert.match(storeVisitDetailH5, /const \[storedPreviewRefreshAttempts, setStoredPreviewRefreshAttempts\] = useState<Record<string, boolean>>\(\{\}\)/);
+  assert.match(storeVisitDetailH5, /async function handleStoredThumbnailError\(input: \{ imageId: string \}\)/);
+  assert.match(storeVisitDetailH5, /onStoredPreviewError: \(image: \{ imageId: string \}\) => void;/);
   assert.match(storeVisitDetailH5, /onError=\{\(\) => \{[\s\S]*void onStoredPreviewError\(\{/);
+  assert.doesNotMatch(storeVisitDetailH5, /setStoredPreviewOverrides/);
 });
 
 test("H5 detail turns refresh 409 conflicts into a friendly operator message", () => {

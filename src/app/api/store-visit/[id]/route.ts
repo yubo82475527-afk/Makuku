@@ -38,17 +38,13 @@ const aiPriceCandidateLegacySelect = aiPriceCandidateSelect.replace("source_row_
 const visitLegacyCandidateSelect = `id,visit_code,store_name,region,channel,promoter,visit_date,visit_status,analysis_status,analysis_error,summary_result,image_urls,image_thumbnail_paths,image_categories,offline_visit_images(id,visit_id,replaces_image_id,replaced_by_image_id,deleted_at,deletion_reason,image_type,image_path,thumbnail_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at),ai_price_candidates(${aiPriceCandidateLegacySelect})`;
 const fullyLegacyVisitSelect = `id,visit_code,store_name,region,channel,promoter,visit_date,visit_status,analysis_status,analysis_error,summary_result,image_urls,image_thumbnail_paths,image_categories,offline_visit_images(id,visit_id,image_type,image_path,thumbnail_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at),ai_price_candidates(${aiPriceCandidateLegacySelect})`;
 
-async function createSignedUrlWithFallback(input: {
+async function createSignedThumbnailUrl(input: {
   bucket: "store-visits" | "offline-visit-images";
-  preferredPath: string;
-  fallbackPath: string;
+  thumbnailPath: string;
 }) {
   const supabase = createSupabaseServiceClient();
-  const preferred = await supabase.storage.from(input.bucket).createSignedUrl(input.preferredPath, 60 * 60);
-  if (preferred.data?.signedUrl) return preferred.data.signedUrl;
-  if (input.preferredPath === input.fallbackPath) return null;
-  const fallback = await supabase.storage.from(input.bucket).createSignedUrl(input.fallbackPath, 60 * 60);
-  return fallback.data?.signedUrl ?? null;
+  const signed = await supabase.storage.from(input.bucket).createSignedUrl(input.thumbnailPath, 60 * 60);
+  return signed.data?.signedUrl ?? null;
 }
 
 function toStoreVisitImageCategory(category: OfflineImageType | StoreVisitImageCategory | null | undefined): StoreVisitImageCategory | undefined {
@@ -65,20 +61,18 @@ async function attachSignedImageUrls(visit: OfflineStoreVisit) {
   const categories = Array.isArray(visit.image_categories) ? visit.image_categories : [];
   const legacySignedImages = await Promise.all(imagePaths.map(async (path, index): Promise<SignedVisitImage> => {
     const thumbnailPath = imageThumbnailPaths[index] ?? buildStoreVisitThumbnailPath(path);
-    const url = await createSignedUrlWithFallback({
+    const url = await createSignedThumbnailUrl({
       bucket: "store-visits",
-      preferredPath: thumbnailPath,
-      fallbackPath: path,
+      thumbnailPath,
     });
     return { path, url, category: toStoreVisitImageCategory(categories[index]) };
   }));
   const tableSignedImages = await Promise.all((visit.offline_visit_images ?? []).map(async (image): Promise<SignedVisitImage> => {
     const category = toStoreVisitImageCategory(image.image_type);
     const thumbnailPath = image.thumbnail_path ?? buildStoreVisitThumbnailPath(image.image_path);
-    const url = await createSignedUrlWithFallback({
+    const url = await createSignedThumbnailUrl({
       bucket: "offline-visit-images",
-      preferredPath: thumbnailPath,
-      fallbackPath: image.image_path,
+      thumbnailPath,
     });
     return { id: image.id, path: image.image_path, url, category };
   }));

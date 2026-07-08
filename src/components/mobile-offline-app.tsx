@@ -913,9 +913,9 @@ function MobileVisitDetailScreen({
               onClick={() => void openOriginalImage(image)}
               className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-lg bg-slate-100"
             >
-              {image.thumbnail_url || image.image_url ? (
+              {image.thumbnail_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={image.thumbnail_url ?? image.image_url ?? undefined} alt={image.file_name} className="h-full w-full object-cover" />
+                <img src={image.thumbnail_url} alt={image.file_name} className="h-full w-full object-cover" />
               ) : (
                 <ImageIcon className="h-8 w-8 text-slate-400" />
               )}
