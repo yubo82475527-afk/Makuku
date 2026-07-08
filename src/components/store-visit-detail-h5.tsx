@@ -533,6 +533,8 @@ function detailText(locale: Locale) {
         retakeAgain: "Retake again",
         previewPhoto: "Preview photo",
         expandPhoto: "Preview photo",
+        thumbnailLoading: "Loading photo",
+        thumbnailRetry: "Tap to retry",
         failedNeedsUpdate: "Analysis failed. Update this photo to continue.",
         retakeRequired: "Please re-upload this photo",
         retakeRequiredSummary: "Price-tag photo needs retake. Use photo actions to retake or replace it.",
@@ -610,6 +612,8 @@ function detailText(locale: Locale) {
         retakeAgain: "Retake again",
         previewPhoto: "Preview photo",
         expandPhoto: "Preview photo",
+        thumbnailLoading: "Loading photo",
+        thumbnailRetry: "Tap to retry",
         failedNeedsUpdate: "Analysis failed. Update this photo to continue.",
         retakeRequired: "Please re-upload this photo",
         retakeRequiredSummary: "Price-tag photo needs retake. Use photo actions to retake or replace it.",
@@ -685,8 +689,11 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   const [matchOptionsLoading, setMatchOptionsLoading] = useState(false);
   const [matchOptionsError, setMatchOptionsError] = useState<string | null>(null);
   const [storedPreviewRefreshAttempts, setStoredPreviewRefreshAttempts] = useState<Record<string, boolean>>({});
+  const [thumbnailRetryVersions, setThumbnailRetryVersions] = useState<Record<string, number>>({});
+  const [thumbnailFailedImageIds, setThumbnailFailedImageIds] = useState<string[]>([]);
   const cameraRetakeInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const albumRetakeInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const thumbnailRetryTimers = useRef<Record<string, number>>({});
 
   const loadVisit = useCallback(async (options?: { preserveLoading?: boolean }) => {
     if (!options?.preserveLoading) setLoading(true);
@@ -732,6 +739,39 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
       setStoredPreviewRefreshAttempts((current) => ({ ...current, [input.imageId]: true }));
       await loadVisit({ preserveLoading: true });
     }
+  }
+
+  function thumbnailSrcForImage(imageId: string) {
+    const version = thumbnailRetryVersions[imageId] ?? 0;
+    return `/api/store-visit/${id}/images/${imageId}/thumbnail?v=${version}`;
+  }
+
+  function clearThumbnailFailure(imageId: string) {
+    setThumbnailFailedImageIds((current) => current.filter((currentId) => currentId !== imageId));
+  }
+
+  function retryThumbnailNow(imageId: string) {
+    const timer = thumbnailRetryTimers.current[imageId];
+    if (timer) window.clearTimeout(timer);
+    delete thumbnailRetryTimers.current[imageId];
+    clearThumbnailFailure(imageId);
+    setThumbnailRetryVersions((current) => ({
+      ...current,
+      [imageId]: (current[imageId] ?? 0) + 1,
+    }));
+  }
+
+  function handleThumbnailLoadError(imageId: string) {
+    setThumbnailFailedImageIds((current) => (
+      current.includes(imageId) ? current : [...current, imageId]
+    ));
+    const version = thumbnailRetryVersions[imageId] ?? 0;
+    if (version >= 3 || thumbnailRetryTimers.current[imageId]) return;
+    const delay = [700, 1800, 3500][version] ?? 3500;
+    thumbnailRetryTimers.current[imageId] = window.setTimeout(() => {
+      delete thumbnailRetryTimers.current[imageId];
+      retryThumbnailNow(imageId);
+    }, delay);
   }
 
   async function openStoredImagePreview(input: { imageId?: string; path: string; label: string }) {
@@ -1271,6 +1311,10 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
     Object.values(localUploads).forEach((item) => URL.revokeObjectURL(item.previewUrl));
   }, [localUploads]);
 
+  useEffect(() => () => {
+    Object.values(thumbnailRetryTimers.current).forEach((timer) => window.clearTimeout(timer));
+  }, []);
+
   useEffect(() => {
     if (!notice) return undefined;
     const timeout = window.setTimeout(() => setNotice(null), 2200);
@@ -1435,10 +1479,16 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   visitAnalysisInProgress={visitAnalysisInProgress}
                   text={text}
                   localUploadsByImageId={localUploads}
+                  thumbnailSrcForImage={thumbnailSrcForImage}
+                  thumbnailRetryVersions={thumbnailRetryVersions}
+                  thumbnailFailedImageIds={thumbnailFailedImageIds}
                   candidates={visit?.ai_price_candidates ?? []}
                   onPreview={({ url, label }) => openDirectPreview(url, label)}
                   onPreviewStored={({ imageId, path, label }) => void openStoredImagePreview({ imageId, path, label })}
                   onStoredPreviewError={({ imageId }) => void handleStoredThumbnailError({ imageId })}
+                  onThumbnailError={handleThumbnailLoadError}
+                  onThumbnailLoad={clearThumbnailFailure}
+                  onRetryThumbnail={retryThumbnailNow}
                   deletingImageIds={deletingImageIds}
                   retryingImageIds={retryingImageIds}
                   aiJobImageIds={activeAiJob?.target_image_ids ?? []}
@@ -1469,10 +1519,16 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   visitAnalysisInProgress={visitAnalysisInProgress}
                   text={text}
                   localUploadsByImageId={localUploads}
+                  thumbnailSrcForImage={thumbnailSrcForImage}
+                  thumbnailRetryVersions={thumbnailRetryVersions}
+                  thumbnailFailedImageIds={thumbnailFailedImageIds}
                   candidates={visit?.ai_price_candidates ?? []}
                   onPreview={({ url, label }) => openDirectPreview(url, label)}
                   onPreviewStored={({ imageId, path, label }) => void openStoredImagePreview({ imageId, path, label })}
                   onStoredPreviewError={({ imageId }) => void handleStoredThumbnailError({ imageId })}
+                  onThumbnailError={handleThumbnailLoadError}
+                  onThumbnailLoad={clearThumbnailFailure}
+                  onRetryThumbnail={retryThumbnailNow}
                   deletingImageIds={deletingImageIds}
                   retryingImageIds={retryingImageIds}
                   aiJobImageIds={activeAiJob?.target_image_ids ?? []}
@@ -1518,25 +1574,23 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                     <button
                       key={item.image.id}
                       type="button"
-                      onClick={() => item.signedImage?.url && void openStoredImagePreview({
+                      onClick={() => void openStoredImagePreview({
                         imageId: item.image.id,
-                        path: item.signedImage.path,
+                        path: item.signedImage?.path ?? item.image.image_path,
                         label: `${text.photoPrefix}${index + 1}`,
                       })}
                       className="aspect-square overflow-hidden rounded-xl bg-slate-100"
                       aria-label={text.previewPhoto}
                     >
-                      {item.signedImage?.url ? (
-                        <>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={item.signedImage.url}
-                            alt={`${text.photoPrefix}${index + 1}`}
-                            className="h-full w-full object-cover"
-                            onError={() => void handleStoredThumbnailError({ imageId: item.image.id })}
-                          />
-                        </>
-                      ) : null}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        key={`${item.image.id}-${thumbnailRetryVersions[item.image.id] ?? 0}`}
+                        src={thumbnailSrcForImage(item.image.id)}
+                        alt={`${text.photoPrefix}${index + 1}`}
+                        className="h-full w-full object-cover"
+                        onLoad={() => clearThumbnailFailure(item.image.id)}
+                        onError={() => handleThumbnailLoadError(item.image.id)}
+                      />
                     </button>
                   ))}
                 </div>
@@ -1904,6 +1958,9 @@ function PriceSectionGroup({
   visitAnalysisInProgress,
   text,
   localUploadsByImageId,
+  thumbnailSrcForImage,
+  thumbnailRetryVersions,
+  thumbnailFailedImageIds,
   candidates,
   deletingImageIds,
   retryingImageIds,
@@ -1912,6 +1969,9 @@ function PriceSectionGroup({
   onPreviewStored,
   onStoredPreviewError,
   onOpenActions,
+  onThumbnailError,
+  onThumbnailLoad,
+  onRetryThumbnail,
   onOpenRowActions,
   onConfirmRow,
   confirmingRowCandidateIds,
@@ -1930,6 +1990,9 @@ function PriceSectionGroup({
   visitAnalysisInProgress: boolean;
   text: ReturnType<typeof detailText>;
   localUploadsByImageId: Record<string, LocalUploadState>;
+  thumbnailSrcForImage: (imageId: string) => string;
+  thumbnailRetryVersions: Record<string, number>;
+  thumbnailFailedImageIds: string[];
   candidates: AiPriceCandidate[];
   deletingImageIds: string[];
   retryingImageIds: string[];
@@ -1937,6 +2000,9 @@ function PriceSectionGroup({
   onPreview: (image: { url: string; label: string }) => void;
   onPreviewStored: (image: { imageId?: string; path: string; label: string }) => void;
   onStoredPreviewError: (image: { imageId: string }) => void;
+  onThumbnailError: (imageId: string) => void;
+  onThumbnailLoad: (imageId: string) => void;
+  onRetryThumbnail: (imageId: string) => void;
   onOpenActions: (imageId: string, category: "makuku_shelf" | "competitor_shelf", label: string) => void;
   onOpenRowActions: (section: PriceParseSection, row: StoreVisitPriceImageAnalysis["rows"][number], rowIndex: number, candidate: AiPriceCandidate) => void;
   onConfirmRow: (candidateId: string) => void;
@@ -1964,7 +2030,10 @@ function PriceSectionGroup({
         <div key={section.image.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
           {(() => {
             const sectionLocalUpload = localUploadsByImageId[section.image.id];
-            const previewUrl = sectionLocalUpload?.previewUrl ?? section.signedImage?.url ?? null;
+            const storedThumbnailUrl = thumbnailSrcForImage(section.image.id);
+            const previewUrl = sectionLocalUpload?.previewUrl ?? storedThumbnailUrl;
+            const thumbnailRetryVersion = thumbnailRetryVersions[section.image.id] ?? 0;
+            const thumbnailFailed = thumbnailFailedImageIds.includes(section.image.id);
             const isProcessingRetake = sectionLocalUpload?.mode === "retake";
             const isAnalyzingImage = section.image.analysis_status === "analyzing";
             const isReanalyzingImage = aiJobImageIds.includes(section.image.id);
@@ -2058,32 +2127,49 @@ function PriceSectionGroup({
               </div>
             </div>
             <div className="flex items-start gap-2">
-              {previewUrl ? (
-                <button
-                  type="button"
-                  onClick={() => sectionLocalUpload?.previewUrl
-                    ? onPreview({ url: previewUrl, label: `${text.photoPrefix}${index + 1}` })
-                    : onPreviewStored({
-                      imageId: section.image.id,
-                      path: section.signedImage?.path ?? section.image.image_path,
-                      label: `${text.photoPrefix}${index + 1}`,
-                    })}
-                  className="h-16 w-16 overflow-hidden rounded-lg bg-slate-200"
-                  aria-label={text.expandPhoto}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={previewUrl}
-                    alt={`${text.photoPrefix}${index + 1}`}
-                    className={`h-full w-full object-cover ${isProcessingRetake ? "opacity-80" : ""}`}
-                    onError={() => {
-                      if (!sectionLocalUpload?.previewUrl) {
-                        void onStoredPreviewError({ imageId: section.image.id });
-                      }
-                    }}
-                  />
-                </button>
-              ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  if (sectionLocalUpload?.previewUrl) {
+                    onPreview({ url: previewUrl, label: `${text.photoPrefix}${index + 1}` });
+                    return;
+                  }
+                  if (thumbnailFailed) {
+                    onRetryThumbnail(section.image.id);
+                    return;
+                  }
+                  onPreviewStored({
+                    imageId: section.image.id,
+                    path: section.signedImage?.path ?? section.image.image_path,
+                    label: `${text.photoPrefix}${index + 1}`,
+                  });
+                }}
+                className="relative h-16 w-16 overflow-hidden rounded-lg bg-slate-200"
+                aria-label={thumbnailFailed ? text.thumbnailRetry : text.expandPhoto}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  key={`${section.image.id}-${thumbnailRetryVersion}`}
+                  src={previewUrl}
+                  alt={`${text.photoPrefix}${index + 1}`}
+                  className={`h-full w-full object-cover transition-opacity ${isProcessingRetake ? "opacity-80" : ""} ${thumbnailFailed ? "opacity-0" : "opacity-100"}`}
+                  onLoad={() => {
+                    if (!sectionLocalUpload?.previewUrl) onThumbnailLoad(section.image.id);
+                  }}
+                  onError={() => {
+                    if (!sectionLocalUpload?.previewUrl) {
+                      onThumbnailError(section.image.id);
+                      void onStoredPreviewError({ imageId: section.image.id });
+                    }
+                  }}
+                />
+                {thumbnailFailed ? (
+                  <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-slate-100 px-1 text-center text-[10px] font-semibold leading-3 text-slate-500">
+                    <ImageIcon className="h-4 w-4 text-slate-400" />
+                    <span>{text.thumbnailRetry}</span>
+                  </span>
+                ) : null}
+              </button>
             </div>
           </div>
           {isProcessingRetake && (sectionLocalUpload.status === "uploading" || sectionLocalUpload.status === "analyzing") ? (

@@ -22,8 +22,10 @@ const aiPriceCandidatesWorkbench = readFileSync("src/components/ai-price-candida
 const backfillScript = existsSync(backfillScriptPath) ? readFileSync(backfillScriptPath, "utf8") : "";
 const storeVisitOriginalRoutePath = "src/app/api/store-visit/[id]/image-url/route.ts";
 const offlineVisitOriginalRoutePath = "src/app/api/offline-store-visits/[id]/image-url/route.ts";
+const storeVisitThumbnailProxyRoutePath = "src/app/api/store-visit/[id]/images/[imageId]/thumbnail/route.ts";
 const storeVisitOriginalRoute = existsSync(storeVisitOriginalRoutePath) ? readFileSync(storeVisitOriginalRoutePath, "utf8") : "";
 const offlineVisitOriginalRoute = existsSync(offlineVisitOriginalRoutePath) ? readFileSync(offlineVisitOriginalRoutePath, "utf8") : "";
+const storeVisitThumbnailProxyRoute = existsSync(storeVisitThumbnailProxyRoutePath) ? readFileSync(storeVisitThumbnailProxyRoutePath, "utf8") : "";
 
 test("thumbnail migration persists paths for current and legacy store visit images", () => {
   assert.ok(existsSync(migrationPath), "thumbnail migration should exist");
@@ -68,6 +70,19 @@ test("thumbnail UIs lazy-load originals only when the user opens a preview", () 
   assert.match(thumbnailGallery, /fetchOriginalImageUrl/);
   assert.match(aiPriceCandidatesWorkbench, /fetchOriginalImageUrl/);
   assert.match(aiPriceCandidatesWorkbench, /setActiveImage\(\{ status: "loading"/);
+});
+
+test("H5 price thumbnails are served through same-origin thumbnail proxy", () => {
+  assert.ok(existsSync(storeVisitThumbnailProxyRoutePath), "same-origin thumbnail proxy should exist");
+  assert.match(storeVisitThumbnailProxyRoute, /requireAppSession\(request\)/);
+  assert.match(storeVisitThumbnailProxyRoute, /thumbnail_path/);
+  assert.match(storeVisitThumbnailProxyRoute, /buildStoreVisitThumbnailPath/);
+  assert.match(storeVisitThumbnailProxyRoute, /Cache-Control/);
+  assert.match(storeVisitThumbnailProxyRoute, /retryDelaysMs/);
+  assert.match(storeVisitDetailH5, /thumbnailSrcForImage/);
+  assert.match(storeVisitDetailH5, /thumbnailRetryVersions/);
+  assert.match(storeVisitDetailH5, /onRetryThumbnail/);
+  assert.doesNotMatch(storeVisitDetailH5, /const previewUrl = sectionLocalUpload\?\.previewUrl \?\? section\.signedImage\?\.url \?\? null;/);
 });
 
 test("detail thumbnails never silently fall back to originals inside the page", () => {
