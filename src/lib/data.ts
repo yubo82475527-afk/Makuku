@@ -19,6 +19,7 @@ import { monthWeeks } from "@/lib/periods";
 import { priceSnapshotBusinessLine, priceSnapshotBusinessSegment, priceSnapshotBusinessSize } from "@/lib/price-snapshot-business";
 import { findMatchingMaterialForSeries } from "@/lib/competitor-series-mapping";
 import { createSupabaseAnonClient, createSupabaseServiceClient, hasSupabaseConfig, hasSupabaseServiceConfig } from "@/lib/supabase";
+import { buildStoreVisitThumbnailPath } from "@/lib/store-visit-image-variants";
 import type {
   Alert,
   AiPriceCandidate,
@@ -4009,23 +4010,35 @@ async function attachVisitImageUrls(visits: OfflineStoreVisit[]) {
   const supabase = createSupabaseServiceClient();
   return Promise.all(visits.map(async (visit) => {
     const imagePaths = Array.isArray(visit.image_urls) ? visit.image_urls : [];
+    const imageThumbnailPaths = Array.isArray(visit.image_thumbnail_paths) ? visit.image_thumbnail_paths : [];
     const categories = Array.isArray(visit.image_categories) ? visit.image_categories : [];
     const signedImages = await Promise.all(imagePaths.map(async (path, index) => {
+      const thumbnailPath = imageThumbnailPaths[index] ?? buildStoreVisitThumbnailPath(path);
+      const thumbnailResult = await supabase.storage
+        .from("store-visits")
+        .createSignedUrl(thumbnailPath, 60 * 60);
       const { data } = await supabase.storage
         .from("store-visits")
         .createSignedUrl(path, 60 * 60);
-      return { path, url: data?.signedUrl ?? null, category: categories[index] };
+      return { path, url: thumbnailResult.data?.signedUrl ?? data?.signedUrl ?? null, category: categories[index] };
     }));
 
     return {
       ...visit,
       signed_images: signedImages,
       offline_visit_images: await Promise.all((visit.offline_visit_images ?? []).map(async (image) => {
-        if (image.image_url) return image;
+        const thumbnailPath = image.thumbnail_path ?? buildStoreVisitThumbnailPath(image.image_path);
+        const thumbnailResult = await supabase.storage
+          .from("offline-visit-images")
+          .createSignedUrl(thumbnailPath, 60 * 60);
         const { data } = await supabase.storage
           .from("offline-visit-images")
           .createSignedUrl(image.image_path, 60 * 60);
-        return { ...image, image_url: data?.signedUrl ?? null };
+        return {
+          ...image,
+          image_url: data?.signedUrl ?? null,
+          thumbnail_url: thumbnailResult.data?.signedUrl ?? data?.signedUrl ?? null,
+        };
       })),
     };
   }));

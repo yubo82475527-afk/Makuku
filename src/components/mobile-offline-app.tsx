@@ -53,6 +53,12 @@ type BrandSlot = {
 };
 
 type Screen = "login" | "store-select" | "capture" | "waiting" | "my-visits" | "visit-detail";
+type PreviewState = {
+  status: "loading" | "ready" | "error";
+  label: string;
+  url?: string;
+  error?: string;
+};
 
 const BRAND_SLOTS: Omit<BrandSlot, "status">[] = [
   { id: "makuku",   brand: "Makuku",   label: "MAKUKU",        hint: "自家货架/陈列/缺货",          imageType: "own_shelf",        tone: "bg-emerald-50 text-emerald-800 ring-emerald-200" },
@@ -64,6 +70,9 @@ const BRAND_SLOTS: Omit<BrandSlot, "status">[] = [
 ];
 
 const STORAGE_KEY = "makuku_app_user";
+const maxUploadBytes = 20 * 1024 * 1024;
+const compressionMaxSide = 3000;
+const compressionQuality = 0.9;
 
 function loadUser(): AppUser | null {
   try {
@@ -93,6 +102,55 @@ function formatRegionLabel(region: {
     .filter(Boolean)
     .join(" / ");
   return structured || region?.city || "-";
+}
+
+function formatMb(bytes: number) {
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+}
+
+function loadImage(file: File) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Unable to read image"));
+    };
+    image.src = url;
+  });
+}
+
+async function prepareImageForUpload(file: File) {
+  if (!file.type.startsWith("image/")) {
+    throw new Error(`${file.name} is not an image.`);
+  }
+  if (file.size <= maxUploadBytes) return file;
+
+  const image = await loadImage(file);
+  const scale = Math.min(1, compressionMaxSide / Math.max(image.naturalWidth, image.naturalHeight));
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Image compression is not available in this browser.");
+  ctx.drawImage(image, 0, 0, width, height);
+
+  const blob = await new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(resolve, "image/jpeg", compressionQuality);
+  });
+  if (!blob) throw new Error("Image compression failed.");
+
+  const safeName = file.name.replace(/\.[^.]+$/, "") || "store-photo";
+  return new File([blob], `${safeName}.jpg`, {
+    type: "image/jpeg",
+    lastModified: Date.now(),
+  });
 }
 
 // ─── Root component ───────────────────────────────────────────────────────────
@@ -482,11 +540,15 @@ function PhotoCaptureScreen({
     const formData = new FormData();
     formData.set("image_type", slot.imageType);
     formData.set("target_brand", slot.brand);
-    formData.set("image", file);
-    formData.set("json", "1");
-    formData.set("auto_analyze", "1");
-    formData.set("return_to", `/${locale}/mobile/offline-capture`);
     try {
+      const uploadFile = await prepareImageForUpload(file);
+      if (uploadFile.size > maxUploadBytes) {
+        throw new Error(`Photo is still ${formatMb(uploadFile.size)} after compression. Please choose a smaller photo.`);
+      }
+      formData.set("image", uploadFile);
+      formData.set("json", "1");
+      formData.set("auto_analyze", "1");
+      formData.set("return_to", `/${locale}/mobile/offline-capture`);
       const res = await fetch(`/api/offline-store-visits/${vid}/images`, { method: "POST", body: formData });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -511,11 +573,15 @@ function PhotoCaptureScreen({
     const formData = new FormData();
     formData.set("image_type", "promo_tag");
     formData.set("target_brand", "Other");
-    formData.set("image", file);
-    formData.set("json", "1");
-    formData.set("auto_analyze", "1");
-    formData.set("return_to", `/${locale}/mobile/offline-capture`);
     try {
+      const uploadFile = await prepareImageForUpload(file);
+      if (uploadFile.size > maxUploadBytes) {
+        throw new Error(`Photo is still ${formatMb(uploadFile.size)} after compression. Please choose a smaller photo.`);
+      }
+      formData.set("image", uploadFile);
+      formData.set("json", "1");
+      formData.set("auto_analyze", "1");
+      formData.set("return_to", `/${locale}/mobile/offline-capture`);
       const res = await fetch(`/api/offline-store-visits/${vid}/images`, { method: "POST", body: formData });
       const data = await res.json().catch(() => ({}));
       setPromoFiles((prev) => prev.map((p, i) => i === idx ? { ...p, status: res.ok ? "done" : "error", id: data.image?.id } : p));
@@ -769,6 +835,30 @@ function MobileVisitDetailScreen({
   onBack: () => void;
 }) {
   const images = visit.offline_visit_images ?? [];
+  const [activeImage, setActiveImage] = useState<PreviewState | null>(null);
+
+  async function fetchOriginalImageUrl(imageId: string) {
+    const response = await fetch(`/api/offline-store-visits/${visit.id}/image-url?image_id=${encodeURIComponent(imageId)}`);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || typeof payload.url !== "string" || !payload.url) {
+      throw new Error("Unable to load original image.");
+    }
+    return payload.url;
+  }
+
+  async function openOriginalImage(image: OfflineVisitImage) {
+    setActiveImage({ status: "loading", label: image.file_name });
+    try {
+      const url = await fetchOriginalImageUrl(image.id);
+      setActiveImage({ status: "ready", label: image.file_name, url });
+    } catch (error) {
+      setActiveImage({
+        status: "error",
+        label: image.file_name,
+        error: error instanceof Error ? error.message : "Unable to load original image.",
+      });
+    }
+  }
 
   return (
     <div className="flex flex-1 flex-col">
@@ -818,17 +908,52 @@ function MobileVisitDetailScreen({
               <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-700">{image.image_type.replaceAll("_", " ")}</span>
               <span className="text-slate-500">{image.analysis_status}</span>
             </div>
-            <div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-lg bg-slate-100">
-              {image.image_url ? (
+            <button
+              type="button"
+              onClick={() => void openOriginalImage(image)}
+              className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-lg bg-slate-100"
+            >
+              {image.thumbnail_url || image.image_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={image.image_url} alt={image.file_name} className="h-full w-full object-cover" />
+                <img src={image.thumbnail_url ?? image.image_url ?? undefined} alt={image.file_name} className="h-full w-full object-cover" />
               ) : (
                 <ImageIcon className="h-8 w-8 text-slate-400" />
               )}
-            </div>
+            </button>
             <div className="mt-2 truncate text-xs text-slate-500">{image.file_name}</div>
           </section>
         ))}
+
+        {activeImage ? (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 p-4"
+            role="dialog"
+            aria-modal="true"
+            onClick={() => setActiveImage(null)}
+          >
+            <div className="max-h-full max-w-full" onClick={(event) => event.stopPropagation()}>
+              <button
+                type="button"
+                onClick={() => setActiveImage(null)}
+                className="mb-3 rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm"
+              >
+                鍏抽棴
+              </button>
+              {activeImage.status === "loading" ? (
+                <div className="flex h-64 w-64 items-center justify-center rounded-xl bg-white/90 text-slate-700">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                </div>
+              ) : null}
+              {activeImage.status === "error" ? (
+                <div className="w-72 rounded-xl bg-white p-4 text-sm text-red-600">{activeImage.error}</div>
+              ) : null}
+              {activeImage.status === "ready" && activeImage.url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={activeImage.url} alt={activeImage.label} className="max-h-[82vh] max-w-full rounded-xl object-contain shadow-2xl" />
+              ) : null}
+            </div>
+          </div>
+        ) : null}
       </main>
     </div>
   );
@@ -848,10 +973,11 @@ function WaitingScreen({
   const [visit, setVisit] = useState<OfflineStoreVisit | null>(null);
   const [images, setImages] = useState<{ id: string; analysis_status: VisitImageStatus; image_type: string }[]>([]);
   const [pollCount, setPollCount] = useState(0);
+  const [openingDetail, setOpeningDetail] = useState(false);
 
   const poll = useCallback(async () => {
     try {
-      const res = await fetch(`/api/offline-store-visits/${visitId}`);
+      const res = await fetch(`/api/offline-store-visits/${visitId}?mode=status`);
       const data = await res.json().catch(() => ({}));
       if (data.visit) {
         setVisit(data.visit as OfflineStoreVisit);
@@ -864,6 +990,20 @@ function WaitingScreen({
       setPollCount((c) => c + 1);
     }
   }, [visitId]);
+
+  async function openVisitDetail() {
+    if (openingDetail) return;
+    setOpeningDetail(true);
+    try {
+      const res = await fetch(`/api/offline-store-visits/${visitId}`);
+      const data = await res.json().catch(() => ({}));
+      if (data.visit) {
+        onViewVisit(data.visit as OfflineStoreVisit);
+      }
+    } finally {
+      setOpeningDetail(false);
+    }
+  }
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -933,11 +1073,11 @@ function WaitingScreen({
       <div className="fixed inset-x-0 bottom-0 z-20 mx-auto max-w-md border-t border-slate-200 bg-white px-4 py-3 space-y-2">
         <button
           type="button"
-          onClick={() => visit && onViewVisit(visit)}
-          disabled={!visit}
+          onClick={() => void openVisitDetail()}
+          disabled={!visit || openingDetail}
           className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-slate-900 text-sm font-semibold text-white disabled:opacity-40"
         >
-          <CheckCircle2 className="h-4 w-4" />
+          {openingDetail ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
           查看解析结果
         </button>
         <button

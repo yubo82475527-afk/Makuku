@@ -128,6 +128,13 @@ type GroupedSystemFailedImage = {
   images: OfflineVisitImage[];
 };
 
+type ActiveImageState = {
+  status: "loading" | "ready" | "error";
+  label: string;
+  url?: string;
+  error?: string;
+};
+
 function isActiveAiJob(job: StoreVisitAiJobSummary | null | undefined) {
   return job?.status === "queued" || job?.status === "running";
 }
@@ -651,7 +658,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   const [analysisPhase, setAnalysisPhase] = useState<"idle" | "running" | "refreshing">("idle");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [activeImage, setActiveImage] = useState<{ url: string; label: string } | null>(null);
+  const [activeImage, setActiveImage] = useState<ActiveImageState | null>(null);
   const [copiedErrorId, setCopiedErrorId] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<"makuku_shelf" | "competitor_shelf", boolean>>({
     makuku_shelf: false,
@@ -695,6 +702,39 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
       if (!options?.preserveLoading) setLoading(false);
     }
   }, [copy.loadVisitFailed, copy.networkRetry, id]);
+
+  function openDirectPreview(url: string, label: string) {
+    setActiveImage({ status: "ready", url, label });
+  }
+
+  async function fetchOriginalImageUrl(input: { imageId?: string; path?: string }) {
+    const params = new URLSearchParams();
+    if (input.imageId) {
+      params.set("image_id", input.imageId);
+    } else if (input.path) {
+      params.set("path", input.path);
+    }
+    const response = await fetch(`/api/store-visit/${id}/image-url?${params.toString()}`);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || typeof payload.url !== "string" || !payload.url) {
+      throw new Error(copy.loadVisitFailed);
+    }
+    return payload.url;
+  }
+
+  async function openStoredImagePreview(input: { imageId?: string; path: string; label: string }) {
+    setActiveImage({ status: "loading", label: input.label });
+    try {
+      const url = await fetchOriginalImageUrl({ imageId: input.imageId, path: input.path });
+      setActiveImage({ status: "ready", label: input.label, url });
+    } catch (error) {
+      setActiveImage({
+        status: "error",
+        label: input.label,
+        error: error instanceof Error ? error.message : copy.networkRetry,
+      });
+    }
+  }
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -964,8 +1004,8 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
     new Set(activeAiJob?.target_image_ids ?? [])
   ), [activeAiJob?.target_image_ids]);
   const fullVisitAiActive = activeAiJob?.job_type === "full_visit_reanalysis";
-  const hasAnalyzingPriceImage = (visit?.offline_visit_images ?? []).some((image) => image.analysis_status === "analyzing");
-  const visitAnalysisInProgress = analyzing || fullVisitReanalyzing || fullVisitAiActive || (status === "analyzing" && !hasAnalyzingPriceImage);
+  const hasPendingOrAnalyzingImage = (visit?.offline_visit_images ?? []).some((image) => image.analysis_status === "pending" || image.analysis_status === "analyzing");
+  const visitAnalysisInProgress = analyzing || fullVisitReanalyzing || fullVisitAiActive || hasPendingOrAnalyzingImage || status === "analyzing";
   const businessRetakeImages = (visit?.offline_visit_images ?? []).filter(isRetakeRequiredPriceImage);
   const systemFailedImages = (visit?.offline_visit_images ?? []).filter((image) => image.analysis_status === "failed" && !isRetakeRequiredPriceImage(image) && (image.analysis_error || image.error_message));
   const groupedSystemFailedImages = useMemo(() => {
@@ -985,8 +1025,9 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
     }
     return Array.from(groups.values()) as GroupedSystemFailedImage[];
   }, [systemFailedImages]);
-  const canRunWholeVisitAnalysis = status === "pending" && visit?.visit_status === "uploaded";
+  const canRunWholeVisitAnalysis = status === "pending" && visit?.visit_status === "uploaded" && !hasPendingOrAnalyzingImage && !activeAiJob;
   const canRunFullVisitAi = appUserRole === "admin";
+  const canShowFullVisitReanalysis = canRunFullVisitAi && status !== "pending" && !hasPendingOrAnalyzingImage;
   const updateLocked = analysisPhase !== "idle" || fullVisitAiActive;
   const signedImagesByPath = useMemo(
     () => new Map((visit?.signed_images ?? []).map((image) => [image.path, image] as const)),
@@ -1296,7 +1337,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                       {copy.analyzeStore}
                     </button>
                   ) : null}
-                  {canRunFullVisitAi ? (
+                  {canShowFullVisitReanalysis ? (
                     <button
                       type="button"
                       onClick={() => setFullVisitReanalyzeConfirmOpen(true)}
@@ -1328,6 +1369,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
               ) : null}
               {businessRetakeImages.length > 0 ? (
                 <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  {/* 请重新上传该图片 */}
                   <div className="font-semibold">{text.retakeRequired}</div>
                   <div className="mt-1">{text.retakeRequiredSummary}</div>
                 </div>
@@ -1381,7 +1423,8 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   text={text}
                   localUploadsByImageId={localUploads}
                   candidates={visit?.ai_price_candidates ?? []}
-                  onPreview={setActiveImage}
+                  onPreview={({ url, label }) => openDirectPreview(url, label)}
+                  onPreviewStored={({ imageId, path, label }) => void openStoredImagePreview({ imageId, path, label })}
                   deletingImageIds={deletingImageIds}
                   retryingImageIds={retryingImageIds}
                   aiJobImageIds={activeAiJob?.target_image_ids ?? []}
@@ -1413,7 +1456,8 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   text={text}
                   localUploadsByImageId={localUploads}
                   candidates={visit?.ai_price_candidates ?? []}
-                  onPreview={setActiveImage}
+                  onPreview={({ url, label }) => openDirectPreview(url, label)}
+                  onPreviewStored={({ imageId, path, label }) => void openStoredImagePreview({ imageId, path, label })}
                   deletingImageIds={deletingImageIds}
                   retryingImageIds={retryingImageIds}
                   aiJobImageIds={activeAiJob?.target_image_ids ?? []}
@@ -1459,7 +1503,11 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                     <button
                       key={item.image.id}
                       type="button"
-                      onClick={() => item.signedImage?.url && setActiveImage({ url: item.signedImage.url, label: `${text.photoPrefix}${index + 1}` })}
+                      onClick={() => item.signedImage?.url && void openStoredImagePreview({
+                        imageId: item.image.id,
+                        path: item.signedImage.path,
+                        label: `${text.photoPrefix}${index + 1}`,
+                      })}
                       className="aspect-square overflow-hidden rounded-xl bg-slate-100"
                       aria-label={text.previewPhoto}
                     >
@@ -1506,12 +1554,22 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
               >
                 {text.close}
               </button>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={activeImage.url}
-                alt={activeImage.label}
-                className="max-h-[82vh] max-w-full rounded-xl object-contain shadow-2xl"
-              />
+              {activeImage.status === "loading" ? (
+                <div className="flex h-64 w-64 items-center justify-center rounded-xl bg-white/90 text-slate-700">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                </div>
+              ) : null}
+              {activeImage.status === "error" ? (
+                <div className="w-72 rounded-xl bg-white p-4 text-sm text-red-600">{activeImage.error}</div>
+              ) : null}
+              {activeImage.status === "ready" && activeImage.url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={activeImage.url}
+                  alt={activeImage.label}
+                  className="max-h-[82vh] max-w-full rounded-xl object-contain shadow-2xl"
+                />
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -1855,6 +1913,7 @@ function PriceSectionGroup({
   retryingImageIds: string[];
   aiJobImageIds: string[];
   onPreview: (image: { url: string; label: string }) => void;
+  onPreviewStored: (image: { imageId?: string; path: string; label: string }) => void;
   onOpenActions: (imageId: string, category: "makuku_shelf" | "competitor_shelf", label: string) => void;
   onOpenRowActions: (section: PriceParseSection, row: StoreVisitPriceImageAnalysis["rows"][number], rowIndex: number, candidate: AiPriceCandidate) => void;
   onConfirmRow: (candidateId: string) => void;
@@ -1979,7 +2038,13 @@ function PriceSectionGroup({
               {previewUrl ? (
                 <button
                   type="button"
-                  onClick={() => onPreview({ url: previewUrl, label: `${text.photoPrefix}${index + 1}` })}
+                  onClick={() => sectionLocalUpload?.previewUrl
+                    ? onPreview({ url: previewUrl, label: `${text.photoPrefix}${index + 1}` })
+                    : onPreviewStored({
+                      imageId: section.image.id,
+                      path: section.signedImage?.path ?? section.image.image_path,
+                      label: `${text.photoPrefix}${index + 1}`,
+                    })}
                   className="h-16 w-16 overflow-hidden rounded-lg bg-slate-200"
                   aria-label={text.expandPhoto}
                 >

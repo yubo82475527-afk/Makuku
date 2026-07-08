@@ -98,7 +98,6 @@ export default async function OfflinePriceCandidatesPage({
             visit_code: visitCode || undefined,
             image_id: imageId || undefined,
           }}
-          rule={ruleResult.data}
         />
       </Card>
     </>

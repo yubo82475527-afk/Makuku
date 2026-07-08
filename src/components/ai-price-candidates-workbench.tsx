@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
 import { Badge, Button, EmptyState } from "@/components/ui";
 import { formatIdr, formatJakartaTime, formatShortImageId } from "@/lib/format";
-import type { AiPriceCandidate, AiPriceCandidateMatchType, AiPriceReviewJob, AiPriceReviewJobItem, AiPriceReviewRule, CompetitorProduct, MaterialMaster } from "@/lib/types";
+import type { AiPriceCandidate, AiPriceCandidateMatchType, AiPriceReviewJob, AiPriceReviewJobItem, CompetitorProduct, MaterialMaster } from "@/lib/types";
 
 type WorkbenchFilters = {
   status?: StatusTabValue;
@@ -30,6 +30,13 @@ type VisitEvidenceImage = {
   path: string;
   url: string | null;
   category?: string;
+};
+
+type ActivePreviewImage = {
+  status: "loading" | "ready" | "error";
+  label: string;
+  url?: string;
+  error?: string;
 };
 
 function stopReviewRowClick(event: MouseEvent) {
@@ -98,7 +105,6 @@ export function AiPriceCandidatesWorkbench({
   perPage,
   locale,
   filters,
-  rule,
 }: {
   items: AiPriceCandidate[];
   total: number;
@@ -106,7 +112,6 @@ export function AiPriceCandidatesWorkbench({
   perPage: number;
   locale: string;
   filters: WorkbenchFilters;
-  rule: AiPriceReviewRule;
 }) {
   const router = useRouter();
   const copy = getWorkbenchCopy(locale) as WorkbenchCopy & {
@@ -1032,7 +1037,7 @@ function CandidateDetailDrawerContent({
   const [promoType, setPromoType] = useState(candidate.promo_type ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeImage, setActiveImage] = useState<{ url: string; label: string } | null>(null);
+  const [activeImage, setActiveImage] = useState<ActivePreviewImage | null>(null);
   const reviewedPricePerPiece = calculateReviewedPricePerPiece(price, pieces);
   const canApprove = candidateCanBeApproved(candidate);
   const sourcePhoto = useMemo(() => findCandidateSourcePhoto(candidate, activeVisitImages ?? []), [candidate, activeVisitImages]);
@@ -1071,6 +1076,38 @@ function CandidateDetailDrawerContent({
       active = false;
     };
   }, [candidate.visit_id]);
+
+  async function fetchOriginalImageUrl(image: VisitEvidenceImage) {
+    if (!candidate.visit_id) {
+      throw new Error(copy.noPhotos);
+    }
+    const params = new URLSearchParams();
+    if (image.id) {
+      params.set("image_id", image.id);
+    } else {
+      params.set("path", image.path);
+    }
+    const response = await fetch(`/api/store-visit/${candidate.visit_id}/image-url?${params.toString()}`);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || typeof payload.url !== "string" || !payload.url) {
+      throw new Error(copy.noPhotos);
+    }
+    return payload.url;
+  }
+
+  async function openOriginalImage(image: VisitEvidenceImage) {
+    setActiveImage({ status: "loading", label: image.category ?? copy.visitPhoto });
+    try {
+      const url = await fetchOriginalImageUrl(image);
+      setActiveImage({ status: "ready", label: image.category ?? copy.visitPhoto, url });
+    } catch (error) {
+      setActiveImage({
+        status: "error",
+        label: image.category ?? copy.visitPhoto,
+        error: error instanceof Error ? error.message : copy.noPhotos,
+      });
+    }
+  }
 
   async function approve() {
     if (!canApprove) {
@@ -1167,7 +1204,7 @@ function CandidateDetailDrawerContent({
                 {image.url ? (
                   <button
                     type="button"
-                    onClick={() => setActiveImage({ url: image.url as string, label: image.category ?? copy.visitPhoto })}
+                    onClick={() => void openOriginalImage(image)}
                     className="block w-full"
                     aria-label={copy.previewPhoto}
                   >
@@ -1199,7 +1236,7 @@ function CandidateDetailDrawerContent({
                     {image.url ? (
                       <button
                         type="button"
-                        onClick={() => setActiveImage({ url: image.url as string, label: image.category ?? copy.visitPhoto })}
+                        onClick={() => void openOriginalImage(image)}
                         className="block w-full"
                         aria-label={copy.previewPhoto}
                       >
@@ -1277,14 +1314,24 @@ function CandidateDetailDrawerContent({
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 p-4" onClick={() => setActiveImage(null)}>
           <div className="max-h-full max-w-5xl" onClick={stopReviewRowClick}>
             <button type="button" onClick={() => setActiveImage(null)} className="mb-3 rounded-md bg-white px-3 py-1 text-sm text-slate-700">{copy.close}</button>
-            <Image
-              src={activeImage.url}
-              alt={activeImage.label}
-              width={1200}
-              height={900}
-              unoptimized
-              className="max-h-[82vh] w-auto rounded-lg object-contain"
-            />
+            {activeImage.status === "loading" ? (
+              <div className="flex h-64 w-64 items-center justify-center rounded-lg bg-white/90 text-slate-700">
+                <span className="text-sm">{copy.loadingPhotos}</span>
+              </div>
+            ) : null}
+            {activeImage.status === "error" ? (
+              <div className="w-72 rounded-lg bg-white p-4 text-sm text-red-600">{activeImage.error}</div>
+            ) : null}
+            {activeImage.status === "ready" && activeImage.url ? (
+              <Image
+                src={activeImage.url}
+                alt={activeImage.label}
+                width={1200}
+                height={900}
+                unoptimized
+                className="max-h-[82vh] w-auto rounded-lg object-contain"
+              />
+            ) : null}
           </div>
         </div>
       ) : null}

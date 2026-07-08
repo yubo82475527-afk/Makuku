@@ -1,6 +1,7 @@
-import { ImageIcon, Smartphone } from "lucide-react";
+import { Smartphone } from "lucide-react";
 import Link from "next/link";
 import { PageShellState } from "@/components/page-shell-state";
+import { StoreVisitThumbnailGallery } from "@/components/store-visit-thumbnail-gallery";
 import { StoreVisitResultCard } from "@/components/store-visit-result-card";
 import { Badge, Button, Card, DataNotice, EmptyState } from "@/components/ui";
 import { formatJakartaTime } from "@/lib/format";
@@ -72,24 +73,16 @@ export default async function OfflineVisitDetailPage({
             </div>
             {(visit.signed_images ?? []).length === 0 ? <EmptyState text={dict.offlineUploads.noImages} /> : null}
             {(visit.signed_images ?? []).length > 0 ? (
-              <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-4">
-                {(visit.signed_images ?? []).map((image, index) => (
-                  <div key={`${image.path}-${index}`} className="overflow-hidden rounded-md border border-slate-200 bg-slate-50">
-                    <div className="flex aspect-[4/3] items-center justify-center bg-slate-100">
-                      {image.url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={image.url} alt={`${visit.store_name} ${index + 1}`} className="h-full w-full object-cover" />
-                      ) : (
-                        <ImageIcon className="h-10 w-10 text-slate-400" />
-                      )}
-                    </div>
-                    <div className="border-t border-slate-200 px-3 py-2 text-xs text-slate-600">
-                      <div className="font-medium text-slate-900">{mobileImageCategoryLabel(locale, image.category)}</div>
-                      <div className="mt-1 truncate">{image.path}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <StoreVisitThumbnailGallery
+                visitId={visit.id}
+                images={(visit.signed_images ?? []).map((image, index) => ({
+                  id: image.id,
+                  path: image.path,
+                  url: image.url,
+                  label: `${visit.store_name} ${index + 1}`,
+                  meta: mobileImageCategoryLabel(locale, image.category),
+                }))}
+              />
             ) : null}
           </Card>
 

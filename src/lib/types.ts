@@ -744,6 +744,8 @@ export type OfflineVisitImage = {
   deletion_reason?: string | null;
   image_type: OfflineImageType;
   image_path: string;
+  thumbnail_path?: string | null;
+  thumbnail_url?: string | null;
   image_url: string | null;
   file_name: string;
   content_type: string;
@@ -764,6 +766,7 @@ export type OfflineStoreVisit = {
   channel?: string | null;
   promoter?: string | null;
   image_urls?: string[] | null;
+  image_thumbnail_paths?: string[] | null;
   image_categories?: StoreVisitImageCategory[] | null;
   ai_result?: StoreVisitAiResult | null;
   analysis_status?: StoreVisitAnalysisStatus | null;

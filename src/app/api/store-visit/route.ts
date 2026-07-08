@@ -1,4 +1,5 @@
 import { revalidatePath } from "next/cache";
+import { buildStoreVisitThumbnailPath, createStoreVisitThumbnail } from "@/lib/store-visit-image-variants";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import { requireAppSession } from "@/lib/auth-session";
 
@@ -417,19 +418,32 @@ export async function POST(request: Request) {
     });
 
     const imageUrls: string[] = [];
+    const imageThumbnailPaths: string[] = [];
     for (const file of files) {
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
       const path = `store-visits/${visit.id}/${Date.now()}-${safeName}`;
+      const bytes = Buffer.from(await file.arrayBuffer());
       const { error: uploadError } = await supabase.storage
         .from(bucketName)
-        .upload(path, file, { contentType: file.type, upsert: false });
+        .upload(path, bytes, { contentType: file.type, upsert: false });
       if (uploadError) return Response.json({ error: uploadError.message }, { status: 400 });
+      const thumbnailPath = buildStoreVisitThumbnailPath(path);
+      const thumbnail = await createStoreVisitThumbnail({ bytes });
+      const { error: thumbnailUploadError } = await supabase.storage
+        .from(bucketName)
+        .upload(thumbnailPath, thumbnail.buffer, { contentType: thumbnail.contentType, upsert: false });
+      if (thumbnailUploadError) return Response.json({ error: thumbnailUploadError.message }, { status: 400 });
       imageUrls.push(path);
+      imageThumbnailPaths.push(thumbnailPath);
     }
 
     const { data: updated, error: updateError } = await supabase
       .from("offline_store_visits")
-      .update({ image_urls: imageUrls, image_categories: categories as StoreVisitImageCategory[] })
+      .update({
+        image_urls: imageUrls,
+        image_thumbnail_paths: imageThumbnailPaths,
+        image_categories: categories as StoreVisitImageCategory[],
+      })
       .eq("id", visit.id)
       .select("*")
       .single();

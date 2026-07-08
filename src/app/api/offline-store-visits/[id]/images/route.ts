@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { formReturnRedirect } from "@/lib/request";
+import { buildStoreVisitThumbnailPath, createStoreVisitThumbnail } from "@/lib/store-visit-image-variants";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import { requireAppSession } from "@/lib/auth-session";
 import type { OfflineImageType } from "@/lib/types";
@@ -48,13 +49,23 @@ export async function POST(request: Request, ctx: RouteContext<"/api/offline-sto
 
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
     const imagePath = `${id}/${imageType}/${Date.now()}-${safeName}`;
+    const bytes = Buffer.from(await file.arrayBuffer());
     const { error: uploadError } = await supabase.storage
       .from(bucketName)
-      .upload(imagePath, file, {
+      .upload(imagePath, bytes, {
         contentType: file.type,
         upsert: false,
       });
     if (uploadError) return Response.json({ error: uploadError.message }, { status: 400 });
+    const thumbnailPath = buildStoreVisitThumbnailPath(imagePath);
+    const thumbnail = await createStoreVisitThumbnail({ bytes });
+    const { error: thumbnailUploadError } = await supabase.storage
+      .from(bucketName)
+      .upload(thumbnailPath, thumbnail.buffer, {
+        contentType: thumbnail.contentType,
+        upsert: false,
+      });
+    if (thumbnailUploadError) return Response.json({ error: thumbnailUploadError.message }, { status: 400 });
 
     const { data: image, error: insertError } = await supabase
       .from("offline_visit_images")
@@ -62,6 +73,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/offline-sto
         visit_id: id,
         image_type: imageType,
         image_path: imagePath,
+        thumbnail_path: thumbnailPath,
         image_url: null,
         file_name: file.name,
         content_type: file.type,

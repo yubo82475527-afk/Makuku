@@ -1,5 +1,7 @@
 import { createSupabaseServiceClient } from "@/lib/supabase";
+import { requireAppSession } from "@/lib/auth-session";
 import { attachAiPriceCandidateMatchLabels } from "@/lib/data";
+import { buildStoreVisitThumbnailPath } from "@/lib/store-visit-image-variants";
 import type { AiPriceCandidate, OfflineImageType, OfflineStoreVisit, OfflineVisitImage, StoreVisitImageCategory } from "@/lib/types";
 import { isInactiveVisitImage, refreshStoreVisitStoredPriceState } from "@/lib/store-visit-image-maintenance";
 import { loadActiveStoreVisitAiJob, summarizeStoreVisitAiJob } from "@/lib/store-visit-ai-jobs";
@@ -30,11 +32,24 @@ class RouteError extends Error {
 }
 
 const aiPriceCandidateSelect = "id,visit_id,candidate_key,source_image_id,source_image_path,source_row_index,raw_brand,raw_product,raw_price,parsed_price_idr,ai_list_price_idr,ai_package_price_idr,ai_net_price_idr,list_price_idr,package_price_idr,net_price_idr,raw_piece_count_text,raw_package_price_text,raw_net_price_text,raw_price_per_piece_text,visible_price_per_piece_idr,price_basis,ai_promo_type,promo_type,ai_piece_count,ai_price_per_piece,piece_count,price_per_piece,candidate_type,ai_confidence,legacy_confidence_fallback,price_evidence_status,price_evidence_confidence,price_evidence_detail,conflicts,review_decision,ai_matched_entity_type,ai_matched_entity_id,ai_matched_label,matched_entity_type,matched_entity_id,matched_label,match_score,warnings,status,price_snapshot_id,reviewed_piece_count,reviewed_price_per_piece,created_at,reviewed_at,reviewed_by,rejection_reason,review_method,h5_lifecycle_status,h5_lifecycle_at";
-const visitSelect = `id,visit_code,store_name,region,channel,promoter,visit_date,visit_status,analysis_status,analysis_error,summary_result,image_urls,image_categories,offline_visit_images(id,visit_id,replaces_image_id,replaced_by_image_id,deleted_at,deletion_reason,image_type,image_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at),ai_price_candidates(${aiPriceCandidateSelect})`;
-const legacyVisitSelect = `id,visit_code,store_name,region,channel,promoter,visit_date,visit_status,analysis_status,analysis_error,summary_result,image_urls,image_categories,offline_visit_images(id,visit_id,image_type,image_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at),ai_price_candidates(${aiPriceCandidateSelect})`;
+const visitSelect = `id,visit_code,store_name,region,channel,promoter,visit_date,visit_status,analysis_status,analysis_error,summary_result,image_urls,image_thumbnail_paths,image_categories,offline_visit_images(id,visit_id,replaces_image_id,replaced_by_image_id,deleted_at,deletion_reason,image_type,image_path,thumbnail_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at),ai_price_candidates(${aiPriceCandidateSelect})`;
+const legacyVisitSelect = `id,visit_code,store_name,region,channel,promoter,visit_date,visit_status,analysis_status,analysis_error,summary_result,image_urls,image_thumbnail_paths,image_categories,offline_visit_images(id,visit_id,image_type,image_path,thumbnail_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at),ai_price_candidates(${aiPriceCandidateSelect})`;
 const aiPriceCandidateLegacySelect = aiPriceCandidateSelect.replace("source_row_index,", "");
-const visitLegacyCandidateSelect = `id,visit_code,store_name,region,channel,promoter,visit_date,visit_status,analysis_status,analysis_error,summary_result,image_urls,image_categories,offline_visit_images(id,visit_id,replaces_image_id,replaced_by_image_id,deleted_at,deletion_reason,image_type,image_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at),ai_price_candidates(${aiPriceCandidateLegacySelect})`;
-const fullyLegacyVisitSelect = `id,visit_code,store_name,region,channel,promoter,visit_date,visit_status,analysis_status,analysis_error,summary_result,image_urls,image_categories,offline_visit_images(id,visit_id,image_type,image_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at),ai_price_candidates(${aiPriceCandidateLegacySelect})`;
+const visitLegacyCandidateSelect = `id,visit_code,store_name,region,channel,promoter,visit_date,visit_status,analysis_status,analysis_error,summary_result,image_urls,image_thumbnail_paths,image_categories,offline_visit_images(id,visit_id,replaces_image_id,replaced_by_image_id,deleted_at,deletion_reason,image_type,image_path,thumbnail_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at),ai_price_candidates(${aiPriceCandidateLegacySelect})`;
+const fullyLegacyVisitSelect = `id,visit_code,store_name,region,channel,promoter,visit_date,visit_status,analysis_status,analysis_error,summary_result,image_urls,image_thumbnail_paths,image_categories,offline_visit_images(id,visit_id,image_type,image_path,thumbnail_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at),ai_price_candidates(${aiPriceCandidateLegacySelect})`;
+
+async function createSignedUrlWithFallback(input: {
+  bucket: "store-visits" | "offline-visit-images";
+  preferredPath: string;
+  fallbackPath: string;
+}) {
+  const supabase = createSupabaseServiceClient();
+  const preferred = await supabase.storage.from(input.bucket).createSignedUrl(input.preferredPath, 60 * 60);
+  if (preferred.data?.signedUrl) return preferred.data.signedUrl;
+  if (input.preferredPath === input.fallbackPath) return null;
+  const fallback = await supabase.storage.from(input.bucket).createSignedUrl(input.fallbackPath, 60 * 60);
+  return fallback.data?.signedUrl ?? null;
+}
 
 function toStoreVisitImageCategory(category: OfflineImageType | StoreVisitImageCategory | null | undefined): StoreVisitImageCategory | undefined {
   if (category === "own_shelf") return "makuku_shelf";
@@ -45,18 +60,27 @@ function toStoreVisitImageCategory(category: OfflineImageType | StoreVisitImageC
 }
 
 async function attachSignedImageUrls(visit: OfflineStoreVisit) {
-  const supabase = createSupabaseServiceClient();
   const imagePaths = Array.isArray(visit.image_urls) ? visit.image_urls : [];
+  const imageThumbnailPaths = Array.isArray(visit.image_thumbnail_paths) ? visit.image_thumbnail_paths : [];
   const categories = Array.isArray(visit.image_categories) ? visit.image_categories : [];
   const legacySignedImages = await Promise.all(imagePaths.map(async (path, index): Promise<SignedVisitImage> => {
-    const { data } = await supabase.storage.from("store-visits").createSignedUrl(path, 60 * 60);
-    return { path, url: data?.signedUrl ?? null, category: toStoreVisitImageCategory(categories[index]) };
+    const thumbnailPath = imageThumbnailPaths[index] ?? buildStoreVisitThumbnailPath(path);
+    const url = await createSignedUrlWithFallback({
+      bucket: "store-visits",
+      preferredPath: thumbnailPath,
+      fallbackPath: path,
+    });
+    return { path, url, category: toStoreVisitImageCategory(categories[index]) };
   }));
   const tableSignedImages = await Promise.all((visit.offline_visit_images ?? []).map(async (image): Promise<SignedVisitImage> => {
     const category = toStoreVisitImageCategory(image.image_type);
-    if (image.image_url) return { id: image.id, path: image.image_path, url: image.image_url, category };
-    const { data } = await supabase.storage.from("offline-visit-images").createSignedUrl(image.image_path, 60 * 60);
-    return { id: image.id, path: image.image_path, url: data?.signedUrl ?? null, category };
+    const thumbnailPath = image.thumbnail_path ?? buildStoreVisitThumbnailPath(image.image_path);
+    const url = await createSignedUrlWithFallback({
+      bucket: "offline-visit-images",
+      preferredPath: thumbnailPath,
+      fallbackPath: image.image_path,
+    });
+    return { id: image.id, path: image.image_path, url, category };
   }));
   return {
     ...visit,
@@ -130,8 +154,10 @@ async function loadVisitWithFallback(supabase: ReturnType<typeof createSupabaseS
   return data as unknown as StoreVisitWithPriceCandidates;
 }
 
-export async function GET(_request: Request, ctx: RouteContext) {
+export async function GET(request: Request, ctx: RouteContext) {
   try {
+    const auth = await requireAppSession(request);
+    if (auth.response) return auth.response;
     const { id } = await ctx.params;
     const supabase = createSupabaseServiceClient();
     let visit = await loadVisitWithFallback(supabase, id);
