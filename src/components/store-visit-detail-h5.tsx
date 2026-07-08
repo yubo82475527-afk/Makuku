@@ -1585,7 +1585,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         key={`${item.image.id}-${thumbnailRetryVersions[item.image.id] ?? 0}`}
-                        src={thumbnailSrcForImage(item.image.id)}
+                        src={item.signedImage?.url ?? thumbnailSrcForImage(item.image.id)}
                         alt={`${text.photoPrefix}${index + 1}`}
                         className="h-full w-full object-cover"
                         onLoad={() => clearThumbnailFailure(item.image.id)}
@@ -2030,7 +2030,7 @@ function PriceSectionGroup({
         <div key={section.image.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
           {(() => {
             const sectionLocalUpload = localUploadsByImageId[section.image.id];
-            const storedThumbnailUrl = thumbnailSrcForImage(section.image.id);
+            const storedThumbnailUrl = section.signedImage?.url ?? thumbnailSrcForImage(section.image.id);
             const previewUrl = sectionLocalUpload?.previewUrl ?? storedThumbnailUrl;
             const thumbnailRetryVersion = thumbnailRetryVersions[section.image.id] ?? 0;
             const thumbnailFailed = thumbnailFailedImageIds.includes(section.image.id);

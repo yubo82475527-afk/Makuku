@@ -23,9 +23,11 @@ const backfillScript = existsSync(backfillScriptPath) ? readFileSync(backfillScr
 const storeVisitOriginalRoutePath = "src/app/api/store-visit/[id]/image-url/route.ts";
 const offlineVisitOriginalRoutePath = "src/app/api/offline-store-visits/[id]/image-url/route.ts";
 const storeVisitThumbnailProxyRoutePath = "src/app/api/store-visit/[id]/images/[imageId]/thumbnail/route.ts";
+const thumbnailTokenPath = "src/lib/store-visit-thumbnail-token.ts";
 const storeVisitOriginalRoute = existsSync(storeVisitOriginalRoutePath) ? readFileSync(storeVisitOriginalRoutePath, "utf8") : "";
 const offlineVisitOriginalRoute = existsSync(offlineVisitOriginalRoutePath) ? readFileSync(offlineVisitOriginalRoutePath, "utf8") : "";
 const storeVisitThumbnailProxyRoute = existsSync(storeVisitThumbnailProxyRoutePath) ? readFileSync(storeVisitThumbnailProxyRoutePath, "utf8") : "";
+const thumbnailTokenFile = existsSync(thumbnailTokenPath) ? readFileSync(thumbnailTokenPath, "utf8") : "";
 
 test("thumbnail migration persists paths for current and legacy store visit images", () => {
   assert.ok(existsSync(migrationPath), "thumbnail migration should exist");
@@ -74,11 +76,15 @@ test("thumbnail UIs lazy-load originals only when the user opens a preview", () 
 
 test("H5 price thumbnails are served through same-origin thumbnail proxy", () => {
   assert.ok(existsSync(storeVisitThumbnailProxyRoutePath), "same-origin thumbnail proxy should exist");
+  assert.ok(existsSync(thumbnailTokenPath), "thumbnail token helper should exist");
   assert.match(storeVisitThumbnailProxyRoute, /requireAppSession\(request\)/);
+  assert.match(storeVisitThumbnailProxyRoute, /readStoreVisitThumbnailToken/);
   assert.match(storeVisitThumbnailProxyRoute, /thumbnail_path/);
   assert.match(storeVisitThumbnailProxyRoute, /buildStoreVisitThumbnailPath/);
   assert.match(storeVisitThumbnailProxyRoute, /Cache-Control/);
   assert.match(storeVisitThumbnailProxyRoute, /retryDelaysMs/);
+  assert.match(thumbnailTokenFile, /createStoreVisitThumbnailToken/);
+  assert.match(storeVisitDetailRoute, /createStoreVisitThumbnailToken/);
   assert.match(storeVisitDetailH5, /thumbnailSrcForImage/);
   assert.match(storeVisitDetailH5, /thumbnailRetryVersions/);
   assert.match(storeVisitDetailH5, /onRetryThumbnail/);

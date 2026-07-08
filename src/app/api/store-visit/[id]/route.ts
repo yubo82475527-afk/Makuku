@@ -6,6 +6,7 @@ import type { AiPriceCandidate, OfflineImageType, OfflineStoreVisit, OfflineVisi
 import { isInactiveVisitImage, refreshStoreVisitStoredPriceState } from "@/lib/store-visit-image-maintenance";
 import { reconcileActiveStoreVisitAiJob, summarizeStoreVisitAiJob } from "@/lib/store-visit-ai-jobs";
 import { syncStoreVisitPriceCandidatesFromImages } from "@/lib/store-visit-price-candidate-sync";
+import { createStoreVisitThumbnailToken } from "@/lib/store-visit-thumbnail-token";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -47,6 +48,15 @@ async function createSignedThumbnailUrl(input: {
   return signed.data?.signedUrl ?? null;
 }
 
+function createSameOriginThumbnailUrl(input: {
+  visitId: string;
+  imageId: string;
+  thumbnailPath: string;
+}) {
+  const token = createStoreVisitThumbnailToken(input);
+  return `/api/store-visit/${input.visitId}/images/${input.imageId}/thumbnail?token=${encodeURIComponent(token)}`;
+}
+
 function toStoreVisitImageCategory(category: OfflineImageType | StoreVisitImageCategory | null | undefined): StoreVisitImageCategory | undefined {
   if (category === "own_shelf") return "makuku_shelf";
   if (category === "competitor_shelf") return "competitor_shelf";
@@ -70,8 +80,9 @@ async function attachSignedImageUrls(visit: OfflineStoreVisit) {
   const tableSignedImages = await Promise.all((visit.offline_visit_images ?? []).map(async (image): Promise<SignedVisitImage> => {
     const category = toStoreVisitImageCategory(image.image_type);
     const thumbnailPath = image.thumbnail_path ?? buildStoreVisitThumbnailPath(image.image_path);
-    const url = await createSignedThumbnailUrl({
-      bucket: "offline-visit-images",
+    const url = createSameOriginThumbnailUrl({
+      visitId: image.visit_id,
+      imageId: image.id,
       thumbnailPath,
     });
     return { id: image.id, path: image.image_path, url, category };

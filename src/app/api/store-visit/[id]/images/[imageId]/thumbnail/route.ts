@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAppSession } from "@/lib/auth-session";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import { buildStoreVisitThumbnailPath } from "@/lib/store-visit-image-variants";
+import { readStoreVisitThumbnailToken } from "@/lib/store-visit-thumbnail-token";
 
 type RouteContext = {
   params: Promise<{ id: string; imageId: string }>;
@@ -45,10 +46,14 @@ async function downloadThumbnail(input: {
 }
 
 export async function GET(request: Request, ctx: RouteContext) {
-  const auth = await requireAppSession(request);
-  if (auth.response) return auth.response;
-
   const { id, imageId } = await ctx.params;
+  const token = readStoreVisitThumbnailToken(new URL(request.url).searchParams.get("token"));
+  const tokenAuthorized = token?.visitId === id && token.imageId === imageId;
+  if (!tokenAuthorized) {
+    const auth = await requireAppSession(request);
+    if (auth.response) return auth.response;
+  }
+
   const supabase = createSupabaseServiceClient();
   const imageResult = await supabase
     .from("offline_visit_images")
@@ -63,6 +68,7 @@ export async function GET(request: Request, ctx: RouteContext) {
   if (image.deleted_at || image.replaced_by_image_id) return jsonError("Image is inactive", 410);
 
   const thumbnailPath = image.thumbnail_path ?? buildStoreVisitThumbnailPath(image.image_path);
+  if (tokenAuthorized && token.thumbnailPath !== thumbnailPath) return jsonError("Thumbnail token is no longer valid", 403);
   try {
     const blob = await downloadThumbnail({
       bucket: "offline-visit-images",
