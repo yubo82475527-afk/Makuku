@@ -88,7 +88,12 @@ test("H5 price thumbnails are served through same-origin thumbnail proxy", () =>
   assert.match(storeVisitDetailH5, /thumbnailSrcForImage/);
   assert.match(storeVisitDetailH5, /thumbnailRetryVersions/);
   assert.match(storeVisitDetailH5, /onRetryThumbnail/);
+  assert.match(storeVisitDetailH5, /thumbnailFailedSources/);
+  assert.match(storeVisitDetailH5, /normalizeBrowserImageSrc/);
+  assert.match(storeVisitDetailH5, /currentSrc/);
+  assert.match(storeVisitDetailH5, /sourceUrl \?\?/);
   assert.doesNotMatch(storeVisitDetailH5, /const previewUrl = sectionLocalUpload\?\.previewUrl \?\? section\.signedImage\?\.url \?\? null;/);
+  assert.doesNotMatch(storeVisitDetailH5, /thumbnailFailedImageIds/);
 });
 
 test("detail thumbnails never silently fall back to originals inside the page", () => {

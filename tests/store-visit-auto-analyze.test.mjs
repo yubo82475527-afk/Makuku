@@ -224,7 +224,7 @@ test("H5 detail fetches fresh visit thumbnails and retries broken stored thumbna
   assert.match(storeVisitDetailH5, /const \[storedPreviewRefreshAttempts, setStoredPreviewRefreshAttempts\] = useState<Record<string, boolean>>\(\{\}\)/);
   assert.match(storeVisitDetailH5, /async function handleStoredThumbnailError\(input: \{ imageId: string \}\)/);
   assert.match(storeVisitDetailH5, /onStoredPreviewError: \(image: \{ imageId: string \}\) => void;/);
-  assert.match(storeVisitDetailH5, /onError=\{\(\) => \{[\s\S]*void onStoredPreviewError\(\{/);
+  assert.match(storeVisitDetailH5, /onError=\{\(event\) => \{[\s\S]*const failedSrc = normalizeBrowserImageSrc\(event\.currentTarget\.currentSrc \|\| event\.currentTarget\.src\);[\s\S]*if \(failedSrc !== expectedThumbnailSrc\) return;[\s\S]*void onStoredPreviewError\(\{/);
   assert.doesNotMatch(storeVisitDetailH5, /setStoredPreviewOverrides/);
 });
 
