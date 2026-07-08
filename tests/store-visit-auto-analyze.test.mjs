@@ -515,12 +515,22 @@ test("store visit monitor export backend strips pagination and runs a storage-ba
   assert.match(storeVisitMonitorExportJobs, /storage/i);
   assert.match(storeVisitMonitorExportJobs, /exported_rows/);
   assert.match(storeVisitMonitorExportJobs, /file_path/);
+  assert.match(storeVisitMonitorExportJobs, /storeVisitMonitorExportBatchSize = 100/);
   assert.match(dataFile, /getStoreVisitMonitorExportBatch/);
 });
 
 test("store visit monitor export uses a dedicated paged row loader instead of the summary query path", () => {
   assert.match(dataFile, /export async function getStoreVisitMonitorExportBatch/);
   assert.match(dataFile, /export async function getStoreVisitMonitorExport[\s\S]*getStoreVisitMonitorExportBatch/);
+});
+
+test("store visit monitor export skips row quality metrics to keep background exports fast", () => {
+  assert.doesNotMatch(storeVisitMonitorExportJobs, /Accuracy:/);
+  assert.doesNotMatch(storeVisitMonitorExportJobs, /Auto-approval rate/);
+  assert.doesNotMatch(storeVisitMonitorExportJobs, /Average price deviation/);
+  assert.match(dataFile, /export async function getStoreVisitMonitorExportBatch[\s\S]*options: \{ includeQuality\?: boolean \} = \{\}/);
+  assert.match(dataFile, /if \(options\.includeQuality === false\) \{/);
+  assert.match(storeVisitMonitorExportJobs, /includeQuality: false/);
 });
 
 test("store visit monitor detail links open in a new window", () => {

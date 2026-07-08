@@ -1,5 +1,5 @@
 import * as XLSX from "xlsx";
-import { formatJakartaDateTimeSeconds, formatJakartaTime, formatPercent } from "@/lib/format";
+import { formatJakartaDateTimeSeconds, formatJakartaTime } from "@/lib/format";
 import {
   getStoreVisitMonitorExportBatch,
   getStoreVisitMonitorExportCount,
@@ -13,7 +13,7 @@ type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceClient>;
 const exportJobStatuses = ["queued", "running"] as const;
 const storeVisitMonitorExportBucket = "store-visits";
 const storeVisitMonitorExportPrefix = "store-visit-monitor-exports";
-const storeVisitMonitorExportBatchSize = 500;
+const storeVisitMonitorExportBatchSize = 100;
 const storeVisitMonitorExportHistoryLimit = 12;
 
 function nowIso() {
@@ -94,9 +94,6 @@ function buildWorkbookBuffer(input: { locale: string; rows: Awaited<ReturnType<t
     Success: visit.successCount,
     Failure: visit.failureCount,
     Retake: visit.retakeRequiredCount,
-    Accuracy: formatPercent(visit.accuracy !== null ? visit.accuracy * 100 : null),
-    "Auto-approval rate": formatPercent(visit.autoApprovalRate !== null ? visit.autoApprovalRate * 100 : null),
-    "Average price deviation": formatPercent(visit.avgPriceDeviationRate !== null ? visit.avgPriceDeviationRate * 100 : null),
     "Started at": visit.startedAt ? formatJakartaTime(visit.startedAt) : "-",
     "Completed at": visit.completedAt ? formatJakartaTime(visit.completedAt) : "-",
     "Create time": formatJakartaDateTimeSeconds(visit.createdAt),
@@ -116,9 +113,6 @@ function buildWorkbookBuffer(input: { locale: string; rows: Awaited<ReturnType<t
     { wch: 10 },
     { wch: 10 },
     { wch: 10 },
-    { wch: 12 },
-    { wch: 18 },
-    { wch: 22 },
     { wch: 18 },
     { wch: 18 },
     { wch: 20 },
@@ -247,6 +241,7 @@ export async function runStoreVisitMonitorExportJob(input: {
       dateTo,
       offset,
       storeVisitMonitorExportBatchSize,
+      { includeQuality: false },
     );
     if (batchResult.error) throw new Error(batchResult.error);
     rows.push(...batchResult.data);

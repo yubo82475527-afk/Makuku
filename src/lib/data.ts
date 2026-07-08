@@ -3792,6 +3792,7 @@ export async function getStoreVisitMonitorExportBatch(
   dateTo: string,
   offset: number,
   limit: number,
+  options: { includeQuality?: boolean } = {},
 ): Promise<QueryResult<StoreVisitMonitorItem[]>> {
   if (!hasSupabaseServiceConfig()) {
     const sorted = sortMonitorItems(filterMonitorItems(demoOfflineStoreVisits.map(toMonitorItem), filters, dateFrom, dateTo));
@@ -3825,6 +3826,13 @@ export async function getStoreVisitMonitorExportBatch(
     exportResult = await runBatch(legacyStoreVisitMonitorSelect);
   }
   if (exportResult.error) return { data: [], error: exportResult.error, isDemo: exportResult.isDemo };
+  if (options.includeQuality === false) {
+    return {
+      data: exportResult.rows,
+      error: null,
+      isDemo: exportResult.isDemo,
+    };
+  }
 
   const visitIds = exportResult.rows.map((visit) => visit.visitId);
   const visitQualityResult = await getStoreVisitMonitorVisitQuality(visitIds);

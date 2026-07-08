@@ -30,7 +30,7 @@ const storeMasterTable = readFileSync("src/components/store-master-table.tsx", "
 test("app shell groups the backend navigation for price positioning and master data", () => {
   assert.match(appShell, /Dashboard/);
   assert.match(appShell, /Price Monitoring/);
-  assert.match(appShell, /真实市场价格|Real Market Price/);
+  assert.match(appShell, /鐪熷疄甯傚満浠锋牸|Real Market Price/);
   assert.match(appShell, /Photo Price Review/);
   assert.match(appShell, /Price Positioning/);
   assert.match(appShell, /Competitor Mapping/);
@@ -65,24 +65,15 @@ test("location reverse and offline stores support structured province city distr
   assert.match(typesFile, /@deprecated Use city_name instead\. Kept only for legacy compatibility\./);
 });
 
-test("dashboard now combines price index, exception follow-up, and execution sections", () => {
-  assert.match(dashboardContent, /Price Index/);
-  assert.match(dashboardContent, /Exception Follow-up/);
-  assert.match(dashboardContent, /Promoter Execution/);
-  assert.match(dashboardContent, /PriceIndexTreeTable/);
-  assert.match(dashboardContent, /flattenProblemStoreRows/);
-  assert.match(dashboardData, /buildExecutionBoard/);
-  assert.match(dashboardContent, /name="month"/);
-  assert.match(dashboardContent, /name="organization"/);
-  assert.match(dashboardContent, /name="ownSeries"/);
-  assert.doesNotMatch(dashboardContent, /name="sku"/);
-  assert.doesNotMatch(dashboardContent, /name="benchmarkRuleId"/);
-  assert.match(dashboardContent, /name="exceptionProvince"/);
-  assert.match(dashboardContent, /name="executionMonth"/);
-  assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /PRICE\/PCS \{week\.label\}/);
-  assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /CombinedMetricCell/);
-  assert.doesNotMatch(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /function PriceCell/);
-  assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /WEEK_COLUMN_CLASS/);
+test("dashboard is temporarily replaced by a refactor placeholder", () => {
+  assert.match(dashboardPage, /Dashboard under refactor/);
+  assert.match(dashboardPage, /仪表盘重构中/);
+  assert.doesNotMatch(dashboardPage, /PriceIndexTreeTable/);
+  assert.doesNotMatch(dashboardPage, /Exception Follow-up/);
+  assert.doesNotMatch(dashboardPage, /Promoter Execution/);
+  assert.doesNotMatch(dashboardPage, /name="month"/);
+  assert.doesNotMatch(dashboardPage, /name="exceptionProvince"/);
+  assert.doesNotMatch(dashboardPage, /name="executionMonth"/);
 });
 
 test("dashboard derived data calculates weekly coefficients from own and benchmark averages", () => {
@@ -111,27 +102,19 @@ test("dashboard derived data calculates weekly coefficients from own and benchma
   assert.match(dataFile, /ownAvgPrice \/ benchmarkAvgPrice/);
   assert.match(dataFile, /series\.isBenchmark/);
   assert.match(dataFile, /coefficient:\s+series\.isBenchmark/);
-  assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /isBenchmark \? \(isZh \? "（标杆）" : " \(Benchmark\)"\) : ""/);
+  assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /series\.isBenchmark \? \(isZh \? "（标杆）" : " \(Benchmark\)"\) : ""/);
   assert.match(dataFile, /material_master/);
   assert.match(dataFile, /canonicalDashboardProvinceLabel/);
   assert.match(dataFile, /buildWeeklyCoefficientTree/);
   assert.match(dataFile, /snapshotOrganizationName/);
 });
 
-test("dashboard exception and execution sections reuse current data sources before dedicated aggregate tables exist", () => {
-  assert.match(dashboardData, /getProductSegmentBattles/);
-  assert.match(dashboardData, /getAlerts/);
-  assert.match(dashboardData, /getOfflineStoreVisits/);
-  assert.match(dashboardContent, /problemStoreCount/);
-  assert.match(dashboardData, /visitWeekKey/);
-  assert.match(dashboardData, /actualVisitCount/);
-  assert.match(dashboardData, /completionRate/);
-  assert.match(dashboardData, /normalizeExecutionOrganization/);
-  assert.match(dashboardContent, /formatExecutionRegionLabel/);
-  assert.match(dashboardContent, /formatLooseRegionText/);
-  assert.match(dashboardData, /includeImageUrls:\s*false/);
-  assert.match(dataFile, /includeImageUrls\?: boolean/);
-  assert.match(dataFile, /if \(filters\.includeImageUrls === false\)/);
+test("dashboard pause removes all current report queries from the page entrypoint", () => {
+  assert.doesNotMatch(dashboardPage, /getWeeklyPriceCoefficientBoard/);
+  assert.doesNotMatch(dashboardPage, /getProductSegmentBattles/);
+  assert.doesNotMatch(dashboardPage, /getAlerts/);
+  assert.doesNotMatch(dashboardPage, /getOfflineStoreVisits/);
+  assert.doesNotMatch(dashboardPage, /Promise\.all/);
 });
 
 test("dashboard region filters use structured store regions and ignore numeric legacy city values", () => {
@@ -225,19 +208,13 @@ test("dashboard and prices expose streaming loading states for fast shell transi
   assert.equal(existsSync("src/app/[locale]/offline-price-candidates/loading.tsx"), true);
 });
 
-test("dashboard uses a light server shell and abortable client data loading", () => {
-  assert.match(dashboardPage, /DashboardClient/);
-  assert.doesNotMatch(dashboardPage, /getWeeklyPriceCoefficientBoard/);
-  assert.doesNotMatch(dashboardPage, /getProductSegmentBattles/);
-  assert.doesNotMatch(dashboardPage, /getOfflineStoreVisits/);
-  assert.match(dashboardClient, /new AbortController\(\)/);
-  assert.match(dashboardClient, /controller\.abort\(\)/);
-  assert.match(dashboardClient, /`\/api\/dashboard\?/);
-  assert.match(dashboardClient, /section", section/);
-  assert.match(dashboardRoute, /getDashboardData/);
-  assert.match(dashboardRoute, /section === "price"/);
-  assert.match(dashboardRoute, /section === "exceptions"/);
-  assert.match(dashboardRoute, /section === "execution"/);
+test("dashboard pause does not depend on client report loading", () => {
+  assert.doesNotMatch(dashboardPage, /DashboardClient/);
+  assert.doesNotMatch(dashboardPage, /\/api\/dashboard/);
+  assert.equal(typeof dashboardClient, "string");
+  assert.equal(typeof dashboardContent, "string");
+  assert.equal(typeof dashboardData, "string");
+  assert.equal(typeof dashboardRoute, "string");
 });
 
 test("photo price review uses the same client-side shell navigation path as the other backend pages", () => {
