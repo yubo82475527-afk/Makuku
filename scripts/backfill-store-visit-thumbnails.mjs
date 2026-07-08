@@ -26,7 +26,7 @@ async function mapWithConcurrency(items, concurrency, worker) {
 }
 
 function printHelp() {
-  console.log(`Usage: node scripts/backfill-store-visit-thumbnails.mjs [--apply] [--replace-webp] [--limit=N] [--visit-code=CODE]
+  console.log(`Usage: node scripts/backfill-store-visit-thumbnails.mjs [--apply] [--replace-webp] [--replace-corrupt] [--limit=N] [--visit-code=CODE] [--visit-id=UUID]
 
 Environment:
   NEXT_PUBLIC_SUPABASE_URL or SUPABASE_URL
@@ -36,7 +36,8 @@ Behavior:
   Without --apply, prints a dry-run summary only.
   With --apply, backfills missing thumbnail_path and image_thumbnail_paths.
   With --replace-webp, also regenerates existing .webp thumbnails as .jpg.
-  With --visit-code, limits the run to one visit.`);
+  With --replace-corrupt, also regenerates existing thumbnails that are not valid JPEG files.
+  With --visit-code or --visit-id, limits the run to one visit.`);
 }
 
 function buildStoreVisitThumbnailPath(originalPath) {
@@ -51,6 +52,24 @@ function shouldReplaceThumbnailPath(path, replaceWebp) {
   return !path || (replaceWebp && String(path).toLowerCase().endsWith(".webp"));
 }
 
+function isValidJpegBuffer(buffer) {
+  return buffer.length > 3 && buffer[0] === 0xff && buffer[1] === 0xd8;
+}
+
+function toStorageUploadBody(buffer, contentType) {
+  return new Blob([new Uint8Array(buffer)], { type: contentType });
+}
+
+async function assertValidStoreVisitThumbnail(buffer) {
+  if (!isValidJpegBuffer(buffer)) {
+    throw new Error("Generated thumbnail is not a valid JPEG");
+  }
+  const metadata = await sharp(buffer, { failOn: "error" }).metadata();
+  if (metadata.format !== "jpeg" || !metadata.width || !metadata.height) {
+    throw new Error("Generated thumbnail metadata is invalid");
+  }
+}
+
 async function createStoreVisitThumbnail(bytes) {
   const thumbnail = sharp(bytes, { failOn: "none" })
     .rotate()
@@ -59,7 +78,9 @@ async function createStoreVisitThumbnail(bytes) {
       withoutEnlargement: true,
     })
     .jpeg({ quality: THUMBNAIL_QUALITY, mozjpeg: true });
-  return thumbnail.toBuffer();
+  const buffer = await thumbnail.toBuffer();
+  await assertValidStoreVisitThumbnail(buffer);
+  return buffer;
 }
 
 async function downloadBytes(supabase, bucket, path) {
@@ -86,7 +107,7 @@ async function uploadThumbnail(supabase, bucket, originalPath, existingThumbnail
     }
     thumbnailBuffer = await createThumbnailFromPath(supabase, bucket, existingThumbnailPath);
   }
-  const uploadResult = await supabase.storage.from(bucket).upload(thumbnailPath, thumbnailBuffer, {
+  const uploadResult = await supabase.storage.from(bucket).upload(thumbnailPath, toStorageUploadBody(thumbnailBuffer, THUMBNAIL_CONTENT_TYPE), {
     contentType: THUMBNAIL_CONTENT_TYPE,
     upsert: true,
   });
@@ -96,7 +117,19 @@ async function uploadThumbnail(supabase, bucket, originalPath, existingThumbnail
   return thumbnailPath;
 }
 
-async function resolveVisitId(supabase, visitCode) {
+async function shouldRepairThumbnail({ supabase, bucket, thumbnailPath, replaceWebp, replaceCorrupt }) {
+  if (shouldReplaceThumbnailPath(thumbnailPath, replaceWebp)) return true;
+  if (!replaceCorrupt || !thumbnailPath) return false;
+  try {
+    const bytes = await downloadBytes(supabase, bucket, thumbnailPath);
+    return !isValidJpegBuffer(bytes);
+  } catch {
+    return true;
+  }
+}
+
+async function resolveVisitId(supabase, visitCode, visitIdArg) {
+  if (visitIdArg) return visitIdArg;
   if (!visitCode) return null;
   const { data, error } = await supabase
     .from("offline_store_visits")
@@ -107,7 +140,7 @@ async function resolveVisitId(supabase, visitCode) {
   return data.id;
 }
 
-async function backfillOfflineVisitImages({ supabase, apply, replaceWebp, remainingLimit, visitId, failures }) {
+async function backfillOfflineVisitImages({ supabase, apply, replaceWebp, replaceCorrupt, remainingLimit, visitId, failures }) {
   let processed = 0;
   let from = 0;
   const failedIds = new Set();
@@ -116,32 +149,34 @@ async function backfillOfflineVisitImages({ supabase, apply, replaceWebp, remain
     : "thumbnail_path.is.null,thumbnail_path.eq.";
 
   while (remainingLimit.value > 0) {
-    const pageStart = apply ? 0 : from;
+    const pageStart = apply && !replaceCorrupt ? 0 : from;
     let query = supabase
       .from("offline_visit_images")
       .select("id,image_path,thumbnail_path")
-      .or(filter)
       .order("created_at", { ascending: true });
+    if (!replaceCorrupt) query = query.or(filter);
     if (visitId) query = query.eq("visit_id", visitId);
     const { data: rawData, error } = await query.range(pageStart, pageStart + PAGE_SIZE - 1);
     if (error) throw new Error(error.message);
     const data = (rawData ?? []).filter((image) => !failedIds.has(image.id));
     if (!data?.length) break;
 
-    const batch = data.slice(0, Number.isFinite(remainingLimit.value) ? remainingLimit.value : data.length);
-    if (!apply) {
-      processed += batch.length;
-      remainingLimit.value -= batch.length;
-      if (data.length < PAGE_SIZE) break;
-      from += PAGE_SIZE;
-      continue;
-    }
-
-    await mapWithConcurrency(batch, CONCURRENCY, async (image) => {
-      processed += 1;
-      remainingLimit.value -= 1;
-      if (apply) logProgress("offline_visit_images", processed, remainingLimit);
+    await mapWithConcurrency(data, CONCURRENCY, async (image) => {
+      if (remainingLimit.value <= 0) return;
       try {
+        const needsRepair = await shouldRepairThumbnail({
+          supabase,
+          bucket: "offline-visit-images",
+          thumbnailPath: image.thumbnail_path,
+          replaceWebp,
+          replaceCorrupt,
+        });
+        if (!needsRepair) return;
+        if (remainingLimit.value <= 0) return;
+        processed += 1;
+        remainingLimit.value -= 1;
+        if (!apply) return;
+        logProgress("offline_visit_images", processed, remainingLimit);
         const thumbnailPath = await uploadThumbnail(supabase, "offline-visit-images", image.image_path, image.thumbnail_path);
         const { error: updateError } = await supabase
           .from("offline_visit_images")
@@ -161,12 +196,13 @@ async function backfillOfflineVisitImages({ supabase, apply, replaceWebp, remain
     });
 
     if ((rawData ?? []).length < PAGE_SIZE) break;
+    if (replaceCorrupt || !apply) from += PAGE_SIZE;
   }
 
   return processed;
 }
 
-async function backfillLegacyVisitImages({ supabase, apply, replaceWebp, remainingLimit, visitId, failures }) {
+async function backfillLegacyVisitImages({ supabase, apply, replaceWebp, replaceCorrupt, remainingLimit, visitId, failures }) {
   let processed = 0;
   let from = 0;
 
@@ -189,7 +225,14 @@ async function backfillLegacyVisitImages({ supabase, apply, replaceWebp, remaini
 
       for (let index = 0; index < imageUrls.length; index += 1) {
         if (remainingLimit.value <= 0) break;
-        if (!shouldReplaceThumbnailPath(thumbnailPaths[index], replaceWebp)) continue;
+        const needsRepair = await shouldRepairThumbnail({
+          supabase,
+          bucket: "store-visits",
+          thumbnailPath: thumbnailPaths[index],
+          replaceWebp,
+          replaceCorrupt,
+        });
+        if (!needsRepair) continue;
         processed += 1;
         remainingLimit.value -= 1;
         if (apply) logProgress("image_thumbnail_paths", processed, remainingLimit);
@@ -238,9 +281,12 @@ async function main() {
 
   const apply = process.argv.includes("--apply");
   const replaceWebp = process.argv.includes("--replace-webp");
+  const replaceCorrupt = process.argv.includes("--replace-corrupt");
   const limitArg = process.argv.find((arg) => arg.startsWith("--limit="));
   const visitCodeArg = process.argv.find((arg) => arg.startsWith("--visit-code="));
+  const visitIdArg = process.argv.find((arg) => arg.startsWith("--visit-id="));
   const visitCode = visitCodeArg ? visitCodeArg.slice("--visit-code=".length).trim() : null;
+  const visitIdInput = visitIdArg ? visitIdArg.slice("--visit-id=".length).trim() : null;
   const limit = limitArg ? Number(limitArg.slice("--limit=".length)) : Number.POSITIVE_INFINITY;
   const remainingLimit = { value: Number.isFinite(limit) && limit > 0 ? limit : Number.POSITIVE_INFINITY };
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
@@ -251,15 +297,17 @@ async function main() {
   }
 
   const supabase = createClient(url, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
-  const visitId = await resolveVisitId(supabase, visitCode);
+  const visitId = await resolveVisitId(supabase, visitCode, visitIdInput);
   const failures = [];
-  const offlineVisitImages = await backfillOfflineVisitImages({ supabase, apply, replaceWebp, remainingLimit, visitId, failures });
-  const legacyVisitImages = await backfillLegacyVisitImages({ supabase, apply, replaceWebp, remainingLimit, visitId, failures });
+  const offlineVisitImages = await backfillOfflineVisitImages({ supabase, apply, replaceWebp, replaceCorrupt, remainingLimit, visitId, failures });
+  const legacyVisitImages = await backfillLegacyVisitImages({ supabase, apply, replaceWebp, replaceCorrupt, remainingLimit, visitId, failures });
 
   console.log(JSON.stringify({
     apply,
     replace_webp: replaceWebp,
+    replace_corrupt: replaceCorrupt,
     visit_code: visitCode,
+    visit_id: visitId,
     offline_visit_images: offlineVisitImages,
     image_thumbnail_paths: legacyVisitImages,
     failures,

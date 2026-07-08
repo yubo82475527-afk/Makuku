@@ -1,5 +1,5 @@
 import { revalidatePath } from "next/cache";
-import { buildStoreVisitThumbnailPath, createStoreVisitThumbnail } from "@/lib/store-visit-image-variants";
+import { buildStoreVisitThumbnailPath, createStoreVisitThumbnail, toStorageUploadBody } from "@/lib/store-visit-image-variants";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import { requireAppSession } from "@/lib/auth-session";
 
@@ -431,7 +431,7 @@ export async function POST(request: Request) {
       const thumbnail = await createStoreVisitThumbnail({ bytes });
       const { error: thumbnailUploadError } = await supabase.storage
         .from(bucketName)
-        .upload(thumbnailPath, thumbnail.buffer, { contentType: thumbnail.contentType, upsert: false });
+        .upload(thumbnailPath, toStorageUploadBody(thumbnail.buffer, thumbnail.contentType), { contentType: thumbnail.contentType, upsert: false });
       if (thumbnailUploadError) return Response.json({ error: thumbnailUploadError.message }, { status: 400 });
       imageUrls.push(path);
       imageThumbnailPaths.push(thumbnailPath);

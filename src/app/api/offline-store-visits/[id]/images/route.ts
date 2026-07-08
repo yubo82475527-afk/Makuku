@@ -1,6 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { formReturnRedirect } from "@/lib/request";
-import { buildStoreVisitThumbnailPath, createStoreVisitThumbnail } from "@/lib/store-visit-image-variants";
+import { buildStoreVisitThumbnailPath, createStoreVisitThumbnail, toStorageUploadBody } from "@/lib/store-visit-image-variants";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import { requireAppSession } from "@/lib/auth-session";
 import type { OfflineImageType } from "@/lib/types";
@@ -61,7 +61,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/offline-sto
     const thumbnail = await createStoreVisitThumbnail({ bytes });
     const { error: thumbnailUploadError } = await supabase.storage
       .from(bucketName)
-      .upload(thumbnailPath, thumbnail.buffer, {
+      .upload(thumbnailPath, toStorageUploadBody(thumbnail.buffer, thumbnail.contentType), {
         contentType: thumbnail.contentType,
         upsert: false,
       });

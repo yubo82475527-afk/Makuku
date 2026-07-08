@@ -1,7 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { invalidateStoreVisitImagePriceImpact, refreshStoreVisitStoredPriceState } from "@/lib/store-visit-image-maintenance";
 import { isSupportedStoreVisitImageFile, unsupportedStoreVisitImageFormatMessage } from "@/lib/store-visit-image-errors";
-import { buildStoreVisitThumbnailPath, createStoreVisitThumbnail } from "@/lib/store-visit-image-variants";
+import { buildStoreVisitThumbnailPath, createStoreVisitThumbnail, toStorageUploadBody } from "@/lib/store-visit-image-variants";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import { requireAppSession } from "@/lib/auth-session";
 import type { OfflineImageType, OfflineStoreVisit, StoreVisitImageCategory } from "@/lib/types";
@@ -132,7 +132,7 @@ export async function POST(request: Request, ctx: RouteContext) {
     const thumbnail = await createStoreVisitThumbnail({ bytes });
     const { error: thumbnailUploadError } = await supabase.storage
       .from(bucketName)
-      .upload(thumbnailPath, thumbnail.buffer, { contentType: thumbnail.contentType, upsert: false });
+      .upload(thumbnailPath, toStorageUploadBody(thumbnail.buffer, thumbnail.contentType), { contentType: thumbnail.contentType, upsert: false });
     if (thumbnailUploadError) return Response.json({ error: thumbnailUploadError.message }, { status: 400 });
 
     const insertPayload = {

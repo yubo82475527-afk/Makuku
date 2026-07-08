@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { requireAppSession } from "@/lib/auth-session";
 import { createSupabaseServiceClient } from "@/lib/supabase";
-import { buildStoreVisitThumbnailPath } from "@/lib/store-visit-image-variants";
+import {
+  buildStoreVisitThumbnailPath,
+  createStoreVisitThumbnail,
+  isValidJpegBuffer,
+  storeVisitThumbnailContentType,
+  toStorageUploadBody,
+} from "@/lib/store-visit-image-variants";
 import { readStoreVisitThumbnailToken } from "@/lib/store-visit-thumbnail-token";
 
 type RouteContext = {
@@ -26,23 +32,65 @@ function jsonError(message: string, status: number) {
   );
 }
 
-async function downloadThumbnail(input: {
+async function downloadStorageObject(input: {
+  supabase: ReturnType<typeof createSupabaseServiceClient>;
   bucket: "offline-visit-images";
   path: string;
 }) {
-  const supabase = createSupabaseServiceClient();
   let lastError: string | null = null;
 
   for (const delay of retryDelaysMs) {
     if (delay > 0) await sleep(delay);
-    const result = await supabase.storage.from(input.bucket).download(input.path);
+    const result = await input.supabase.storage.from(input.bucket).download(input.path);
     if (!result.error && result.data) {
-      return result.data;
+      return {
+        bytes: Buffer.from(await result.data.arrayBuffer()),
+        contentType: result.data.type || storeVisitThumbnailContentType,
+      };
     }
-    lastError = result.error?.message ?? "Thumbnail is not available";
+    lastError = result.error?.message ?? "Storage object is not available";
   }
 
-  throw new Error(lastError ?? "Thumbnail is not available");
+  throw new Error(lastError ?? "Storage object is not available");
+}
+
+async function ensureValidThumbnailBytes(input: {
+  supabase: ReturnType<typeof createSupabaseServiceClient>;
+  thumbnailPath: string;
+  originalPath: string;
+}) {
+  try {
+    const thumbnail = await downloadStorageObject({
+      supabase: input.supabase,
+      bucket: "offline-visit-images",
+      path: input.thumbnailPath,
+    });
+    if (isValidJpegBuffer(thumbnail.bytes)) {
+      return { ...thumbnail, repaired: false };
+    }
+  } catch {
+    // Missing thumbnails are repaired from the original below when possible.
+  }
+
+  const original = await downloadStorageObject({
+    supabase: input.supabase,
+    bucket: "offline-visit-images",
+    path: input.originalPath,
+  });
+  const regenerated = await createStoreVisitThumbnail({ bytes: original.bytes });
+  const uploadResult = await input.supabase.storage
+    .from("offline-visit-images")
+    .upload(input.thumbnailPath, toStorageUploadBody(regenerated.buffer, regenerated.contentType), {
+      contentType: regenerated.contentType,
+      upsert: true,
+    });
+  if (uploadResult.error) throw new Error(uploadResult.error.message);
+
+  return {
+    bytes: regenerated.buffer,
+    contentType: regenerated.contentType,
+    repaired: true,
+  };
 }
 
 export async function GET(request: Request, ctx: RouteContext) {
@@ -70,16 +118,17 @@ export async function GET(request: Request, ctx: RouteContext) {
   const thumbnailPath = image.thumbnail_path ?? buildStoreVisitThumbnailPath(image.image_path);
   if (tokenAuthorized && token.thumbnailPath !== thumbnailPath) return jsonError("Thumbnail token is no longer valid", 403);
   try {
-    const blob = await downloadThumbnail({
-      bucket: "offline-visit-images",
-      path: thumbnailPath,
+    const thumbnail = await ensureValidThumbnailBytes({
+      supabase,
+      thumbnailPath,
+      originalPath: image.image_path,
     });
-    const bytes = Buffer.from(await blob.arrayBuffer());
-    return new Response(bytes, {
+    return new Response(thumbnail.bytes, {
       headers: {
-        "Content-Type": blob.type || "image/jpeg",
-        "Content-Length": String(bytes.length),
+        "Content-Type": thumbnail.contentType,
+        "Content-Length": String(thumbnail.bytes.length),
         "Cache-Control": "private, max-age=300, stale-while-revalidate=3600",
+        ...(thumbnail.repaired ? { "X-Thumbnail-Repaired": "1" } : {}),
       },
     });
   } catch (error) {

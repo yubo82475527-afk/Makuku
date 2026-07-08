@@ -41,13 +41,21 @@ test("upload routes generate and persist thumbnails for new images", () => {
   assert.match(packageFile, /"sharp":/);
   assert.ok(existsSync(helperPath), "thumbnail helper should exist");
   assert.match(helperFile, /export async function createStoreVisitThumbnail/);
+  assert.match(helperFile, /export async function assertValidStoreVisitThumbnail/);
+  assert.match(helperFile, /export function isValidJpegBuffer/);
+  assert.match(helperFile, /export function toStorageUploadBody/);
   assert.match(helperFile, /export function buildStoreVisitThumbnailPath/);
   assert.match(helperFile, /storeVisitThumbnailContentType = "image\/jpeg"/);
   assert.match(helperFile, /\.jpeg\(\{ quality: thumbnailQuality, mozjpeg: true \}\)/);
+  assert.match(helperFile, /buffer\[0\] === 0xff && buffer\[1\] === 0xd8/);
   assert.doesNotMatch(helperFile, /\.webp\(/);
   assert.match(storeVisitImageRoute, /thumbnail_path:/);
   assert.match(offlineVisitImageRoute, /thumbnail_path:/);
   assert.match(createVisitRoute, /image_thumbnail_paths:/);
+  assert.match(storeVisitImageRoute, /toStorageUploadBody\(thumbnail\.buffer, thumbnail\.contentType\)/);
+  assert.match(createVisitRoute, /toStorageUploadBody\(thumbnail\.buffer, thumbnail\.contentType\)/);
+  assert.doesNotMatch(storeVisitImageRoute, /\.upload\(thumbnailPath, thumbnail\.buffer,/);
+  assert.doesNotMatch(createVisitRoute, /\.upload\(thumbnailPath, thumbnail\.buffer,/);
 });
 
 test("detail routes sign thumbnails first and expose per-image original URL endpoints", () => {
@@ -81,6 +89,11 @@ test("H5 price thumbnails are served through same-origin thumbnail proxy", () =>
   assert.match(storeVisitThumbnailProxyRoute, /readStoreVisitThumbnailToken/);
   assert.match(storeVisitThumbnailProxyRoute, /thumbnail_path/);
   assert.match(storeVisitThumbnailProxyRoute, /buildStoreVisitThumbnailPath/);
+  assert.match(storeVisitThumbnailProxyRoute, /ensureValidThumbnailBytes/);
+  assert.match(storeVisitThumbnailProxyRoute, /isValidJpegBuffer/);
+  assert.match(storeVisitThumbnailProxyRoute, /createStoreVisitThumbnail/);
+  assert.match(storeVisitThumbnailProxyRoute, /toStorageUploadBody/);
+  assert.match(storeVisitThumbnailProxyRoute, /X-Thumbnail-Repaired/);
   assert.match(storeVisitThumbnailProxyRoute, /Cache-Control/);
   assert.match(storeVisitThumbnailProxyRoute, /retryDelaysMs/);
   assert.match(thumbnailTokenFile, /createStoreVisitThumbnailToken/);
@@ -112,7 +125,10 @@ test("waiting-screen polling stays lightweight and a backfill script exists for 
   assert.match(backfillScript, /image_thumbnail_paths/);
   assert.match(backfillScript, /createStoreVisitThumbnail/);
   assert.match(backfillScript, /replaceWebp/);
+  assert.match(backfillScript, /replaceCorrupt/);
+  assert.match(backfillScript, /isValidJpegBuffer/);
+  assert.match(backfillScript, /toStorageUploadBody/);
   assert.match(backfillScript, /image\/jpeg/);
-  assert.match(backfillScript, /const pageStart = apply \? 0 : from;/);
+  assert.match(backfillScript, /const pageStart = apply && !replaceCorrupt \? 0 : from;/);
   assert.match(backfillScript, /\.range\(pageStart, pageStart \+ PAGE_SIZE - 1\)/);
 });
