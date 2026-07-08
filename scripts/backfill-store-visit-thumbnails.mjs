@@ -70,10 +70,22 @@ async function downloadBytes(supabase, bucket, path) {
   return Buffer.from(await result.data.arrayBuffer());
 }
 
-async function uploadThumbnail(supabase, bucket, originalPath) {
+async function createThumbnailFromPath(supabase, bucket, path) {
+  const bytes = await downloadBytes(supabase, bucket, path);
+  return createStoreVisitThumbnail(bytes);
+}
+
+async function uploadThumbnail(supabase, bucket, originalPath, existingThumbnailPath = null) {
   const thumbnailPath = buildStoreVisitThumbnailPath(originalPath);
-  const bytes = await downloadBytes(supabase, bucket, originalPath);
-  const thumbnailBuffer = await createStoreVisitThumbnail(bytes);
+  let thumbnailBuffer;
+  try {
+    thumbnailBuffer = await createThumbnailFromPath(supabase, bucket, originalPath);
+  } catch (error) {
+    if (!existingThumbnailPath || !String(existingThumbnailPath).toLowerCase().endsWith(".webp")) {
+      throw error;
+    }
+    thumbnailBuffer = await createThumbnailFromPath(supabase, bucket, existingThumbnailPath);
+  }
   const uploadResult = await supabase.storage.from(bucket).upload(thumbnailPath, thumbnailBuffer, {
     contentType: THUMBNAIL_CONTENT_TYPE,
     upsert: true,
@@ -130,7 +142,7 @@ async function backfillOfflineVisitImages({ supabase, apply, replaceWebp, remain
       remainingLimit.value -= 1;
       if (apply) logProgress("offline_visit_images", processed, remainingLimit);
       try {
-        const thumbnailPath = await uploadThumbnail(supabase, "offline-visit-images", image.image_path);
+        const thumbnailPath = await uploadThumbnail(supabase, "offline-visit-images", image.image_path, image.thumbnail_path);
         const { error: updateError } = await supabase
           .from("offline_visit_images")
           .update({ thumbnail_path: thumbnailPath })
@@ -183,7 +195,7 @@ async function backfillLegacyVisitImages({ supabase, apply, replaceWebp, remaini
         if (apply) logProgress("image_thumbnail_paths", processed, remainingLimit);
         if (apply) {
           try {
-            thumbnailPaths[index] = await uploadThumbnail(supabase, "store-visits", imageUrls[index]);
+            thumbnailPaths[index] = await uploadThumbnail(supabase, "store-visits", imageUrls[index], thumbnailPaths[index]);
             changed = true;
           } catch (error) {
             failures.push({
