@@ -10,6 +10,7 @@ const storeVisitH5 = readFileSync("src/components/store-visit-h5.tsx", "utf8");
 const storeVisitsListH5 = readFileSync("src/components/store-visits-list-h5.tsx", "utf8");
 const analyzeRoute = readFileSync("src/app/api/store-visit/analyze/route.ts", "utf8");
 const storeVisitImagesRoute = readFileSync("src/app/api/store-visit/[id]/images/route.ts", "utf8");
+const storeVisitDetailRoute = readFileSync("src/app/api/store-visit/[id]/route.ts", "utf8");
 const storeVisitDetailH5 = readFileSync("src/components/store-visit-detail-h5.tsx", "utf8");
 const storeVisitRefreshRoute = readFileSync("src/app/api/store-visit/[id]/refresh/route.ts", "utf8");
 const storeVisitAiCore = readFileSync("src/lib/store-visit-ai.ts", "utf8");
@@ -396,6 +397,14 @@ test("store visit AI hotfix migration removes ambiguous job_id output collisions
   assert.match(hotfixMigration, /create function public\.claim_store_visit_ai_job_item/);
   assert.match(hotfixMigration, /returns table\(claimed_job_id uuid, claimed_item_id uuid\)/);
   assert.match(hotfixMigration, /select updated_item\.job_id as claimed_job_id, updated_item\.id as claimed_item_id/);
+});
+
+test("store visit detail reconciles stale active AI jobs from terminal image state", () => {
+  assert.match(storeVisitAiJobs, /reconcileStoreVisitAiJobFromImages/);
+  assert.match(storeVisitAiJobs, /image\.analysis_status === "analyzed"/);
+  assert.match(storeVisitAiJobs, /remaining_count === 0/);
+  assert.match(storeVisitDetailRoute, /reconcileActiveStoreVisitAiJob/);
+  assert.doesNotMatch(storeVisitDetailRoute, /loadActiveStoreVisitAiJob/);
 });
 
 test("store visit analysis failure path also persists visit-level timing metrics", () => {

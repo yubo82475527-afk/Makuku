@@ -38,6 +38,9 @@ test("upload routes generate and persist thumbnails for new images", () => {
   assert.ok(existsSync(helperPath), "thumbnail helper should exist");
   assert.match(helperFile, /export async function createStoreVisitThumbnail/);
   assert.match(helperFile, /export function buildStoreVisitThumbnailPath/);
+  assert.match(helperFile, /storeVisitThumbnailContentType = "image\/jpeg"/);
+  assert.match(helperFile, /\.jpeg\(\{ quality: thumbnailQuality, mozjpeg: true \}\)/);
+  assert.doesNotMatch(helperFile, /\.webp\(/);
   assert.match(storeVisitImageRoute, /thumbnail_path:/);
   assert.match(offlineVisitImageRoute, /thumbnail_path:/);
   assert.match(createVisitRoute, /image_thumbnail_paths:/);
@@ -82,6 +85,8 @@ test("waiting-screen polling stays lightweight and a backfill script exists for 
   assert.match(backfillScript, /offline_visit_images/);
   assert.match(backfillScript, /image_thumbnail_paths/);
   assert.match(backfillScript, /createStoreVisitThumbnail/);
+  assert.match(backfillScript, /replaceWebp/);
+  assert.match(backfillScript, /image\/jpeg/);
   assert.match(backfillScript, /const pageStart = apply \? 0 : from;/);
   assert.match(backfillScript, /\.range\(pageStart, pageStart \+ PAGE_SIZE - 1\)/);
 });

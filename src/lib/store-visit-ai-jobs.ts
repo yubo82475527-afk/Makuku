@@ -91,6 +91,68 @@ async function loadJobItems(supabase: SupabaseServiceClient, jobId: string) {
   return (data ?? []) as StoreVisitAiJobItem[];
 }
 
+function isRetakeRequiredVisionResult(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const photoQuality = (value as Record<string, unknown>).photo_quality;
+  return Boolean(photoQuality)
+    && typeof photoQuality === "object"
+    && !Array.isArray(photoQuality)
+    && (photoQuality as Record<string, unknown>).status === "retake_required";
+}
+
+async function reconcileStoreVisitAiJobFromImages(input: {
+  supabase: SupabaseServiceClient;
+  job: StoreVisitAiJob;
+  items: StoreVisitAiJobItem[];
+}) {
+  const openItems = input.items.filter((item) => !terminalItemStatuses.includes(item.status as (typeof terminalItemStatuses)[number]));
+  if (openItems.length === 0) return { job: input.job, items: input.items };
+
+  const imageIds = cleanIds(openItems.map((item) => item.source_image_id));
+  const { data: images, error } = await input.supabase
+    .from("offline_visit_images")
+    .select("id,analysis_status,vision_result,analysis_error,error_message")
+    .in("id", imageIds);
+  if (error) throw new Error(error.message);
+
+  const imagesById = new Map((images ?? []).map((image) => [String(image.id), image] as const));
+  let changed = false;
+  for (const item of openItems) {
+    const image = imagesById.get(item.source_image_id);
+    if (!image) continue;
+
+    const nextStatus = isRetakeRequiredVisionResult(image.vision_result)
+      ? "retake_required"
+      : image.analysis_status === "analyzed"
+        ? "succeeded"
+        : image.analysis_status === "failed"
+          ? "failed"
+          : null;
+    if (!nextStatus) continue;
+
+    const { error: updateError } = await input.supabase
+      .from("store_visit_ai_job_items")
+      .update({
+        status: nextStatus,
+        error_message: nextStatus === "failed" ? image.analysis_error ?? image.error_message ?? "Image analysis failed." : null,
+        result_summary: {
+          ...(item.result_summary && typeof item.result_summary === "object" && !Array.isArray(item.result_summary)
+            ? item.result_summary as Record<string, unknown>
+            : {}),
+          reconciled_from_image_status: image.analysis_status,
+        },
+        lease_expires_at: null,
+        last_heartbeat_at: nowIso(),
+        updated_at: nowIso(),
+      })
+      .eq("id", item.id);
+    if (updateError) throw new Error(updateError.message);
+    changed = true;
+  }
+
+  return changed ? refreshJobCounts(input.supabase, input.job.id) : { job: input.job, items: input.items };
+}
+
 export async function loadStoreVisitAiJob(input: {
   jobId: string;
   supabase?: SupabaseServiceClient;
@@ -124,6 +186,28 @@ export async function loadActiveStoreVisitAiJob(input: {
   if (!job) return { job: null, items: [] as StoreVisitAiJobItem[] };
   const items = await loadJobItems(supabase, String(job.id));
   return { job: job as StoreVisitAiJob, items };
+}
+
+export async function reconcileActiveStoreVisitAiJob(input: {
+  visitId: string;
+  supabase?: SupabaseServiceClient;
+}) {
+  const supabase = input.supabase ?? createSupabaseServiceClient();
+  const active = await loadActiveStoreVisitAiJob({ visitId: input.visitId, supabase });
+  if (!active.job) return active;
+
+  const reconciled = await reconcileStoreVisitAiJobFromImages({
+    supabase,
+    job: active.job,
+    items: active.items,
+  });
+  if (
+    reconciled.job.remaining_count === 0
+    || !activeJobStatuses.includes(reconciled.job.status as (typeof activeJobStatuses)[number])
+  ) {
+    return { job: null, items: [] as StoreVisitAiJobItem[] };
+  }
+  return reconciled;
 }
 
 export async function loadActiveAiJobsForVisits(input: {

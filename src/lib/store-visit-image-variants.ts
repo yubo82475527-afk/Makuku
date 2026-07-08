@@ -3,14 +3,14 @@ import sharp from "sharp";
 const thumbnailMaxSide = 512;
 const thumbnailQuality = 72;
 
-export const storeVisitThumbnailContentType = "image/webp";
+export const storeVisitThumbnailContentType = "image/jpeg";
 
 export function buildStoreVisitThumbnailPath(originalPath: string) {
   const slashIndex = originalPath.lastIndexOf("/");
   const directory = slashIndex >= 0 ? originalPath.slice(0, slashIndex) : "";
   const fileName = slashIndex >= 0 ? originalPath.slice(slashIndex + 1) : originalPath;
   const baseName = fileName.replace(/\.[^.]+$/, "");
-  return `${directory}/thumbnails/${baseName}.webp`;
+  return `${directory}/thumbnails/${baseName}.jpg`;
 }
 
 export async function createStoreVisitThumbnail(input: { bytes: Buffer }) {
@@ -20,7 +20,7 @@ export async function createStoreVisitThumbnail(input: { bytes: Buffer }) {
       fit: "inside",
       withoutEnlargement: true,
     })
-    .webp({ quality: thumbnailQuality });
+    .jpeg({ quality: thumbnailQuality, mozjpeg: true });
   const metadata = await thumbnail.metadata();
 
   return {

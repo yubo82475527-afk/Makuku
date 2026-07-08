@@ -4,7 +4,7 @@ import { attachAiPriceCandidateMatchLabels } from "@/lib/data";
 import { buildStoreVisitThumbnailPath } from "@/lib/store-visit-image-variants";
 import type { AiPriceCandidate, OfflineImageType, OfflineStoreVisit, OfflineVisitImage, StoreVisitImageCategory } from "@/lib/types";
 import { isInactiveVisitImage, refreshStoreVisitStoredPriceState } from "@/lib/store-visit-image-maintenance";
-import { loadActiveStoreVisitAiJob, summarizeStoreVisitAiJob } from "@/lib/store-visit-ai-jobs";
+import { reconcileActiveStoreVisitAiJob, summarizeStoreVisitAiJob } from "@/lib/store-visit-ai-jobs";
 import { syncStoreVisitPriceCandidatesFromImages } from "@/lib/store-visit-price-candidate-sync";
 
 type RouteContext = {
@@ -208,7 +208,7 @@ export async function GET(request: Request, ctx: RouteContext) {
       summary_result: summaryResult,
       offline_visit_images: activeImages,
     };
-    const activeAi = await loadActiveStoreVisitAiJob({ visitId: id, supabase });
+    const activeAi = await reconcileActiveStoreVisitAiJob({ visitId: id, supabase });
 
     return Response.json({
       visit: {
