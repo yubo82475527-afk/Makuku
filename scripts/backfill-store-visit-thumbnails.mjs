@@ -61,14 +61,16 @@ async function uploadThumbnail(supabase, bucket, originalPath) {
 
 async function backfillOfflineVisitImages({ supabase, apply, remainingLimit }) {
   let processed = 0;
+  let from = 0;
 
   while (remainingLimit.value > 0) {
+    const pageStart = apply ? 0 : from;
     const { data, error } = await supabase
       .from("offline_visit_images")
       .select("id,image_path,thumbnail_path")
       .or("thumbnail_path.is.null,thumbnail_path.eq.")
       .order("created_at", { ascending: true })
-      .range(0, PAGE_SIZE - 1);
+      .range(pageStart, pageStart + PAGE_SIZE - 1);
     if (error) throw new Error(error.message);
     if (!data?.length) break;
 
@@ -86,6 +88,7 @@ async function backfillOfflineVisitImages({ supabase, apply, remainingLimit }) {
     }
 
     if (data.length < PAGE_SIZE) break;
+    if (!apply) from += PAGE_SIZE;
   }
 
   return processed;
@@ -93,14 +96,16 @@ async function backfillOfflineVisitImages({ supabase, apply, remainingLimit }) {
 
 async function backfillLegacyVisitImages({ supabase, apply, remainingLimit }) {
   let processed = 0;
+  let from = 0;
 
   while (remainingLimit.value > 0) {
+    const pageStart = apply ? 0 : from;
     const { data, error } = await supabase
       .from("offline_store_visits")
       .select("id,image_urls,image_thumbnail_paths")
       .not("image_urls", "is", null)
       .order("created_at", { ascending: true })
-      .range(0, PAGE_SIZE - 1);
+      .range(pageStart, pageStart + PAGE_SIZE - 1);
     if (error) throw new Error(error.message);
     if (!data?.length) break;
 
@@ -135,6 +140,7 @@ async function backfillLegacyVisitImages({ supabase, apply, remainingLimit }) {
     }
 
     if (data.length < PAGE_SIZE) break;
+    if (!apply) from += PAGE_SIZE;
   }
 
   return processed;

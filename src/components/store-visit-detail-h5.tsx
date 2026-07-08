@@ -1889,6 +1889,7 @@ function PriceSectionGroup({
   retryingImageIds,
   aiJobImageIds,
   onPreview,
+  onPreviewStored,
   onOpenActions,
   onOpenRowActions,
   onConfirmRow,

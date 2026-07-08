@@ -210,6 +210,7 @@ test("H5 detail only shows whole-visit analysis before the first run and keeps s
   assert.match(storeVisitDetailH5, /const hasPendingOrAnalyzingImage = \(visit\?\.offline_visit_images \?\? \[\]\)\.some\(\(image\) => image\.analysis_status === "pending" \|\| image\.analysis_status === "analyzing"\)/);
   assert.match(storeVisitDetailH5, /const canRunWholeVisitAnalysis = status === "pending" && visit\?\.visit_status === "uploaded" && !hasPendingOrAnalyzingImage && !activeAiJob/);
   assert.match(storeVisitDetailH5, /const canShowFullVisitReanalysis = canRunFullVisitAi && status !== "pending" && !hasPendingOrAnalyzingImage/);
+  assert.match(storeVisitDetailH5, /function PriceSectionGroup\(\{[\s\S]*onPreview,\s*onPreviewStored,\s*onOpenActions,/);
   assert.doesNotMatch(storeVisitDetailH5, /retryable && systemFailedImages\.length === 0/);
   assert.match(storeVisitDetailH5, /retryExistingImageAnalysis/);
   assert.match(storeVisitDetailH5, /replaces_image_id/);

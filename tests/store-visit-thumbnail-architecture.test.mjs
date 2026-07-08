@@ -72,5 +72,6 @@ test("waiting-screen polling stays lightweight and a backfill script exists for 
   assert.match(backfillScript, /offline_visit_images/);
   assert.match(backfillScript, /image_thumbnail_paths/);
   assert.match(backfillScript, /createStoreVisitThumbnail/);
-  assert.match(backfillScript, /\.range\(0, PAGE_SIZE - 1\)/);
+  assert.match(backfillScript, /const pageStart = apply \? 0 : from;/);
+  assert.match(backfillScript, /\.range\(pageStart, pageStart \+ PAGE_SIZE - 1\)/);
 });
