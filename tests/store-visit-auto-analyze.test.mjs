@@ -441,6 +441,12 @@ test("store visit monitor page shows summary cards, visit latency metrics, and a
   assert.match(storeVisitMonitorPage, /Completed at/);
 });
 
+test("store visit monitor list shows started and completed timestamps with second-level datetime formatting", () => {
+  assert.match(storeVisitMonitorClient, /formatJakartaDateTimeSeconds/);
+  assert.match(storeVisitMonitorClient, /visit\.startedAt \? formatJakartaDateTimeSeconds\(visit\.startedAt\) : "-"/);
+  assert.match(storeVisitMonitorClient, /visit\.completedAt \? formatJakartaDateTimeSeconds\(visit\.completedAt\) : "-"/);
+});
+
 test("store visit monitor data path reads analysis metrics and computes visit latency percentiles", () => {
   assert.match(dataFile, /export async function getStoreVisitMonitor/);
   assert.match(dataFile, /visit_analysis_duration_ms/);

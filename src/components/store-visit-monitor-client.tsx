@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { StoreVisitMonitorExportButton } from "@/components/store-visit-monitor-export-button";
 import StoreVisitMonitorLoading from "@/app/[locale]/store-visit-monitor/loading";
 import { Badge, Button, Card, DataNotice, EmptyState, MetricCard } from "@/components/ui";
-import { formatJakartaTime, formatPercent } from "@/lib/format";
+import { formatJakartaDateTimeSeconds, formatJakartaTime, formatPercent } from "@/lib/format";
 import type { StoreVisitMonitorResult } from "@/lib/data";
 import type { Dictionary } from "@/lib/i18n/get-dictionary";
 
@@ -224,8 +224,8 @@ export function StoreVisitMonitorClient({
                     <td className="whitespace-nowrap py-3 pr-3">{formatPercent(visit.accuracy !== null ? visit.accuracy * 100 : null)}</td>
                     <td className="whitespace-nowrap py-3 pr-3">{formatPercent(visit.autoApprovalRate !== null ? visit.autoApprovalRate * 100 : null)}</td>
                     <td className="whitespace-nowrap py-3 pr-3">{formatPercent(visit.avgPriceDeviationRate !== null ? visit.avgPriceDeviationRate * 100 : null)}</td>
-                    <td className="whitespace-nowrap py-3 pr-3">{visit.startedAt ? formatJakartaTime(visit.startedAt) : "-"}</td>
-                    <td className="whitespace-nowrap py-3 pr-3">{visit.completedAt ? formatJakartaTime(visit.completedAt) : "-"}</td>
+                    <td className="whitespace-nowrap py-3 pr-3">{visit.startedAt ? formatJakartaDateTimeSeconds(visit.startedAt) : "-"}</td>
+                    <td className="whitespace-nowrap py-3 pr-3">{visit.completedAt ? formatJakartaDateTimeSeconds(visit.completedAt) : "-"}</td>
                     <td className="whitespace-nowrap py-3 pr-3">
                       <Link
                         href={`/${locale}/mobile/offline-capture/${visit.visitId}`}

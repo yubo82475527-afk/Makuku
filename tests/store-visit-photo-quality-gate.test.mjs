@@ -9,7 +9,7 @@ const storeVisitDetailH5 = readFileSync("src/components/store-visit-detail-h5.ts
 const storeVisitsListH5 = readFileSync("src/components/store-visits-list-h5.tsx", "utf8");
 const typesFile = readFileSync("src/lib/types.ts", "utf8");
 
-test("price image prompt includes the two-state photo quality gate without adding OCR precheck calls", () => {
+test("price image prompt uses a majority-readable photo quality gate without adding OCR precheck calls", () => {
   assert.match(storeVisitAi, /photo_quality/);
   assert.match(storeVisitAi, /pass\|retake_required/);
   assert.match(storeVisitAi, /wide shelf overview/);
@@ -17,10 +17,14 @@ test("price image prompt includes the two-state photo quality gate without addin
   assert.match(storeVisitAi, /PHOTO QUALITY PASS GATE/);
   assert.match(storeVisitAi, /intended price-tag or price-board capture area/);
   assert.match(storeVisitAi, /product-to-price binding must be reliable/);
-  assert.match(storeVisitAi, /one or two front price tags are readable/);
-  assert.match(storeVisitAi, /most target tags\/rows in the intended capture area/);
+  assert.match(storeVisitAi, /clear majority of target rows\/tags/i);
+  assert.match(storeVisitAi, /does not require every row\/tag to be readable/i);
+  assert.match(storeVisitAi, /only a minority of target tags\/rows/i);
+  assert.match(storeVisitAi, /one or two front price tags or isolated rows are readable/);
+  assert.match(storeVisitAi, /most target rows\/tags in the foreground intended capture area/);
   assert.match(storeVisitAi, /long side-angle shelf shot/);
   assert.doesNotMatch(storeVisitAi, /at least one product-price relationship is visually reliable/);
+  assert.doesNotMatch(storeVisitAi, /pass when at least one/i);
   assert.doesNotMatch(storeVisitAi, /OCR|optical character recognition|precheck/i);
   assert.doesNotMatch(storeVisitAi, /\/api\/.*precheck|photo-quality|quality-gate/i);
 });
