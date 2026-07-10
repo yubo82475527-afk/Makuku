@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 const nextConfig = readFileSync("next.config.ts", "utf8");
+const priceSnapshotListQueryIndexes = readFileSync("supabase/migrations/202607100001_price_snapshot_list_query_indexes.sql", "utf8");
 const appShell = readFileSync("src/components/app-shell.tsx", "utf8");
 const localeShellLayout = readFileSync("src/components/locale-shell-layout.tsx", "utf8");
 const dashboardPage = readFileSync("src/app/[locale]/dashboard/page.tsx", "utf8");
@@ -180,7 +181,9 @@ test("real market price pagination and filters are pushed down to the data layer
   assert.doesNotMatch(pricesPage, /prices\.slice\(/);
   assert.match(dataFile, /export async function getPriceSnapshotsPage/);
   assert.equal((dataFile.match(/export async function getPriceSnapshotsPage/g) ?? []).length, 1);
-  assert.match(dataFile, /count:\s*"exact"/);
+  assert.match(dataFile, /count:\s*"planned"/);
+  assert.match(dataFile, /priceSnapshotSelectForPageFilters/);
+  assert.match(dataFile, /offline_store_visits!source_visit_id!inner/);
   assert.match(dataFile, /if \(filters\.brand\)/);
   assert.match(dataFile, /if \(filters\.province\)/);
   assert.match(dataFile, /if \(filters\.cityName\)/);
@@ -189,6 +192,10 @@ test("real market price pagination and filters are pushed down to the data layer
   assert.match(dataFile, /if \(filters\.sku\)/);
   assert.match(dataFile, /if \(filters\.visitCode\)/);
   assert.match(dataFile, /return \{ data: candidates, total: count \?\? 0/);
+  assert.match(priceSnapshotListQueryIndexes, /idx_price_snapshots_list_order/);
+  assert.match(priceSnapshotListQueryIndexes, /idx_price_snapshots_captured_list_order/);
+  assert.match(priceSnapshotListQueryIndexes, /idx_price_snapshots_competitor_list_order/);
+  assert.match(priceSnapshotListQueryIndexes, /idx_price_snapshots_makuku_list_order/);
 });
 
 test("next config keeps instant navigation tooling without enabling cacheComponents on dynamic routes", () => {

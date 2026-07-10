@@ -1010,6 +1010,8 @@ export async function getPriceSnapshotsPage(filters: PriceSnapshotPageFilters = 
   const from = (page - 1) * perPage;
   const to = from + perPage - 1;
   const fallback = filterPriceSnapshotPageRows(filterPriceSnapshotsByOwner(demoPriceSnapshots, owner), filters);
+  const selectWithMaterial = priceSnapshotSelectForPageFilters(priceSnapshotSelectWithMaterial, filters);
+  const legacySelect = priceSnapshotSelectForPageFilters(legacyPriceSnapshotSelect, filters);
 
   if (!hasSupabaseConfig()) {
     return {
@@ -1026,7 +1028,7 @@ export async function getPriceSnapshotsPage(filters: PriceSnapshotPageFilters = 
   const buildQuery = (select: string) => {
     let query = supabase
       .from("price_snapshots")
-      .select(select, { count: "exact" })
+      .select(select, { count: "planned" })
       .range(from, to);
 
     if (owner === "makuku") {
@@ -1049,9 +1051,9 @@ export async function getPriceSnapshotsPage(filters: PriceSnapshotPageFilters = 
       .order("id", { ascending: true });
   };
 
-  let { data, error, count } = await buildQuery(priceSnapshotSelectWithMaterial);
+  let { data, error, count } = await buildQuery(selectWithMaterial);
   if (resultNeedsLegacyPriceSnapshotQuery(error)) {
-    const legacy = await buildQuery(legacyPriceSnapshotSelect);
+    const legacy = await buildQuery(legacySelect);
     data = legacy.data;
     error = legacy.error;
     count = legacy.count;
@@ -1070,6 +1072,21 @@ export async function getPriceSnapshotsPage(filters: PriceSnapshotPageFilters = 
 
   const candidates = filterPriceSnapshotPageRows((data ?? []) as unknown as PriceSnapshot[], filters);
   return { data: candidates, total: count ?? 0, page, perPage, error: null, isDemo: false };
+}
+
+function priceSnapshotSelectForPageFilters(select: string, filters: PriceSnapshotPageFilters) {
+  if (!hasPriceSnapshotVisitRelationFilter(filters)) return select;
+  return select.replace("offline_store_visits!source_visit_id(", "offline_store_visits!source_visit_id!inner(");
+}
+
+function hasPriceSnapshotVisitRelationFilter(filters: PriceSnapshotPageFilters) {
+  return Boolean(
+    filters.visitCode?.trim()
+    || filters.province?.trim()
+    || filters.cityName?.trim()
+    || filters.district?.trim()
+    || filters.store?.trim(),
+  );
 }
 
 function resultNeedsLegacyPriceSnapshotQuery(error: { message?: string } | null) {
