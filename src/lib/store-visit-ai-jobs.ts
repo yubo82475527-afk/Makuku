@@ -11,6 +11,8 @@ import type {
 } from "@/lib/types";
 
 type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceClient>;
+type StoreVisitAiFinalizeOutcome = "succeeded" | "retake_required" | "failed";
+type StoreVisitAiFinalizeResult = "applied" | "already_finalized" | "ownership_lost";
 
 const activeJobStatuses = ["queued", "running"] as const;
 const terminalItemStatuses = ["succeeded", "retake_required", "failed"] as const;
@@ -375,32 +377,27 @@ async function claimNextItem(input: {
   return { job: job as StoreVisitAiJob, item: item as StoreVisitAiJobItem };
 }
 
-async function markImageFailed(input: {
+async function finalizeStoreVisitAiJobItem(input: {
   supabase: SupabaseServiceClient;
-  visitId: string;
-  imageId: string;
-  message: string;
+  item: StoreVisitAiJobItem;
+  outcome: StoreVisitAiFinalizeOutcome;
+  resultSummary: Record<string, unknown>;
+  errorMessage?: string | null;
 }) {
-  const { data: updatedImages, error } = await input.supabase
-    .from("offline_visit_images")
-    .update({
-      analysis_status: "failed",
-      analysis_error: input.message,
-      error_message: input.message,
-    })
-    .eq("visit_id", input.visitId)
-    .eq("id", input.imageId)
-    .select("id");
-  if (error) throw new Error(error.message);
-  if ((updatedImages ?? []).length !== 1) throw new Error("Unable to mark the photo analysis as failed.");
-
-  await refreshStoreVisitStoredPriceState({
-    visitId: input.visitId,
-    analysisStatusOverride: "failed",
-    analysisErrorOverride: input.message,
-    visitStatusOverride: "analyzed",
-    supabase: input.supabase,
+  if (!input.item.worker_id) throw new Error("Claimed store visit AI job item has no worker owner.");
+  const { data, error } = await input.supabase.rpc("finalize_store_visit_ai_job_item", {
+    p_item_id: input.item.id,
+    p_worker_id: input.item.worker_id,
+    p_outcome: input.outcome,
+    p_result_summary: input.resultSummary,
+    p_error_message: input.errorMessage ?? null,
   });
+  if (error) throw new Error(error.message);
+  const row = Array.isArray(data)
+    ? data[0] as { finalize_result?: StoreVisitAiFinalizeResult } | undefined
+    : null;
+  if (!row?.finalize_result) throw new Error("Store visit AI finalization returned no result.");
+  return row.finalize_result;
 }
 
 async function processItem(input: {
@@ -422,6 +419,12 @@ async function processItem(input: {
   if (markError) throw new Error(markError.message);
   if ((markedImages ?? []).length !== 1) throw new Error("Unable to mark the requested photo for AI analysis.");
 
+  let completed: {
+    outcome: Exclude<StoreVisitAiFinalizeOutcome, "failed">;
+    resultSummary: Record<string, unknown>;
+  } | null = null;
+  let analysisFailure: string | null = null;
+
   try {
     const isRerun = job.job_type === "single_image_reanalysis" || job.job_type === "full_visit_reanalysis";
     const result = await runStoreVisitAnalysis({
@@ -438,81 +441,93 @@ async function processItem(input: {
 
     const retake = result.aiAnalysis.price_image_retake_required.find((entry) => entry.imageId === item.source_image_id);
     const forcedResult = result.forcedImageResults.find((entry) => entry.imageId === item.source_image_id);
-    const nextStatus = retake ? "retake_required" : "succeeded";
-    const resultSummary = {
-      response_id: forcedResult?.responseId ?? null,
-      usage_present: Boolean(forcedResult?.usagePresent),
-      row_count: forcedResult?.rowCount ?? 0,
-      replaced_candidate_count: result.replacedCandidateCount,
-      deleted_snapshot_count: result.deletedSnapshotCount,
-      synced_candidate_count: syncResult.inserted_count,
-      eligible_candidate_row_count: syncResult.eligible_row_count,
-      retake_reasons: retake?.reasons ?? null,
-      retake_message: retake?.message ?? null,
+    completed = {
+      outcome: retake ? "retake_required" : "succeeded",
+      resultSummary: {
+        response_id: forcedResult?.responseId ?? null,
+        usage_present: Boolean(forcedResult?.usagePresent),
+        row_count: forcedResult?.rowCount ?? 0,
+        replaced_candidate_count: result.replacedCandidateCount,
+        deleted_snapshot_count: result.deletedSnapshotCount,
+        synced_candidate_count: syncResult.inserted_count,
+        eligible_candidate_row_count: syncResult.eligible_row_count,
+        retake_reasons: retake?.reasons ?? null,
+        retake_message: retake?.message ?? null,
+      },
     };
-    const { data: updatedItems, error: itemError } = await supabase
-      .from("store_visit_ai_job_items")
-      .update({
-        status: nextStatus,
-        result_summary: resultSummary,
-        error_message: null,
-        last_heartbeat_at: nowIso(),
-        lease_expires_at: null,
-        updated_at: nowIso(),
-      })
-      .eq("id", item.id)
-      .eq("status", "processing")
-      .select("id");
-    if (itemError) throw new Error(itemError.message);
-    if ((updatedItems ?? []).length !== 1) throw new Error("Unable to finalize store visit AI job item.");
+  } catch (error) {
+    analysisFailure = error instanceof Error ? error.message : "Unknown error";
+  }
 
-    console.info("[store-visit-ai-jobs] item completed", {
+  const outcome: StoreVisitAiFinalizeOutcome = analysisFailure ? "failed" : completed!.outcome;
+  const resultSummary = analysisFailure ? { error_message: analysisFailure } : completed!.resultSummary;
+  const finalizeResult = await finalizeStoreVisitAiJobItem({
+    supabase,
+    item,
+    outcome,
+    resultSummary,
+    errorMessage: analysisFailure,
+  });
+
+  if (finalizeResult === "ownership_lost") {
+    console.warn("[store-visit-ai-jobs] item ownership lost", {
       job_id: job.id,
-      job_type: job.job_type,
       visit_id: job.visit_id,
       image_id: item.source_image_id,
+      item_id: item.id,
+      worker_id: item.worker_id,
       attempt_count: item.attempt_count,
-      status: nextStatus,
-      result_summary: resultSummary,
+      intended_status: outcome,
     });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    return;
+  }
+
+  if (finalizeResult === "already_finalized") {
+    console.info("[store-visit-ai-jobs] item already finalized", {
+      job_id: job.id,
+      item_id: item.id,
+      image_id: item.source_image_id,
+      status: outcome,
+    });
+  }
+
+  if (analysisFailure) {
     try {
-      await markImageFailed({ supabase, visitId: job.visit_id, imageId: item.source_image_id, message });
-    } catch (markError) {
-      console.error("[store-visit-ai-jobs] failed to persist image failure", {
+      await refreshStoreVisitStoredPriceState({
+        visitId: job.visit_id,
+        analysisStatusOverride: "failed",
+        analysisErrorOverride: analysisFailure,
+        visitStatusOverride: "analyzed",
+        supabase,
+      });
+    } catch (refreshError) {
+      console.error("[store-visit-ai-jobs] failed to refresh visit after image failure", {
         job_id: job.id,
         visit_id: job.visit_id,
         image_id: item.source_image_id,
-        error: markError instanceof Error ? markError.message : String(markError),
+        error: refreshError instanceof Error ? refreshError.message : String(refreshError),
       });
     }
-
-    const { data: updatedItems, error: itemError } = await supabase
-      .from("store_visit_ai_job_items")
-      .update({
-        status: "failed",
-        error_message: message,
-        result_summary: { error_message: message },
-        last_heartbeat_at: nowIso(),
-        lease_expires_at: null,
-        updated_at: nowIso(),
-      })
-      .eq("id", item.id)
-      .eq("status", "processing")
-      .select("id");
-    if (itemError) throw new Error(itemError.message);
-    if ((updatedItems ?? []).length !== 1) throw new Error("Unable to finalize failed store visit AI job item.");
-
-    console.error("[store-visit-ai-jobs] item failed", {
+    console.error("[store-visit-ai-jobs] item analysis failed", {
       job_id: job.id,
       job_type: job.job_type,
       visit_id: job.visit_id,
       image_id: item.source_image_id,
       attempt_count: item.attempt_count,
-      error: message,
+      error: analysisFailure,
     });
+    return;
   }
+
+  console.info("[store-visit-ai-jobs] item completed", {
+    job_id: job.id,
+    job_type: job.job_type,
+    visit_id: job.visit_id,
+    image_id: item.source_image_id,
+    attempt_count: item.attempt_count,
+    status: completed!.outcome,
+    result_summary: completed!.resultSummary,
+  });
 }
 
 export async function enqueuePendingStoreVisitInitialAnalysisJobs(input: {

@@ -160,9 +160,9 @@ test("store visit analysis accepts active price image rows for initial analysis"
 });
 
 test("store visit analysis failures keep retryable status and error details", () => {
-  assert.match(storeVisitAiJobs, /analysis_status: "failed"/);
+  assert.match(storeVisitAiFinalizeMigration, /analysis_status = case when p_outcome = 'failed' then 'failed' else 'analyzed' end/);
   assert.match(storeVisitAiJobs, /visitStatusOverride: "analyzed"/);
-  assert.match(storeVisitAiJobs, /analysisErrorOverride: input\.message/);
+  assert.match(storeVisitAiJobs, /analysisErrorOverride: analysisFailure/);
 });
 
 test("store visit analyze route only allows first whole-visit analysis", () => {
@@ -412,6 +412,15 @@ test("store visit AI finalization is fenced, atomic, idempotent, and service-rol
   assert.match(storeVisitAiFinalizeMigration, /count\(\*\) filter \(where status = 'succeeded'\)/i);
   assert.match(storeVisitAiFinalizeMigration, /revoke all on function public\.finalize_store_visit_ai_job_item/);
   assert.match(storeVisitAiFinalizeMigration, /grant execute on function public\.finalize_store_visit_ai_job_item[\s\S]*to service_role/);
+});
+
+test("store visit AI worker uses fenced finalization without converting control conflicts into image failures", () => {
+  assert.match(storeVisitAiJobs, /rpc\("finalize_store_visit_ai_job_item"/);
+  assert.match(storeVisitAiJobs, /p_worker_id: input\.item\.worker_id/);
+  assert.match(storeVisitAiJobs, /finalizeResult === "ownership_lost"/);
+  assert.match(storeVisitAiJobs, /item ownership lost/);
+  assert.doesNotMatch(storeVisitAiJobs, /Unable to finalize store visit AI job item/);
+  assert.doesNotMatch(storeVisitAiJobs, /async function markImageFailed/);
 });
 
 test("store visit detail only reconciles queued AI items and never steals processing work", () => {
