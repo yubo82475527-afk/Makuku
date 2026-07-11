@@ -414,10 +414,10 @@ test("store visit AI finalization is fenced, atomic, idempotent, and service-rol
   assert.match(storeVisitAiFinalizeMigration, /grant execute on function public\.finalize_store_visit_ai_job_item[\s\S]*to service_role/);
 });
 
-test("store visit detail reconciles stale active AI jobs from terminal image state", () => {
+test("store visit detail only reconciles queued AI items and never steals processing work", () => {
+  assert.match(storeVisitAiJobs, /const reconcilableItems = input\.items\.filter\(\(item\) => item\.status === "queued"\)/);
   assert.match(storeVisitAiJobs, /reconcileStoreVisitAiJobFromImages/);
   assert.match(storeVisitAiJobs, /image\.analysis_status === "analyzed"/);
-  assert.match(storeVisitAiJobs, /remaining_count === 0/);
   assert.match(storeVisitDetailRoute, /reconcileActiveStoreVisitAiJob/);
   assert.doesNotMatch(storeVisitDetailRoute, /loadActiveStoreVisitAiJob/);
 });

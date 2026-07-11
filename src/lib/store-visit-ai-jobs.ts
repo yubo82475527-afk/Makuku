@@ -105,10 +105,10 @@ async function reconcileStoreVisitAiJobFromImages(input: {
   job: StoreVisitAiJob;
   items: StoreVisitAiJobItem[];
 }) {
-  const openItems = input.items.filter((item) => !terminalItemStatuses.includes(item.status as (typeof terminalItemStatuses)[number]));
-  if (openItems.length === 0) return { job: input.job, items: input.items };
+  const reconcilableItems = input.items.filter((item) => item.status === "queued");
+  if (reconcilableItems.length === 0) return { job: input.job, items: input.items };
 
-  const imageIds = cleanIds(openItems.map((item) => item.source_image_id));
+  const imageIds = cleanIds(reconcilableItems.map((item) => item.source_image_id));
   const { data: images, error } = await input.supabase
     .from("offline_visit_images")
     .select("id,analysis_status,vision_result,analysis_error,error_message")
@@ -117,7 +117,7 @@ async function reconcileStoreVisitAiJobFromImages(input: {
 
   const imagesById = new Map((images ?? []).map((image) => [String(image.id), image] as const));
   let changed = false;
-  for (const item of openItems) {
+  for (const item of reconcilableItems) {
     const image = imagesById.get(item.source_image_id);
     if (!image) continue;
 
