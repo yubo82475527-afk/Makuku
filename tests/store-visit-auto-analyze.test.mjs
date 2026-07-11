@@ -36,6 +36,9 @@ const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const storeVisitAiJobs = readMaybe("src/lib/store-visit-ai-jobs.ts");
 const storeVisitAiJobRoute = readMaybe("src/app/api/store-visit/ai-jobs/[jobId]/route.ts");
 const storeVisitAiRunnerRoute = readMaybe("src/app/api/internal/store-visit-ai/run/route.ts");
+const storeVisitAiFinalizeMigration = readMaybe(
+  "supabase/migrations/202607110001_store_visit_ai_job_atomic_finalization.sql",
+);
 const vercelConfig = readFileSync("vercel.json", "utf8");
 
 test("new H5 store visit returns to the list after uploads without waiting for AI analysis", () => {
@@ -397,6 +400,18 @@ test("store visit AI hotfix migration removes ambiguous job_id output collisions
   assert.match(hotfixMigration, /create function public\.claim_store_visit_ai_job_item/);
   assert.match(hotfixMigration, /returns table\(claimed_job_id uuid, claimed_item_id uuid\)/);
   assert.match(hotfixMigration, /select updated_item\.job_id as claimed_job_id, updated_item\.id as claimed_item_id/);
+});
+
+test("store visit AI finalization is fenced, atomic, idempotent, and service-role only", () => {
+  assert.match(storeVisitAiFinalizeMigration, /finalize_store_visit_ai_job_item/);
+  assert.match(storeVisitAiFinalizeMigration, /for update/i);
+  assert.match(storeVisitAiFinalizeMigration, /v_item\.worker_id is distinct from p_worker_id/i);
+  assert.match(storeVisitAiFinalizeMigration, /already_finalized/);
+  assert.match(storeVisitAiFinalizeMigration, /ownership_lost/);
+  assert.match(storeVisitAiFinalizeMigration, /update public\.offline_visit_images/);
+  assert.match(storeVisitAiFinalizeMigration, /count\(\*\) filter \(where status = 'succeeded'\)/i);
+  assert.match(storeVisitAiFinalizeMigration, /revoke all on function public\.finalize_store_visit_ai_job_item/);
+  assert.match(storeVisitAiFinalizeMigration, /grant execute on function public\.finalize_store_visit_ai_job_item[\s\S]*to service_role/);
 });
 
 test("store visit detail reconciles stale active AI jobs from terminal image state", () => {
