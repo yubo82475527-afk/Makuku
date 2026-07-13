@@ -912,6 +912,40 @@ export type AiPriceCandidate = {
   offline_store_visits?: Pick<OfflineStoreVisit, "id" | "visit_code" | "store_name" | "city" | "province" | "city_name" | "district" | "channel_type" | "visit_date" | "created_at" | "uploader_name"> | null;
 };
 
+export type OperatorPriceReviewState = "pending" | "processed";
+export type OperatorPriceReviewDecision = "confirmed" | "corrected" | "rejected";
+
+export type OperatorPriceReviewListItem = {
+  id: string;
+  state: OperatorPriceReviewState;
+  source_thumbnail_url: string | null;
+  source_image_available: boolean;
+  product_name: string;
+  sku_label: string | null;
+  ai_package_price: number | null;
+  ai_piece_count: number | null;
+  ai_price_per_piece: number | null;
+  operator_reason: string;
+  requires_product_correction: boolean;
+  processed_decision: OperatorPriceReviewDecision | null;
+  processed_at: string | null;
+};
+
+export type OperatorPriceReviewDetail = OperatorPriceReviewListItem & {
+  source_image_id: string | null;
+  source_image_url: string | null;
+  evidence_product_text: string;
+  evidence_package_price: number | null;
+  evidence_piece_count: number | null;
+  evidence_price_per_piece: number | null;
+  historical_common_price_per_piece: number | null;
+  current_match_type: AiPriceCandidateMatchType;
+  current_match_id: string | null;
+  current_match_label: string | null;
+  review_token: string;
+  visit_detail_href: string;
+};
+
 export type PriceQualityBenchmarkDaily = {
   id: string;
   benchmark_date: string;
