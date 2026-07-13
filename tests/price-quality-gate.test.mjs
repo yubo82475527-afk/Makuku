@@ -1,12 +1,37 @@
 import { existsSync, readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import test from "node:test";
+import vm from "node:vm";
+import ts from "typescript";
 
 const migrationPath = "supabase/migrations/202607130001_price_quality_gate_phase1.sql";
 const migration = existsSync(migrationPath) ? readFileSync(migrationPath, "utf8") : "";
 const types = readFileSync("src/lib/types.ts", "utf8");
 const benchmarkServicePath = "src/lib/price-quality-benchmarks.ts";
 const benchmarkService = existsSync(benchmarkServicePath) ? readFileSync(benchmarkServicePath, "utf8") : "";
+
+function loadQualityEvaluator() {
+  const path = "src/lib/price-quality-gate.ts";
+  if (!existsSync(path)) return null;
+  const source = readFileSync(path, "utf8");
+  const transpiled = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+      esModuleInterop: true,
+    },
+  }).outputText;
+  const testModule = { exports: {} };
+  vm.runInNewContext(transpiled, {
+    module: testModule,
+    exports: testModule.exports,
+    require(id) {
+      if (id === "@/lib/types") return {};
+      throw new Error(`Unexpected require: ${id}`);
+    },
+  });
+  return testModule.exports;
+}
 
 test("price quality migration defines a dedicated daily L2 benchmark", () => {
   assert.equal(existsSync(migrationPath), true);
@@ -55,4 +80,117 @@ test("benchmark service calls the refresh RPC instead of reading snapshots", () 
   assert.equal(existsSync(benchmarkServicePath), true);
   assert.match(benchmarkService, /refresh_price_quality_benchmark_daily/);
   assert.doesNotMatch(benchmarkService, /from\("price_snapshots"\)/);
+});
+
+test("quality evaluator passes a clear candidate within 30 percent", () => {
+  const evaluator = loadQualityEvaluator();
+  assert.ok(evaluator);
+  const result = evaluator.evaluatePriceQualityGate({
+    candidatePricePerPiece: 2400,
+    evidenceReviewDecision: "AUTO_APPROVE",
+    matchedEntityType: "material_master",
+    matchedEntityId: "SKU-1",
+    promoType: null,
+    benchmark: {
+      benchmarkDate: "2026-07-13",
+      medianPricePerPiece: 2200,
+      sampleCount: 8,
+      storeCount: 5,
+      status: "READY",
+    },
+  });
+  assert.equal(result.status, "PASSED");
+  assert.equal(result.reviewDecision, "AUTO_APPROVE");
+  assert.equal(result.reasonCodes.length, 0);
+});
+
+test("quality evaluator uses strict 30 and 50 percent boundaries", () => {
+  const evaluator = loadQualityEvaluator();
+  assert.ok(evaluator);
+  const baseline = {
+    evidenceReviewDecision: "AUTO_APPROVE",
+    matchedEntityType: "material_master",
+    matchedEntityId: "SKU-1",
+    promoType: null,
+    benchmark: {
+      benchmarkDate: "2026-07-13",
+      medianPricePerPiece: 2000,
+      sampleCount: 8,
+      storeCount: 5,
+      status: "READY",
+    },
+  };
+  assert.equal(evaluator.evaluatePriceQualityGate({ ...baseline, candidatePricePerPiece: 2600 }).status, "PASSED");
+  const high = evaluator.evaluatePriceQualityGate({ ...baseline, candidatePricePerPiece: 2601 });
+  assert.equal(high.status, "REVIEW_REQUIRED");
+  assert.ok(high.reasonCodes.includes("PRICE_DEVIATION_HIGH"));
+  const critical = evaluator.evaluatePriceQualityGate({ ...baseline, candidatePricePerPiece: 3001 });
+  assert.ok(critical.reasonCodes.includes("PRICE_DEVIATION_CRITICAL"));
+  assert.ok(!critical.reasonCodes.includes("PRICE_DEVIATION_HIGH"));
+});
+
+test("quality evaluator detects scale errors after per-piece conversion", () => {
+  const evaluator = loadQualityEvaluator();
+  assert.ok(evaluator);
+  for (const candidatePricePerPiece of [10, 100, 1000, 100000, 1000000, 10000000]) {
+    const result = evaluator.evaluatePriceQualityGate({
+      candidatePricePerPiece,
+      evidenceReviewDecision: "AUTO_APPROVE",
+      matchedEntityType: "competitor_product",
+      matchedEntityId: "product-1",
+      promoType: null,
+      benchmark: {
+        benchmarkDate: "2026-07-13",
+        medianPricePerPiece: 10000,
+        sampleCount: 10,
+        storeCount: 6,
+        status: "READY",
+      },
+    });
+    assert.ok(result.reasonCodes.includes("AMOUNT_SCALE_SUSPECTED"));
+  }
+});
+
+test("quality evaluator keeps insufficient, unmatched, evidence, and promo cases in review", () => {
+  const evaluator = loadQualityEvaluator();
+  assert.ok(evaluator);
+  const insufficient = evaluator.evaluatePriceQualityGate({
+    candidatePricePerPiece: 2200,
+    evidenceReviewDecision: "AUTO_APPROVE",
+    matchedEntityType: "material_master",
+    matchedEntityId: "SKU-1",
+    promoType: null,
+    benchmark: null,
+  });
+  assert.equal(insufficient.status, "INSUFFICIENT_BENCHMARK");
+  assert.ok(insufficient.reasonCodes.includes("INSUFFICIENT_BENCHMARK"));
+
+  const evidence = evaluator.evaluatePriceQualityGate({
+    candidatePricePerPiece: 2200,
+    evidenceReviewDecision: "NEED_REVIEW",
+    matchedEntityType: "unmatched",
+    matchedEntityId: null,
+    promoType: null,
+    benchmark: null,
+  });
+  assert.equal(evidence.reviewDecision, "NEED_REVIEW");
+  assert.ok(evidence.reasonCodes.includes("EVIDENCE_REVIEW_REQUIRED"));
+  assert.ok(evidence.reasonCodes.includes("SKU_MATCH_UNCERTAIN"));
+
+  const promotion = evaluator.evaluatePriceQualityGate({
+    candidatePricePerPiece: 1300,
+    evidenceReviewDecision: "AUTO_APPROVE",
+    matchedEntityType: "material_master",
+    matchedEntityId: "SKU-1",
+    promoType: "Discount",
+    benchmark: {
+      benchmarkDate: "2026-07-13",
+      medianPricePerPiece: 2200,
+      sampleCount: 8,
+      storeCount: 5,
+      status: "READY",
+    },
+  });
+  assert.equal(promotion.status, "REVIEW_REQUIRED");
+  assert.ok(promotion.reasonCodes.includes("PROMOTION_EVIDENCE"));
 });
