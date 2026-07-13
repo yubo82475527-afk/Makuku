@@ -27,6 +27,7 @@ type CandidateUpdatePayload = {
 };
 
 export function candidateMatchesReviewRule(candidate: AiPriceCandidate, _rule: AiPriceReviewRule) {
+  void _rule;
   if (candidate.status !== "pending") return { eligible: false, reason: "Only pending candidates can be bulk reviewed." };
   if (candidate.quality_gate_status !== "PASSED") {
     return { eligible: false, reason: "Historical price quality gate has not passed." };
