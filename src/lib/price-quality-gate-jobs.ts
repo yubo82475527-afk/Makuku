@@ -20,6 +20,7 @@ type FinalizableQualityStatus = Extract<
 
 type ClaimedQualityCandidate = {
   candidate_id: string;
+  claim_input_fingerprint: string;
   candidate_price_per_piece: number | string | null;
   evidence_review_decision: PriceReviewDecision | null;
   matched_entity_type: AiPriceCandidateMatchType;
@@ -44,6 +45,7 @@ async function finalizeCandidate(input: {
   supabase: SupabaseServiceClient;
   workerId: string;
   candidateId: string;
+  expectedInputFingerprint: string;
   status: FinalizableQualityStatus;
   reasonCodes: PriceQualityReasonCode[];
   version: string | null;
@@ -57,6 +59,7 @@ async function finalizeCandidate(input: {
   const { data, error } = await input.supabase.rpc("finalize_ai_price_candidate_quality_gate", {
     p_candidate_id: input.candidateId,
     p_worker_id: input.workerId,
+    p_expected_input_fingerprint: input.expectedInputFingerprint,
     p_quality_gate_status: input.status,
     p_reason_codes: input.reasonCodes,
     p_quality_gate_version: input.version,
@@ -129,6 +132,7 @@ export async function runPriceQualityGate(input: {
           supabase,
           workerId,
           candidateId: row.candidate_id,
+          expectedInputFingerprint: row.claim_input_fingerprint,
           status: result.status,
           reasonCodes: result.reasonCodes,
           version: result.version,
@@ -152,6 +156,7 @@ export async function runPriceQualityGate(input: {
             supabase,
             workerId,
             candidateId: row.candidate_id,
+            expectedInputFingerprint: row.claim_input_fingerprint,
             status: "FAILED",
             reasonCodes: [],
             version: null,

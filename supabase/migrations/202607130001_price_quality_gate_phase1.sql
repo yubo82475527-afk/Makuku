@@ -42,13 +42,56 @@ create table if not exists public.price_quality_benchmark_refresh_runs (
 
 alter table public.price_quality_benchmark_refresh_runs enable row level security;
 
+create table if not exists public.price_quality_gate_evaluations (
+  id bigint generated always as identity primary key,
+  candidate_id uuid not null references public.ai_price_candidates(id),
+  claim_input_fingerprint text not null,
+  quality_gate_attempt_count integer not null check (quality_gate_attempt_count > 0),
+  worker_id text not null,
+  quality_gate_status text not null
+    check (quality_gate_status in ('PASSED', 'REVIEW_REQUIRED', 'INSUFFICIENT_BENCHMARK', 'FAILED')),
+  reason_codes jsonb not null default '[]'::jsonb
+    check (jsonb_typeof(reason_codes) = 'array'),
+  quality_gate_version text,
+  benchmark_date date,
+  benchmark_price_per_piece numeric,
+  benchmark_deviation_pct numeric,
+  benchmark_sample_count integer,
+  benchmark_store_count integer,
+  evaluation_error text,
+  evaluated_at timestamptz not null default now()
+);
+
+create index if not exists idx_price_quality_gate_evaluations_candidate
+  on public.price_quality_gate_evaluations(candidate_id, evaluated_at desc);
+
+alter table public.price_quality_gate_evaluations enable row level security;
+
+drop policy if exists "authenticated insert ai_price_candidates"
+  on public.ai_price_candidates;
+drop policy if exists "authenticated update ai_price_candidates"
+  on public.ai_price_candidates;
+drop policy if exists "authenticated insert price_snapshots"
+  on public.price_snapshots;
+drop policy if exists "authenticated update price_snapshots"
+  on public.price_snapshots;
+
+revoke insert, update, delete on table public.ai_price_candidates
+  from anon, authenticated;
+revoke insert, update, delete on table public.price_snapshots
+  from anon, authenticated;
+revoke insert, update, delete on table public.price_quality_gate_evaluations
+  from anon, authenticated;
+
 create or replace function public.compute_ai_price_candidate_input_fingerprint(
   p_matched_entity_type text,
   p_matched_entity_id text,
+  p_evidence_review_decision text,
   p_list_price_idr numeric,
   p_package_price_idr numeric,
   p_net_price_idr numeric,
   p_parsed_price_idr numeric,
+  p_visible_price_per_piece numeric,
   p_price_per_piece numeric,
   p_reviewed_price_per_piece numeric,
   p_ai_price_per_piece numeric,
@@ -66,10 +109,12 @@ as $$
   select md5(
     coalesce(p_matched_entity_type, '') || chr(31)
     || coalesce(p_matched_entity_id, '') || chr(31)
+    || coalesce(p_evidence_review_decision, '') || chr(31)
     || coalesce(p_list_price_idr::text, '') || chr(31)
     || coalesce(p_package_price_idr::text, '') || chr(31)
     || coalesce(p_net_price_idr::text, '') || chr(31)
     || coalesce(p_parsed_price_idr::text, '') || chr(31)
+    || coalesce(p_visible_price_per_piece::text, '') || chr(31)
     || coalesce(p_price_per_piece::text, '') || chr(31)
     || coalesce(p_reviewed_price_per_piece::text, '') || chr(31)
     || coalesce(p_ai_price_per_piece::text, '') || chr(31)
@@ -105,10 +150,12 @@ alter table public.ai_price_candidates
     public.compute_ai_price_candidate_input_fingerprint(
       matched_entity_type,
       matched_entity_id,
+      evidence_review_decision,
       list_price_idr,
       package_price_idr,
       net_price_idr,
       parsed_price_idr,
+      visible_price_per_piece_idr,
       price_per_piece,
       reviewed_price_per_piece,
       ai_price_per_piece,
@@ -243,15 +290,19 @@ begin
     and (
       new.matched_entity_type is distinct from old.matched_entity_type
       or new.matched_entity_id is distinct from old.matched_entity_id
+      or new.evidence_review_decision is distinct from old.evidence_review_decision
       or new.list_price_idr is distinct from old.list_price_idr
       or new.package_price_idr is distinct from old.package_price_idr
       or new.net_price_idr is distinct from old.net_price_idr
       or new.parsed_price_idr is distinct from old.parsed_price_idr
+      or new.visible_price_per_piece_idr is distinct from old.visible_price_per_piece_idr
       or new.price_per_piece is distinct from old.price_per_piece
       or new.reviewed_price_per_piece is distinct from old.reviewed_price_per_piece
+      or new.ai_price_per_piece is distinct from old.ai_price_per_piece
       or new.piece_count is distinct from old.piece_count
       or new.reviewed_piece_count is distinct from old.reviewed_piece_count
       or new.promo_type is distinct from old.promo_type
+      or new.ai_promo_type is distinct from old.ai_promo_type
     )
   then
     new.quality_gate_status := 'PENDING';
@@ -286,15 +337,19 @@ create trigger trg_reset_ai_price_candidate_quality_gate
 before update of
   matched_entity_type,
   matched_entity_id,
+  evidence_review_decision,
   list_price_idr,
   package_price_idr,
   net_price_idr,
   parsed_price_idr,
+  visible_price_per_piece_idr,
   price_per_piece,
   reviewed_price_per_piece,
+  ai_price_per_piece,
   piece_count,
   reviewed_piece_count,
-  promo_type
+  promo_type,
+  ai_promo_type
 on public.ai_price_candidates
 for each row execute function public.reset_ai_price_candidate_quality_gate_on_input_change();
 
@@ -361,6 +416,11 @@ declare
   v_ready_count integer := 0;
   v_insufficient_count integer := 0;
 begin
+  perform pg_advisory_xact_lock(
+    hashtext('price-quality-benchmark'),
+    (v_benchmark_date - date '2000-01-01')::integer
+  );
+
   delete from public.price_quality_benchmark_daily benchmark
   where benchmark.benchmark_date = v_benchmark_date;
 
@@ -516,6 +576,7 @@ create or replace function public.claim_ai_price_candidates_for_quality_gate(
 )
 returns table (
   candidate_id uuid,
+  claim_input_fingerprint text,
   candidate_price_per_piece numeric,
   evidence_review_decision text,
   matched_entity_type text,
@@ -536,22 +597,57 @@ begin
     raise exception 'worker id is required';
   end if;
 
-  update public.ai_price_candidates candidate
-  set
-    quality_gate_status = 'FAILED',
-    quality_gate_reason_codes = '[]'::jsonb,
-    quality_gate_version = null,
-    quality_gate_evaluated_at = now(),
-    quality_gate_error = 'Quality gate lease expired after maximum attempts.',
-    quality_gate_worker_id = null,
-    quality_gate_claimed_at = null,
-    quality_gate_input_fingerprint = candidate.approval_input_fingerprint,
-    review_decision = 'NEED_REVIEW'
-  where candidate.status = 'pending'
-    and candidate.candidate_type = 'SKU'
-    and candidate.quality_gate_status = 'PROCESSING'
-    and candidate.quality_gate_attempt_count >= 3
-    and candidate.quality_gate_claimed_at < now() - interval '10 minutes';
+  with expired_claims as (
+    select
+      candidate.id,
+      candidate.approval_input_fingerprint,
+      candidate.quality_gate_attempt_count,
+      candidate.quality_gate_worker_id
+    from public.ai_price_candidates candidate
+    where candidate.status = 'pending'
+      and candidate.candidate_type = 'SKU'
+      and candidate.quality_gate_status = 'PROCESSING'
+      and candidate.quality_gate_attempt_count >= 3
+      and candidate.quality_gate_claimed_at < now() - interval '10 minutes'
+    for update skip locked
+  ), terminalized as (
+    update public.ai_price_candidates candidate
+    set
+      quality_gate_status = 'FAILED',
+      quality_gate_reason_codes = '[]'::jsonb,
+      quality_gate_version = null,
+      quality_gate_evaluated_at = now(),
+      quality_gate_error = 'Quality gate lease expired after maximum attempts.',
+      quality_gate_worker_id = null,
+      quality_gate_claimed_at = null,
+      quality_gate_input_fingerprint = expired.approval_input_fingerprint,
+      review_decision = 'NEED_REVIEW'
+    from expired_claims expired
+    where candidate.id = expired.id
+    returning
+      candidate.id,
+      expired.approval_input_fingerprint,
+      expired.quality_gate_attempt_count,
+      expired.quality_gate_worker_id
+  )
+  insert into public.price_quality_gate_evaluations (
+    candidate_id,
+    claim_input_fingerprint,
+    quality_gate_attempt_count,
+    worker_id,
+    quality_gate_status,
+    reason_codes,
+    evaluation_error
+  )
+  select
+    terminalized.id,
+    terminalized.approval_input_fingerprint,
+    terminalized.quality_gate_attempt_count,
+    coalesce(terminalized.quality_gate_worker_id, 'expired-lease'),
+    'FAILED',
+    '[]'::jsonb,
+    'Quality gate lease expired after maximum attempts.'
+  from terminalized;
 
   return query
   with claimable as (
@@ -587,6 +683,7 @@ begin
       quality_gate_claimed_at = now(),
       quality_gate_attempt_count = candidate.quality_gate_attempt_count + 1,
       quality_gate_error = null,
+      quality_gate_input_fingerprint = candidate.approval_input_fingerprint,
       review_decision = 'NEED_REVIEW'
     from claimable
     where candidate.id = claimable.id
@@ -594,6 +691,7 @@ begin
   )
   select
     candidate.id,
+    candidate.quality_gate_input_fingerprint,
     coalesce(
       candidate.reviewed_price_per_piece,
       candidate.price_per_piece,
@@ -620,6 +718,7 @@ $$;
 create or replace function public.finalize_ai_price_candidate_quality_gate(
   p_candidate_id uuid,
   p_worker_id text,
+  p_expected_input_fingerprint text,
   p_quality_gate_status text,
   p_reason_codes jsonb,
   p_quality_gate_version text,
@@ -660,7 +759,7 @@ begin
     benchmark_store_count = p_benchmark_store_count,
     quality_gate_evaluated_at = now(),
     quality_gate_error = left(p_error, 1000),
-    quality_gate_input_fingerprint = candidate.approval_input_fingerprint,
+    quality_gate_input_fingerprint = p_expected_input_fingerprint,
     quality_gate_worker_id = null,
     quality_gate_claimed_at = null,
     auto_approval_status = case
@@ -681,10 +780,44 @@ begin
     end
   where candidate.id = p_candidate_id
     and candidate.quality_gate_status = 'PROCESSING'
-    and candidate.quality_gate_worker_id = p_worker_id;
+    and candidate.quality_gate_worker_id = p_worker_id
+    and candidate.quality_gate_input_fingerprint = p_expected_input_fingerprint
+    and candidate.approval_input_fingerprint = p_expected_input_fingerprint;
 
   get diagnostics v_updated = row_count;
   if v_updated = 1 then
+    insert into public.price_quality_gate_evaluations (
+      candidate_id,
+      claim_input_fingerprint,
+      quality_gate_attempt_count,
+      worker_id,
+      quality_gate_status,
+      reason_codes,
+      quality_gate_version,
+      benchmark_date,
+      benchmark_price_per_piece,
+      benchmark_deviation_pct,
+      benchmark_sample_count,
+      benchmark_store_count,
+      evaluation_error
+    )
+    select
+      candidate.id,
+      p_expected_input_fingerprint,
+      candidate.quality_gate_attempt_count,
+      p_worker_id,
+      p_quality_gate_status,
+      coalesce(p_reason_codes, '[]'::jsonb),
+      p_quality_gate_version,
+      p_benchmark_date,
+      p_benchmark_price_per_piece,
+      p_benchmark_deviation_pct,
+      p_benchmark_sample_count,
+      p_benchmark_store_count,
+      left(p_error, 1000)
+    from public.ai_price_candidates candidate
+    where candidate.id = p_candidate_id;
+
     return query select 'APPLIED'::text;
     return;
   end if;
@@ -813,6 +946,65 @@ begin
 end;
 $$;
 
+create or replace function public.reject_ai_price_candidate_with_quality_gate(
+  p_candidate_id uuid,
+  p_reason text,
+  p_reviewer text,
+  p_review_job_id uuid,
+  p_review_method text
+)
+returns table (candidate_id uuid)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_candidate public.ai_price_candidates%rowtype;
+  v_reason text := trim(coalesce(p_reason, ''));
+begin
+  if p_review_method not in ('bulk_manual', 'manual') then
+    raise exception 'invalid review method';
+  end if;
+  if v_reason = '' then
+    raise exception 'Rejection reason is required';
+  end if;
+
+  select candidate.*
+  into v_candidate
+  from public.ai_price_candidates candidate
+  where candidate.id = p_candidate_id
+  for update of candidate;
+
+  if not found then
+    raise exception 'Candidate not found';
+  end if;
+  if v_candidate.status <> 'pending' then
+    raise exception 'Only pending candidates can be rejected';
+  end if;
+
+  update public.ai_price_candidates candidate
+  set
+    status = 'rejected',
+    price_snapshot_id = null,
+    rejection_reason = v_reason,
+    reviewed_at = now(),
+    reviewed_by = p_reviewer,
+    review_job_id = p_review_job_id,
+    review_method = p_review_method,
+    review_decision = 'NEED_REVIEW',
+    quality_gate_status = 'NOT_REQUIRED',
+    quality_gate_worker_id = null,
+    quality_gate_claimed_at = null,
+    auto_approval_status = 'NOT_REQUIRED',
+    auto_approval_worker_id = null,
+    auto_approval_claimed_at = null,
+    auto_approval_error = null
+  where candidate.id = v_candidate.id;
+
+  return query select v_candidate.id;
+end;
+$$;
+
 create or replace function public.approve_ai_price_candidate_with_quality_gate(
   p_candidate_id uuid,
   p_expected_approval_input_fingerprint text,
@@ -894,6 +1086,10 @@ begin
     and v_candidate.quality_gate_attempt_count < 3
   then
     raise exception 'Historical price quality check is waiting for retry.';
+  elsif v_candidate.quality_gate_status <> 'NOT_REQUIRED'
+    and v_candidate.quality_gate_input_fingerprint is distinct from v_candidate.approval_input_fingerprint
+  then
+    raise exception 'Candidate inputs changed; wait for historical price re-evaluation.';
   end if;
 
   v_net_price := coalesce(v_candidate.net_price_idr, v_candidate.parsed_price_idr);
@@ -1069,6 +1265,7 @@ revoke all on function public.finalize_ai_price_candidate_quality_gate(
   uuid,
   text,
   text,
+  text,
   jsonb,
   text,
   date,
@@ -1096,10 +1293,13 @@ revoke all on function public.claim_ai_price_candidates_for_auto_approval(text, 
   from public, anon, authenticated;
 revoke all on function public.finalize_ai_price_candidate_auto_approval_failure(uuid, text, text)
   from public, anon, authenticated;
+revoke all on function public.reject_ai_price_candidate_with_quality_gate(uuid, text, text, uuid, text)
+  from public, anon, authenticated;
 grant execute on function public.claim_ai_price_candidates_for_quality_gate(text, integer)
   to service_role;
 grant execute on function public.finalize_ai_price_candidate_quality_gate(
   uuid,
+  text,
   text,
   text,
   jsonb,
@@ -1128,6 +1328,8 @@ grant execute on function public.approve_ai_price_candidate_with_quality_gate(
 grant execute on function public.claim_ai_price_candidates_for_auto_approval(text, integer)
   to service_role;
 grant execute on function public.finalize_ai_price_candidate_auto_approval_failure(uuid, text, text)
+  to service_role;
+grant execute on function public.reject_ai_price_candidate_with_quality_gate(uuid, text, text, uuid, text)
   to service_role;
 
 notify pgrst, 'reload schema';

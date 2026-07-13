@@ -261,6 +261,13 @@ test("price quality internal routes require cron secret or admin", () => {
   }
 });
 
+test("manual benchmark refresh rejects impossible calendar dates", () => {
+  const refreshRoute = readFileSync(refreshRoutePath, "utf8");
+  assert.match(refreshRoute, /function isValidBenchmarkDate/);
+  assert.match(refreshRoute, /toISOString\(\)\.slice\(0, 10\) === value/);
+  assert.match(refreshRoute, /!isValidBenchmarkDate\(benchmarkDate\)/);
+});
+
 test("cron refreshes T+1 daily and repairs candidate work every minute", () => {
   assert.match(vercelConfig, /\/api\/internal\/price-quality\/refresh-benchmarks/);
   assert.match(vercelConfig, /"30 17 \* \* \*"/);
@@ -302,6 +309,73 @@ test("approval is atomically bound to the exact inputs evaluated by the gate", (
   assert.doesNotMatch(reviewService, /\.from\("price_snapshots"\)\s*\n\s*\.insert\(/);
 });
 
+test("authenticated clients cannot mutate governed price facts or quality state directly", () => {
+  assert.match(migration, /drop policy if exists "authenticated insert ai_price_candidates"/i);
+  assert.match(migration, /drop policy if exists "authenticated update ai_price_candidates"/i);
+  assert.match(migration, /drop policy if exists "authenticated insert price_snapshots"/i);
+  assert.match(migration, /drop policy if exists "authenticated update price_snapshots"/i);
+  assert.match(migration, /revoke insert, update, delete on table public\.ai_price_candidates\s+from anon, authenticated/i);
+  assert.match(migration, /revoke insert, update, delete on table public\.price_snapshots\s+from anon, authenticated/i);
+});
+
+test("candidate rejection is atomic with approval and clears queue ownership", () => {
+  assert.match(migration, /create or replace function public\.reject_ai_price_candidate_with_quality_gate/i);
+  assert.match(migration, /for update of candidate/i);
+  assert.match(migration, /v_candidate\.status <> 'pending'/i);
+  assert.match(migration, /auto_approval_status = 'NOT_REQUIRED'/i);
+  assert.match(migration, /auto_approval_worker_id = null/i);
+  assert.match(migration, /quality_gate_worker_id = null/i);
+  assert.match(reviewService, /reject_ai_price_candidate_with_quality_gate/);
+  assert.doesNotMatch(reviewService, /select\("id,status"\)[\s\S]*updateAiPriceCandidateWithReviewMethodFallback/);
+});
+
+test("quality finalization is fenced to the exact inputs returned by claim", () => {
+  assert.match(migration, /claim_input_fingerprint text/i);
+  assert.match(migration, /candidate\.approval_input_fingerprint[\s\S]*from claimed candidate/i);
+  assert.match(migration, /p_expected_input_fingerprint text/i);
+  assert.match(migration, /candidate\.approval_input_fingerprint = p_expected_input_fingerprint/i);
+  assert.match(migration, /quality_gate_input_fingerprint = p_expected_input_fingerprint/i);
+  assert.match(jobs, /claim_input_fingerprint/);
+  assert.match(jobs, /p_expected_input_fingerprint:\s*input\.expectedInputFingerprint/);
+});
+
+test("quality decisions keep append-only evaluation audit records", () => {
+  assert.match(migration, /create table if not exists public\.price_quality_gate_evaluations/i);
+  assert.match(migration, /candidate_id uuid not null references public\.ai_price_candidates/i);
+  assert.match(migration, /claim_input_fingerprint text not null/i);
+  assert.match(migration, /quality_gate_attempt_count integer not null/i);
+  assert.match(migration, /insert into public\.price_quality_gate_evaluations[\s\S]*p_expected_input_fingerprint/i);
+  assert.match(migration, /lease expired after maximum attempts[\s\S]*price_quality_gate_evaluations/i);
+  assert.match(migration, /revoke insert, update, delete on table public\.price_quality_gate_evaluations/i);
+});
+
+test("daily benchmark refresh serializes by benchmark date", () => {
+  assert.match(migration, /pg_advisory_xact_lock/i);
+  assert.match(migration, /v_benchmark_date - date '2000-01-01'/i);
+});
+
+test("every evaluated or snapshotted candidate input invalidates stale quality", () => {
+  assert.match(migration, /p_evidence_review_decision text/i);
+  assert.match(migration, /p_visible_price_per_piece numeric/i);
+  for (const field of [
+    "evidence_review_decision",
+    "visible_price_per_piece_idr",
+    "ai_price_per_piece",
+    "ai_promo_type",
+  ]) {
+    assert.match(migration, new RegExp(`new\\.${field} is distinct from old\\.${field}`, "i"));
+    assert.match(migration, new RegExp(`before update of[\\s\\S]*${field}`, "i"));
+  }
+});
+
+test("H5 corrections cannot overwrite an approved price fact", () => {
+  assert.match(visitCandidateReviewRoute, /candidateStatuses\s*=\s*\["pending"\];/);
+  assert.match(visitCandidateReviewRoute, /\.eq\("status", "pending"\)/);
+  assert.doesNotMatch(visitCandidateReviewRoute, /syncCandidateReviewInputToPriceSnapshot/);
+  assert.doesNotMatch(visitCandidateReviewRoute, /syncCandidateMatchToPriceSnapshot/);
+  assert.doesNotMatch(visitCandidateReviewRoute, /deleteLinkedSnapshot/);
+});
+
 test("bulk manual override cannot bypass a risky quality result", () => {
   assert.match(bulkReviewRunRoute, /quality_gate_status/);
   assert.match(bulkReviewRunRoute, /PASSED/);
@@ -315,6 +389,7 @@ test("single manual review waits only for unfinished historical quality work", (
   assert.match(reviewService, /Historical price quality check is still running/);
   assert.match(reviewService, /quality_gate_status === "FAILED"/);
   assert.match(reviewService, /quality_gate_attempt_count < 3/);
+  assert.match(migration, /quality_gate_input_fingerprint is distinct from v_candidate\.approval_input_fingerprint/);
 });
 
 test("passed candidates are auto-approved asynchronously and retried by the runner", () => {

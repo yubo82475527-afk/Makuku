@@ -54,6 +54,10 @@ Vision 和 Visit 分析完成后先生成候选并结束主流程；Visit 不等
 
 自动批准使用独立的有界租约队列，最多尝试三次。失败或 worker 崩溃不会长期占用 `PROCESSING`；耗尽重试后回到单条人工处理，也不会阻塞后续候选。
 
+`price_quality_gate_evaluations` 以追加方式保存每次门禁尝试的领取指纹、基准、结论、原因、worker 和版本。候选表保留最新状态用于排队，审计表保留历史，不因重新校验而覆盖。
+
+数据库权限边界固定为：`anon` 和 `authenticated` 只能读取获准数据，不能直接写 `ai_price_candidates`、`price_snapshots` 或门禁审计表。批准、拒绝和事实生成必须通过 service-role 服务与带行锁的 RPC。已经批准的 H5 价格事实不可原地修改或删除；后续纠错必须产生新的待校验候选或专门的更正流程。
+
 ### `price_snapshots`（已实现）
 
 `price_snapshots` 继续只保存已经确认的 L1 价格事实。T+1 样本数、偏差率、门禁状态和失败重试等过程字段不得写入该表。
@@ -106,11 +110,12 @@ Vision 和 Visit 分析完成后先生成候选并结束主流程；Visit 不等
 
 ## 部署与恢复顺序
 
-1. 先执行 `202607130001_price_quality_gate_phase1.sql`，再部署应用代码。
+1. 上线前先确认 `ai_price_candidates` 行数和维护窗口；`approval_input_fingerprint` 是 stored generated column，需在预发布环境演练迁移锁时长。然后执行 `202607130001_price_quality_gate_phase1.sql`，再部署应用代码。
 2. 执行 `node scripts/refresh-price-quality-benchmarks.mjs`，确认当天 refresh run 为 `COMPLETED`。
 3. 执行 `node scripts/run-price-quality-gate.mjs --repeat=10` 回填待处理候选。
-4. 检查待处理候选的质量状态、过期租约、自动批准耗尽数和非 `PASSED` 的自动决策。
-5. 紧急回滚应用前先停用价格质量 cron，并把仍待处理的候选恢复为 `NOT_REQUIRED`/原证据决策；保留新增表和审计字段，后续优先向前修复。
+4. 用真实 `anon`/`authenticated` 角色验证不能直接修改候选或价格事实，并用两个数据库会话验证“输入变更与 finalize”“拒绝与批准”的竞争只允许一方成功。
+5. 检查待处理候选的质量状态、过期租约、自动批准耗尽数、`price_quality_gate_evaluations` 审计记录和非 `PASSED` 的自动决策。
+6. 紧急回滚应用前先停用价格质量 cron，并把仍待处理的候选恢复为 `NOT_REQUIRED`/原证据决策；保留新增表和审计字段，后续优先向前修复。
 
 ## 架构评审红线
 

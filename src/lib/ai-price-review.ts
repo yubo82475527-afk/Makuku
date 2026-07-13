@@ -9,23 +9,6 @@ const AUTO_REVIEW_CONCURRENCY = 10;
 const MIN_MATCH_SCORE = 0.9;
 const REQUIRE_MATCHED_ENTITY = true;
 
-type CandidateUpdatePayload = {
-  status: "approved" | "rejected";
-  parsed_price_idr?: number;
-  reviewed_piece_count?: number;
-  reviewed_price_per_piece?: number;
-  price_snapshot_id?: string | null;
-  matched_entity_type?: "material_master" | "competitor_product" | "unmatched";
-  matched_entity_id?: string | null;
-  matched_label?: string | null;
-  match_score?: number;
-  rejection_reason?: string | null;
-  reviewed_at: string;
-  reviewed_by: string | null;
-  review_job_id: string | null;
-  review_method?: AiPriceCandidateReviewMethod;
-};
-
 export function candidateMatchesReviewRule(candidate: AiPriceCandidate, _rule: AiPriceReviewRule) {
   void _rule;
   if (candidate.status !== "pending") return { eligible: false, reason: "Only pending candidates can be bulk reviewed." };
@@ -203,22 +186,32 @@ export async function rejectAiPriceCandidate({
   const cleanReason = reason.trim();
   if (!cleanReason) throw new Error("Rejection reason is required");
 
-  const { data: candidate, error: lookupError } = await supabase
-    .from("ai_price_candidates")
-    .select("id,status")
-    .eq("id", candidateId)
-    .single();
-  if (lookupError || !candidate) throw new Error(lookupError?.message ?? "Candidate not found");
-  if (candidate.status === "approved") throw new Error("Approved candidates cannot be rejected");
+  const { data: rejectionRows, error: rejectionError } = await supabase.rpc(
+    "reject_ai_price_candidate_with_quality_gate",
+    {
+      p_candidate_id: candidateId,
+      p_reason: cleanReason,
+      p_reviewer: reviewer ?? null,
+      p_review_job_id: reviewJobId ?? null,
+      p_review_method: reviewMethod,
+    },
+  );
+  if (rejectionError) throw new Error(rejectionError.message);
+  const rejection = Array.isArray(rejectionRows)
+    ? rejectionRows[0] as { candidate_id?: string } | undefined
+    : null;
+  if (!rejection?.candidate_id) {
+    throw new Error("Atomic candidate rejection returned no result.");
+  }
 
-  const data = await updateAiPriceCandidateWithReviewMethodFallback(supabase, candidateId, {
-    status: "rejected",
-    rejection_reason: cleanReason,
-    reviewed_at: new Date().toISOString(),
-    reviewed_by: reviewer ?? null,
-    review_job_id: reviewJobId ?? null,
-    review_method: reviewMethod,
-  });
+  const { data, error } = await supabase
+    .from("ai_price_candidates")
+    .select("*")
+    .eq("id", rejection.candidate_id)
+    .single();
+  if (error || !data) {
+    throw new Error(error?.message ?? "Rejected candidate not found");
+  }
 
   return data as AiPriceCandidate;
 }
@@ -568,38 +561,4 @@ function competitorBrandsMatch(candidateBrand: string | null | undefined, produc
   const product = compactText(productBrand);
   if (!candidate || !product) return false;
   return candidate === product;
-}
-
-async function updateAiPriceCandidateWithReviewMethodFallback(
-  supabase: SupabaseServiceClient,
-  candidateId: string,
-  payload: CandidateUpdatePayload,
-) {
-  const { data, error } = await supabase
-    .from("ai_price_candidates")
-    .update(payload)
-    .eq("id", candidateId)
-    .select("*")
-    .single();
-  if (!error && data) return data;
-
-  if (!isMissingReviewMethodError(error)) {
-    throw new Error(error?.message ?? "Candidate not found");
-  }
-
-  const legacyPayload = { ...payload };
-  delete legacyPayload.review_method;
-  const { data: legacyData, error: legacyError } = await supabase
-    .from("ai_price_candidates")
-    .update(legacyPayload)
-    .eq("id", candidateId)
-    .select("*")
-    .single();
-  if (legacyError || !legacyData) throw new Error(legacyError?.message ?? "Candidate not found");
-  return legacyData;
-}
-
-function isMissingReviewMethodError(error: { message?: string | null } | null) {
-  const message = error?.message ?? "";
-  return message.includes("review_method") || message.includes("schema cache");
 }

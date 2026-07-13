@@ -9,6 +9,12 @@ function clean(value: unknown) {
   return String(value ?? "").trim();
 }
 
+function isValidBenchmarkDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
 function readAuthorizationToken(request: Request) {
   const header = request.headers.get("authorization") ?? "";
   const bearerMatch = header.match(/^Bearer\s+(.+)$/i);
@@ -38,8 +44,8 @@ export async function POST(request: Request) {
 
   const { body } = await readRequestBody(request).catch(() => ({ body: {} }));
   const benchmarkDate = clean((body as Record<string, unknown>).benchmark_date) || null;
-  if (benchmarkDate && !/^\d{4}-\d{2}-\d{2}$/.test(benchmarkDate)) {
-    return Response.json({ error: "benchmark_date must use YYYY-MM-DD" }, { status: 400 });
+  if (benchmarkDate && !isValidBenchmarkDate(benchmarkDate)) {
+    return Response.json({ error: "benchmark_date must be a valid YYYY-MM-DD date" }, { status: 400 });
   }
   return Response.json(await refreshPriceQualityBenchmarks({ benchmarkDate }));
 }

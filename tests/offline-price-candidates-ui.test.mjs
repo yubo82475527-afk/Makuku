@@ -675,23 +675,25 @@ test("mobile store visit detail exposes row-level delete and hides H5-deleted ro
   assert.match(storeVisitDetailH5, /rowActionSheet/);
   assert.match(storeVisitDetailH5, /setRowDeleteConfirm/);
   assert.match(storeVisitDetailH5, /openRowEditor\(current\.section, current\.row, current\.rowIndex\)/);
+  assert.match(storeVisitDetailH5, /candidate\.status !== "pending"/);
   assert.match(storeVisitCandidateRoute, /action === "delete_h5_row"/);
   assert.match(storeVisitCandidateRoute, /h5_lifecycle_status: "deleted"/);
-  assert.match(storeVisitCandidateRoute, /price_snapshot_id: null/);
+  assert.match(storeVisitCandidateRoute, /rejectAiPriceCandidate/);
+  assert.doesNotMatch(storeVisitCandidateRoute, /\.from\("price_snapshots"\)[\s\S]*\.delete\(\)/);
 });
 
 test("mobile store visit detail renders the normalized row sku title", () => {
   assert.match(storeVisitDetailH5, /className="line-clamp-1 min-w-0 text-sm font-semibold leading-5 text-slate-900">\{row\.sku\}/);
 });
 
-test("H5 price candidate API updates approved matches and syncs linked snapshots", () => {
+test("H5 price candidate API keeps approved facts immutable", () => {
   assert.match(storeVisitCandidateRoute, /action === "update_match"/);
   assert.match(storeVisitCandidateRoute, /action === "save_review_input"/);
-  assert.match(storeVisitCandidateRoute, /const candidateStatuses = action === "delete_h5_row"/);
+  assert.match(storeVisitCandidateRoute, /const candidateStatuses = \["pending"\]/);
   assert.match(storeVisitCandidateRoute, /\.in\("status", candidateStatuses\)/);
-  assert.match(storeVisitCandidateRoute, /syncCandidateMatchToPriceSnapshot/);
-  assert.match(storeVisitCandidateRoute, /syncCandidateReviewInputToPriceSnapshot/);
-  assert.match(storeVisitCandidateRoute, /if \(candidate\.price_snapshot_id\) \{/);
+  assert.match(storeVisitCandidateRoute, /\.eq\("status", "pending"\)/);
+  assert.doesNotMatch(storeVisitCandidateRoute, /syncCandidateMatchToPriceSnapshot/);
+  assert.doesNotMatch(storeVisitCandidateRoute, /syncCandidateReviewInputToPriceSnapshot/);
   assert.match(aiPriceReview, /export async function syncCandidateMatchToPriceSnapshot/);
   assert.match(aiPriceReview, /export async function syncCandidateReviewInputToPriceSnapshot/);
   assert.match(aiPriceReview, /Price snapshot not found/);
@@ -709,7 +711,8 @@ test("H5 price candidate API combines H5 row price and match save into one actio
   assert.match(storeVisitCandidateRoute, /action === "save_h5_row"/);
   assert.match(storeVisitCandidateRoute, /const h5RowPatch = buildReviewInputPatch/);
   assert.match(storeVisitCandidateRoute, /buildMatchPatch/);
-  assert.match(storeVisitCandidateRoute, /syncCandidateReviewInputToPriceSnapshot/);
-  assert.match(storeVisitCandidateRoute, /syncCandidateMatchToPriceSnapshot/);
+  assert.match(storeVisitCandidateRoute, /\.eq\("status", "pending"\)/);
+  assert.doesNotMatch(storeVisitCandidateRoute, /syncCandidateReviewInputToPriceSnapshot/);
+  assert.doesNotMatch(storeVisitCandidateRoute, /syncCandidateMatchToPriceSnapshot/);
   assert.match(storeVisitCandidateRoute, /return Response\.json\(\{ candidate \}\)/);
 });
