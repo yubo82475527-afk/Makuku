@@ -547,7 +547,7 @@ begin
     'price-quality-benchmark-v1',
     now()
   )
-  on conflict (benchmark_date) do update
+  on conflict on constraint price_quality_benchmark_refresh_runs_pkey do update
   set
     status = excluded.status,
     inserted_count = excluded.inserted_count,

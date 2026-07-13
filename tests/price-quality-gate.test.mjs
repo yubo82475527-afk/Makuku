@@ -6,6 +6,8 @@ import ts from "typescript";
 
 const migrationPath = "supabase/migrations/202607130001_price_quality_gate_phase1.sql";
 const migration = existsSync(migrationPath) ? readFileSync(migrationPath, "utf8") : "";
+const benchmarkRefreshHotfixPath = "supabase/migrations/202607130003_fix_price_quality_benchmark_refresh.sql";
+const benchmarkRefreshHotfix = existsSync(benchmarkRefreshHotfixPath) ? readFileSync(benchmarkRefreshHotfixPath, "utf8") : "";
 const types = readFileSync("src/lib/types.ts", "utf8");
 const benchmarkServicePath = "src/lib/price-quality-benchmarks.ts";
 const benchmarkService = existsSync(benchmarkServicePath) ? readFileSync(benchmarkServicePath, "utf8") : "";
@@ -352,6 +354,14 @@ test("quality decisions keep append-only evaluation audit records", () => {
 test("daily benchmark refresh serializes by benchmark date", () => {
   assert.match(migration, /pg_advisory_xact_lock/i);
   assert.match(migration, /v_benchmark_date - date '2000-01-01'/i);
+});
+
+test("benchmark refresh upsert does not collide with the table-return benchmark_date name", () => {
+  assert.doesNotMatch(migration, /on conflict \(benchmark_date\) do update/i);
+  assert.equal(existsSync(benchmarkRefreshHotfixPath), true);
+  assert.match(benchmarkRefreshHotfix, /create or replace function public\.refresh_price_quality_benchmark_daily/i);
+  assert.match(benchmarkRefreshHotfix, /on conflict on constraint price_quality_benchmark_refresh_runs_pkey do update/i);
+  assert.doesNotMatch(benchmarkRefreshHotfix, /on conflict \(benchmark_date\) do update/i);
 });
 
 test("every evaluated or snapshotted candidate input invalidates stale quality", () => {
