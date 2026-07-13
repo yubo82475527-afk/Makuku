@@ -503,6 +503,7 @@ function buildAiPriceCandidateRow(input: {
   const packagePrice = reconciledPrices.packagePriceIdr ?? parsedPrice;
   const netPrice = reconciledPrices.netPriceIdr ?? parsedPrice;
   const pricePerPiece = reconciledPrices.pricePerPieceIdr;
+  const evidenceReviewDecision = item.review_decision ?? reconciledPrices.reviewDecision;
   const warnings: Warning[] = [];
   if (!item.brand) warnings.push({ type: "MISSING_DATA", message: "AI did not extract a brand." });
   if (!item.product) warnings.push({ type: "MISSING_DATA", message: "AI did not extract a product name." });
@@ -570,7 +571,11 @@ function buildAiPriceCandidateRow(input: {
     price_evidence_confidence: item.price_evidence_confidence ?? reconciledPrices.priceEvidenceConfidence,
     price_evidence_detail: item.price_evidence_detail ?? reconciledPrices.priceEvidenceDetail,
     conflicts: item.conflicts ?? reconciledPrices.conflicts,
-    review_decision: item.review_decision ?? reconciledPrices.reviewDecision,
+    evidence_review_decision: evidenceReviewDecision,
+    review_decision: "NEED_REVIEW",
+    quality_gate_status: "PENDING",
+    quality_gate_reason_codes: [],
+    quality_gate_version: null,
     matched_entity_type: matchedEntityType,
     matched_entity_id: matchedEntityId,
     matched_label: materialMatch ? materialLabel(materialMatch.item) : competitorMatch ? competitorLabel(competitorMatch.item) : null,

@@ -14,6 +14,9 @@ const jobs = existsSync(jobsPath) ? readFileSync(jobsPath, "utf8") : "";
 const runRoutePath = "src/app/api/internal/price-quality/run/route.ts";
 const refreshRoutePath = "src/app/api/internal/price-quality/refresh-benchmarks/route.ts";
 const vercelConfig = readFileSync("vercel.json", "utf8");
+const candidateService = readFileSync("src/lib/ai-price-candidates.ts", "utf8");
+const visitRunnerRoute = readFileSync("src/app/api/internal/store-visit-ai/run/route.ts", "utf8");
+const visitJobs = readFileSync("src/lib/store-visit-ai-jobs.ts", "utf8");
 
 function loadQualityEvaluator() {
   const path = "src/lib/price-quality-gate.ts";
@@ -239,4 +242,17 @@ test("cron refreshes T+1 daily and repairs candidate work every minute", () => {
   assert.match(vercelConfig, /"30 17 \* \* \*"/);
   assert.match(vercelConfig, /\/api\/internal\/price-quality\/run/);
   assert.match(vercelConfig, /"\* \* \* \* \*"/);
+});
+
+test("new candidates preserve evidence decision and wait for historical quality", () => {
+  assert.match(candidateService, /evidence_review_decision/);
+  assert.match(candidateService, /quality_gate_status:\s*"PENDING"/);
+  assert.match(candidateService, /quality_gate_reason_codes:\s*\[\]/);
+  assert.match(candidateService, /review_decision:\s*"NEED_REVIEW"/);
+});
+
+test("Visit runner triggers quality work after analysis without putting history in the job path", () => {
+  assert.match(visitRunnerRoute, /triggerPriceQualityGateRunner/);
+  assert.match(visitRunnerRoute, /after\(\(\) => triggerPriceQualityGateRunner/);
+  assert.doesNotMatch(visitJobs, /refresh_price_quality_benchmark_daily|price_quality_benchmark_daily/);
 });

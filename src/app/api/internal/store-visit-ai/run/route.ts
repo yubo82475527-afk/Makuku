@@ -1,5 +1,6 @@
 import { after } from "next/server";
 import { requireAdminSession } from "@/lib/auth-session";
+import { triggerPriceQualityGateRunner } from "@/lib/price-quality-gate-jobs";
 import { readRequestBody } from "@/lib/request";
 import {
   runStoreVisitAiJob,
@@ -36,6 +37,9 @@ async function runAndRespond(request: Request, jobId?: string | null) {
     after(() => triggerStoreVisitAiJobRunner({ requestUrl: request.url, jobId: result.job?.id }));
   } else if (!jobId && result.processed > 0) {
     after(() => triggerStoreVisitAiJobRunner({ requestUrl: request.url }));
+  }
+  if (result.processed > 0) {
+    after(() => triggerPriceQualityGateRunner({ requestUrl: request.url }));
   }
   return Response.json(result);
 }
