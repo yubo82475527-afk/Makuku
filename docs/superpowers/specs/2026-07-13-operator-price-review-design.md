@@ -99,6 +99,7 @@ Price Snapshot 必须关联一个明确 SKU，合法口径为：
 - `current_match_type`
 - `current_match_id`
 - `current_match_label`
+- `review_token`
 - `visit_detail_href`
 
 接口不得返回 AI confidence、match score、benchmark sample count、benchmark store count、原始 JSON、warnings 数组、conflicts 数组或全部 Visit 图片。
@@ -199,7 +200,9 @@ Price Snapshot 必须关联一个明确 SKU，合法口径为：
 
 ### 商品修正
 
-商品修正只允许待处理候选。修正商品后仍停留在抽屉，由运营继续执行“确认价格正确”或“修正后通过”。服务端最终生成快照前再次校验商品关联。
+商品修正只允许待处理候选。运营在抽屉内选择商品时先保留为本地审核输入，不单独修改数据库；随后执行“确认价格正确”或“修正后通过”时，商品修正与 Price Snapshot 生成在同一事务提交。服务端最终生成快照前再次校验商品关联。
+
+`review_token` 是当前候选输入指纹的非展示别名。所有通过和拒绝请求都必须携带该 token；候选在抽屉打开后发生变化时，服务端返回 409，不能按旧证据完成处理。
 
 ## 12. 错误处理
 
