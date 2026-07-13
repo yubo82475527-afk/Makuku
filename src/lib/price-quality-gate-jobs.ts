@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { autoApprovePassedAiPriceCandidates } from "@/lib/ai-price-review";
 import { evaluatePriceQualityGate } from "@/lib/price-quality-gate";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import type {
@@ -89,6 +90,8 @@ export async function runPriceQualityGate(input: {
     failed: 0,
     already_finalized: 0,
     ownership_lost: 0,
+    auto_approved: 0,
+    auto_approval_failed: 0,
   };
 
   for (let batch = 0; batch < maxBatches; batch += 1) {
@@ -173,6 +176,13 @@ export async function runPriceQualityGate(input: {
       }
     }
   }
+
+  const autoApproval = await autoApprovePassedAiPriceCandidates({
+    supabase,
+    limit: PRICE_QUALITY_GATE_BATCH_SIZE,
+  });
+  counters.auto_approved += autoApproval.approved;
+  counters.auto_approval_failed += autoApproval.failed;
 
   return counters;
 }

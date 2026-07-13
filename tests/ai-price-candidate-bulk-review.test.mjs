@@ -163,3 +163,9 @@ test("bulk review API carries row correction overrides into approve processing",
   assert.match(runRoute, /pieceCount:\s*overrideForCandidate\?\.piece_count\s*\?\?/);
   assert.match(runRoute, /promoType:\s*overrideForCandidate\?\.promo_type\s*\?\?/);
 });
+
+test("bulk approval cannot bypass the historical quality gate", () => {
+  assert.match(runRoute, /candidate\.quality_gate_status !== "PASSED"/);
+  assert.match(runRoute, /Historical price quality gate requires individual review/);
+  assert.match(runRoute, /status:\s*"skipped"/);
+});

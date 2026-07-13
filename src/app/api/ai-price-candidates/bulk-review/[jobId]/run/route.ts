@@ -128,6 +128,18 @@ export async function POST(request: Request, ctx: { params: Promise<{ jobId: str
         continue;
       }
 
+      if (candidate.quality_gate_status !== "PASSED") {
+        await supabase
+          .from("ai_price_review_job_items")
+          .update({
+            status: "skipped",
+            error_message: "Historical price quality gate requires individual review.",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", item.id);
+        continue;
+      }
+
       if (!manualOverride) {
         const eligibility = candidateMatchesReviewRule(candidate, job.rule_snapshot as AiPriceReviewRule);
         if (!eligibility.eligible) {

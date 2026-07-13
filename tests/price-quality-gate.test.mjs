@@ -17,6 +17,10 @@ const vercelConfig = readFileSync("vercel.json", "utf8");
 const candidateService = readFileSync("src/lib/ai-price-candidates.ts", "utf8");
 const visitRunnerRoute = readFileSync("src/app/api/internal/store-visit-ai/run/route.ts", "utf8");
 const visitJobs = readFileSync("src/lib/store-visit-ai-jobs.ts", "utf8");
+const reviewService = readFileSync("src/lib/ai-price-review.ts", "utf8");
+const bulkReviewRunRoute = readFileSync("src/app/api/ai-price-candidates/bulk-review/[jobId]/run/route.ts", "utf8");
+const candidateReviewRoute = readFileSync("src/app/api/ai-price-candidates/[id]/route.ts", "utf8");
+const visitCandidateReviewRoute = readFileSync("src/app/api/store-visit/price-candidates/[id]/route.ts", "utf8");
 
 function loadQualityEvaluator() {
   const path = "src/lib/price-quality-gate.ts";
@@ -255,4 +259,35 @@ test("Visit runner triggers quality work after analysis without putting history 
   assert.match(visitRunnerRoute, /triggerPriceQualityGateRunner/);
   assert.match(visitRunnerRoute, /after\(\(\) => triggerPriceQualityGateRunner/);
   assert.doesNotMatch(visitJobs, /refresh_price_quality_benchmark_daily|price_quality_benchmark_daily/);
+});
+
+test("automatic and bulk approval require a passed quality gate", () => {
+  assert.match(reviewService, /candidate\.quality_gate_status !== "PASSED"/);
+  assert.match(reviewService, /Historical price quality gate has not passed/);
+});
+
+test("bulk manual override cannot bypass a risky quality result", () => {
+  assert.match(bulkReviewRunRoute, /quality_gate_status/);
+  assert.match(bulkReviewRunRoute, /PASSED/);
+  assert.match(bulkReviewRunRoute, /skipped/);
+});
+
+test("single manual review waits only for unfinished historical quality work", () => {
+  assert.match(reviewService, /reviewMethod === "manual"/);
+  assert.match(reviewService, /quality_gate_status === "PENDING"/);
+  assert.match(reviewService, /quality_gate_status === "PROCESSING"/);
+  assert.match(reviewService, /Historical price quality check is still running/);
+  assert.match(reviewService, /quality_gate_status === "FAILED"/);
+  assert.match(reviewService, /quality_gate_attempt_count < 3/);
+});
+
+test("passed candidates are auto-approved asynchronously and retried by the runner", () => {
+  assert.match(reviewService, /autoApprovePassedAiPriceCandidates/);
+  assert.match(reviewService, /quality_gate_status", "PASSED"/);
+  assert.match(jobs, /autoApprovePassedAiPriceCandidates/);
+});
+
+test("single approval routes keep policy centralized in the review service", () => {
+  assert.match(candidateReviewRoute, /approveAiPriceCandidate/);
+  assert.match(visitCandidateReviewRoute, /approveAiPriceCandidate/);
 });

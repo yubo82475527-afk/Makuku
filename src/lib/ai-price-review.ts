@@ -28,6 +28,9 @@ type CandidateUpdatePayload = {
 
 export function candidateMatchesReviewRule(candidate: AiPriceCandidate, _rule: AiPriceReviewRule) {
   if (candidate.status !== "pending") return { eligible: false, reason: "Only pending candidates can be bulk reviewed." };
+  if (candidate.quality_gate_status !== "PASSED") {
+    return { eligible: false, reason: "Historical price quality gate has not passed." };
+  }
   if (candidate.review_decision !== "AUTO_APPROVE") return { eligible: false, reason: "Candidate requires manual review." };
   if (candidate.match_score < MIN_MATCH_SCORE) return { eligible: false, reason: "Match score is below the fixed auto-approval threshold." };
   if (REQUIRE_MATCHED_ENTITY && (!candidate.matched_entity_id || candidate.matched_entity_type === "unmatched")) {
@@ -83,6 +86,18 @@ export async function approveAiPriceCandidate({
   }
 
   const candidateRow = candidate as AiPriceCandidate;
+  const requiresPassedQualityGate = reviewMethod === "auto_rule" || reviewMethod === "bulk_manual";
+  if (requiresPassedQualityGate && candidate.quality_gate_status !== "PASSED") {
+    throw new Error("Historical price quality gate has not passed.");
+  }
+  if (reviewMethod === "manual") {
+    if (candidate.quality_gate_status === "PENDING" || candidate.quality_gate_status === "PROCESSING") {
+      throw new Error("Historical price quality check is still running.");
+    }
+    if (candidate.quality_gate_status === "FAILED" && candidate.quality_gate_attempt_count < 3) {
+      throw new Error("Historical price quality check is waiting for retry.");
+    }
+  }
   const price = Number(priceIdr ?? candidate.net_price_idr ?? candidate.parsed_price_idr);
   if (!Number.isFinite(price) || price <= 0) {
     throw new Error("Valid price is required");
@@ -322,6 +337,47 @@ export async function autoApproveAiPriceCandidatesForVisit({
   await Promise.all(Array.from({ length: workerCount }, () => autoReviewWorker()));
 
   return { approvedCount, failedCount, skippedCount, errors };
+}
+
+export async function autoApprovePassedAiPriceCandidates(input: {
+  supabase: SupabaseServiceClient;
+  limit?: number;
+}) {
+  const limit = Math.max(1, Math.min(input.limit ?? 50, 100));
+  const { data, error } = await input.supabase
+    .from("ai_price_candidates")
+    .select("*")
+    .eq("status", "pending")
+    .eq("quality_gate_status", "PASSED")
+    .eq("review_decision", "AUTO_APPROVE")
+    .order("quality_gate_evaluated_at", { ascending: true })
+    .limit(limit);
+  if (error) throw new Error(error.message);
+
+  let approved = 0;
+  let failed = 0;
+  for (const candidate of (data ?? []) as AiPriceCandidate[]) {
+    try {
+      await approveAiPriceCandidate({
+        supabase: input.supabase,
+        candidateId: candidate.id,
+        priceIdr: candidate.net_price_idr ?? candidate.parsed_price_idr,
+        pieceCount: candidate.piece_count,
+        promoType: candidate.promo_type,
+        reviewer: "auto_rule",
+        reviewMethod: "auto_rule",
+      });
+      approved += 1;
+    } catch (error) {
+      failed += 1;
+      console.error("[price-quality-gate] auto approval failed", {
+        candidate_id: candidate.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return { approved, failed };
 }
 
 export async function ensureCompetitorProduct(supabase: SupabaseServiceClient, candidate: Record<string, unknown>, pieceCount: number) {
