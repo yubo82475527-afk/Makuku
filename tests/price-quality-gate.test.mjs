@@ -257,6 +257,7 @@ test("new candidates preserve evidence decision and wait for historical quality"
 
 test("non-SKU candidates are not stranded in a quality queue that only claims SKUs", () => {
   assert.match(migration, /candidate\.candidate_type = 'SKU'/);
+  assert.match(migration, /new\.candidate_type = 'SKU'/);
   assert.match(candidateService, /quality_gate_status:\s*item\.type === "SKU"\s*\?\s*"PENDING"\s*:\s*"NOT_REQUIRED"/);
 });
 

@@ -146,6 +146,7 @@ set search_path = public
 as $$
 begin
   if new.status = 'pending'
+    and new.candidate_type = 'SKU'
     and (
       new.matched_entity_type is distinct from old.matched_entity_type
       or new.matched_entity_id is distinct from old.matched_entity_id
