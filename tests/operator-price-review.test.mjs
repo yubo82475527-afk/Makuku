@@ -134,6 +134,7 @@ test("operator API maps stale state and invalid ownership conflicts without retu
 
 test("snapshot reuse never overwrites an already confirmed price fact", () => {
   assert.match(migration, /select[\s\S]*snapshot\.piece_count[\s\S]*snapshot\.price_per_piece[\s\S]*into[\s\S]*v_snapshot_piece_count[\s\S]*v_snapshot_price_per_piece/i);
+  assert.match(migration, /where snapshot\.id = v_snapshot_id\s+for update of snapshot;/i);
   assert.match(migration, /Existing price snapshot facts differ from this review/i);
   assert.doesNotMatch(migration, /update public\.price_snapshots snapshot\s+set[\s\S]{0,200}piece_count = v_piece_count/i);
 });

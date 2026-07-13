@@ -545,7 +545,8 @@ begin
   select snapshot.piece_count, snapshot.price_per_piece
   into v_snapshot_piece_count, v_snapshot_price_per_piece
   from public.price_snapshots snapshot
-  where snapshot.id = v_snapshot_id;
+  where snapshot.id = v_snapshot_id
+  for update of snapshot;
 
   if v_snapshot_piece_count is distinct from v_piece_count
     or v_snapshot_price_per_piece is distinct from v_price_per_piece
