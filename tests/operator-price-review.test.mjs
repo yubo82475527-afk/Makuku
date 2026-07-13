@@ -108,12 +108,34 @@ test("manual decisions require an active SKU candidate and a terminal result for
   assert.match(h5CandidateRoute, /requireTerminalQuality:\s*false/);
 });
 
+test("H5 row deletion commits rejection and lifecycle state in one locked mutation", () => {
+  assert.match(migration, /p_h5_lifecycle_status text/i);
+  assert.match(migration, /h5_lifecycle_status = p_h5_lifecycle_status/i);
+  assert.match(migration, /h5_lifecycle_at = case[\s\S]*now\(\)/i);
+  assert.match(h5CandidateRoute, /h5LifecycleStatus:\s*"deleted"/);
+  const deleteBranch = h5CandidateRoute.slice(h5CandidateRoute.indexOf('if \(action === "delete_h5_row"\)'), h5CandidateRoute.indexOf('return Response.json\(\{ error: "Unsupported action"'));
+  assert.doesNotMatch(deleteBranch, /\.from\("ai_price_candidates"\)[\s\S]*\.update\(/);
+});
+
 test("confident product ownership cannot be changed by a crafted review request", () => {
   assert.match(detailRoute, /detail\.requires_product_correction/);
   assert.match(reviewService, /candidateAllowsProductCorrection/);
   assert.match(migration, /v_product_correction_allowed/i);
   assert.match(migration, /SKU_MATCH_UNCERTAIN/i);
   assert.match(migration, /Product match is already confident/i);
+});
+
+test("operator API maps stale state and invalid ownership conflicts without returning 500", () => {
+  assert.match(detailRoute, /quality result is stale[\s\S]*return 409/i);
+  assert.match(detailRoute, /Inactive candidates[\s\S]*return 409/i);
+  assert.match(detailRoute, /Only SKU candidates[\s\S]*return 400/i);
+  assert.match(detailRoute, /Product match is already confident[\s\S]*return 400/i);
+});
+
+test("snapshot reuse never overwrites an already confirmed price fact", () => {
+  assert.match(migration, /select[\s\S]*snapshot\.piece_count[\s\S]*snapshot\.price_per_piece[\s\S]*into[\s\S]*v_snapshot_piece_count[\s\S]*v_snapshot_price_per_piece/i);
+  assert.match(migration, /Existing price snapshot facts differ from this review/i);
+  assert.doesNotMatch(migration, /update public\.price_snapshots snapshot\s+set[\s\S]{0,200}piece_count = v_piece_count/i);
 });
 
 test("manual SKU correction validates one legal product owner", () => {

@@ -184,7 +184,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     }
 
     if (action === "delete_h5_row") {
-      await rejectAiPriceCandidate({
+      const candidate = await rejectAiPriceCandidate({
         supabase,
         candidateId: id,
         reason: "H5 deleted this SKU row.",
@@ -192,19 +192,8 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
         reviewMethod: "manual",
         reviewToken: sourceCandidate.approval_input_fingerprint,
         requireTerminalQuality: false,
+        h5LifecycleStatus: "deleted",
       });
-      const deletedAt = new Date().toISOString();
-      const { data: candidate, error } = await supabase
-        .from("ai_price_candidates")
-        .update({
-          h5_lifecycle_status: "deleted",
-          h5_lifecycle_at: deletedAt,
-        })
-        .eq("id", id)
-        .eq("status", "rejected")
-        .select("*")
-        .single();
-      if (error || !candidate) throw new Error(error?.message ?? "Rejected candidate not found");
       return Response.json({ candidate, deleted_snapshot: false });
     }
 

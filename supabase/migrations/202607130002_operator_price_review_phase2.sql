@@ -74,7 +74,8 @@ create or replace function public.reject_ai_price_candidate_with_quality_gate(
   p_reviewer text,
   p_review_job_id uuid,
   p_review_method text,
-  p_require_terminal_quality boolean
+  p_require_terminal_quality boolean,
+  p_h5_lifecycle_status text
 )
 returns table (candidate_id uuid)
 language plpgsql
@@ -90,6 +91,9 @@ begin
   end if;
   if v_reason = '' then
     raise exception 'Rejection reason is required';
+  end if;
+  if p_h5_lifecycle_status is not null and p_h5_lifecycle_status <> 'deleted' then
+    raise exception 'Invalid H5 lifecycle status';
   end if;
 
   select candidate.*
@@ -138,6 +142,8 @@ begin
     reviewed_by = p_reviewer,
     review_job_id = p_review_job_id,
     review_method = p_review_method,
+    h5_lifecycle_status = p_h5_lifecycle_status,
+    h5_lifecycle_at = case when p_h5_lifecycle_status is not null then now() else null end,
     review_decision = 'NEED_REVIEW',
     quality_gate_worker_id = null,
     quality_gate_claimed_at = null,
@@ -193,6 +199,8 @@ declare
   v_segment text;
   v_target_price numeric;
   v_product_correction_allowed boolean;
+  v_snapshot_piece_count integer;
+  v_snapshot_price_per_piece numeric;
 begin
   if p_review_method not in ('auto_rule', 'bulk_manual', 'manual') then
     raise exception 'invalid review method';
@@ -534,11 +542,19 @@ begin
     raise exception 'Failed to create or resolve price snapshot';
   end if;
 
+  select snapshot.piece_count, snapshot.price_per_piece
+  into v_snapshot_piece_count, v_snapshot_price_per_piece
+  from public.price_snapshots snapshot
+  where snapshot.id = v_snapshot_id;
+
+  if v_snapshot_piece_count is distinct from v_piece_count
+    or v_snapshot_price_per_piece is distinct from v_price_per_piece
+  then
+    raise exception 'Existing price snapshot facts differ from this review.';
+  end if;
+
   update public.price_snapshots snapshot
-  set
-    offline_store_id = coalesce(snapshot.offline_store_id, v_offline_store_id),
-    piece_count = v_piece_count,
-    price_per_piece = v_price_per_piece
+  set offline_store_id = coalesce(snapshot.offline_store_id, v_offline_store_id)
   where snapshot.id = v_snapshot_id;
 
   update public.ai_price_candidates candidate
@@ -577,18 +593,21 @@ revoke all on function public.approve_ai_price_candidate_with_quality_gate(
   uuid, text, numeric, integer, text, text, text, text, text, uuid, text, text
 ) from public, anon, authenticated;
 revoke all on function public.reject_ai_price_candidate_with_quality_gate(
-  uuid, text, text, text, uuid, text, boolean
+  uuid, text, text, text, uuid, text, boolean, text
 ) from public, anon, authenticated;
 
 grant execute on function public.approve_ai_price_candidate_with_quality_gate(
   uuid, text, numeric, integer, text, text, text, text, text, uuid, text, text
 ) to service_role;
 grant execute on function public.reject_ai_price_candidate_with_quality_gate(
-  uuid, text, text, text, uuid, text, boolean
+  uuid, text, text, text, uuid, text, boolean, text
 ) to service_role;
 
 drop function if exists public.approve_ai_price_candidate_with_quality_gate(
   uuid, text, numeric, integer, text, uuid, uuid, text, text, uuid, text, text
+);
+drop function if exists public.reject_ai_price_candidate_with_quality_gate(
+  uuid, text, text, text, uuid, text, boolean
 );
 drop function if exists public.reject_ai_price_candidate_with_quality_gate(
   uuid, text, text, text, uuid, text

@@ -53,6 +53,7 @@ test("price snapshots PATCH switches owner without updating mapping rules", () =
   assert.match(priceSnapshotsRoute, /competitor_product_id: ownerType === "competitor" \? competitorProduct!?\.(id) : null/);
   assert.match(priceSnapshotsRoute, /sku_master_id: ownerType === "makuku" \? skuMasterId : null/);
   assert.match(priceSnapshotsRoute, /normalizePriceSnapshot/);
+  assert.match(priceSnapshotsRoute, /\.update\(\{[\s\S]*material_sku_code:[\s\S]*piece_count:\s*pieceCount[\s\S]*price_per_piece:\s*normalized\.price_per_piece/);
   assert.doesNotMatch(priceSnapshotsRoute, /\.from\("sku_matches"\)\.(insert|update)/);
 });
 

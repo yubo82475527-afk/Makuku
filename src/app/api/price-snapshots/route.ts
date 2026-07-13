@@ -174,6 +174,7 @@ export async function PATCH(request: Request) {
         sku_master_id: ownerType === "makuku" ? skuMasterId : null,
         material_sku_code: ownerType === "makuku" ? materialSkuCode : null,
         net_price_idr: normalized.net_price_idr,
+        piece_count: pieceCount,
         price_per_piece: normalized.price_per_piece,
       })
       .eq("id", snapshotId)

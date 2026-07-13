@@ -136,8 +136,8 @@ function revalidateReviewPaths(visitDetailHref: string) {
 }
 
 function errorStatus(message: string) {
-  if (/inputs changed|pending candidates|not ready for operator review|ownership lost/i.test(message)) return 409;
-  if (/valid |required|invalid|match a product|not found/i.test(message)) return 400;
+  if (/inputs changed|pending candidates|not ready for operator review|ownership lost|quality result is stale|Inactive candidates|Existing price snapshot facts differ/i.test(message)) return 409;
+  if (/valid |required|invalid|match a product|not found|Only SKU candidates|Product match is already confident/i.test(message)) return 400;
   return 500;
 }
 

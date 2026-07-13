@@ -670,8 +670,10 @@ test("mobile store visit detail exposes row-level delete and hides H5-deleted ro
   assert.match(storeVisitDetailH5, /openRowEditor\(current\.section, current\.row, current\.rowIndex\)/);
   assert.match(storeVisitDetailH5, /candidate\.status !== "pending"/);
   assert.match(storeVisitCandidateRoute, /action === "delete_h5_row"/);
-  assert.match(storeVisitCandidateRoute, /h5_lifecycle_status: "deleted"/);
+  assert.match(storeVisitCandidateRoute, /h5LifecycleStatus: "deleted"/);
   assert.match(storeVisitCandidateRoute, /rejectAiPriceCandidate/);
+  const deleteBranch = storeVisitCandidateRoute.slice(storeVisitCandidateRoute.indexOf('if (action === "delete_h5_row")'));
+  assert.doesNotMatch(deleteBranch, /\.from\("ai_price_candidates"\)[\s\S]*\.update\(/);
   assert.doesNotMatch(storeVisitCandidateRoute, /\.from\("price_snapshots"\)[\s\S]*\.delete\(\)/);
 });
 

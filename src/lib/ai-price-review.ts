@@ -198,6 +198,7 @@ export async function rejectAiPriceCandidate({
   reviewMethod = "manual",
   reviewToken,
   requireTerminalQuality = reviewMethod === "manual",
+  h5LifecycleStatus,
 }: {
   supabase: SupabaseServiceClient;
   candidateId: string;
@@ -207,6 +208,7 @@ export async function rejectAiPriceCandidate({
   reviewMethod?: Exclude<AiPriceCandidateReviewMethod, "auto_rule">;
   reviewToken?: string | null;
   requireTerminalQuality?: boolean;
+  h5LifecycleStatus?: "deleted" | null;
 }) {
   const cleanReason = reason.trim();
   if (!cleanReason) throw new Error("Rejection reason is required");
@@ -237,6 +239,7 @@ export async function rejectAiPriceCandidate({
       p_review_job_id: reviewJobId ?? null,
       p_review_method: reviewMethod,
       p_require_terminal_quality: requireTerminalQuality,
+      p_h5_lifecycle_status: h5LifecycleStatus ?? null,
     },
   );
   if (rejectionError) throw new Error(rejectionError.message);
