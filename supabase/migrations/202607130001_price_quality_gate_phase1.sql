@@ -375,4 +375,199 @@ revoke all on function public.refresh_price_quality_benchmark_daily(date)
 grant execute on function public.refresh_price_quality_benchmark_daily(date)
   to service_role;
 
+create or replace function public.claim_ai_price_candidates_for_quality_gate(
+  p_worker_id text,
+  p_limit integer default 50
+)
+returns table (
+  candidate_id uuid,
+  candidate_price_per_piece numeric,
+  evidence_review_decision text,
+  matched_entity_type text,
+  matched_entity_id text,
+  promo_type text,
+  benchmark_date date,
+  median_price_per_piece numeric,
+  benchmark_sample_count integer,
+  benchmark_store_count integer,
+  benchmark_status text
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if nullif(trim(p_worker_id), '') is null then
+    raise exception 'worker id is required';
+  end if;
+
+  return query
+  with claimable as (
+    select candidate.id
+    from public.ai_price_candidates candidate
+    where candidate.status = 'pending'
+      and candidate.candidate_type = 'SKU'
+      and coalesce(candidate.h5_lifecycle_status, '') not in ('deleted', 'replaced', 'reanalyzed')
+      and candidate.quality_gate_attempt_count < 3
+      and (
+        candidate.quality_gate_status = 'PENDING'
+        or candidate.quality_gate_status = 'FAILED'
+        or (
+          candidate.quality_gate_status = 'PROCESSING'
+          and candidate.quality_gate_claimed_at < now() - interval '10 minutes'
+        )
+      )
+    order by candidate.created_at, candidate.id
+    for update skip locked
+    limit greatest(1, least(coalesce(p_limit, 50), 100))
+  ),
+  claimed as (
+    update public.ai_price_candidates candidate
+    set
+      quality_gate_status = 'PROCESSING',
+      quality_gate_worker_id = p_worker_id,
+      quality_gate_claimed_at = now(),
+      quality_gate_attempt_count = candidate.quality_gate_attempt_count + 1,
+      quality_gate_error = null,
+      review_decision = 'NEED_REVIEW'
+    from claimable
+    where candidate.id = claimable.id
+    returning candidate.*
+  )
+  select
+    candidate.id,
+    coalesce(
+      candidate.reviewed_price_per_piece,
+      candidate.price_per_piece,
+      candidate.ai_price_per_piece
+    ),
+    candidate.evidence_review_decision,
+    candidate.matched_entity_type,
+    candidate.matched_entity_id,
+    coalesce(candidate.promo_type, candidate.ai_promo_type),
+    benchmark.benchmark_date,
+    benchmark.median_price_per_piece,
+    benchmark.sample_count,
+    benchmark.store_count,
+    benchmark.benchmark_status
+  from claimed candidate
+  left join public.price_quality_benchmark_daily benchmark
+    on benchmark.benchmark_date = timezone('Asia/Jakarta', now())::date
+   and benchmark.matched_entity_type = candidate.matched_entity_type
+   and benchmark.matched_entity_id = candidate.matched_entity_id
+   and benchmark.channel = 'offline';
+end;
+$$;
+
+create or replace function public.finalize_ai_price_candidate_quality_gate(
+  p_candidate_id uuid,
+  p_worker_id text,
+  p_quality_gate_status text,
+  p_reason_codes jsonb,
+  p_quality_gate_version text,
+  p_benchmark_date date,
+  p_benchmark_price_per_piece numeric,
+  p_benchmark_deviation_pct numeric,
+  p_benchmark_sample_count integer,
+  p_benchmark_store_count integer,
+  p_error text
+)
+returns table (finalize_result text)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_updated integer := 0;
+  v_current_status text;
+begin
+  if p_quality_gate_status not in (
+    'PASSED',
+    'REVIEW_REQUIRED',
+    'INSUFFICIENT_BENCHMARK',
+    'FAILED'
+  ) then
+    raise exception 'invalid quality gate status: %', p_quality_gate_status;
+  end if;
+
+  update public.ai_price_candidates candidate
+  set
+    quality_gate_status = p_quality_gate_status,
+    quality_gate_reason_codes = coalesce(p_reason_codes, '[]'::jsonb),
+    quality_gate_version = p_quality_gate_version,
+    benchmark_date = p_benchmark_date,
+    benchmark_price_per_piece = p_benchmark_price_per_piece,
+    benchmark_deviation_pct = p_benchmark_deviation_pct,
+    benchmark_sample_count = p_benchmark_sample_count,
+    benchmark_store_count = p_benchmark_store_count,
+    quality_gate_evaluated_at = now(),
+    quality_gate_error = left(p_error, 1000),
+    quality_gate_worker_id = null,
+    quality_gate_claimed_at = null,
+    review_decision = case
+      when p_quality_gate_status = 'PASSED'
+       and candidate.evidence_review_decision = 'AUTO_APPROVE'
+        then 'AUTO_APPROVE'
+      else 'NEED_REVIEW'
+    end
+  where candidate.id = p_candidate_id
+    and candidate.quality_gate_status = 'PROCESSING'
+    and candidate.quality_gate_worker_id = p_worker_id;
+
+  get diagnostics v_updated = row_count;
+  if v_updated = 1 then
+    return query select 'APPLIED'::text;
+    return;
+  end if;
+
+  select candidate.quality_gate_status
+  into v_current_status
+  from public.ai_price_candidates candidate
+  where candidate.id = p_candidate_id;
+
+  if v_current_status in (
+    'PASSED',
+    'REVIEW_REQUIRED',
+    'INSUFFICIENT_BENCHMARK',
+    'FAILED',
+    'NOT_REQUIRED'
+  ) then
+    return query select 'ALREADY_FINALIZED'::text;
+  else
+    return query select 'OWNERSHIP_LOST'::text;
+  end if;
+end;
+$$;
+
+revoke all on function public.claim_ai_price_candidates_for_quality_gate(text, integer)
+  from public, anon, authenticated;
+revoke all on function public.finalize_ai_price_candidate_quality_gate(
+  uuid,
+  text,
+  text,
+  jsonb,
+  text,
+  date,
+  numeric,
+  numeric,
+  integer,
+  integer,
+  text
+) from public, anon, authenticated;
+grant execute on function public.claim_ai_price_candidates_for_quality_gate(text, integer)
+  to service_role;
+grant execute on function public.finalize_ai_price_candidate_quality_gate(
+  uuid,
+  text,
+  text,
+  jsonb,
+  text,
+  date,
+  numeric,
+  numeric,
+  integer,
+  integer,
+  text
+) to service_role;
+
 notify pgrst, 'reload schema';

@@ -194,3 +194,16 @@ test("quality evaluator keeps insufficient, unmatched, evidence, and promo cases
   assert.equal(promotion.status, "REVIEW_REQUIRED");
   assert.ok(promotion.reasonCodes.includes("PROMOTION_EVIDENCE"));
 });
+
+test("quality work uses fenced claim and finalize RPCs", () => {
+  assert.match(migration, /claim_ai_price_candidates_for_quality_gate/i);
+  assert.match(migration, /for update skip locked/i);
+  assert.match(migration, /quality_gate_status = 'PROCESSING'/i);
+  assert.match(migration, /quality_gate_attempt_count \+ 1/i);
+  assert.match(migration, /quality_gate_claimed_at < now\(\) - interval '10 minutes'/i);
+  assert.match(migration, /finalize_ai_price_candidate_quality_gate/i);
+  assert.match(migration, /quality_gate_worker_id = p_worker_id/i);
+  assert.match(migration, /quality_gate_status = 'PROCESSING'/i);
+  assert.match(migration, /grant execute on function public\.claim_ai_price_candidates_for_quality_gate/i);
+  assert.match(migration, /grant execute on function public\.finalize_ai_price_candidate_quality_gate/i);
+});
