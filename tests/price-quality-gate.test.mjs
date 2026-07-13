@@ -382,14 +382,14 @@ test("bulk manual override cannot bypass a risky quality result", () => {
   assert.match(bulkReviewRunRoute, /skipped/);
 });
 
-test("single manual review waits only for unfinished historical quality work", () => {
+test("single manual review accepts only terminal operator-review quality states", () => {
   assert.match(reviewService, /reviewMethod === "manual"/);
-  assert.match(reviewService, /quality_gate_status === "PENDING"/);
-  assert.match(reviewService, /quality_gate_status === "PROCESSING"/);
-  assert.match(reviewService, /Historical price quality check is still running/);
+  assert.match(reviewService, /quality_gate_status === "REVIEW_REQUIRED"/);
+  assert.match(reviewService, /quality_gate_status === "INSUFFICIENT_BENCHMARK"/);
   assert.match(reviewService, /quality_gate_status === "FAILED"/);
-  assert.match(reviewService, /quality_gate_attempt_count < 3/);
-  assert.match(migration, /quality_gate_input_fingerprint is distinct from v_candidate\.approval_input_fingerprint/);
+  assert.match(reviewService, /quality_gate_attempt_count >= 3/);
+  assert.match(reviewService, /Review token is required/);
+  assert.match(reviewService, /p_review_token/);
 });
 
 test("passed candidates are auto-approved asynchronously and retried by the runner", () => {

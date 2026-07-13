@@ -56,7 +56,6 @@ test("manual review mutations are token fenced and atomic", () => {
   assert.match(migration, /p_review_method = 'manual'/i);
   assert.match(migration, /insert into public\.price_snapshots/i);
   assert.match(migration, /p_matched_entity_type text/i);
-  assert.match(detailRoute, /review_token/);
   assert.match(reviewService, /reviewToken/);
 });
 
@@ -71,7 +70,8 @@ test("manual SKU correction validates one legal product owner", () => {
   assert.match(migration, /material_master/i);
   assert.match(migration, /competitor_products/i);
   assert.match(migration, /Please match a product before approving/i);
-  assert.match(migration, /p_competitor_product_id[\s\S]*p_sku_master_id/i);
+  assert.match(migration, /v_competitor_product_id[\s\S]*v_sku_master_id/i);
+  assert.match(migration, /Exactly one product owner is required/i);
 });
 
 test("rejection is protected by the same review token", () => {

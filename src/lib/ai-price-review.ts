@@ -49,6 +49,10 @@ export async function approveAiPriceCandidate({
   reviewMethod = "manual",
   promoType,
   autoApprovalWorkerId,
+  reviewToken,
+  matchedEntityType,
+  matchedEntityId,
+  matchedLabel,
 }: {
   supabase: SupabaseServiceClient;
   candidateId: string;
@@ -59,6 +63,10 @@ export async function approveAiPriceCandidate({
   reviewMethod?: AiPriceCandidateReviewMethod;
   promoType?: string | null;
   autoApprovalWorkerId?: string | null;
+  reviewToken?: string | null;
+  matchedEntityType?: AiPriceCandidate["matched_entity_type"] | null;
+  matchedEntityId?: string | null;
+  matchedLabel?: string | null;
 }) {
   const { data: candidate, error } = await supabase
     .from("ai_price_candidates")
@@ -77,11 +85,14 @@ export async function approveAiPriceCandidate({
     throw new Error("Historical price quality gate has not passed.");
   }
   if (reviewMethod === "manual") {
-    if (candidate.quality_gate_status === "PENDING" || candidate.quality_gate_status === "PROCESSING") {
-      throw new Error("Historical price quality check is still running.");
+    const manualReviewReady = candidate.quality_gate_status === "REVIEW_REQUIRED"
+      || candidate.quality_gate_status === "INSUFFICIENT_BENCHMARK"
+      || (candidate.quality_gate_status === "FAILED" && candidate.quality_gate_attempt_count >= 3);
+    if (!manualReviewReady) {
+      throw new Error("Candidate is not ready for operator review.");
     }
-    if (candidate.quality_gate_status === "FAILED" && candidate.quality_gate_attempt_count < 3) {
-      throw new Error("Historical price quality check is waiting for retry.");
+    if (!reviewToken) {
+      throw new Error("Review token is required; reload before reviewing.");
     }
   }
   const currentPrice = Number(candidate.net_price_idr ?? candidate.parsed_price_idr);
@@ -96,46 +107,50 @@ export async function approveAiPriceCandidate({
   }
   const currentPromoType = cleanCandidatePromoType(candidateRow.promo_type);
   const requestedPromoType = cleanCandidatePromoType(promoType ?? candidateRow.promo_type);
-  if (
+  if (requiresPassedQualityGate && (
     price !== currentPrice
     || Math.floor(reviewedPieceCount) !== Math.floor(currentPieceCount)
     || requestedPromoType !== currentPromoType
-  ) {
+  )) {
     throw new Error("Save the correction and wait for historical price re-evaluation before approving.");
   }
   if (!candidateRow.approval_input_fingerprint) {
     throw new Error("Candidate approval fingerprint is unavailable; reload after applying the quality migration.");
   }
 
-  let competitorProduct: CompetitorProduct | null = null;
-  let skuMasterId: string | null = null;
-  let materialSkuCode: string | null = null;
-  if (candidateRow.matched_entity_type === "material_master" && candidateRow.matched_entity_id) {
-    materialSkuCode = candidateRow.matched_entity_id;
-    skuMasterId = await ensureSkuMasterFromMaterial(supabase, materialSkuCode);
-  } else if (candidateRow.matched_entity_type === "competitor_product") {
-    competitorProduct = await ensureCompetitorProduct(supabase, candidate, Math.floor(reviewedPieceCount));
-  } else {
+  const finalMatchType = reviewMethod === "manual"
+    ? matchedEntityType ?? candidateRow.matched_entity_type
+    : candidateRow.matched_entity_type;
+  const finalMatchId = reviewMethod === "manual"
+    ? matchedEntityId ?? candidateRow.matched_entity_id
+    : candidateRow.matched_entity_id;
+  const finalMatchLabel = reviewMethod === "manual"
+    ? matchedLabel ?? candidateRow.matched_label
+    : candidateRow.matched_label;
+
+  if (!finalMatchId || finalMatchType === "unmatched") {
     throw new Error("Please match a product before approving this candidate");
   }
-  if (candidateRow.matched_entity_type === "competitor_product" && !competitorProduct) {
-    throw new Error("Matched competitor product is required");
-  }
-  if (competitorProduct && competitorProduct.id !== candidateRow.matched_entity_id) {
-    throw new Error("Matched competitor product changed; save the match and wait for historical price re-evaluation.");
+
+  if (finalMatchType === "material_master") {
+    await ensureSkuMasterFromMaterial(supabase, finalMatchId);
+  } else if (finalMatchType === "competitor_product") {
+    await loadCompetitorProductById(supabase, finalMatchId);
+  } else {
+    throw new Error("Please match a product before approving this candidate");
   }
 
   const { data: approvalRows, error: approvalError } = await supabase.rpc(
     "approve_ai_price_candidate_with_quality_gate",
     {
       p_candidate_id: candidateId,
-      p_expected_approval_input_fingerprint: candidateRow.approval_input_fingerprint,
-      p_price_idr: currentPrice,
-      p_piece_count: Math.floor(currentPieceCount),
-      p_promo_type: currentPromoType,
-      p_competitor_product_id: competitorProduct?.id ?? null,
-      p_sku_master_id: skuMasterId,
-      p_material_sku_code: materialSkuCode,
+      p_review_token: reviewMethod === "manual" ? reviewToken : candidateRow.approval_input_fingerprint,
+      p_price_idr: price,
+      p_piece_count: Math.floor(reviewedPieceCount),
+      p_promo_type: requestedPromoType,
+      p_matched_entity_type: finalMatchType,
+      p_matched_entity_id: finalMatchId,
+      p_matched_label: finalMatchLabel,
       p_reviewer: reviewer ?? null,
       p_review_job_id: reviewJobId ?? null,
       p_review_method: reviewMethod,
@@ -175,6 +190,7 @@ export async function rejectAiPriceCandidate({
   reviewer,
   reviewJobId,
   reviewMethod = "manual",
+  reviewToken,
 }: {
   supabase: SupabaseServiceClient;
   candidateId: string;
@@ -182,14 +198,32 @@ export async function rejectAiPriceCandidate({
   reviewer?: string | null;
   reviewJobId?: string | null;
   reviewMethod?: Exclude<AiPriceCandidateReviewMethod, "auto_rule">;
+  reviewToken?: string | null;
 }) {
   const cleanReason = reason.trim();
   if (!cleanReason) throw new Error("Rejection reason is required");
+  if (reviewMethod === "manual" && !reviewToken) {
+    throw new Error("Review token is required; reload before reviewing.");
+  }
+
+  let effectiveReviewToken = reviewToken;
+  if (!effectiveReviewToken) {
+    const { data: currentCandidate, error: currentCandidateError } = await supabase
+      .from("ai_price_candidates")
+      .select("approval_input_fingerprint")
+      .eq("id", candidateId)
+      .single();
+    if (currentCandidateError || !currentCandidate?.approval_input_fingerprint) {
+      throw new Error(currentCandidateError?.message ?? "Candidate review token is unavailable");
+    }
+    effectiveReviewToken = currentCandidate.approval_input_fingerprint;
+  }
 
   const { data: rejectionRows, error: rejectionError } = await supabase.rpc(
     "reject_ai_price_candidate_with_quality_gate",
     {
       p_candidate_id: candidateId,
+      p_review_token: effectiveReviewToken,
       p_reason: cleanReason,
       p_reviewer: reviewer ?? null,
       p_review_job_id: reviewJobId ?? null,
@@ -414,6 +448,16 @@ export async function ensureCompetitorProduct(supabase: SupabaseServiceClient, c
     .single();
   if (productCreateError) throw new Error(productCreateError.message);
   return createdProduct as CompetitorProduct;
+}
+
+async function loadCompetitorProductById(supabase: SupabaseServiceClient, productId: string) {
+  const { data, error } = await supabase
+    .from("competitor_products")
+    .select("*, brands(id,name), sku_matches(*, sku_master(*))")
+    .eq("id", productId)
+    .single();
+  if (error || !data) throw new Error(error?.message ?? "Competitor product not found");
+  return data as CompetitorProduct;
 }
 
 export function competitorLabel(product: CompetitorProduct) {
