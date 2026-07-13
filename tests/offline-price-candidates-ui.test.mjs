@@ -17,7 +17,6 @@ const storeVisitRefreshRoute = readFileSync("src/app/api/store-visit/[id]/refres
 const storeVisitDetailH5 = readFileSync("src/components/store-visit-detail-h5.tsx", "utf8");
 const candidateRoute = readFileSync("src/app/api/ai-price-candidates/[id]/route.ts", "utf8");
 const storeVisitCandidateRoute = readFileSync("src/app/api/store-visit/price-candidates/[id]/route.ts", "utf8");
-const candidateListRoute = readFileSync("src/app/api/ai-price-candidates/route.ts", "utf8");
 const aiPriceReview = readFileSync("src/lib/ai-price-review.ts", "utf8");
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const typesFile = readFileSync("src/lib/types.ts", "utf8");

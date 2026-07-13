@@ -10,6 +10,7 @@ const typesFile = readFileSync("src/lib/types.ts", "utf8");
 const priceSnapshotsRoute = readFileSync("src/app/api/price-snapshots/route.ts", "utf8");
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const aiPriceReview = readFileSync("src/lib/ai-price-review.ts", "utf8");
+const operatorReviewMigration = readFileSync("supabase/migrations/202607130002_operator_price_review_phase2.sql", "utf8");
 const pricesPage = readFileSync("src/app/[locale]/prices/page.tsx", "utf8");
 const priceSnapshotsTable = readFileSync("src/components/price-snapshots-table.tsx", "utf8");
 const priceExportRoute = readFileSync("src/app/api/price-snapshots/export/route.ts", "utf8");
@@ -35,12 +36,12 @@ test("types expose nullable competitor and Makuku snapshot owners", () => {
 
 test("photo review writes only one product owner per snapshot", () => {
   assert.match(skuBridge, /export async function ensureSkuMasterFromMaterial/);
-  assert.match(aiPriceReview, /candidateRow\.matched_entity_type === "material_master"/);
-  assert.match(aiPriceReview, /competitor_product_id: null/);
-  assert.match(aiPriceReview, /sku_master_id: skuMasterId/);
-  assert.match(aiPriceReview, /candidateRow\.matched_entity_type === "competitor_product"/);
-  assert.match(aiPriceReview, /competitor_product_id: competitorProduct!?\.(id)/);
-  assert.match(aiPriceReview, /sku_master_id: null/);
+  assert.match(aiPriceReview, /finalMatchType === "material_master"/);
+  assert.match(aiPriceReview, /finalMatchType === "competitor_product"/);
+  assert.match(operatorReviewMigration, /v_competitor_product_id uuid/);
+  assert.match(operatorReviewMigration, /v_sku_master_id uuid/);
+  assert.match(operatorReviewMigration, /Exactly one product owner is required/);
+  assert.match(operatorReviewMigration, /insert into public\.price_snapshots[\s\S]*v_competitor_product_id,[\s\S]*v_sku_master_id,/);
   assert.match(aiPriceReview, /Please match a product before approving this candidate/);
   assert.doesNotMatch(aiPriceReview, /createCompetitorIfUnmatched/);
 });
@@ -72,11 +73,11 @@ test("prices page and export show actual owner and filter by derived Makuku SKU 
 test("real market price page supports created_at date range filters in page and export", () => {
   assert.match(pricesPage, /name="createdFrom"/);
   assert.match(pricesPage, /name="createdTo"/);
-  assert.match(pricesPage, /currentParams\.set\(key, params\[key\]\)/);
+  assert.match(pricesPage, /currentParams\.set\(key, params\[key\] as string\)/);
   assert.match(pricesPage, /params\.createdFrom/);
   assert.match(pricesPage, /params\.createdTo/);
-  assert.match(pricesPage, /matchesCreatedFrom\(snapshot\.captured_at, params\.createdFrom\)/);
-  assert.match(pricesPage, /matchesCreatedTo\(snapshot\.captured_at, params\.createdTo\)/);
+  assert.match(pricesPage, /capturedFrom: params\.createdFrom \|\| undefined/);
+  assert.match(pricesPage, /capturedTo: capturedToExclusive \?\? undefined/);
   assert.match(priceExportRoute, /const createdFrom = searchParams\.get\("createdFrom"\)/);
   assert.match(priceExportRoute, /const createdTo = searchParams\.get\("createdTo"\)/);
   assert.match(priceExportRoute, /matchesCreatedFrom\(snapshot\.created_at, createdFrom\)/);
@@ -160,7 +161,9 @@ test("price snapshots query supports owner visibility while market price page sh
   assert.match(dataFile, /owner === "makuku"[\s\S]*sku_master_id\.not\.is\.null,material_sku_code\.not\.is\.null[\s\S]*\.is\("competitor_product_id", null\)/);
   assert.match(dataFile, /owner === "competitor"[\s\S]*\.not\("competitor_product_id", "is", null\)/);
 
-  assert.match(pricesPage, /getPriceSnapshots\(\{[\s\S]*limit: 5000/);
+  assert.match(pricesPage, /getPriceSnapshotsPage\(\{/);
+  assert.match(pricesPage, /page: requestedPage/);
+  assert.match(pricesPage, /perPage/);
   assert.match(pricesPage, /name="brand"/);
   assert.doesNotMatch(pricesPage, /owner\?: "all" \| "makuku" \| "competitor"/);
   assert.doesNotMatch(pricesPage, /normalizeOwner\(params\.owner\)/);
