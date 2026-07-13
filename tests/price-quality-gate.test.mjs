@@ -250,9 +250,14 @@ test("cron refreshes T+1 daily and repairs candidate work every minute", () => {
 
 test("new candidates preserve evidence decision and wait for historical quality", () => {
   assert.match(candidateService, /evidence_review_decision/);
-  assert.match(candidateService, /quality_gate_status:\s*"PENDING"/);
+  assert.match(candidateService, /item\.type === "SKU"\s*\?\s*"PENDING"\s*:\s*"NOT_REQUIRED"/);
   assert.match(candidateService, /quality_gate_reason_codes:\s*\[\]/);
   assert.match(candidateService, /review_decision:\s*"NEED_REVIEW"/);
+});
+
+test("non-SKU candidates are not stranded in a quality queue that only claims SKUs", () => {
+  assert.match(migration, /candidate\.candidate_type = 'SKU'/);
+  assert.match(candidateService, /quality_gate_status:\s*item\.type === "SKU"\s*\?\s*"PENDING"\s*:\s*"NOT_REQUIRED"/);
 });
 
 test("Visit runner triggers quality work after analysis without putting history in the job path", () => {

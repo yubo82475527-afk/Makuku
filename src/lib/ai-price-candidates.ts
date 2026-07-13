@@ -573,7 +573,7 @@ function buildAiPriceCandidateRow(input: {
     conflicts: item.conflicts ?? reconciledPrices.conflicts,
     evidence_review_decision: evidenceReviewDecision,
     review_decision: "NEED_REVIEW",
-    quality_gate_status: "PENDING",
+    quality_gate_status: item.type === "SKU" ? "PENDING" : "NOT_REQUIRED",
     quality_gate_reason_codes: [],
     quality_gate_version: null,
     matched_entity_type: matchedEntityType,
