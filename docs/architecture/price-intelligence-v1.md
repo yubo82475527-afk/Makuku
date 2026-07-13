@@ -42,11 +42,17 @@ Makuku 1.0 只建设价格智能能力。
 
 基准只使用已经进入 `price_snapshots` 的确认事实，窗口为 Jakarta 日期 D-30 到 D-1；同一门店、商品、渠道和日期只保留最新一条。每天刷新一次，门禁任务只读取当天已经生成的基准，不在 Visit 解析过程中扫描 30 天历史。
 
+`price_quality_benchmark_refresh_runs` 记录每天基准刷新已完整提交。候选 worker 只有看到当天 `COMPLETED` 标记后才领取任务，因此午夜到定时刷新之间候选保持待处理，不会被误判为“历史样本不足”。
+
 ### `ai_price_candidates`（已实现的治理工作区）
 
 `ai_price_candidates` 保存 Vision 证据判断、quality gate 状态、原因码、使用的基准和人工审核轨迹。它是价格进入事实层之前的治理工作区，不是确认事实表。
 
 Vision 和 Visit 分析完成后先生成候选并结束主流程；Visit 不等待历史价格校验。独立后台任务领取候选、读取 T+1 基准并写回质量结果。只有证据判断和历史校验都通过的候选可以自动批准，风险候选保留给单条人工审核。
+
+候选包含由商品、金额、片数和促销输入生成的指纹。历史校验保存当时的输入指纹；批准时数据库锁定候选并再次核对指纹，在同一事务内生成或复用 `price_snapshots` 并完成候选状态迁移。批量修正必须先保存并重新校验，不能在批准动作里替换金额。
+
+自动批准使用独立的有界租约队列，最多尝试三次。失败或 worker 崩溃不会长期占用 `PROCESSING`；耗尽重试后回到单条人工处理，也不会阻塞后续候选。
 
 ### `price_snapshots`（已实现）
 
@@ -97,6 +103,14 @@ Vision 和 Visit 分析完成后先生成候选并结束主流程；Visit 不等
 7. `Pricing Expert` 基于上述结果帮助管理者判断并推动经营动作。
 
 当前阶段只实现后台质量门禁。运营审核页的极简化改造属于后续阶段，不应把尚未落地的页面设计描述成当前能力。
+
+## 部署与恢复顺序
+
+1. 先执行 `202607130001_price_quality_gate_phase1.sql`，再部署应用代码。
+2. 执行 `node scripts/refresh-price-quality-benchmarks.mjs`，确认当天 refresh run 为 `COMPLETED`。
+3. 执行 `node scripts/run-price-quality-gate.mjs --repeat=10` 回填待处理候选。
+4. 检查待处理候选的质量状态、过期租约、自动批准耗尽数和非 `PASSED` 的自动决策。
+5. 紧急回滚应用前先停用价格质量 cron，并把仍待处理的候选恢复为 `NOT_REQUIRED`/原证据决策；保留新增表和审计字段，后续优先向前修复。
 
 ## 架构评审红线
 

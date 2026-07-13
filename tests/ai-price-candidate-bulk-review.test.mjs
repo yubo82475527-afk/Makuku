@@ -169,3 +169,8 @@ test("bulk approval cannot bypass the historical quality gate", () => {
   assert.match(runRoute, /Historical price quality gate requires individual review/);
   assert.match(runRoute, /status:\s*"skipped"/);
 });
+
+test("bulk corrections must be saved and re-evaluated before approval", () => {
+  assert.match(runRoute, /bulkOverrideMatchesCandidate/);
+  assert.match(runRoute, /Save the correction and wait for historical price re-evaluation/);
+});

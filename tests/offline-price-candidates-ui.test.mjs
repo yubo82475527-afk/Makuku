@@ -25,6 +25,7 @@ const candidateExportRoute = readFileSync("src/app/api/ai-price-candidates/expor
 const storeVisitAiJobRoute = readMaybe("src/app/api/store-visit/ai-jobs/[jobId]/route.ts");
 const aiPriceCandidatesLib = readFileSync("src/lib/ai-price-candidates.ts", "utf8");
 const h5RowIdentityMigration = readMaybe("supabase/migrations/202607070002_ai_price_candidates_h5_row_identity.sql");
+const priceQualityMigration = readMaybe("supabase/migrations/202607130001_price_quality_gate_phase1.sql");
 
 test("photo price review keeps compact date filter and export action", () => {
   assert.doesNotMatch(candidatesPage, /SelectInput/);
@@ -265,8 +266,9 @@ test("photo price review carries net price and activity type into price snapshot
   assert.match(workbench, /copy\.promoType/);
   assert.match(candidateRoute, /net_price_idr/);
   assert.match(candidateRoute, /promo_type/);
-  assert.match(aiPriceReview, /candidateRow\.net_price_idr/);
-  assert.match(aiPriceReview, /promo_type: normalizeCandidatePromoType/);
+  assert.match(aiPriceReview, /p_price_idr: currentPrice/);
+  assert.match(aiPriceReview, /p_promo_type: currentPromoType/);
+  assert.match(priceQualityMigration, /net_price_idr,[\s\S]*price_per_piece,[\s\S]*promo_type,[\s\S]*captured_at/);
 });
 
 test("Chinese photo price review copy renders from stable copy keys", () => {

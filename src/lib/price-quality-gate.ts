@@ -68,7 +68,11 @@ function isApproximateScaleError(candidatePrice: number, benchmarkPrice: number)
 }
 
 function roundedDeviationPct(candidatePrice: number, benchmarkPrice: number) {
-  return Math.round(((candidatePrice - benchmarkPrice) / benchmarkPrice) * 100 * 10000) / 10000;
+  return Math.round(rawDeviationPct(candidatePrice, benchmarkPrice) * 10000) / 10000;
+}
+
+function rawDeviationPct(candidatePrice: number, benchmarkPrice: number) {
+  return ((candidatePrice - benchmarkPrice) / benchmarkPrice) * 100;
 }
 
 export function evaluatePriceQualityGate(input: PriceQualityGateInput): PriceQualityGateResult {
@@ -111,7 +115,7 @@ export function evaluatePriceQualityGate(input: PriceQualityGateInput): PriceQua
 
   if (isPositiveFinite(candidatePrice)) {
     benchmarkDeviationPct = roundedDeviationPct(candidatePrice, benchmarkPrice);
-    const absoluteDeviation = Math.abs(benchmarkDeviationPct);
+    const absoluteDeviation = Math.abs(rawDeviationPct(candidatePrice, benchmarkPrice));
 
     if (isApproximateScaleError(candidatePrice, benchmarkPrice)) {
       addReason(reasonCodes, "AMOUNT_SCALE_SUSPECTED");

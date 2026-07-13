@@ -881,6 +881,13 @@ export type AiPriceCandidate = {
   quality_gate_attempt_count?: number;
   quality_gate_worker_id?: string | null;
   quality_gate_claimed_at?: string | null;
+  quality_gate_input_fingerprint?: string | null;
+  approval_input_fingerprint?: string | null;
+  auto_approval_status?: "PENDING" | "PROCESSING" | "FAILED" | "EXHAUSTED" | "COMPLETED" | "NOT_REQUIRED";
+  auto_approval_attempt_count?: number;
+  auto_approval_worker_id?: string | null;
+  auto_approval_claimed_at?: string | null;
+  auto_approval_error?: string | null;
   ai_matched_entity_type?: AiPriceCandidateMatchType | null;
   ai_matched_entity_id?: string | null;
   ai_matched_label?: string | null;

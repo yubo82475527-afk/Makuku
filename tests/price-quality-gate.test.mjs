@@ -85,7 +85,17 @@ test("daily benchmark refresh is Jakarta T+1, deduplicated, and idempotent", () 
   assert.match(migration, /percentile_cont\(0\.5\)/i);
   assert.match(migration, /delete from public\.price_quality_benchmark_daily/i);
   assert.match(migration, /grouped\.sample_count >= 5 and grouped\.store_count >= 3/i);
+  assert.match(migration, /snapshot\.captured_at >= v_window_start_at/);
+  assert.match(migration, /snapshot\.captured_at < v_window_end_exclusive_at/);
+  assert.doesNotMatch(migration, /timezone\('Asia\/Jakarta', snapshot\.captured_at\)::date\s+between/);
   assert.doesNotMatch(migration, /market_benchmark_period_prices/i);
+});
+
+test("quality claims wait for a completed daily refresh marker", () => {
+  assert.match(migration, /create table if not exists public\.price_quality_benchmark_refresh_runs/);
+  assert.match(migration, /insert into public\.price_quality_benchmark_refresh_runs/);
+  assert.match(migration, /benchmark\.benchmark_date = v_benchmark_date/);
+  assert.match(migration, /exists \([\s\S]*price_quality_benchmark_refresh_runs[\s\S]*refresh\.status = 'COMPLETED'/);
 });
 
 test("benchmark service calls the refresh RPC instead of reading snapshots", () => {
@@ -133,12 +143,16 @@ test("quality evaluator uses strict 30 and 50 percent boundaries", () => {
     },
   };
   assert.equal(evaluator.evaluatePriceQualityGate({ ...baseline, candidatePricePerPiece: 2600 }).status, "PASSED");
+  const barelyHigh = evaluator.evaluatePriceQualityGate({ ...baseline, candidatePricePerPiece: 2600.000002 });
+  assert.ok(barelyHigh.reasonCodes.includes("PRICE_DEVIATION_HIGH"));
   const high = evaluator.evaluatePriceQualityGate({ ...baseline, candidatePricePerPiece: 2601 });
   assert.equal(high.status, "REVIEW_REQUIRED");
   assert.ok(high.reasonCodes.includes("PRICE_DEVIATION_HIGH"));
   const critical = evaluator.evaluatePriceQualityGate({ ...baseline, candidatePricePerPiece: 3001 });
   assert.ok(critical.reasonCodes.includes("PRICE_DEVIATION_CRITICAL"));
   assert.ok(!critical.reasonCodes.includes("PRICE_DEVIATION_HIGH"));
+  const barelyCritical = evaluator.evaluatePriceQualityGate({ ...baseline, candidatePricePerPiece: 3000.000002 });
+  assert.ok(barelyCritical.reasonCodes.includes("PRICE_DEVIATION_CRITICAL"));
 });
 
 test("quality evaluator detects scale errors after per-piece conversion", () => {
@@ -220,6 +234,12 @@ test("quality work uses fenced claim and finalize RPCs", () => {
   assert.match(migration, /grant execute on function public\.finalize_ai_price_candidate_quality_gate/i);
 });
 
+test("an exhausted stale third lease is terminalized instead of remaining processing forever", () => {
+  assert.match(migration, /quality_gate_status = 'FAILED'[\s\S]*lease expired after maximum attempts/i);
+  assert.match(migration, /quality_gate_attempt_count >= 3/);
+  assert.match(migration, /quality_gate_claimed_at < now\(\) - interval '10 minutes'/);
+});
+
 test("price quality runs in a bounded asynchronous worker", () => {
   assert.equal(existsSync(jobsPath), true);
   assert.match(jobs, /claim_ai_price_candidates_for_quality_gate/);
@@ -272,6 +292,16 @@ test("automatic and bulk approval require a passed quality gate", () => {
   assert.match(reviewService, /Historical price quality gate has not passed/);
 });
 
+test("approval is atomically bound to the exact inputs evaluated by the gate", () => {
+  assert.match(migration, /approval_input_fingerprint/);
+  assert.match(migration, /quality_gate_input_fingerprint/);
+  assert.match(migration, /create or replace function public\.approve_ai_price_candidate_with_quality_gate/);
+  assert.match(migration, /for update of candidate/);
+  assert.match(migration, /quality_gate_input_fingerprint[^;]+approval_input_fingerprint/s);
+  assert.match(reviewService, /approve_ai_price_candidate_with_quality_gate/);
+  assert.doesNotMatch(reviewService, /\.from\("price_snapshots"\)\s*\n\s*\.insert\(/);
+});
+
 test("bulk manual override cannot bypass a risky quality result", () => {
   assert.match(bulkReviewRunRoute, /quality_gate_status/);
   assert.match(bulkReviewRunRoute, /PASSED/);
@@ -289,8 +319,20 @@ test("single manual review waits only for unfinished historical quality work", (
 
 test("passed candidates are auto-approved asynchronously and retried by the runner", () => {
   assert.match(reviewService, /autoApprovePassedAiPriceCandidates/);
-  assert.match(reviewService, /quality_gate_status", "PASSED"/);
+  assert.match(reviewService, /claim_ai_price_candidates_for_auto_approval/);
+  assert.match(reviewService, /finalize_ai_price_candidate_auto_approval_failure/);
   assert.match(jobs, /autoApprovePassedAiPriceCandidates/);
+});
+
+test("automatic approval uses a fenced bounded queue so poison rows cannot starve newer candidates", () => {
+  assert.match(migration, /auto_approval_status/);
+  assert.match(migration, /auto_approval_attempt_count/);
+  assert.match(migration, /claim_ai_price_candidates_for_auto_approval/);
+  assert.match(migration, /finalize_ai_price_candidate_auto_approval_failure/);
+  assert.match(migration, /for update skip locked/);
+  assert.match(migration, /auto_approval_attempt_count < 3/);
+  assert.match(migration, /auto_approval_worker_id = p_worker_id/);
+  assert.match(migration, /auto_approval_status = 'EXHAUSTED'/);
 });
 
 test("single approval routes keep policy centralized in the review service", () => {

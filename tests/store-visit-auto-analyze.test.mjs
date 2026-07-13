@@ -127,7 +127,10 @@ test("store visit analysis preserves the source image on generated price candida
 test("store visit analysis only generates candidates that are bound to a source image", () => {
   assert.match(readFileSync("src/lib/ai-price-candidates.ts", "utf8"), /const scopedItems = items\.filter\(\(item\) => item\.sourceImageId\)/);
   assert.doesNotMatch(readFileSync("src/lib/ai-price-candidates.ts", "utf8"), /delete legacyRow\.source_image_id/);
-  assert.match(readFileSync("src/lib/ai-price-review.ts", "utf8"), /if \(!sourceImageId\) \{\s*throw new Error\("AI price candidate is missing source_image_id and cannot create a price snapshot"\);/s);
+  assert.match(
+    readFileSync("supabase/migrations/202607130001_price_quality_gate_phase1.sql", "utf8"),
+    /if v_candidate\.source_image_id is null then\s*raise exception 'AI price candidate is missing source_image_id and cannot create a price snapshot';/s,
+  );
 });
 
 test("store visit analysis keeps all visible H5 image rows as candidates even when confidence is low or brand is missing", () => {

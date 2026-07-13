@@ -42,6 +42,20 @@ function cleanOptionalText(value: unknown) {
   return text ? text : null;
 }
 
+function bulkOverrideMatchesCandidate(
+  candidate: AiPriceCandidate,
+  override: { net_price_idr: number; piece_count: number; promo_type: string | null } | undefined,
+) {
+  if (!override) return true;
+  const candidatePrice = Number(candidate.net_price_idr ?? candidate.parsed_price_idr);
+  const candidatePieceCount = Number(candidate.reviewed_piece_count ?? candidate.piece_count);
+  return Number.isFinite(candidatePrice)
+    && Number.isFinite(candidatePieceCount)
+    && override.net_price_idr === candidatePrice
+    && override.piece_count === candidatePieceCount
+    && cleanOptionalText(override.promo_type) === cleanOptionalText(candidate.promo_type);
+}
+
 async function refreshJobCounts(supabase: ReturnType<typeof createSupabaseServiceClient>, jobId: string) {
   const { data: items, error } = await supabase
     .from("ai_price_review_job_items")
@@ -149,6 +163,17 @@ export async function POST(request: Request, ctx: { params: Promise<{ jobId: str
       }
 
       const overrideForCandidate = reviewOverrides[candidate.id];
+      if (!bulkOverrideMatchesCandidate(candidate, overrideForCandidate)) {
+        await supabase
+          .from("ai_price_review_job_items")
+          .update({
+            status: "skipped",
+            error_message: "Save the correction and wait for historical price re-evaluation before approving.",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", item.id);
+        continue;
+      }
       await approveAiPriceCandidate({
         supabase,
         candidateId: candidate.id,
