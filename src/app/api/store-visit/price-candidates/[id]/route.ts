@@ -191,6 +191,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
         reviewer: auth.session.id,
         reviewMethod: "manual",
         reviewToken: sourceCandidate.approval_input_fingerprint,
+        requireTerminalQuality: false,
       });
       const deletedAt = new Date().toISOString();
       const { data: candidate, error } = await supabase

@@ -1,10 +1,80 @@
+alter table public.price_snapshots
+  add column if not exists piece_count integer;
+
+with resolved_piece_counts as (
+  select
+    snapshot.id,
+    coalesce(product.piece_count, sku.piece_count, material.pack_count) as piece_count
+  from public.price_snapshots snapshot
+  left join public.competitor_products product
+    on product.id = snapshot.competitor_product_id
+  left join public.sku_master sku
+    on sku.id = snapshot.sku_master_id
+  left join public.material_master material
+    on material.tenant_sku_code = coalesce(snapshot.material_sku_code, sku.material_sku_code)
+)
+update public.price_snapshots snapshot
+set piece_count = resolved.piece_count
+from resolved_piece_counts resolved
+where snapshot.id = resolved.id
+  and snapshot.piece_count is null
+  and resolved.piece_count > 0;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'price_snapshots_piece_count_check'
+      and conrelid = 'public.price_snapshots'::regclass
+  ) then
+    alter table public.price_snapshots
+      add constraint price_snapshots_piece_count_check
+      check (piece_count is null or piece_count > 0);
+  end if;
+end;
+$$;
+
+create or replace function public.normalize_price_snapshot()
+returns trigger
+language plpgsql
+as $$
+declare
+  product_piece_count integer;
+begin
+  select coalesce(product.piece_count, sku.piece_count, material.pack_count)
+    into product_piece_count
+  from (select new.competitor_product_id, new.sku_master_id, new.material_sku_code) snapshot
+  left join public.competitor_products product
+    on product.id = snapshot.competitor_product_id
+  left join public.sku_master sku
+    on sku.id = snapshot.sku_master_id
+  left join public.material_master material
+    on material.tenant_sku_code = coalesce(snapshot.material_sku_code, sku.material_sku_code);
+
+  new.package_price_idr := coalesce(new.package_price_idr, new.promo_price_idr, new.list_price_idr, new.net_price_idr, 0);
+  new.promo_price_idr := coalesce(new.promo_price_idr, new.package_price_idr);
+  new.net_price_idr := coalesce(
+    new.net_price_idr,
+    greatest(coalesce(new.package_price_idr, 0) - coalesce(new.voucher_value_idr, 0) - coalesce(new.shipping_subsidy_idr, 0), 0)
+  );
+  new.piece_count := coalesce(new.piece_count, product_piece_count);
+
+  if new.price_per_piece is null and new.piece_count is not null and new.piece_count > 0 then
+    new.price_per_piece := round(new.net_price_idr / new.piece_count, 4);
+  end if;
+
+  return new;
+end;
+$$;
+
 create or replace function public.reject_ai_price_candidate_with_quality_gate(
   p_candidate_id uuid,
   p_review_token text,
   p_reason text,
   p_reviewer text,
   p_review_job_id uuid,
-  p_review_method text
+  p_review_method text,
+  p_require_terminal_quality boolean
 )
 returns table (candidate_id uuid)
 language plpgsql
@@ -34,10 +104,30 @@ begin
   if v_candidate.status <> 'pending' then
     raise exception 'Only pending candidates can be rejected';
   end if;
+  if v_candidate.candidate_type <> 'SKU' then
+    raise exception 'Only SKU candidates can be reviewed';
+  end if;
+  if coalesce(v_candidate.h5_lifecycle_status, '') in ('deleted', 'replaced', 'reanalyzed') then
+    raise exception 'Inactive candidates cannot be reviewed';
+  end if;
   if nullif(p_review_token, '') is null
     or v_candidate.approval_input_fingerprint is distinct from p_review_token
   then
     raise exception 'Candidate inputs changed; reload before reviewing.';
+  end if;
+  if p_require_terminal_quality then
+    if not (
+      v_candidate.quality_gate_status in ('REVIEW_REQUIRED', 'INSUFFICIENT_BENCHMARK')
+      or (
+        v_candidate.quality_gate_status = 'FAILED'
+        and v_candidate.quality_gate_attempt_count >= 3
+      )
+    ) then
+      raise exception 'Candidate is not ready for operator review.';
+    end if;
+    if v_candidate.quality_gate_input_fingerprint is distinct from v_candidate.approval_input_fingerprint then
+      raise exception 'Candidate quality result is stale; reload after re-evaluation.';
+    end if;
   end if;
   update public.ai_price_candidates candidate
   set
@@ -102,6 +192,7 @@ declare
   v_size text;
   v_segment text;
   v_target_price numeric;
+  v_product_correction_allowed boolean;
 begin
   if p_review_method not in ('auto_rule', 'bulk_manual', 'manual') then
     raise exception 'invalid review method';
@@ -118,6 +209,12 @@ begin
   end if;
   if v_candidate.status <> 'pending' then
     raise exception 'Only pending candidates can be approved';
+  end if;
+  if v_candidate.candidate_type <> 'SKU' then
+    raise exception 'Only SKU candidates can be reviewed';
+  end if;
+  if coalesce(v_candidate.h5_lifecycle_status, '') in ('deleted', 'replaced', 'reanalyzed') then
+    raise exception 'Inactive candidates cannot be reviewed';
   end if;
   if nullif(p_review_token, '') is null
     or v_candidate.approval_input_fingerprint is distinct from p_review_token
@@ -156,6 +253,9 @@ begin
     ) then
       raise exception 'Candidate is not ready for operator review.';
     end if;
+    if v_candidate.quality_gate_input_fingerprint is distinct from v_candidate.approval_input_fingerprint then
+      raise exception 'Candidate quality result is stale; reload after re-evaluation.';
+    end if;
   end if;
 
   if p_price_idr is null or p_price_idr <= 0 then
@@ -172,6 +272,12 @@ begin
     v_matched_entity_type := v_candidate.matched_entity_type;
     v_matched_entity_id := v_candidate.matched_entity_id;
     v_matched_label := v_candidate.matched_label;
+    v_price_per_piece := coalesce(
+      nullif(v_candidate.visible_price_per_piece_idr, 0),
+      nullif(v_candidate.reviewed_price_per_piece, 0),
+      nullif(v_candidate.price_per_piece, 0),
+      round(v_net_price / v_piece_count, 4)
+    );
 
     if p_price_idr is distinct from v_net_price
       or p_piece_count is distinct from v_piece_count
@@ -188,6 +294,18 @@ begin
     v_matched_entity_type := nullif(trim(coalesce(p_matched_entity_type, '')), '');
     v_matched_entity_id := nullif(trim(coalesce(p_matched_entity_id, '')), '');
     v_matched_label := nullif(trim(coalesce(p_matched_label, '')), '');
+    v_price_per_piece := round(v_net_price / v_piece_count, 4);
+
+    v_product_correction_allowed := v_candidate.matched_entity_type = 'unmatched'
+      or v_candidate.matched_entity_id is null
+      or v_candidate.match_score < 0.9
+      or coalesce(v_candidate.quality_gate_reason_codes, '[]'::jsonb) ? 'SKU_MATCH_UNCERTAIN';
+    if (
+      v_matched_entity_type is distinct from v_candidate.matched_entity_type
+      or v_matched_entity_id is distinct from v_candidate.matched_entity_id
+    ) and not v_product_correction_allowed then
+      raise exception 'Product match is already confident and cannot be changed from this review.';
+    end if;
   end if;
 
   if v_matched_entity_type = 'material_master' then
@@ -330,7 +448,6 @@ begin
 
   v_list_price := case when p_review_method = 'manual' then v_net_price else coalesce(v_candidate.list_price_idr, v_net_price) end;
   v_package_price := case when p_review_method = 'manual' then v_net_price else coalesce(v_candidate.package_price_idr, v_net_price) end;
-  v_price_per_piece := round(v_net_price / v_piece_count, 4);
 
   select snapshot.id
   into v_snapshot_id
@@ -356,6 +473,7 @@ begin
       voucher_value_idr,
       shipping_subsidy_idr,
       net_price_idr,
+      piece_count,
       price_per_piece,
       promo_type,
       captured_at,
@@ -377,6 +495,7 @@ begin
       0,
       0,
       v_net_price,
+      v_piece_count,
       v_price_per_piece,
       case
         when v_promo_type is null or lower(v_promo_type) in ('none', 'no activity', 'no promo', 'normal')
@@ -409,15 +528,18 @@ begin
         and snapshot.net_price_idr = v_net_price
       limit 1;
     end if;
-  elsif v_offline_store_id is not null then
-    update public.price_snapshots snapshot
-    set offline_store_id = coalesce(snapshot.offline_store_id, v_offline_store_id)
-    where snapshot.id = v_snapshot_id;
   end if;
 
   if v_snapshot_id is null then
     raise exception 'Failed to create or resolve price snapshot';
   end if;
+
+  update public.price_snapshots snapshot
+  set
+    offline_store_id = coalesce(snapshot.offline_store_id, v_offline_store_id),
+    piece_count = v_piece_count,
+    price_per_piece = v_price_per_piece
+  where snapshot.id = v_snapshot_id;
 
   update public.ai_price_candidates candidate
   set
@@ -455,18 +577,21 @@ revoke all on function public.approve_ai_price_candidate_with_quality_gate(
   uuid, text, numeric, integer, text, text, text, text, text, uuid, text, text
 ) from public, anon, authenticated;
 revoke all on function public.reject_ai_price_candidate_with_quality_gate(
-  uuid, text, text, text, uuid, text
+  uuid, text, text, text, uuid, text, boolean
 ) from public, anon, authenticated;
 
 grant execute on function public.approve_ai_price_candidate_with_quality_gate(
   uuid, text, numeric, integer, text, text, text, text, text, uuid, text, text
 ) to service_role;
 grant execute on function public.reject_ai_price_candidate_with_quality_gate(
-  uuid, text, text, text, uuid, text
+  uuid, text, text, text, uuid, text, boolean
 ) to service_role;
 
 drop function if exists public.approve_ai_price_candidate_with_quality_gate(
   uuid, text, numeric, integer, text, uuid, uuid, text, text, uuid, text, text
+);
+drop function if exists public.reject_ai_price_candidate_with_quality_gate(
+  uuid, text, text, text, uuid, text
 );
 drop function if exists public.reject_ai_price_candidate_with_quality_gate(
   uuid, text, text, uuid, text

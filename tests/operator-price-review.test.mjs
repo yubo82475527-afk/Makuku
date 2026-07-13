@@ -43,6 +43,15 @@ test("operator view models expose an explicit minimal contract", () => {
   assert.doesNotMatch(domain, /\.\.\.candidate/);
 });
 
+test("operator candidate queries select only persisted columns and enrich SKU labels in batches", () => {
+  const candidateSelect = domain.match(/const CANDIDATE_SELECT = \[([\s\S]*?)\]\.join/)?.[1] ?? "";
+  assert.doesNotMatch(candidateSelect, /matched_sku_label/);
+  assert.match(domain, /loadMatchedLabelMap/);
+  assert.match(domain, /from\("material_master"\)[\s\S]*tenant_sku_code,tenant_sku_name/);
+  assert.match(domain, /from\("competitor_products"\)[\s\S]*brands\(name\)/);
+  assert.match(domain, /candidate\.matched_label/);
+});
+
 test("operator detail loads only the exact candidate source image", () => {
   assert.match(domain, /source_image_id/);
   assert.match(domain, /offline_visit_images/);
@@ -72,6 +81,39 @@ test("manual approval permits final values while automated approval remains stri
   assert.match(migration, /p_review_method = 'manual'[\s\S]*v_net_price := p_price_idr/i);
   assert.match(migration, /v_piece_count := p_piece_count/i);
   assert.match(migration, /v_price_per_piece := round\(v_net_price \/ v_piece_count/i);
+});
+
+test("price snapshots persist the reviewed piece-count fact without trigger overwrite", () => {
+  assert.match(migration, /alter table public\.price_snapshots[\s\S]*add column if not exists piece_count integer/i);
+  assert.match(migration, /price_snapshots_piece_count_check/i);
+  assert.match(migration, /create or replace function public\.normalize_price_snapshot/i);
+  assert.match(migration, /new\.piece_count := coalesce\(new\.piece_count, product_piece_count\)/i);
+  assert.match(migration, /if new\.price_per_piece is null[\s\S]*new\.net_price_idr \/ new\.piece_count/i);
+  assert.doesNotMatch(migration, /new\.price_per_piece := round\(new\.net_price_idr \/ product_piece_count/i);
+  assert.match(migration, /insert into public\.price_snapshots \([\s\S]*piece_count[\s\S]*price_per_piece/i);
+});
+
+test("automatic approvals preserve the evaluated per-piece fact while corrections recompute it", () => {
+  assert.match(migration, /p_review_method in \('auto_rule', 'bulk_manual'\)[\s\S]*visible_price_per_piece_idr[\s\S]*reviewed_price_per_piece[\s\S]*price_per_piece[\s\S]*round\(v_net_price \/ v_piece_count/i);
+  assert.match(migration, /p_review_method = 'manual'[\s\S]*v_price_per_piece := round\(v_net_price \/ v_piece_count/i);
+});
+
+test("manual decisions require an active SKU candidate and a terminal result for current inputs", () => {
+  assert.match(migration, /v_candidate\.candidate_type <> 'SKU'/i);
+  assert.match(migration, /h5_lifecycle_status[\s\S]*deleted[\s\S]*replaced[\s\S]*reanalyzed/i);
+  assert.match(migration, /quality_gate_input_fingerprint is distinct from v_candidate\.approval_input_fingerprint/i);
+  assert.match(migration, /p_require_terminal_quality boolean/i);
+  assert.match(migration, /if p_require_terminal_quality[\s\S]*REVIEW_REQUIRED[\s\S]*INSUFFICIENT_BENCHMARK[\s\S]*FAILED/i);
+  assert.match(detailRoute, /requireTerminalQuality:\s*true/);
+  assert.match(h5CandidateRoute, /requireTerminalQuality:\s*false/);
+});
+
+test("confident product ownership cannot be changed by a crafted review request", () => {
+  assert.match(detailRoute, /detail\.requires_product_correction/);
+  assert.match(reviewService, /candidateAllowsProductCorrection/);
+  assert.match(migration, /v_product_correction_allowed/i);
+  assert.match(migration, /SKU_MATCH_UNCERTAIN/i);
+  assert.match(migration, /Product match is already confident/i);
 });
 
 test("manual SKU correction validates one legal product owner", () => {
@@ -125,6 +167,14 @@ test("operator list exposes only two states and no technical bulk workflow", () 
   assert.match(workbench, /查看并处理/);
   assert.doesNotMatch(workbench, /benchmark_sample_count|benchmark_store_count|ai_confidence|match_score|quality_gate_version|raw JSON/i);
   assert.doesNotMatch(workbench, /bulk|批量批准/i);
+});
+
+test("operator navigation derives rows from fresh props and preserves filter state", () => {
+  assert.match(workbench, /removedPendingIds/);
+  assert.match(workbench, /useMemo\([\s\S]*items\.filter/);
+  assert.doesNotMatch(workbench, /useState\(items\)/);
+  assert.match(page, /type="hidden" name="state"/);
+  assert.match(page, /type="hidden" name="per_page"/);
 });
 
 test("drawer exposes evidence, three final actions, conditional SKU correction and Visit link", () => {

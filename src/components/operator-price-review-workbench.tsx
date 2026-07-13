@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { OperatorPriceReviewDrawer } from "@/components/operator-price-review-drawer";
 import { formatIdr, formatJakartaTime } from "@/lib/format";
 import type { OperatorPriceReviewListItem, OperatorPriceReviewState } from "@/lib/types";
@@ -31,14 +31,20 @@ export function OperatorPriceReviewWorkbench({
 }) {
   const router = useRouter();
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [visibleItems, setVisibleItems] = useState(items);
+  const [removedPendingIds, setRemovedPendingIds] = useState<Set<string>>(() => new Set());
+  const visibleItems = useMemo(
+    () => filters.state === "pending" ? items.filter((item) => !removedPendingIds.has(item.id)) : items,
+    [filters.state, items, removedPendingIds],
+  );
   const isZh = locale === "zh";
   const pageCount = Math.max(1, Math.ceil(total / perPage));
   const from = total === 0 ? 0 : (page - 1) * perPage + 1;
   const to = Math.min(total, page * perPage);
 
   function onProcessed(id: string) {
-    if (filters.state === "pending") setVisibleItems((current) => current.filter((item) => item.id !== id));
+    if (filters.state === "pending") {
+      setRemovedPendingIds((current) => new Set(current).add(id));
+    }
     setActiveId(null);
     router.refresh();
   }

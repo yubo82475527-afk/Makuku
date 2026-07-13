@@ -47,12 +47,17 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
         reviewer,
         reviewMethod: "manual",
         reviewToken,
+        requireTerminalQuality: true,
       });
       revalidateReviewPaths(detail.visit_detail_href);
       return Response.json({ candidate_id: candidate.id, decision: "rejected" });
     }
 
     const match = normalizeMatch(body, detail.current_match_type, detail.current_match_id, detail.current_match_label);
+    const ownershipChanged = match.type !== detail.current_match_type || match.id !== detail.current_match_id;
+    if (ownershipChanged && !detail.requires_product_correction) {
+      return Response.json({ error: "Product match is already confident and cannot be changed from this review." }, { status: 400 });
+    }
 
     if (action === "confirm") {
       const result = await approveAiPriceCandidate({

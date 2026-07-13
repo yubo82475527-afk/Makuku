@@ -128,6 +128,12 @@ export async function approveAiPriceCandidate({
     ? matchedLabel ?? candidateRow.matched_label
     : candidateRow.matched_label;
 
+  const ownershipChanged = finalMatchType !== candidateRow.matched_entity_type
+    || finalMatchId !== candidateRow.matched_entity_id;
+  if (reviewMethod === "manual" && ownershipChanged && !candidateAllowsProductCorrection(candidateRow)) {
+    throw new Error("Product match is already confident and cannot be changed from this review.");
+  }
+
   if (!finalMatchId || finalMatchType === "unmatched") {
     throw new Error("Please match a product before approving this candidate");
   }
@@ -191,6 +197,7 @@ export async function rejectAiPriceCandidate({
   reviewJobId,
   reviewMethod = "manual",
   reviewToken,
+  requireTerminalQuality = reviewMethod === "manual",
 }: {
   supabase: SupabaseServiceClient;
   candidateId: string;
@@ -199,6 +206,7 @@ export async function rejectAiPriceCandidate({
   reviewJobId?: string | null;
   reviewMethod?: Exclude<AiPriceCandidateReviewMethod, "auto_rule">;
   reviewToken?: string | null;
+  requireTerminalQuality?: boolean;
 }) {
   const cleanReason = reason.trim();
   if (!cleanReason) throw new Error("Rejection reason is required");
@@ -228,6 +236,7 @@ export async function rejectAiPriceCandidate({
       p_reviewer: reviewer ?? null,
       p_review_job_id: reviewJobId ?? null,
       p_review_method: reviewMethod,
+      p_require_terminal_quality: requireTerminalQuality,
     },
   );
   if (rejectionError) throw new Error(rejectionError.message);
@@ -248,6 +257,15 @@ export async function rejectAiPriceCandidate({
   }
 
   return data as AiPriceCandidate;
+}
+
+function candidateAllowsProductCorrection(candidate: Pick<AiPriceCandidate,
+  "matched_entity_type" | "matched_entity_id" | "match_score" | "quality_gate_reason_codes"
+>) {
+  return candidate.matched_entity_type === "unmatched"
+    || !candidate.matched_entity_id
+    || Number(candidate.match_score ?? 0) < MIN_MATCH_SCORE
+    || (candidate.quality_gate_reason_codes ?? []).includes("SKU_MATCH_UNCERTAIN");
 }
 
 export async function autoApproveAiPriceCandidatesForVisit({

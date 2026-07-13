@@ -85,7 +85,6 @@ const CANDIDATE_SELECT = [
   "matched_entity_type",
   "matched_entity_id",
   "matched_label",
-  "matched_sku_label",
   "match_score",
   "status",
   "reviewed_piece_count",
@@ -231,8 +230,13 @@ export async function getOperatorPriceReviewsPage(filters: OperatorPriceReviewFi
   const { data, error, count } = await query;
   if (error) return { data: [], total: 0, page, perPage, error: error.message, isDemo: false };
   const rows = (data ?? []) as unknown as ReviewCandidateRow[];
-  const imageMap = await loadSourceImageMap(supabase, rows);
-  const items = await Promise.all(rows.map((candidate) => toListItem(supabase, candidate, state, filters.locale ?? "zh", imageMap)));
+  const [imageMap, matchedLabelMap] = await Promise.all([
+    loadSourceImageMap(supabase, rows),
+    loadMatchedLabelMap(supabase, rows),
+  ]);
+  const items = await Promise.all(rows.map((candidate) =>
+    toListItem(supabase, candidate, state, filters.locale ?? "zh", imageMap, matchedLabelMap),
+  ));
   return { data: items, total: count ?? 0, page, perPage, error: null, isDemo: false };
 }
 
@@ -258,9 +262,12 @@ export async function getOperatorPriceReviewDetail(id: string, locale = "zh"): P
   if (state === "pending" ? !isPendingOperatorReviewCandidate(candidate) : !isProcessedOperatorReviewCandidate(candidate)) {
     return { data: null, error: null, isDemo: false };
   }
-  const imageMap = await loadSourceImageMap(supabase, [candidate]);
+  const [imageMap, matchedLabelMap] = await Promise.all([
+    loadSourceImageMap(supabase, [candidate]),
+    loadMatchedLabelMap(supabase, [candidate]),
+  ]);
   const sourceImage = findSourceImage(candidate, imageMap);
-  const listItem = await toListItem(supabase, candidate, state, locale, imageMap);
+  const listItem = await toListItem(supabase, candidate, state, locale, imageMap, matchedLabelMap);
   const sourceImageUrl = sourceImage ? await signImage(supabase, sourceImage.image_path) : null;
 
   return {
@@ -277,7 +284,7 @@ export async function getOperatorPriceReviewDetail(id: string, locale = "zh"): P
       historical_common_price_per_piece: positiveNumber(candidate.benchmark_price_per_piece),
       current_match_type: candidate.matched_entity_type,
       current_match_id: candidate.matched_entity_id,
-      current_match_label: candidate.matched_sku_label ?? candidate.matched_label,
+      current_match_label: resolveMatchedLabel(candidate, matchedLabelMap),
       review_token: candidate.approval_input_fingerprint ?? "",
       visit_detail_href: candidate.visit_id ? `/${locale}/mobile/offline-capture/${candidate.visit_id}` : `/${locale}/mobile/offline-capture`,
     },
@@ -292,6 +299,7 @@ async function toListItem(
   state: OperatorPriceReviewState,
   locale: string,
   imageMap: Map<string, SourceImageRow>,
+  matchedLabelMap: Map<string, string>,
 ): Promise<OperatorPriceReviewListItem> {
   const sourceImage = findSourceImage(candidate, imageMap);
   const thumbnailPath = sourceImage?.thumbnail_path ?? sourceImage?.image_path ?? null;
@@ -302,7 +310,7 @@ async function toListItem(
     source_thumbnail_url: sourceImageUrl,
     source_image_available: Boolean(sourceImageUrl),
     product_name: [candidate.raw_brand, candidate.raw_product].filter(Boolean).join(" ").trim() || candidate.raw_product || "-",
-    sku_label: candidate.matched_sku_label ?? candidate.matched_label ?? null,
+    sku_label: resolveMatchedLabel(candidate, matchedLabelMap),
     ai_package_price: positiveNumber(candidate.ai_package_price_idr ?? candidate.ai_net_price_idr ?? candidate.parsed_price_idr),
     ai_piece_count: positiveInteger(candidate.ai_piece_count ?? candidate.piece_count),
     ai_price_per_piece: positiveNumber(candidate.ai_price_per_piece)
@@ -312,6 +320,51 @@ async function toListItem(
     processed_decision: state === "processed" ? deriveProcessedDecision(candidate) : null,
     processed_at: state === "processed" ? candidate.reviewed_at : null,
   };
+}
+
+async function loadMatchedLabelMap(supabase: SupabaseServiceClient, candidates: ReviewCandidateRow[]) {
+  const labelMap = new Map<string, string>();
+  const materialCodes = Array.from(new Set(candidates
+    .filter((candidate) => candidate.matched_entity_type === "material_master")
+    .map((candidate) => candidate.matched_entity_id)
+    .filter(Boolean))) as string[];
+  const competitorIds = Array.from(new Set(candidates
+    .filter((candidate) => candidate.matched_entity_type === "competitor_product")
+    .map((candidate) => candidate.matched_entity_id)
+    .filter(Boolean))) as string[];
+
+  const [materialsResult, competitorsResult] = await Promise.all([
+    materialCodes.length > 0
+      ? supabase.from("material_master").select("tenant_sku_code,tenant_sku_name").in("tenant_sku_code", materialCodes)
+      : Promise.resolve({ data: [] }),
+    competitorIds.length > 0
+      ? supabase.from("competitor_products").select("id,normalized_name,brands(name)").in("id", competitorIds)
+      : Promise.resolve({ data: [] }),
+  ]);
+
+  for (const material of (materialsResult.data ?? []) as { tenant_sku_code: string; tenant_sku_name: string }[]) {
+    labelMap.set(matchLabelKey("material_master", material.tenant_sku_code), `${material.tenant_sku_code} · ${material.tenant_sku_name}`);
+  }
+  for (const product of (competitorsResult.data ?? []) as {
+    id: string;
+    normalized_name: string;
+    brands?: { name?: string | null } | { name?: string | null }[] | null;
+  }[]) {
+    const brand = Array.isArray(product.brands) ? product.brands[0]?.name : product.brands?.name;
+    labelMap.set(matchLabelKey("competitor_product", product.id), [brand, product.normalized_name].filter(Boolean).join(" "));
+  }
+  return labelMap;
+}
+
+function resolveMatchedLabel(candidate: ReviewCandidateRow, labelMap: Map<string, string>) {
+  if (!candidate.matched_entity_id) return candidate.matched_label ?? null;
+  return labelMap.get(matchLabelKey(candidate.matched_entity_type, candidate.matched_entity_id))
+    ?? candidate.matched_label
+    ?? null;
+}
+
+function matchLabelKey(type: string, id: string) {
+  return `${type}|${id}`;
 }
 
 function requiresProductCorrection(candidate: AiPriceCandidate) {

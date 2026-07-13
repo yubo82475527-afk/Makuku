@@ -52,6 +52,8 @@ export default async function OfflinePriceCandidatesPage({
 
       <Card className="mb-4">
         <form className="grid gap-3 md:grid-cols-[minmax(280px,1fr)_minmax(220px,280px)_minmax(120px,180px)]">
+          <input type="hidden" name="state" value={state} />
+          <input type="hidden" name="per_page" value={perPage} />
           <DateRangeFilter locale={locale} dateFrom={dateFrom} dateTo={dateTo} />
           <BatchCodeFilter locale={locale} visitCode={visitCode} />
           <Button type="submit">{dict.common.filter}</Button>

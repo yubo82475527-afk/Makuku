@@ -653,6 +653,7 @@ export type PriceSnapshot = {
   voucher_value_idr: number;
   shipping_subsidy_idr: number;
   net_price_idr: number;
+  piece_count?: number | null;
   price_per_piece: number;
   promo_type: string | null;
   captured_at: string;
