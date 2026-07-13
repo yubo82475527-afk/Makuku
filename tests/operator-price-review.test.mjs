@@ -85,7 +85,7 @@ test("operator APIs require admin auth and return minimal review actions", () =>
   assert.match(detailRoute, /action === "confirm"/);
   assert.match(detailRoute, /action === "correct"/);
   assert.match(detailRoute, /action === "reject"/);
-  assert.match(detailRoute, /status:\s*409/);
+  assert.match(detailRoute, /return 409/);
 });
 
 test("the existing photo-review route renders the operator workbench", () => {
