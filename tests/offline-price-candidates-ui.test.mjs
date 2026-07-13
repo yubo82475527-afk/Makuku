@@ -9,6 +9,9 @@ function readMaybe(path) {
 const candidatesPage = readFileSync("src/app/[locale]/offline-price-candidates/page.tsx", "utf8");
 const workbenchPath = "src/components/ai-price-candidates-workbench.tsx";
 const workbench = readFileSync(workbenchPath, "utf8");
+const operatorWorkbench = readFileSync("src/components/operator-price-review-workbench.tsx", "utf8");
+const operatorDrawer = readFileSync("src/components/operator-price-review-drawer.tsx", "utf8");
+const operatorReviewDomain = readFileSync("src/lib/operator-price-review.ts", "utf8");
 const storeVisitRoute = readFileSync("src/app/api/store-visit/[id]/route.ts", "utf8");
 const storeVisitRefreshRoute = readFileSync("src/app/api/store-visit/[id]/refresh/route.ts", "utf8");
 const storeVisitDetailH5 = readFileSync("src/components/store-visit-detail-h5.tsx", "utf8");
@@ -27,14 +30,15 @@ const aiPriceCandidatesLib = readFileSync("src/lib/ai-price-candidates.ts", "utf
 const h5RowIdentityMigration = readMaybe("supabase/migrations/202607070002_ai_price_candidates_h5_row_identity.sql");
 const priceQualityMigration = readMaybe("supabase/migrations/202607130001_price_quality_gate_phase1.sql");
 
-test("photo price review keeps compact date filter and export action", () => {
+test("operator price review keeps only compact business filters", () => {
   assert.doesNotMatch(candidatesPage, /SelectInput/);
   assert.doesNotMatch(candidatesPage, /name="status"/);
   assert.match(candidatesPage, /DateRangeFilter/);
   assert.match(candidatesPage, /aria-label=\{label\}/);
   assert.match(candidatesPage, /<Card className="mb-4">/);
   assert.match(candidatesPage, /<form className="grid gap-3/);
-  assert.match(candidatesPage, /Export CSV/);
+  assert.match(candidatesPage, /BatchCodeFilter/);
+  assert.doesNotMatch(candidatesPage, /Export CSV|image_id|ImageIdFilter/);
   assert.doesNotMatch(candidatesPage, /TextInput name="date_from"/);
   assert.doesNotMatch(candidatesPage, /TextInput name="date_to"/);
 });
@@ -62,22 +66,24 @@ test("ai price candidates enforce active H5 row identity", () => {
   assert.match(h5RowIdentityMigration, /visit_id, source_image_id, source_row_index/);
 });
 
-test("photo price review uses a paginated review table instead of evidence cards", () => {
-  assert.match(candidatesPage, /AiPriceCandidatesWorkbench/);
+test("operator price review uses the new paginated minimal workbench", () => {
+  assert.match(candidatesPage, /OperatorPriceReviewWorkbench/);
+  assert.doesNotMatch(candidatesPage, /AiPriceCandidatesWorkbench/);
   assert.match(candidatesPage, /pageParam/);
   assert.match(candidatesPage, /perPageParam/);
   assert.match(candidatesPage, /total/);
   assert.doesNotMatch(candidatesPage, /<article/);
   assert.doesNotMatch(candidatesPage, /space-y-3/);
+  assert.match(operatorWorkbench, /<table/);
 });
 
-test("photo price review uses status tabs instead of top status dropdown", () => {
-  assert.match(workbench, /function StatusTabs/);
-  assert.match(workbench, /pending.*approved.*rejected.*all/s);
-  assert.match(workbench, /statusTabs/);
-  assert.match(workbench, /URLSearchParams/);
-  assert.match(candidatesPage, /status:\s*currentStatus/);
-  assert.match(workbench, /params\.set\("status", status\)/);
+test("operator price review exposes only pending and processed tabs", () => {
+  assert.match(operatorWorkbench, /待处理/);
+  assert.match(operatorWorkbench, /已处理/);
+  assert.match(operatorWorkbench, /state="pending"/);
+  assert.match(operatorWorkbench, /state="processed"/);
+  assert.doesNotMatch(operatorWorkbench, /approved.*rejected.*all/s);
+  assert.match(candidatesPage, /state,\s*dateFrom/);
   assert.doesNotMatch(candidatesPage, /statusHref/);
   assert.doesNotMatch(candidatesPage, /tabClass/);
 });
@@ -176,34 +182,22 @@ test("photo price review and export expose store visit batch codes", () => {
   assert.match(candidateExportRoute, /visit\?\.visit_code/);
 });
 
-test("photo price review filters by fuzzy store visit batch code", () => {
+test("operator price review filters by fuzzy store visit batch code", () => {
   assert.match(candidatesPage, /const visitCode = getFilter\("visit_code"\)/);
   assert.match(candidatesPage, /name="visit_code"/);
   assert.match(candidatesPage, /defaultValue=\{visitCode\}/);
-  assert.match(candidatesPage, /exportParams\.set\("visit_code", visitCode\)/);
   assert.match(candidatesPage, /visitCode: visitCode \|\| undefined/);
-  assert.match(candidateListRoute, /visitCode: searchParams\.get\("visit_code"\)\?\.trim\(\) \|\| undefined/);
-  assert.match(candidateExportRoute, /const visitCode = searchParams\.get\("visit_code"\)\?\.trim\(\)/);
-  assert.match(candidateExportRoute, /visitCode: visitCode \|\| undefined/);
-  assert.match(dataFile, /visitCode\?: string/);
-  assert.match(dataFile, /\.ilike\("offline_store_visits\.visit_code", `%\$\{escapeIlikePattern\(filters\.visitCode\)\}%`\)/);
+  assert.match(operatorReviewDomain, /visitCode\?: string/);
+  assert.match(operatorReviewDomain, /\.ilike\("offline_store_visits\.visit_code", `%\$\{escapeIlike\(filters\.visitCode\)\}%`\)/);
 });
 
-test("photo price review filters by source image id and shows it in the list", () => {
-  assert.match(candidatesPage, /const imageId = getFilter\("image_id"\)\.trim\(\)/);
-  assert.match(candidatesPage, /name="image_id"/);
-  assert.match(candidatesPage, /defaultValue=\{imageId\}/);
-  assert.match(candidatesPage, /exportParams\.set\("image_id", imageId\)/);
-  assert.match(candidatesPage, /imageId: imageId \|\| undefined/);
-  assert.match(workbench, /copy\.table\.imageId/);
-  assert.match(workbench, /<td className="px-3 py-3 font-medium text-slate-700">\{formatShortImageId\(candidate\.source_image_id\)\}<\/td>/);
-  assert.match(candidateListRoute, /imageId: searchParams\.get\("image_id"\)\?\.trim\(\) \|\| undefined/);
-  assert.match(candidateExportRoute, /const imageId = searchParams\.get\("image_id"\)\?\.trim\(\)/);
-  assert.match(candidateExportRoute, /imageId: imageId \|\| undefined/);
-  assert.match(dataFile, /imageId\?: string/);
-  assert.match(dataFile, /matchesAiPriceCandidateImageId/);
-  assert.match(dataFile, /normalizedSourceImageId\.endsWith\(normalizedQuery\)/);
-  assert.match(dataFile, /formatShortImageId\(candidate\.source_image_id\) === normalizedQuery/);
+test("operator price review removes image-id filtering and shows exact source evidence", () => {
+  assert.doesNotMatch(candidatesPage, /image_id|ImageIdFilter/);
+  assert.match(operatorWorkbench, /SourceThumbnail/);
+  assert.match(operatorReviewDomain, /source_image_id/);
+  assert.match(operatorReviewDomain, /source_image_path/);
+  assert.match(operatorReviewDomain, /offline_visit_images/);
+  assert.match(operatorDrawer, /原始证据不可用/);
 });
 
 test("photo price review image filter no longer falls back to 5000-row client filtering", () => {
@@ -266,8 +260,8 @@ test("photo price review carries net price and activity type into price snapshot
   assert.match(workbench, /copy\.promoType/);
   assert.match(candidateRoute, /net_price_idr/);
   assert.match(candidateRoute, /promo_type/);
-  assert.match(aiPriceReview, /p_price_idr: currentPrice/);
-  assert.match(aiPriceReview, /p_promo_type: currentPromoType/);
+  assert.match(aiPriceReview, /p_price_idr: price/);
+  assert.match(aiPriceReview, /p_promo_type: requestedPromoType/);
   assert.match(priceQualityMigration, /net_price_idr,[\s\S]*price_per_piece,[\s\S]*promo_type,[\s\S]*captured_at/);
 });
 
@@ -369,8 +363,8 @@ test("store visit detail route returns signed photos from new image table and le
   assert.match(storeVisitRoute, /const aiPriceCandidateSelect = /);
   assert.match(storeVisitRoute, /attachAiPriceCandidateMatchLabels/);
   assert.match(storeVisitRoute, /ai_price_candidates: await attachAiPriceCandidateMatchLabels\(supabase, signedVisit\.ai_price_candidates \?\? \[\]\)/);
-  assert.match(storeVisitRoute, /const visitSelect = `id,visit_code,[\s\S]+offline_visit_images\(id,visit_id,replaces_image_id,replaced_by_image_id,deleted_at,deletion_reason,image_type,image_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at\),ai_price_candidates\(\$\{aiPriceCandidateSelect\}\)`/);
-  assert.match(storeVisitRoute, /const legacyVisitSelect = `id,visit_code,[\s\S]+offline_visit_images\(id,visit_id,image_type,image_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at\),ai_price_candidates\(\$\{aiPriceCandidateSelect\}\)`/);
+  assert.match(storeVisitRoute, /const visitSelect = `id,visit_code,[\s\S]+offline_visit_images\(id,visit_id,replaces_image_id,replaced_by_image_id,deleted_at,deletion_reason,image_type,image_path,thumbnail_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at\),ai_price_candidates\(\$\{aiPriceCandidateSelect\}\)`/);
+  assert.match(storeVisitRoute, /const legacyVisitSelect = `id,visit_code,[\s\S]+offline_visit_images\(id,visit_id,image_type,image_path,thumbnail_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at\),ai_price_candidates\(\$\{aiPriceCandidateSelect\}\)`/);
   assert.match(storeVisitRoute, /offline-visit-images/);
   assert.match(storeVisitRoute, /store-visits/);
   assert.match(storeVisitRoute, /active_signed_images/);
@@ -390,7 +384,7 @@ test("mobile store visit detail can preview photos from the thumbnail grid", () 
   assert.match(storeVisitDetailH5, /previewPhoto: "Preview photo"/);
   assert.match(storeVisitDetailH5, /expandPhoto: "Preview photo"/);
   assert.match(storeVisitDetailH5, /aria-label=\{text\.previewPhoto\}/);
-  assert.match(storeVisitDetailH5, /aria-label=\{text\.expandPhoto\}/);
+  assert.match(storeVisitDetailH5, /aria-label=\{thumbnailFailed \? text\.thumbnailRetry : text\.expandPhoto\}/);
   assert.match(storeVisitDetailH5, /role="dialog"/);
   assert.match(storeVisitDetailH5, /max-h-\[82vh\]/);
 });
@@ -440,8 +434,8 @@ test("mobile store visit detail shows need-confirm as a row tag without hiding p
 });
 
 test("mobile store visit detail hides price rows while analysis is still running", () => {
-  assert.match(storeVisitDetailH5, /const hasAnalyzingPriceImage = \(visit\?\.offline_visit_images \?\? \[\]\)\.some\(\(image\) => image\.analysis_status === "analyzing"\);/);
-  assert.match(storeVisitDetailH5, /const visitAnalysisInProgress = analyzing \|\| fullVisitReanalyzing \|\| fullVisitAiActive \|\| \(status === "analyzing" && !hasAnalyzingPriceImage\);/);
+  assert.match(storeVisitDetailH5, /const hasPendingOrAnalyzingPriceImage = \(visit\?\.offline_visit_images \?\? \[\]\)\.some\(\(image\) => isPriceImageType\(image\.image_type\) && \(image\.analysis_status === "pending" \|\| image\.analysis_status === "analyzing"\)\);/);
+  assert.match(storeVisitDetailH5, /const visitAnalysisInProgress = analyzing \|\| fullVisitReanalyzing \|\| fullVisitAiActive \|\| hasPendingOrAnalyzingPriceImage \|\| status === "analyzing";/);
   assert.match(storeVisitDetailH5, /visitAnalysisInProgress=\{visitAnalysisInProgress\}/);
   assert.match(storeVisitDetailH5, /const priceRowsPending = visitAnalysisInProgress \|\| retryingImageIds\.includes\(section\.image\.id\) \|\| isAnalyzingImage \|\| isReanalyzingImage \|\| \(isProcessingRetake && sectionLocalUpload\?\.status === "analyzing"\);/);
   assert.doesNotMatch(storeVisitDetailH5, /const visitAnalysisInProgress = status === "analyzing" \|\| analysisPhase !== "idle";/);
