@@ -88,6 +88,14 @@ test("operator APIs require admin auth and return minimal review actions", () =>
   assert.match(detailRoute, /return 409/);
 });
 
+test("rejecting an invalid candidate does not require a valid product match", () => {
+  const rejectIndex = detailRoute.indexOf('if (action === "reject")');
+  const normalizeMatchIndex = detailRoute.indexOf("const match = normalizeMatch");
+  assert.notEqual(rejectIndex, -1);
+  assert.notEqual(normalizeMatchIndex, -1);
+  assert.ok(rejectIndex < normalizeMatchIndex);
+});
+
 test("the existing photo-review route renders the operator workbench", () => {
   assert.match(page, /OperatorPriceReviewWorkbench/);
   assert.match(page, /getOperatorPriceReviewsPage/);

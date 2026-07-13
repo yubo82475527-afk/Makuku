@@ -36,9 +36,23 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const detail = detailResult.data;
     if (!detail) return Response.json({ error: "Operator review candidate not found" }, { status: 404 });
 
-    const match = normalizeMatch(body, detail.current_match_type, detail.current_match_id, detail.current_match_label);
     const reviewer = auth.session.displayName;
     const supabase = createSupabaseServiceClient();
+
+    if (action === "reject") {
+      const candidate = await rejectAiPriceCandidate({
+        supabase,
+        candidateId: id,
+        reason: "operator_marked_incorrect",
+        reviewer,
+        reviewMethod: "manual",
+        reviewToken,
+      });
+      revalidateReviewPaths(detail.visit_detail_href);
+      return Response.json({ candidate_id: candidate.id, decision: "rejected" });
+    }
+
+    const match = normalizeMatch(body, detail.current_match_type, detail.current_match_id, detail.current_match_label);
 
     if (action === "confirm") {
       const result = await approveAiPriceCandidate({
@@ -78,19 +92,6 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       });
       revalidateReviewPaths(detail.visit_detail_href);
       return Response.json({ candidate_id: result.candidate.id, snapshot_id: result.snapshot.id, decision: "corrected" });
-    }
-
-    if (action === "reject") {
-      const candidate = await rejectAiPriceCandidate({
-        supabase,
-        candidateId: id,
-        reason: "operator_marked_incorrect",
-        reviewer,
-        reviewMethod: "manual",
-        reviewToken,
-      });
-      revalidateReviewPaths(detail.visit_detail_href);
-      return Response.json({ candidate_id: candidate.id, decision: "rejected" });
     }
 
     return Response.json({ error: "Unsupported action" }, { status: 400 });
