@@ -45,6 +45,8 @@ alter table public.price_quality_benchmark_refresh_runs enable row level securit
 create or replace function public.compute_ai_price_candidate_input_fingerprint(
   p_matched_entity_type text,
   p_matched_entity_id text,
+  p_list_price_idr numeric,
+  p_package_price_idr numeric,
   p_net_price_idr numeric,
   p_parsed_price_idr numeric,
   p_price_per_piece numeric,
@@ -64,6 +66,8 @@ as $$
   select md5(
     coalesce(p_matched_entity_type, '') || chr(31)
     || coalesce(p_matched_entity_id, '') || chr(31)
+    || coalesce(p_list_price_idr::text, '') || chr(31)
+    || coalesce(p_package_price_idr::text, '') || chr(31)
     || coalesce(p_net_price_idr::text, '') || chr(31)
     || coalesce(p_parsed_price_idr::text, '') || chr(31)
     || coalesce(p_price_per_piece::text, '') || chr(31)
@@ -101,6 +105,8 @@ alter table public.ai_price_candidates
     public.compute_ai_price_candidate_input_fingerprint(
       matched_entity_type,
       matched_entity_id,
+      list_price_idr,
+      package_price_idr,
       net_price_idr,
       parsed_price_idr,
       price_per_piece,
@@ -237,6 +243,8 @@ begin
     and (
       new.matched_entity_type is distinct from old.matched_entity_type
       or new.matched_entity_id is distinct from old.matched_entity_id
+      or new.list_price_idr is distinct from old.list_price_idr
+      or new.package_price_idr is distinct from old.package_price_idr
       or new.net_price_idr is distinct from old.net_price_idr
       or new.parsed_price_idr is distinct from old.parsed_price_idr
       or new.price_per_piece is distinct from old.price_per_piece
@@ -278,6 +286,8 @@ create trigger trg_reset_ai_price_candidate_quality_gate
 before update of
   matched_entity_type,
   matched_entity_id,
+  list_price_idr,
+  package_price_idr,
   net_price_idr,
   parsed_price_idr,
   price_per_piece,
@@ -860,6 +870,13 @@ begin
   if p_review_method in ('auto_rule', 'bulk_manual') then
     if v_candidate.quality_gate_status <> 'PASSED'
       or v_candidate.quality_gate_input_fingerprint is distinct from v_candidate.approval_input_fingerprint
+      or v_candidate.evidence_review_decision <> 'AUTO_APPROVE'
+      or v_candidate.review_decision <> 'AUTO_APPROVE'
+      or v_candidate.match_score < 0.9
+      or v_candidate.matched_entity_id is null
+      or v_candidate.matched_entity_type = 'unmatched'
+      or coalesce(jsonb_array_length(v_candidate.warnings), 0) > 0
+      or coalesce(jsonb_array_length(v_candidate.conflicts), 0) > 0
     then
       raise exception 'Historical price quality gate has not passed for the current inputs.';
     end if;
