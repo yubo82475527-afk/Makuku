@@ -291,3 +291,25 @@ test("single approval routes keep policy centralized in the review service", () 
   assert.match(candidateReviewRoute, /approveAiPriceCandidate/);
   assert.match(visitCandidateReviewRoute, /approveAiPriceCandidate/);
 });
+
+test("quality gate provides explicit refresh and repair commands", () => {
+  const refreshScriptPath = "scripts/refresh-price-quality-benchmarks.mjs";
+  const runScriptPath = "scripts/run-price-quality-gate.mjs";
+  assert.equal(existsSync(refreshScriptPath), true);
+  assert.equal(existsSync(runScriptPath), true);
+  const refreshScript = readFileSync(refreshScriptPath, "utf8");
+  const runScript = readFileSync(runScriptPath, "utf8");
+  assert.match(refreshScript, /price-quality\/refresh-benchmarks/);
+  assert.match(runScript, /price-quality\/run/);
+  assert.match(refreshScript, /CRON_SECRET|INTERNAL_JOB_SECRET/);
+  assert.match(runScript, /CRON_SECRET|INTERNAL_JOB_SECRET/);
+});
+
+test("price architecture documents the implemented asynchronous T+1 quality boundary", () => {
+  const architecture = readFileSync("docs/architecture/price-intelligence-v1.md", "utf8");
+  assert.match(architecture, /price_quality_benchmark_daily/);
+  assert.match(architecture, /D-30[\s\S]*D-1/);
+  assert.match(architecture, /ai_price_candidates[\s\S]*quality/i);
+  assert.match(architecture, /Visit[\s\S]*(?:never waits|不等待|不会等待)/i);
+  assert.match(architecture, /price_snapshots[\s\S]*(?:confirmed|已确认|事实)/i);
+});
