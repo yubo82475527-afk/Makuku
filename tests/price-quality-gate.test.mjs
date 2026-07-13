@@ -9,6 +9,11 @@ const migration = existsSync(migrationPath) ? readFileSync(migrationPath, "utf8"
 const types = readFileSync("src/lib/types.ts", "utf8");
 const benchmarkServicePath = "src/lib/price-quality-benchmarks.ts";
 const benchmarkService = existsSync(benchmarkServicePath) ? readFileSync(benchmarkServicePath, "utf8") : "";
+const jobsPath = "src/lib/price-quality-gate-jobs.ts";
+const jobs = existsSync(jobsPath) ? readFileSync(jobsPath, "utf8") : "";
+const runRoutePath = "src/app/api/internal/price-quality/run/route.ts";
+const refreshRoutePath = "src/app/api/internal/price-quality/refresh-benchmarks/route.ts";
+const vercelConfig = readFileSync("vercel.json", "utf8");
 
 function loadQualityEvaluator() {
   const path = "src/lib/price-quality-gate.ts";
@@ -206,4 +211,32 @@ test("quality work uses fenced claim and finalize RPCs", () => {
   assert.match(migration, /quality_gate_status = 'PROCESSING'/i);
   assert.match(migration, /grant execute on function public\.claim_ai_price_candidates_for_quality_gate/i);
   assert.match(migration, /grant execute on function public\.finalize_ai_price_candidate_quality_gate/i);
+});
+
+test("price quality runs in a bounded asynchronous worker", () => {
+  assert.equal(existsSync(jobsPath), true);
+  assert.match(jobs, /claim_ai_price_candidates_for_quality_gate/);
+  assert.match(jobs, /evaluatePriceQualityGate/);
+  assert.match(jobs, /finalize_ai_price_candidate_quality_gate/);
+  assert.match(jobs, /PRICE_QUALITY_GATE_BATCH_SIZE\s*=\s*50/);
+  assert.match(jobs, /maxBatches/);
+  assert.equal(existsSync(runRoutePath), true);
+  assert.equal(existsSync(refreshRoutePath), true);
+});
+
+test("price quality internal routes require cron secret or admin", () => {
+  const runRoute = existsSync(runRoutePath) ? readFileSync(runRoutePath, "utf8") : "";
+  const refreshRoute = existsSync(refreshRoutePath) ? readFileSync(refreshRoutePath, "utf8") : "";
+  for (const source of [runRoute, refreshRoute]) {
+    assert.match(source, /CRON_SECRET/);
+    assert.match(source, /requireAdminSession/);
+    assert.match(source, /Authorization|authorization/);
+  }
+});
+
+test("cron refreshes T+1 daily and repairs candidate work every minute", () => {
+  assert.match(vercelConfig, /\/api\/internal\/price-quality\/refresh-benchmarks/);
+  assert.match(vercelConfig, /"30 17 \* \* \*"/);
+  assert.match(vercelConfig, /\/api\/internal\/price-quality\/run/);
+  assert.match(vercelConfig, /"\* \* \* \* \*"/);
 });
