@@ -39,18 +39,6 @@ begin
   then
     raise exception 'Candidate inputs changed; reload before reviewing.';
   end if;
-  if p_review_method = 'manual'
-    and not (
-      v_candidate.quality_gate_status in ('REVIEW_REQUIRED', 'INSUFFICIENT_BENCHMARK')
-      or (
-        v_candidate.quality_gate_status = 'FAILED'
-        and v_candidate.quality_gate_attempt_count >= 3
-      )
-    )
-  then
-    raise exception 'Candidate is not ready for operator review.';
-  end if;
-
   update public.ai_price_candidates candidate
   set
     status = 'rejected',

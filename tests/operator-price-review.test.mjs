@@ -12,6 +12,8 @@ const appShell = read("src/components/app-shell.tsx");
 const workbench = read("src/components/operator-price-review-workbench.tsx");
 const drawer = read("src/components/operator-price-review-drawer.tsx");
 const reviewService = read("src/lib/ai-price-review.ts");
+const legacyCandidateRoute = read("src/app/api/ai-price-candidates/[id]/route.ts");
+const h5CandidateRoute = read("src/app/api/store-visit/price-candidates/[id]/route.ts");
 const migration = read("supabase/migrations/202607130002_operator_price_review_phase2.sql");
 
 test("operator queue includes only terminal human-review candidates", () => {
@@ -49,6 +51,12 @@ test("operator detail loads only the exact candidate source image", () => {
   assert.match(drawer, /原始证据不可用|Source evidence unavailable/);
 });
 
+test("a missing source image id never falls back to another path and signing failure is unavailable", () => {
+  assert.match(domain, /filter\(\(candidate\) => !candidate\.source_image_id\)/);
+  assert.match(domain, /if \(candidate\.source_image_id\) \{[\s\S]*return byId\?\.visit_id === candidate\.visit_id \? byId : null;[\s\S]*\}/);
+  assert.match(domain, /source_image_available: Boolean\(sourceImageUrl\)/);
+});
+
 test("manual review mutations are token fenced and atomic", () => {
   assert.match(migration, /p_review_token text/i);
   assert.match(migration, /for update of candidate/i);
@@ -77,6 +85,12 @@ test("manual SKU correction validates one legal product owner", () => {
 test("rejection is protected by the same review token", () => {
   assert.match(migration, /reject_ai_price_candidate_with_quality_gate\([\s\S]*p_review_token text/i);
   assert.match(migration, /approval_input_fingerprint is distinct from p_review_token/i);
+});
+
+test("legacy and H5 manual review callers carry the candidate fingerprint", () => {
+  assert.match(legacyCandidateRoute, /reviewToken:\s*cleanOptionalText\(body\.review_token\)/);
+  assert.match(h5CandidateRoute, /reviewToken:\s*candidateRow\.approval_input_fingerprint/);
+  assert.match(h5CandidateRoute, /reviewToken:\s*sourceCandidate\.approval_input_fingerprint/);
 });
 
 test("operator APIs require admin auth and return minimal review actions", () => {

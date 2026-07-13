@@ -133,7 +133,7 @@ export async function approveAiPriceCandidate({
   }
 
   if (finalMatchType === "material_master") {
-    await ensureSkuMasterFromMaterial(supabase, finalMatchId);
+    // The approval RPC validates/materializes the SKU bridge in the same transaction as the snapshot.
   } else if (finalMatchType === "competitor_product") {
     await loadCompetitorProductById(supabase, finalMatchId);
   } else {

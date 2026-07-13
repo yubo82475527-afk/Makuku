@@ -266,6 +266,7 @@ export async function getOperatorPriceReviewDetail(id: string, locale = "zh"): P
   return {
     data: {
       ...listItem,
+      source_image_available: Boolean(sourceImageUrl),
       source_image_id: sourceImage?.id ?? candidate.source_image_id ?? null,
       source_image_url: sourceImageUrl,
       evidence_product_text: [candidate.raw_brand, candidate.raw_product].filter(Boolean).join(" ").trim() || candidate.raw_product,
@@ -294,11 +295,12 @@ async function toListItem(
 ): Promise<OperatorPriceReviewListItem> {
   const sourceImage = findSourceImage(candidate, imageMap);
   const thumbnailPath = sourceImage?.thumbnail_path ?? sourceImage?.image_path ?? null;
+  const sourceImageUrl = thumbnailPath ? await signImage(supabase, thumbnailPath) : null;
   return {
     id: candidate.id,
     state,
-    source_thumbnail_url: thumbnailPath ? await signImage(supabase, thumbnailPath) : null,
-    source_image_available: Boolean(sourceImage),
+    source_thumbnail_url: sourceImageUrl,
+    source_image_available: Boolean(sourceImageUrl),
     product_name: [candidate.raw_brand, candidate.raw_product].filter(Boolean).join(" ").trim() || candidate.raw_product || "-",
     sku_label: candidate.matched_sku_label ?? candidate.matched_label ?? null,
     ai_package_price: positiveNumber(candidate.ai_package_price_idr ?? candidate.ai_net_price_idr ?? candidate.parsed_price_idr),
@@ -342,7 +344,7 @@ async function loadSourceImageMap(supabase: SupabaseServiceClient, candidates: R
   }
 
   const fallbackPaths = Array.from(new Set(candidates
-    .filter((candidate) => !candidate.source_image_id || !imageMap.has(candidate.source_image_id))
+    .filter((candidate) => !candidate.source_image_id)
     .map((candidate) => candidate.source_image_path)
     .filter(Boolean))) as string[];
   if (fallbackPaths.length > 0) {
@@ -364,7 +366,7 @@ function addActiveSourceImage(imageMap: Map<string, SourceImageRow>, image: Sour
 function findSourceImage(candidate: ReviewCandidateRow, imageMap: Map<string, SourceImageRow>) {
   if (candidate.source_image_id) {
     const byId = imageMap.get(candidate.source_image_id);
-    if (byId?.visit_id === candidate.visit_id) return byId;
+    return byId?.visit_id === candidate.visit_id ? byId : null;
   }
   if (candidate.visit_id && candidate.source_image_path) {
     return imageMap.get(`${candidate.visit_id}|${candidate.source_image_path}`) ?? null;

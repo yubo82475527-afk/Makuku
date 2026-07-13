@@ -178,6 +178,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
         reviewer: auth.session.id,
         reviewMethod: "manual",
         promoType: candidateRow.promo_type,
+        reviewToken: candidateRow.approval_input_fingerprint,
       });
       return Response.json(result);
     }
@@ -189,6 +190,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
         reason: "H5 deleted this SKU row.",
         reviewer: auth.session.id,
         reviewMethod: "manual",
+        reviewToken: sourceCandidate.approval_input_fingerprint,
       });
       const deletedAt = new Date().toISOString();
       const { data: candidate, error } = await supabase

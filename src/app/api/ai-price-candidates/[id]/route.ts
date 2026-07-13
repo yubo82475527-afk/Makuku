@@ -153,6 +153,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
         promoType: cleanOptionalText(body.promo_type),
         reviewer,
         reviewMethod: "manual",
+        reviewToken: cleanOptionalText(body.review_token),
       });
       revalidateReviewPaths();
       return Response.json(result);
@@ -165,6 +166,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
         reason: String(body.reason ?? "Rejected by reviewer"),
         reviewer,
         reviewMethod: "manual",
+        reviewToken: cleanOptionalText(body.review_token),
       });
       revalidateReviewPaths();
       return Response.json({ candidate });
