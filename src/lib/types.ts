@@ -813,6 +813,22 @@ export type OfflineStoreVisit = {
 export type AiPriceCandidateStatus = "pending" | "approved" | "rejected";
 export type AiPriceCandidateMatchType = "material_master" | "competitor_product" | "unmatched";
 export type AiPriceCandidateReviewMethod = "auto_rule" | "manual" | "bulk_manual";
+export type AiPriceQualityGateStatus =
+  | "PENDING"
+  | "PROCESSING"
+  | "PASSED"
+  | "REVIEW_REQUIRED"
+  | "INSUFFICIENT_BENCHMARK"
+  | "FAILED"
+  | "NOT_REQUIRED";
+export type PriceQualityReasonCode =
+  | "EVIDENCE_REVIEW_REQUIRED"
+  | "SKU_MATCH_UNCERTAIN"
+  | "INSUFFICIENT_BENCHMARK"
+  | "PRICE_DEVIATION_HIGH"
+  | "PRICE_DEVIATION_CRITICAL"
+  | "AMOUNT_SCALE_SUSPECTED"
+  | "PROMOTION_EVIDENCE";
 
 export type AiPriceCandidate = {
   id: string;
@@ -851,6 +867,20 @@ export type AiPriceCandidate = {
   price_evidence_detail?: Record<string, unknown> | null;
   conflicts?: { type?: string; message: string }[];
   review_decision?: PriceReviewDecision;
+  evidence_review_decision?: PriceReviewDecision | null;
+  quality_gate_status?: AiPriceQualityGateStatus;
+  quality_gate_reason_codes?: PriceQualityReasonCode[];
+  quality_gate_version?: string | null;
+  benchmark_date?: string | null;
+  benchmark_price_per_piece?: number | null;
+  benchmark_deviation_pct?: number | null;
+  benchmark_sample_count?: number | null;
+  benchmark_store_count?: number | null;
+  quality_gate_evaluated_at?: string | null;
+  quality_gate_error?: string | null;
+  quality_gate_attempt_count?: number;
+  quality_gate_worker_id?: string | null;
+  quality_gate_claimed_at?: string | null;
   ai_matched_entity_type?: AiPriceCandidateMatchType | null;
   ai_matched_entity_id?: string | null;
   ai_matched_label?: string | null;
@@ -873,6 +903,22 @@ export type AiPriceCandidate = {
   h5_lifecycle_status?: "deleted" | "replaced" | "reanalyzed" | null;
   h5_lifecycle_at?: string | null;
   offline_store_visits?: Pick<OfflineStoreVisit, "id" | "visit_code" | "store_name" | "city" | "province" | "city_name" | "district" | "channel_type" | "visit_date" | "created_at" | "uploader_name"> | null;
+};
+
+export type PriceQualityBenchmarkDaily = {
+  id: string;
+  benchmark_date: string;
+  matched_entity_type: Exclude<AiPriceCandidateMatchType, "unmatched">;
+  matched_entity_id: string;
+  channel: PriceSnapshot["channel"];
+  window_start_date: string;
+  window_end_date: string;
+  median_price_per_piece: number;
+  sample_count: number;
+  store_count: number;
+  benchmark_status: "READY" | "INSUFFICIENT";
+  calculation_version: string;
+  generated_at: string;
 };
 
 export type AiPriceReviewRule = {
