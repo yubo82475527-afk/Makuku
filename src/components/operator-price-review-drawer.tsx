@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { formatIdr } from "@/lib/format";
-import type { AiPriceCandidateMatchType, OperatorPriceReviewDetail } from "@/lib/types";
+import type { AiPriceCandidateMatchType, OperatorPriceReviewDetail, OperatorPriceReviewReasonGroup } from "@/lib/types";
 
 type MatchOption = {
   type: Exclude<AiPriceCandidateMatchType, "unmatched">;
@@ -74,8 +74,15 @@ export function OperatorPriceReviewDrawer({
     if (!Number.isFinite(price) || price <= 0 || !Number.isInteger(pieces) || pieces <= 0) return null;
     return Math.round(price / pieces * 100) / 100;
   }, [packagePrice, pieceCount]);
-  const requiresMatchSelection = Boolean(detail?.requires_product_correction);
-  const finalMatchValid = requiresMatchSelection ? Boolean(selectedMatch) : Boolean(detail?.current_match_id && detail.current_match_type !== "unmatched");
+  const currentMatch: MatchOption | null = detail?.current_match_id && detail.current_match_type !== "unmatched"
+    ? {
+      type: detail.current_match_type,
+      id: detail.current_match_id,
+      label: detail.current_match_label ?? "",
+    }
+    : null;
+  const finalMatch = selectedMatch ?? currentMatch;
+  const finalMatchValid = Boolean(finalMatch);
 
   async function openMatchEditor() {
     setMatchEditorOpen(true);
@@ -121,11 +128,6 @@ export function OperatorPriceReviewDrawer({
 
     setSubmitting(true);
     setError(null);
-    const match = selectedMatch ?? (detail.current_match_id && detail.current_match_type !== "unmatched" ? {
-      type: detail.current_match_type,
-      id: detail.current_match_id,
-      label: detail.current_match_label ?? "",
-    } : null);
     try {
       const response = await fetch(`/api/operator-price-reviews/${candidateId}`, {
         method: "PATCH",
@@ -136,9 +138,9 @@ export function OperatorPriceReviewDrawer({
           review_token: detail.review_token,
           package_price: action === "correct" ? Number(packagePrice) : undefined,
           piece_count: action === "correct" ? Number(pieceCount) : undefined,
-          matched_entity_type: match?.type,
-          matched_entity_id: match?.id,
-          matched_label: match?.label,
+          matched_entity_type: finalMatch?.type,
+          matched_entity_id: finalMatch?.id,
+          matched_label: finalMatch?.label,
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -171,7 +173,7 @@ export function OperatorPriceReviewDrawer({
           {!loading && !detail ? <div className="rounded-md bg-rose-50 p-3 text-sm text-rose-700">{error ?? (isZh ? "审核详情不可用" : "Review details unavailable")}</div> : null}
           {detail ? (
             <>
-              <p className="rounded-lg bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">{detail.operator_reason}</p>
+              <ReasonGroups groups={detail.operator_reason_groups} fallback={detail.operator_reason} />
 
               <section>
                 {detail.source_image_url ? (
@@ -200,8 +202,9 @@ export function OperatorPriceReviewDrawer({
                 <section className="rounded-lg border border-amber-200 bg-amber-50/50 p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <h3 className="text-sm font-semibold text-slate-950">{isZh ? "商品需要确认" : "Product needs confirmation"}</h3>
-                      <p className="mt-1 text-xs text-slate-500">{isZh ? "确认后才能通过这条价格" : "Confirm the product before approving the price"}</p>
+                      <h3 className="text-sm font-semibold text-slate-950">{isZh ? "AI 建议商品" : "AI suggested product"}</h3>
+                      <p className="mt-1 text-xs text-slate-600">{currentMatch?.label || (isZh ? "系统未能给出商品建议，请选择正确商品。" : "No product was suggested. Select the correct product.")}</p>
+                      <p className="mt-1 text-xs text-slate-500">{isZh ? "确认商品与价格正确，即会按此商品生成价格记录。" : "Confirming accepts this product and price together."}</p>
                     </div>
                     {!matchEditorOpen ? <button type="button" onClick={openMatchEditor} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700">{isZh ? "修正商品" : "Correct product"}</button> : null}
                   </div>
@@ -233,7 +236,7 @@ export function OperatorPriceReviewDrawer({
 
                   {error ? <div className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
                   <div className="grid gap-2 sm:grid-cols-3">
-                    <button type="button" disabled={submitting || !finalMatchValid} onClick={() => submit("confirm")} className="inline-flex h-10 items-center justify-center rounded-md bg-emerald-600 px-3 text-sm font-medium text-white disabled:opacity-40">{isZh ? "确认价格正确" : "Confirm price"}</button>
+                    <button type="button" disabled={submitting || !finalMatchValid} onClick={() => submit("confirm")} className="inline-flex h-10 items-center justify-center rounded-md bg-emerald-600 px-3 text-sm font-medium text-white disabled:opacity-40">{detail.requires_product_correction ? (isZh ? "确认商品与价格正确" : "Confirm product and price") : (isZh ? "确认价格正确" : "Confirm price")}</button>
                     {mode === "correct" ? (
                       <button type="button" disabled={submitting || !finalMatchValid || previewPricePerPiece === null} onClick={() => submit("correct")} className="inline-flex h-10 items-center justify-center rounded-md bg-slate-900 px-3 text-sm font-medium text-white disabled:opacity-40">{isZh ? "提交修正并通过" : "Submit correction"}</button>
                     ) : (
@@ -254,5 +257,23 @@ export function OperatorPriceReviewDrawer({
         </div>
       </aside>
     </div>
+  );
+}
+
+function ReasonGroups({ groups, fallback }: { groups: OperatorPriceReviewReasonGroup[]; fallback: string }) {
+  if (groups.length === 0) {
+    return <p className="rounded-lg bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">{fallback}</p>;
+  }
+  return (
+    <section className="space-y-3">
+      {groups.map((group) => (
+        <div key={group.kind} className={`rounded-lg px-4 py-3 ${group.kind === "PRICE" ? "bg-rose-50 text-rose-950" : "bg-amber-50 text-amber-900"}`}>
+          <h3 className="text-sm font-semibold">{group.title}</h3>
+          <div className="mt-1.5 space-y-1 text-sm leading-6">
+            {group.messages.map((message) => <p key={message}>{message}</p>)}
+          </div>
+        </div>
+      ))}
+    </section>
   );
 }

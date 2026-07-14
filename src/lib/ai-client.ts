@@ -168,20 +168,28 @@ function withFailureMetadata(error: unknown, metadata: Partial<ExecuteAttemptFai
   return extended;
 }
 
-function resolveAiRoute(model: string, baseUrl: string): AiRouteResolved {
+function parseAiApiFamily(value: string | undefined): AiApiFamily | null {
+  return value === "chat_completions" || value === "responses" ? value : null;
+}
+
+export function resolveAiRoute(
+  model: string,
+  baseUrl: string,
+  apiFamilyOverride: AiApiFamily | null = null,
+): AiRouteResolved {
   const matched = aiRouteDefinitions.find((route) => route.model === model);
-  if (!matched) {
-    return {
+  const defaultRoute = matched ?? {
       model,
       apiFamily: "chat_completions",
       supportsJsonMode: true,
       fallbackModel: "gpt-4o",
-      resolvedBaseUrl: baseUrl,
-    };
-  }
+    } satisfies AiRouteDefinition;
+  const apiFamily = apiFamilyOverride ?? defaultRoute.apiFamily;
   return {
-    ...matched,
-    resolvedBaseUrl: trimTrailingSlash(matched.baseUrlOverride || baseUrl),
+    ...defaultRoute,
+    apiFamily,
+    supportsJsonMode: apiFamily === "chat_completions",
+    resolvedBaseUrl: trimTrailingSlash(defaultRoute.baseUrlOverride || baseUrl),
   };
 }
 
@@ -290,10 +298,12 @@ export function getAiConfig() {
   const baseUrl = trimTrailingSlash(process.env.AI_BASE_URL || "https://api.openai.com/v1");
   const model = process.env.AI_MODEL || "gpt-4o";
   const maxTokens = Number(process.env.AI_MAX_TOKENS ?? "");
+  const apiFamily = parseAiApiFamily(process.env.AI_API_FAMILY);
   return {
     apiKey,
     baseUrl,
     model,
+    apiFamily,
     maxTokens: Number.isFinite(maxTokens) && maxTokens > 0 ? Math.floor(maxTokens) : undefined,
   };
 }
@@ -518,7 +528,7 @@ export async function createJsonChatCompletion(input: {
     };
   }
 
-  const primaryRoute = resolveAiRoute(requestedModel, config.baseUrl);
+  const primaryRoute = resolveAiRoute(requestedModel, config.baseUrl, config.apiFamily);
   let execution: ExecuteAttemptSuccess;
   try {
     execution = await executeRoute(primaryRoute);

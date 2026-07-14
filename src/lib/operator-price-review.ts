@@ -1,5 +1,7 @@
 import "server-only";
 
+import type { OperatorPriceReviewReasonFilter } from "@/lib/operator-price-review-reasons";
+import { buildOperatorPriceReviewReasonGroups } from "@/lib/operator-price-review-reason-groups";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
 import type {
   AiPriceCandidate,
@@ -34,6 +36,7 @@ export type OperatorPriceReviewFilters = {
   dateFrom?: string;
   dateTo?: string;
   visitCode?: string;
+  reason?: OperatorPriceReviewReasonFilter;
   page?: number;
   perPage?: number;
   locale?: string;
@@ -71,6 +74,7 @@ const CANDIDATE_SELECT = [
   "ai_promo_type",
   "candidate_type",
   "price_evidence_status",
+  "price_evidence_reason_code",
   "conflicts",
   "warnings",
   "quality_gate_status",
@@ -130,12 +134,37 @@ export function buildOperatorReason(candidate: AiPriceCandidate, locale = "zh") 
   const hasMathConflict = (candidate.conflicts ?? []).some((conflict) =>
     String(conflict.type ?? conflict.message).toUpperCase().includes("PACKAGE_PIECE"),
   );
+  const hasCurrentEvidence = Boolean(candidate.price_evidence_reason_code)
+    || Boolean(candidate.price_evidence_status);
 
   if (primaryReason === "SKU_MATCH_UNCERTAIN" || candidate.matched_entity_type === "unmatched" || !candidate.matched_entity_id) {
     return isZh ? "AI 无法确认这个价格属于哪款商品。" : "AI could not confirm which product this price belongs to.";
   }
+  if (candidate.price_evidence_reason_code === "PRODUCT_PRICE_BINDING_UNCLEAR") {
+    return isZh ? "商品与价格的对应关系不明确，需要人工确认。" : "The product-to-price binding is unclear and needs confirmation.";
+  }
+  if (candidate.price_evidence_reason_code === "PRICE_TAG_UNCLEAR") {
+    return isZh ? "价格牌或金额不清晰，需要人工确认。" : "The price label or amount is unclear and needs confirmation.";
+  }
+  if (candidate.price_evidence_reason_code === "PIECE_COUNT_UNCLEAR") {
+    return isZh ? "图片中的包装片数不清晰，无法确认单片价。" : "The package piece count is unclear, so the per-piece price cannot be confirmed.";
+  }
+  if (candidate.price_evidence_reason_code === "PRICE_MATH_CONFLICT") {
+    return isZh ? "图片中的包装价、片数和单片价无法相互验证。" : "The package price, piece count, and per-piece price do not reconcile.";
+  }
+  if (candidate.price_evidence_reason_code === "PRICE_DERIVED") {
+    return isZh ? "单片价由包装价和片数换算，需要确认包装价和片数。" : "The per-piece price was derived from the package price and piece count, which need confirmation.";
+  }
+  if (candidate.price_evidence_reason_code === "LEGACY_EVIDENCE_UNAVAILABLE") {
+    return isZh ? "历史记录缺少原始识别依据，无法自动判断。" : "The historical record lacks the original recognition evidence for an automatic decision.";
+  }
   if (primaryReason === "EVIDENCE_REVIEW_REQUIRED" || candidate.price_evidence_status === "LOW_CONFIDENCE" || candidate.price_evidence_status === "REVIEW_REQUIRED") {
-    return isZh ? "价格牌不清晰或商品与价格的对应关系不明确，需要人工确认。" : "The price label or its product binding is unclear and needs confirmation.";
+    if (!hasCurrentEvidence) {
+      return isZh ? "历史记录缺少原始识别依据，无法自动判断。" : "The historical record lacks the original recognition evidence for an automatic decision.";
+    }
+    return isZh
+      ? "本次识别已有图片依据，但商品、价格或包装信息仍存在不确定之处，需要人工确认。"
+      : "Current recognition evidence exists, but the product, price, or package facts still need confirmation.";
   }
   if (hasMathConflict || candidate.price_evidence_status === "CONFLICT") {
     return isZh ? "图片中的包装价格和包装片数无法换算出当前单片价。" : "The package price and piece count do not reconcile with the current per-piece price.";
@@ -209,8 +238,7 @@ export async function getOperatorPriceReviewsPage(filters: OperatorPriceReviewFi
     .from("ai_price_candidates")
     .select(`${CANDIDATE_SELECT},${visitSelect}`, { count: "exact" })
     .eq("candidate_type", "SKU")
-    .is("h5_lifecycle_status", null)
-    .range(from, from + perPage - 1);
+    .is("h5_lifecycle_status", null);
 
   if (state === "pending") {
     query = query
@@ -226,6 +254,52 @@ export async function getOperatorPriceReviewsPage(filters: OperatorPriceReviewFi
   if (filters.dateFrom) query = query.gte("offline_store_visits.visit_date", filters.dateFrom);
   if (filters.dateTo) query = query.lte("offline_store_visits.visit_date", filters.dateTo);
   if (filters.visitCode) query = query.ilike("offline_store_visits.visit_code", `%${escapeIlike(filters.visitCode)}%`);
+
+  switch (filters.reason) {
+    case "PRICE_DEVIATION_HIGH":
+    case "PRICE_DEVIATION_CRITICAL":
+    case "AMOUNT_SCALE_SUSPECTED":
+    case "PROMOTION_EVIDENCE":
+      query = query.filter("quality_gate_reason_codes", "cs", JSON.stringify([filters.reason]));
+      break;
+    case "PRICE_TAG_UNCLEAR":
+    case "PRODUCT_PRICE_BINDING_UNCLEAR":
+    case "PIECE_COUNT_UNCLEAR":
+    case "PRICE_DERIVED":
+    case "LEGACY_EVIDENCE_UNAVAILABLE":
+      query = query.eq("price_evidence_reason_code", filters.reason);
+      break;
+    case "PRICE_MATH_CONFLICT":
+      query = query.or("price_evidence_reason_code.eq.PRICE_MATH_CONFLICT,price_evidence_status.eq.CONFLICT");
+      break;
+    case "SKU_MATCH_UNCERTAIN":
+      query = query.or(`quality_gate_reason_codes.cs.${JSON.stringify(["SKU_MATCH_UNCERTAIN"])},matched_entity_type.eq.unmatched,matched_entity_id.is.null`);
+      break;
+    case "OTHER_EVIDENCE_REVIEW_REQUIRED":
+      query = query
+        .is("price_evidence_reason_code", null)
+        .or(`quality_gate_reason_codes.cs.${JSON.stringify(["EVIDENCE_REVIEW_REQUIRED"])},price_evidence_status.in.(LOW_CONFIDENCE,REVIEW_REQUIRED)`);
+      break;
+    case "INSUFFICIENT_BENCHMARK":
+      query = query.or(`quality_gate_reason_codes.cs.${JSON.stringify(["INSUFFICIENT_BENCHMARK"])},quality_gate_status.eq.INSUFFICIENT_BENCHMARK`);
+      break;
+    case "QUALITY_CHECK_FAILED":
+      query = query
+        .eq("quality_gate_status", "FAILED")
+        .gte("quality_gate_attempt_count", MAX_QUALITY_GATE_ATTEMPTS);
+      break;
+    case "OTHER_REVIEW_REQUIRED":
+      query = query
+        .filter("quality_gate_reason_codes", "eq", JSON.stringify([]))
+        .is("price_evidence_reason_code", null)
+        .not("matched_entity_type", "eq", "unmatched")
+        .not("matched_entity_id", "is", null)
+        .or("price_evidence_status.is.null,price_evidence_status.in.(CLEAR,DERIVED)")
+        .not("quality_gate_status", "eq", "FAILED");
+      break;
+  }
+
+  query = query.range(from, from + perPage - 1);
 
   const { data, error, count } = await query;
   if (error) return { data: [], total: 0, page, perPage, error: error.message, isDemo: false };
@@ -304,6 +378,7 @@ async function toListItem(
   const sourceImage = findSourceImage(candidate, imageMap);
   const thumbnailPath = sourceImage?.thumbnail_path ?? sourceImage?.image_path ?? null;
   const sourceImageUrl = thumbnailPath ? await signImage(supabase, thumbnailPath) : null;
+  const operatorReasonGroups = buildOperatorPriceReviewReasonGroups(candidate, locale);
   return {
     id: candidate.id,
     state,
@@ -315,7 +390,8 @@ async function toListItem(
     ai_piece_count: positiveInteger(candidate.ai_piece_count ?? candidate.piece_count),
     ai_price_per_piece: positiveNumber(candidate.ai_price_per_piece)
       ?? derivedPerPiece(candidate.ai_package_price_idr ?? candidate.parsed_price_idr, candidate.ai_piece_count ?? candidate.piece_count),
-    operator_reason: buildOperatorReason(candidate, locale),
+    operator_reason: operatorReasonGroups.flatMap((group) => group.messages).join(" "),
+    operator_reason_groups: operatorReasonGroups,
     requires_product_correction: requiresProductCorrection(candidate),
     processed_decision: state === "processed" ? deriveProcessedDecision(candidate) : null,
     processed_at: state === "processed" ? candidate.reviewed_at : null,

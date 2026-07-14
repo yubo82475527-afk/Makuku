@@ -5,6 +5,8 @@ import { createSupabaseServiceClient } from "@/lib/supabase";
 import type {
   AiPriceCandidateMatchType,
   AiPriceQualityGateStatus,
+  BenchmarkAssessment,
+  BenchmarkAssessmentReason,
   PriceQualityReasonCode,
   PriceReviewDecision,
 } from "@/lib/types";
@@ -25,6 +27,11 @@ type ClaimedQualityCandidate = {
   evidence_review_decision: PriceReviewDecision | null;
   matched_entity_type: AiPriceCandidateMatchType;
   matched_entity_id: string | null;
+  match_score: number | string | null;
+  has_warnings: boolean;
+  has_conflicts: boolean;
+  has_source_image: boolean;
+  has_valid_package_facts: boolean;
   promo_type: string | null;
   benchmark_date: string | null;
   median_price_per_piece: number | string | null;
@@ -54,6 +61,8 @@ async function finalizeCandidate(input: {
   benchmarkDeviationPct: number | null;
   benchmarkSampleCount: number | null;
   benchmarkStoreCount: number | null;
+  benchmarkAssessment: BenchmarkAssessment;
+  benchmarkAssessmentReason: BenchmarkAssessmentReason | null;
   error: string | null;
 }): Promise<FinalizeResult> {
   const { data, error } = await input.supabase.rpc("finalize_ai_price_candidate_quality_gate", {
@@ -68,6 +77,8 @@ async function finalizeCandidate(input: {
     p_benchmark_deviation_pct: input.benchmarkDeviationPct,
     p_benchmark_sample_count: input.benchmarkSampleCount,
     p_benchmark_store_count: input.benchmarkStoreCount,
+    p_benchmark_assessment: input.benchmarkAssessment,
+    p_benchmark_assessment_reason: input.benchmarkAssessmentReason,
     p_error: input.error,
   });
   if (error) throw new Error(error.message);
@@ -90,6 +101,7 @@ export async function runPriceQualityGate(input: {
     passed: 0,
     review_required: 0,
     insufficient: 0,
+    building_passed: 0,
     failed: 0,
     already_finalized: 0,
     ownership_lost: 0,
@@ -117,6 +129,11 @@ export async function runPriceQualityGate(input: {
           evidenceReviewDecision: row.evidence_review_decision,
           matchedEntityType: row.matched_entity_type,
           matchedEntityId: row.matched_entity_id,
+          matchScore: nullableNumber(row.match_score),
+          hasWarnings: row.has_warnings,
+          hasConflicts: row.has_conflicts,
+          hasSourceImage: row.has_source_image,
+          hasValidPackageFacts: row.has_valid_package_facts,
           promoType: row.promo_type,
           benchmark: row.benchmark_date && benchmarkPrice !== null
             ? {
@@ -141,13 +158,17 @@ export async function runPriceQualityGate(input: {
           benchmarkDeviationPct: result.benchmarkDeviationPct,
           benchmarkSampleCount: result.benchmarkSampleCount,
           benchmarkStoreCount: result.benchmarkStoreCount,
+          benchmarkAssessment: result.benchmarkAssessment,
+          benchmarkAssessmentReason: result.benchmarkAssessmentReason,
           error: null,
         });
 
         if (finalizeResult === "ALREADY_FINALIZED") counters.already_finalized += 1;
         else if (finalizeResult === "OWNERSHIP_LOST") counters.ownership_lost += 1;
-        else if (result.status === "PASSED") counters.passed += 1;
-        else if (result.status === "INSUFFICIENT_BENCHMARK") counters.insufficient += 1;
+        else if (result.status === "PASSED") {
+          counters.passed += 1;
+          if (result.benchmarkAssessment === "BUILDING") counters.building_passed += 1;
+        }
         else counters.review_required += 1;
       } catch (caught) {
         const message = (caught instanceof Error ? caught.message : String(caught)).slice(0, 1000);
@@ -165,6 +186,8 @@ export async function runPriceQualityGate(input: {
             benchmarkDeviationPct: null,
             benchmarkSampleCount: nullableNumber(row.benchmark_sample_count),
             benchmarkStoreCount: nullableNumber(row.benchmark_store_count),
+            benchmarkAssessment: "NOT_EVALUATED",
+            benchmarkAssessmentReason: null,
             error: message,
           });
           if (finalizeResult === "ALREADY_FINALIZED") counters.already_finalized += 1;

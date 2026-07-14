@@ -1,8 +1,14 @@
 import { OperatorPriceReviewWorkbench } from "@/components/operator-price-review-workbench";
 import { PageShellState } from "@/components/page-shell-state";
-import { Button, Card, DataNotice } from "@/components/ui";
+import { QueryForm, QuerySubmitButton } from "@/components/query-form";
+import { Card, DataNotice } from "@/components/ui";
 import { getPageI18n } from "@/lib/i18n/server";
 import { getOperatorPriceReviewsPage } from "@/lib/operator-price-review";
+import {
+  normalizeOperatorPriceReviewReason,
+  OPERATOR_PRICE_REVIEW_REASON_FILTERS,
+  type OperatorPriceReviewReasonFilter,
+} from "@/lib/operator-price-review-reasons";
 import type { OperatorPriceReviewState } from "@/lib/types";
 
 export default async function OfflinePriceCandidatesPage({
@@ -22,6 +28,7 @@ export default async function OfflinePriceCandidatesPage({
   const dateFrom = getFilter("date_from");
   const dateTo = getFilter("date_to");
   const visitCode = getFilter("visit_code").trim();
+  const reason = normalizeOperatorPriceReviewReason(getFilter("reason"));
   const state: OperatorPriceReviewState = getFilter("state") === "processed" ? "processed" : "pending";
   const pageParam = Number.parseInt(getFilter("page") || "1", 10);
   const perPageParam = Number.parseInt(getFilter("per_page") || "25", 10);
@@ -33,6 +40,7 @@ export default async function OfflinePriceCandidatesPage({
     dateFrom: dateFrom || undefined,
     dateTo: dateTo || undefined,
     visitCode: visitCode || undefined,
+    reason: reason,
     page,
     perPage,
     locale,
@@ -51,13 +59,17 @@ export default async function OfflinePriceCandidatesPage({
       <DataNotice error={reviews.error} dict={dict} />
 
       <Card className="mb-4">
-        <form className="grid gap-3 md:grid-cols-[minmax(280px,1fr)_minmax(220px,280px)_minmax(120px,180px)]">
+        <QueryForm className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(280px,1fr)_minmax(220px,280px)_minmax(240px,320px)_minmax(120px,180px)]">
           <input type="hidden" name="state" value={state} />
           <input type="hidden" name="per_page" value={perPage} />
           <DateRangeFilter locale={locale} dateFrom={dateFrom} dateTo={dateTo} />
           <BatchCodeFilter locale={locale} visitCode={visitCode} />
-          <Button type="submit">{dict.common.filter}</Button>
-        </form>
+          <ReasonFilter locale={locale} reason={reason} />
+          <QuerySubmitButton
+            idleLabel={dict.common.filter}
+            pendingLabel={locale === "zh" ? "筛选中..." : "Filtering..."}
+          />
+        </QueryForm>
       </Card>
 
       <Card>
@@ -72,10 +84,27 @@ export default async function OfflinePriceCandidatesPage({
             date_from: dateFrom || undefined,
             date_to: dateTo || undefined,
             visit_code: visitCode || undefined,
+            reason,
           }}
         />
       </Card>
     </>
+  );
+}
+
+function ReasonFilter({ locale, reason }: { locale: string; reason?: OperatorPriceReviewReasonFilter }) {
+  const isZh = locale === "zh";
+
+  return (
+    <label className="flex min-h-10 items-center rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus-within:border-slate-500 focus-within:ring-2 focus-within:ring-slate-200">
+      <span className="mr-2 shrink-0 text-xs font-medium text-slate-500">{isZh ? "异常原因" : "Reason"}</span>
+      <select name="reason" defaultValue={reason ?? ""} className="min-w-0 flex-1 bg-transparent py-2 outline-none">
+        <option value="">{isZh ? "全部原因" : "All reasons"}</option>
+        {OPERATOR_PRICE_REVIEW_REASON_FILTERS.map((option) => (
+          <option key={option.value} value={option.value}>{isZh ? option.zh : option.en}</option>
+        ))}
+      </select>
+    </label>
   );
 }
 

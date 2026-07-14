@@ -39,6 +39,9 @@ const storeVisitAiRunnerRoute = readMaybe("src/app/api/internal/store-visit-ai/r
 const storeVisitAiFinalizeMigration = readMaybe(
   "supabase/migrations/202607110001_store_visit_ai_job_atomic_finalization.sql",
 );
+const candidateSnapshotFkIndexMigration = readMaybe(
+  "supabase/migrations/202607140003_ai_price_candidate_snapshot_fk_index.sql",
+);
 const vercelConfig = readFileSync("vercel.json", "utf8");
 
 test("new H5 store visit returns to the list after uploads without waiting for AI analysis", () => {
@@ -360,6 +363,13 @@ test("store visit refresh replaces old price impact only after forced AI success
   );
 });
 
+test("store visit reanalysis can clear snapshot links without scanning every price candidate", () => {
+  assert.match(
+    candidateSnapshotFkIndexMigration,
+    /create index if not exists idx_ai_price_candidates_price_snapshot_id\s+on public\.ai_price_candidates\s*\(price_snapshot_id\)/i,
+  );
+});
+
 test("store visit Ai persists AI usage metadata into job item summaries", () => {
   assert.match(storeVisitAiDebug, /usage:\s*result\.metadata\.usage/);
   assert.match(storeVisitAiJobs, /usage_present/);
@@ -432,6 +442,21 @@ test("store visit detail only reconciles queued AI items and never steals proces
   assert.match(storeVisitAiJobs, /image\.analysis_status === "analyzed"/);
   assert.match(storeVisitDetailRoute, /reconcileActiveStoreVisitAiJob/);
   assert.doesNotMatch(storeVisitDetailRoute, /loadActiveStoreVisitAiJob/);
+});
+
+test("reanalysis jobs never reconcile from pre-existing image status", () => {
+  assert.match(
+    storeVisitAiJobs,
+    /if \(input\.job\.job_type !== "initial_analysis"\) \{\s*return \{ job: input\.job, items: input\.items \};\s*\}/,
+  );
+});
+
+test("local store visit runner triggers price quality without a cron secret", () => {
+  assert.match(storeVisitAiJobs, /import \{ triggerPriceQualityGateRunner \} from "@\/lib\/price-quality-gate-jobs"/);
+  assert.match(
+    storeVisitAiJobs,
+    /if \(!secret\) \{\s*const result = await runStoreVisitAiJob\(\{ jobId: input\.jobId \}\);\s*if \(result\.processed > 0\) \{\s*await triggerPriceQualityGateRunner\(\{ requestUrl: input\.requestUrl \}\);\s*\}/,
+  );
 });
 
 test("store visit analysis failure path also persists visit-level timing metrics", () => {

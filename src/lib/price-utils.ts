@@ -54,6 +54,43 @@ type PriceRole = "PACKAGE" | "PIECE" | "UNKNOWN";
 type PriceEvidenceSource = "LIST" | "PACKAGE" | "NET" | "VISIBLE_PIECE";
 export type PriceEvidenceStatus = "CLEAR" | "LOW_CONFIDENCE" | "DERIVED" | "CONFLICT" | "REVIEW_REQUIRED";
 export type PriceReviewDecision = "AUTO_APPROVE" | "NEED_REVIEW";
+export type PriceEvidenceReasonCode =
+  | "PRODUCT_PRICE_BINDING_UNCLEAR"
+  | "PRICE_TAG_UNCLEAR"
+  | "PIECE_COUNT_UNCLEAR"
+  | "PRICE_MATH_CONFLICT"
+  | "PRICE_DERIVED"
+  | "LEGACY_EVIDENCE_UNAVAILABLE";
+
+function detailNumber(detail: Record<string, unknown>, key: string) {
+  const value = Number(detail[key]);
+  return Number.isFinite(value) ? value : null;
+}
+
+export function derivePriceEvidenceReasonCode({
+  status,
+  detail,
+}: {
+  status: PriceEvidenceStatus | null | undefined;
+  detail: Record<string, unknown> | null | undefined;
+}): PriceEvidenceReasonCode | null {
+  if (!status || status === "CLEAR") return null;
+  if (status === "CONFLICT") return "PRICE_MATH_CONFLICT";
+  if (!detail) return "LEGACY_EVIDENCE_UNAVAILABLE";
+
+  const threshold = detailNumber(detail, "threshold") ?? PRICE_EVIDENCE_CONFIDENCE_THRESHOLD;
+  const rowBindingConfidence = detailNumber(detail, "row_binding_confidence");
+  const sectionBindingConfidence = detailNumber(detail, "section_binding_confidence");
+  if ((rowBindingConfidence !== null && rowBindingConfidence < threshold)
+    || (sectionBindingConfidence !== null && sectionBindingConfidence < threshold)) {
+    return "PRODUCT_PRICE_BINDING_UNCLEAR";
+  }
+  if (detail.visible_piece_count_clear === false) return "PIECE_COUNT_UNCLEAR";
+  if (detail.package_price_status === "DERIVED" || detail.per_piece_price_status === "DERIVED" || status === "DERIVED") {
+    return "PRICE_DERIVED";
+  }
+  return "PRICE_TAG_UNCLEAR";
+}
 
 type PriceEvidence = {
   source: PriceEvidenceSource;

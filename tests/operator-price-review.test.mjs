@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
+import vm from "node:vm";
+import ts from "typescript";
 
 const read = (path) => existsSync(path) ? readFileSync(path, "utf8") : "";
 
@@ -15,6 +17,40 @@ const reviewService = read("src/lib/ai-price-review.ts");
 const legacyCandidateRoute = read("src/app/api/ai-price-candidates/[id]/route.ts");
 const h5CandidateRoute = read("src/app/api/store-visit/price-candidates/[id]/route.ts");
 const migration = read("supabase/migrations/202607130002_operator_price_review_phase2.sql");
+const reasonFilters = read("src/lib/operator-price-review-reasons.ts");
+const reasonGroups = read("src/lib/operator-price-review-reason-groups.ts");
+
+function loadReasonGroups() {
+  if (!reasonGroups) return null;
+  const transpiled = ts.transpileModule(reasonGroups, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const testModule = { exports: {} };
+  vm.runInNewContext(transpiled, { module: testModule, exports: testModule.exports });
+  return testModule.exports;
+}
+
+test("operator reason filters use one complete shared catalog", () => {
+  assert.match(reasonFilters, /OPERATOR_PRICE_REVIEW_REASON_FILTERS/);
+  for (const key of [
+    "SKU_MATCH_UNCERTAIN",
+    "PRODUCT_PRICE_BINDING_UNCLEAR",
+    "PRICE_TAG_UNCLEAR",
+    "PIECE_COUNT_UNCLEAR",
+    "PRICE_MATH_CONFLICT",
+    "PRICE_DERIVED",
+    "LEGACY_EVIDENCE_UNAVAILABLE",
+    "OTHER_EVIDENCE_REVIEW_REQUIRED",
+    "AMOUNT_SCALE_SUSPECTED",
+    "PRICE_DEVIATION_CRITICAL",
+    "PRICE_DEVIATION_HIGH",
+    "PROMOTION_EVIDENCE",
+    "INSUFFICIENT_BENCHMARK",
+    "QUALITY_CHECK_FAILED",
+    "OTHER_REVIEW_REQUIRED",
+  ]) assert.match(reasonFilters, new RegExp(key));
+  assert.match(reasonFilters, /normalizeOperatorPriceReviewReason/);
+});
 
 test("operator queue includes only terminal human-review candidates", () => {
   assert.match(domain, /MAX_QUALITY_GATE_ATTEMPTS\s*=\s*3/);
@@ -26,12 +62,89 @@ test("operator queue includes only terminal human-review candidates", () => {
   assert.match(domain, /candidate_type/);
 });
 
+test("operator review filters use the shared query form to preserve filter parameters", () => {
+  assert.match(page, /import \{ QueryForm, QuerySubmitButton \} from "@\/components\/query-form"/);
+  assert.match(page, /<QueryForm[\s\S]*?<\/QueryForm>/);
+  assert.match(page, /<QuerySubmitButton[\s\S]*?\/>/);
+  assert.doesNotMatch(page, /<form className=/);
+});
+
+test("operator reason filtering happens in the database before pagination", () => {
+  assert.match(domain, /reason\?: OperatorPriceReviewReasonFilter/);
+  assert.match(domain, /PRICE_DEVIATION_HIGH[\s\S]*filter\("quality_gate_reason_codes", "cs"/);
+  assert.match(domain, /PRICE_DEVIATION_CRITICAL[\s\S]*filter\("quality_gate_reason_codes", "cs"/);
+  assert.match(domain, /PRICE_TAG_UNCLEAR[\s\S]*eq\("price_evidence_reason_code"/);
+  assert.match(domain, /QUALITY_CHECK_FAILED[\s\S]*eq\("quality_gate_status", "FAILED"\)/);
+  assert.ok(domain.indexOf("switch (filters.reason)") < domain.indexOf("query = query.range"));
+});
+
+test("operator JSONB reason filters send valid JSON instead of Postgres array syntax", () => {
+  assert.doesNotMatch(domain, /\.contains\("quality_gate_reason_codes"/);
+  assert.doesNotMatch(domain, /\.eq\("quality_gate_reason_codes", \[\]\)/);
+  assert.match(domain, /filter\("quality_gate_reason_codes", "cs", JSON\.stringify\(\[filters\.reason\]\)\)/);
+  assert.match(domain, /filter\("quality_gate_reason_codes", "eq", JSON\.stringify\(\[\]\)\)/);
+});
+
+test("operator review API normalizes and forwards the reason filter", () => {
+  assert.match(listRoute, /normalizeOperatorPriceReviewReason/);
+  assert.match(listRoute, /reason:\s*normalizeOperatorPriceReviewReason/);
+});
+
+test("operator review page renders the shared anomaly reason filter", () => {
+  assert.match(page, /OPERATOR_PRICE_REVIEW_REASON_FILTERS/);
+  assert.match(page, /name="reason"/);
+  assert.match(page, /异常原因/);
+  assert.match(page, /全部原因/);
+  assert.match(page, /reason:\s*reason/);
+});
+
+test("operator navigation preserves the anomaly reason filter", () => {
+  assert.match(workbench, /reason\?: OperatorPriceReviewReasonFilter/);
+  assert.match(workbench, /if \(filters\.reason\) params\.set\("reason", filters\.reason\)/);
+});
+
 test("operator reason mapping is server-owned and follows business priority", () => {
   assert.match(domain, /buildOperatorReason/);
   assert.match(domain, /SKU_MATCH_UNCERTAIN[\s\S]*EVIDENCE_REVIEW_REQUIRED[\s\S]*AMOUNT_SCALE_SUSPECTED[\s\S]*PRICE_DEVIATION_CRITICAL[\s\S]*PRICE_DEVIATION_HIGH/);
   assert.match(domain, /INSUFFICIENT_BENCHMARK/);
   assert.match(domain, /PROMOTION_EVIDENCE/);
   assert.match(domain, /Intl\.NumberFormat/);
+});
+
+test("operator reason groups put stored price deviation before confirmation evidence", () => {
+  assert.match(reasonGroups, /buildOperatorPriceReviewReasonGroups/);
+  assert.match(reasonGroups, /kind:\s*"PRICE"/);
+  assert.match(reasonGroups, /kind:\s*"CONFIRMATION"/);
+  assert.match(reasonGroups, /benchmark_price_per_piece/);
+  assert.match(reasonGroups, /benchmark_deviation_pct/);
+  assert.match(reasonGroups, /AI 识别/);
+  assert.match(reasonGroups, /偏差/);
+  assert.match(domain, /operator_reason_groups/);
+  assert.match(workbench, /operator_reason_groups/);
+  assert.match(drawer, /operator_reason_groups/);
+
+  const groups = loadReasonGroups()?.buildOperatorPriceReviewReasonGroups({
+    quality_gate_reason_codes: ["PRICE_DEVIATION_CRITICAL", "EVIDENCE_REVIEW_REQUIRED"],
+    benchmark_price_per_piece: 2142,
+    ai_price_per_piece: 3854,
+    benchmark_deviation_pct: 79.9253,
+    price_evidence_reason_code: "PRICE_TAG_UNCLEAR",
+    price_evidence_status: "REVIEW_REQUIRED",
+    matched_entity_type: "material_master",
+    matched_entity_id: "SKU-1",
+    match_score: 0.95,
+    conflicts: [],
+  }, "zh");
+  assert.equal(groups?.[0]?.kind, "PRICE");
+  assert.match(groups?.[0]?.messages.join(" ") ?? "", /Rp 2,142\/片.*AI 识别 Rp 3,854\/片.*\+80%/);
+  assert.equal(groups?.[1]?.kind, "CONFIRMATION");
+  assert.match(groups?.[1]?.messages.join(" ") ?? "", /价格牌或金额不清晰/);
+});
+
+test("operator reason reserves legacy evidence copy for candidates without current evidence", () => {
+  assert.match(domain, /const hasCurrentEvidence = Boolean\(candidate\.price_evidence_reason_code\)\s*\|\| Boolean\(candidate\.price_evidence_status\)/);
+  assert.match(domain, /if \(!hasCurrentEvidence\) \{[\s\S]*historical record lacks the original recognition evidence/i);
+  assert.match(domain, /Current recognition evidence exists, but the product, price, or package facts still need confirmation/);
 });
 
 test("operator view models expose an explicit minimal contract", () => {
@@ -209,4 +322,21 @@ test("drawer exposes evidence, three final actions, conditional SKU correction a
   assert.match(drawer, /requires_product_correction/);
   assert.match(drawer, /\/api\/store-visit\/match-options/);
   assert.doesNotMatch(drawer, /benchmark_sample_count|benchmark_store_count|ai_confidence|match_score|quality_gate_version/i);
+});
+
+test("operators can confirm an existing AI product suggestion without selecting it again", () => {
+  assert.match(drawer, /const currentMatch: MatchOption \| null/);
+  assert.match(drawer, /const finalMatch = selectedMatch \?\? currentMatch/);
+  assert.match(drawer, /确认商品与价格正确/);
+  assert.match(drawer, /AI 建议商品/);
+  assert.match(workbench, /return isZh \? "待确认" : "Needs confirmation"/);
+  assert.doesNotMatch(workbench, /AI 建议商品，待确认/);
+  assert.match(workbench, /item\.requires_product_correction/);
+});
+
+test("operator list keeps matched SKU label even when product correction is allowed", () => {
+  assert.match(
+    workbench,
+    /function productAssociationLabel[\s\S]*if \(item\.sku_label\) return item\.sku_label;[\s\S]*item\.requires_product_correction/,
+  );
 });

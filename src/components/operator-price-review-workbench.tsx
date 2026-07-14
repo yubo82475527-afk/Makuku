@@ -5,13 +5,15 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { OperatorPriceReviewDrawer } from "@/components/operator-price-review-drawer";
 import { formatIdr, formatJakartaTime } from "@/lib/format";
-import type { OperatorPriceReviewListItem, OperatorPriceReviewState } from "@/lib/types";
+import type { OperatorPriceReviewReasonFilter } from "@/lib/operator-price-review-reasons";
+import type { OperatorPriceReviewListItem, OperatorPriceReviewReasonGroup, OperatorPriceReviewState } from "@/lib/types";
 
 type ReviewFilters = {
   state: OperatorPriceReviewState;
   date_from?: string;
   date_to?: string;
   visit_code?: string;
+  reason?: OperatorPriceReviewReasonFilter;
 };
 
 export function OperatorPriceReviewWorkbench({
@@ -74,7 +76,7 @@ export function OperatorPriceReviewWorkbench({
               <thead className="bg-slate-50 text-xs text-slate-500">
                 <tr>
                   <th className="w-24 px-4 py-3">{isZh ? "来源" : "Source"}</th>
-                  <th className="w-[25%] px-4 py-3">{isZh ? "商品 / SKU" : "Product / SKU"}</th>
+                  <th className="w-[25%] px-4 py-3">{isZh ? "商品" : "Product"}</th>
                   <th className="w-36 px-4 py-3">{isZh ? "AI 识别价格" : "AI price"}</th>
                   <th className="px-4 py-3">{isZh ? "异常原因" : "Reason"}</th>
                   <th className="w-36 px-4 py-3" />
@@ -86,10 +88,10 @@ export function OperatorPriceReviewWorkbench({
                     <td className="px-4 py-3"><SourceThumbnail item={item} locale={locale} /></td>
                     <td className="px-4 py-3">
                       <div className="font-medium text-slate-950">{item.product_name}</div>
-                      <div className="mt-1 truncate text-xs text-slate-500">{item.sku_label ?? (isZh ? "商品待确认" : "Product not confirmed")}</div>
+                      <div className="mt-1 truncate text-xs text-slate-500">{productAssociationLabel(item, isZh)}</div>
                     </td>
                     <td className="px-4 py-3 font-semibold text-slate-950">{formatIdr(item.ai_package_price)}</td>
-                    <td className="px-4 py-3 text-slate-700">{item.operator_reason}</td>
+                    <td className="px-4 py-3"><ReasonSummary groups={item.operator_reason_groups} fallback={item.operator_reason} /></td>
                     <td className="px-4 py-3 text-right">
                       <button type="button" onClick={() => setActiveId(item.id)} className="inline-flex h-9 items-center rounded-md bg-slate-900 px-3 text-sm font-medium text-white hover:bg-slate-800">
                         {filters.state === "pending" ? (isZh ? "查看并处理" : "View and handle") : (isZh ? "查看详情" : "View details")}
@@ -108,11 +110,11 @@ export function OperatorPriceReviewWorkbench({
                   <SourceThumbnail item={item} locale={locale} />
                   <div className="min-w-0 flex-1">
                     <div className="font-medium text-slate-950">{item.product_name}</div>
-                    <div className="mt-1 truncate text-xs text-slate-500">{item.sku_label ?? (isZh ? "商品待确认" : "Product not confirmed")}</div>
+                    <div className="mt-1 truncate text-xs text-slate-500">{productAssociationLabel(item, isZh)}</div>
                     <div className="mt-2 text-base font-semibold text-slate-950">{formatIdr(item.ai_package_price)}</div>
                   </div>
                 </div>
-                <p className="mt-3 text-sm leading-6 text-slate-700">{item.operator_reason}</p>
+                <div className="mt-3"><ReasonSummary groups={item.operator_reason_groups} fallback={item.operator_reason} /></div>
                 {item.processed_at ? <div className="mt-2 text-xs text-slate-400">{formatJakartaTime(item.processed_at)}</div> : null}
                 <button type="button" onClick={() => setActiveId(item.id)} className="mt-3 inline-flex h-9 w-full items-center justify-center rounded-md bg-slate-900 px-3 text-sm font-medium text-white">
                   {filters.state === "pending" ? (isZh ? "查看并处理" : "View and handle") : (isZh ? "查看详情" : "View details")}
@@ -141,6 +143,25 @@ export function OperatorPriceReviewWorkbench({
           onProcessed={onProcessed}
         />
       ) : null}
+    </div>
+  );
+}
+
+function productAssociationLabel(item: OperatorPriceReviewListItem, isZh: boolean) {
+  if (item.sku_label) return item.sku_label;
+  if (item.requires_product_correction) return isZh ? "待确认" : "Needs confirmation";
+  return isZh ? "商品待确认" : "Product not confirmed";
+}
+
+function ReasonSummary({ groups, fallback }: { groups: OperatorPriceReviewReasonGroup[]; fallback: string }) {
+  if (groups.length === 0) return <p className="text-sm leading-6 text-slate-700">{fallback}</p>;
+  return (
+    <div className="space-y-1.5 text-sm leading-5">
+      {groups.map((group) => (
+        <p key={group.kind} className={group.kind === "PRICE" ? "font-medium text-rose-700" : "text-slate-700"}>
+          <span className="mr-1">{group.title}：</span>{group.messages[0]}
+        </p>
+      ))}
     </div>
   );
 }
@@ -182,6 +203,7 @@ function buildHref(locale: string, filters: ReviewFilters, overrides: Record<str
   if (filters.date_from) params.set("date_from", filters.date_from);
   if (filters.date_to) params.set("date_to", filters.date_to);
   if (filters.visit_code) params.set("visit_code", filters.visit_code);
+  if (filters.reason) params.set("reason", filters.reason);
   for (const [key, value] of Object.entries(overrides)) params.set(key, String(value));
   return `/${locale}/offline-price-candidates?${params.toString()}`;
 }

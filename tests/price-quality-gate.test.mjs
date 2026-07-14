@@ -8,6 +8,12 @@ const migrationPath = "supabase/migrations/202607130001_price_quality_gate_phase
 const migration = existsSync(migrationPath) ? readFileSync(migrationPath, "utf8") : "";
 const benchmarkRefreshHotfixPath = "supabase/migrations/202607130003_fix_price_quality_benchmark_refresh.sql";
 const benchmarkRefreshHotfix = existsSync(benchmarkRefreshHotfixPath) ? readFileSync(benchmarkRefreshHotfixPath, "utf8") : "";
+const coldStartMigrationPath = "supabase/migrations/202607140002_price_quality_cold_start_v2.sql";
+const coldStartMigration = existsSync(coldStartMigrationPath) ? readFileSync(coldStartMigrationPath, "utf8") : "";
+const recentPriorityMigrationPath = "supabase/migrations/202607140004_price_quality_gate_recent_priority.sql";
+const recentPriorityMigration = existsSync(recentPriorityMigrationPath) ? readFileSync(recentPriorityMigrationPath, "utf8") : "";
+const independentReasonRequeueMigrationPath = "supabase/migrations/202607140005_requeue_ready_price_quality_reason_codes.sql";
+const independentReasonRequeueMigration = existsSync(independentReasonRequeueMigrationPath) ? readFileSync(independentReasonRequeueMigrationPath, "utf8") : "";
 const types = readFileSync("src/lib/types.ts", "utf8");
 const benchmarkServicePath = "src/lib/price-quality-benchmarks.ts";
 const benchmarkService = existsSync(benchmarkServicePath) ? readFileSync(benchmarkServicePath, "utf8") : "";
@@ -47,6 +53,14 @@ function loadQualityEvaluator() {
   return testModule.exports;
 }
 
+const clearCandidateFacts = {
+  matchScore: 0.95,
+  hasWarnings: false,
+  hasConflicts: false,
+  hasSourceImage: true,
+  hasValidPackageFacts: true,
+};
+
 test("price quality migration defines a dedicated daily L2 benchmark", () => {
   assert.equal(existsSync(migrationPath), true);
   assert.match(migration, /create table if not exists public\.price_quality_benchmark_daily/i);
@@ -69,6 +83,41 @@ test("candidate schema keeps evidence review separate from historical quality", 
   assert.match(types, /AiPriceQualityGateStatus/);
   assert.match(types, /PriceQualityReasonCode/);
   assert.match(types, /evidence_review_decision/);
+});
+
+test("cold-start V2 persists benchmark assessment without duplicating benchmark tables", () => {
+  assert.equal(existsSync(coldStartMigrationPath), true);
+  assert.match(types, /BenchmarkAssessment/);
+  assert.match(types, /BenchmarkAssessmentReason/);
+  assert.match(coldStartMigration, /ai_price_candidates[\s\S]*benchmark_assessment/i);
+  assert.match(coldStartMigration, /price_quality_gate_evaluations[\s\S]*benchmark_assessment_reason/i);
+  assert.match(coldStartMigration, /price_snapshots[\s\S]*benchmark_assessment_at_approval/i);
+  assert.equal((coldStartMigration.match(/benchmark_assessment = 'BUILDING' and benchmark_assessment_reason is not null/g) ?? []).length, 2);
+  assert.doesNotMatch(coldStartMigration, /create table[^;]*market_benchmark_daily/i);
+});
+
+test("quality gate prioritizes recent Visit candidates without dropping the historical backlog", () => {
+  assert.equal(existsSync(recentPriorityMigrationPath), true);
+  assert.match(recentPriorityMigration, /create or replace function public\.claim_ai_price_candidates_for_quality_gate/i);
+  assert.match(
+    recentPriorityMigration,
+    /order by\s+case\s+when candidate\.created_at >= now\(\) - interval '1 day' then 0\s+else 1\s+end,\s+candidate\.created_at,\s+candidate\.id/i,
+  );
+  assert.match(recentPriorityMigration, /candidate\.quality_gate_status = 'PENDING'/i);
+  assert.match(recentPriorityMigration, /candidate\.quality_gate_status = 'FAILED'/i);
+  assert.match(recentPriorityMigration, /for update skip locked/i);
+});
+
+test("mature historical candidates can be safely re-evaluated for independent reason codes", () => {
+  assert.equal(existsSync(independentReasonRequeueMigrationPath), true);
+  assert.match(independentReasonRequeueMigration, /create function public\.requeue_ready_price_quality_reason_codes\(\)/i);
+  assert.match(independentReasonRequeueMigration, /candidate\.benchmark_assessment = 'READY'/i);
+  assert.match(independentReasonRequeueMigration, /candidate\.status = 'pending'/i);
+  assert.match(independentReasonRequeueMigration, /candidate\.candidate_type = 'SKU'/i);
+  assert.match(independentReasonRequeueMigration, /candidate\.price_snapshot_id is null/i);
+  assert.match(independentReasonRequeueMigration, /quality_gate_status = 'PENDING'/i);
+  assert.match(independentReasonRequeueMigration, /quality_gate_reason_codes = '\[\]'::jsonb/i);
+  assert.doesNotMatch(independentReasonRequeueMigration, /select public\.requeue_ready_price_quality_reason_codes\(\)/i);
 });
 
 test("editing a pending candidate invalidates stale quality results", () => {
@@ -110,6 +159,7 @@ test("quality evaluator passes a clear candidate within 30 percent", () => {
   const evaluator = loadQualityEvaluator();
   assert.ok(evaluator);
   const result = evaluator.evaluatePriceQualityGate({
+    ...clearCandidateFacts,
     candidatePricePerPiece: 2400,
     evidenceReviewDecision: "AUTO_APPROVE",
     matchedEntityType: "material_master",
@@ -128,10 +178,36 @@ test("quality evaluator passes a clear candidate within 30 percent", () => {
   assert.equal(result.reasonCodes.length, 0);
 });
 
+test("quality evaluator keeps historical price deviation alongside evidence and match risks", () => {
+  const evaluator = loadQualityEvaluator();
+  assert.ok(evaluator);
+  const result = evaluator.evaluatePriceQualityGate({
+    ...clearCandidateFacts,
+    candidatePricePerPiece: 2680,
+    evidenceReviewDecision: "NEED_REVIEW",
+    matchedEntityType: "material_master",
+    matchedEntityId: "SKU-1",
+    promoType: null,
+    benchmark: {
+      benchmarkDate: "2026-07-14",
+      medianPricePerPiece: 2000,
+      sampleCount: 8,
+      storeCount: 4,
+      status: "READY",
+    },
+  });
+
+  assert.equal(result.status, "REVIEW_REQUIRED");
+  assert.ok(result.reasonCodes.includes("EVIDENCE_REVIEW_REQUIRED"));
+  assert.ok(result.reasonCodes.includes("PRICE_DEVIATION_HIGH"));
+  assert.equal(result.benchmarkDeviationPct, 34);
+});
+
 test("quality evaluator uses strict 30 and 50 percent boundaries", () => {
   const evaluator = loadQualityEvaluator();
   assert.ok(evaluator);
   const baseline = {
+    ...clearCandidateFacts,
     evidenceReviewDecision: "AUTO_APPROVE",
     matchedEntityType: "material_master",
     matchedEntityId: "SKU-1",
@@ -162,6 +238,7 @@ test("quality evaluator detects scale errors after per-piece conversion", () => 
   assert.ok(evaluator);
   for (const candidatePricePerPiece of [10, 100, 1000, 100000, 1000000, 10000000]) {
     const result = evaluator.evaluatePriceQualityGate({
+      ...clearCandidateFacts,
       candidatePricePerPiece,
       evidenceReviewDecision: "AUTO_APPROVE",
       matchedEntityType: "competitor_product",
@@ -179,10 +256,11 @@ test("quality evaluator detects scale errors after per-piece conversion", () => 
   }
 });
 
-test("quality evaluator keeps insufficient, unmatched, evidence, and promo cases in review", () => {
+test("quality evaluator passes clear cold-start prices and records why the benchmark is building", () => {
   const evaluator = loadQualityEvaluator();
   assert.ok(evaluator);
-  const insufficient = evaluator.evaluatePriceQualityGate({
+  const noHistory = evaluator.evaluatePriceQualityGate({
+    ...clearCandidateFacts,
     candidatePricePerPiece: 2200,
     evidenceReviewDecision: "AUTO_APPROVE",
     matchedEntityType: "material_master",
@@ -190,10 +268,45 @@ test("quality evaluator keeps insufficient, unmatched, evidence, and promo cases
     promoType: null,
     benchmark: null,
   });
-  assert.equal(insufficient.status, "INSUFFICIENT_BENCHMARK");
-  assert.ok(insufficient.reasonCodes.includes("INSUFFICIENT_BENCHMARK"));
+  assert.equal(noHistory.status, "PASSED");
+  assert.equal(noHistory.reviewDecision, "AUTO_APPROVE");
+  assert.equal(noHistory.benchmarkAssessment, "BUILDING");
+  assert.equal(noHistory.benchmarkAssessmentReason, "NO_HISTORY");
+  assert.deepEqual(Array.from(noHistory.reasonCodes), []);
+
+  const cases = [
+    [{ sampleCount: 4, storeCount: 3 }, "LOW_SAMPLE"],
+    [{ sampleCount: 5, storeCount: 2 }, "LOW_STORE"],
+    [{ sampleCount: 4, storeCount: 2 }, "LOW_SAMPLE_AND_STORE"],
+  ];
+  for (const [counts, expectedReason] of cases) {
+    const result = evaluator.evaluatePriceQualityGate({
+      ...clearCandidateFacts,
+      candidatePricePerPiece: 2200,
+      evidenceReviewDecision: "AUTO_APPROVE",
+      matchedEntityType: "competitor_product",
+      matchedEntityId: "product-1",
+      promoType: null,
+      benchmark: {
+        benchmarkDate: "2026-07-14",
+        medianPricePerPiece: 2200,
+        sampleCount: counts.sampleCount,
+        storeCount: counts.storeCount,
+        status: "INSUFFICIENT",
+      },
+    });
+    assert.equal(result.status, "PASSED");
+    assert.equal(result.benchmarkAssessment, "BUILDING");
+    assert.equal(result.benchmarkAssessmentReason, expectedReason);
+  }
+});
+
+test("quality evaluator keeps evidence, matching, and cold-start promotion risks in review", () => {
+  const evaluator = loadQualityEvaluator();
+  assert.ok(evaluator);
 
   const evidence = evaluator.evaluatePriceQualityGate({
+    ...clearCandidateFacts,
     candidatePricePerPiece: 2200,
     evidenceReviewDecision: "NEED_REVIEW",
     matchedEntityType: "unmatched",
@@ -204,23 +317,95 @@ test("quality evaluator keeps insufficient, unmatched, evidence, and promo cases
   assert.equal(evidence.reviewDecision, "NEED_REVIEW");
   assert.ok(evidence.reasonCodes.includes("EVIDENCE_REVIEW_REQUIRED"));
   assert.ok(evidence.reasonCodes.includes("SKU_MATCH_UNCERTAIN"));
+  assert.equal(evidence.benchmarkAssessment, "NOT_EVALUATED");
 
-  const promotion = evaluator.evaluatePriceQualityGate({
+  const coldStartPromotion = evaluator.evaluatePriceQualityGate({
+    ...clearCandidateFacts,
     candidatePricePerPiece: 1300,
     evidenceReviewDecision: "AUTO_APPROVE",
     matchedEntityType: "material_master",
     matchedEntityId: "SKU-1",
     promoType: "Discount",
-    benchmark: {
-      benchmarkDate: "2026-07-13",
-      medianPricePerPiece: 2200,
-      sampleCount: 8,
-      storeCount: 5,
-      status: "READY",
-    },
+    benchmark: null,
   });
-  assert.equal(promotion.status, "REVIEW_REQUIRED");
-  assert.ok(promotion.reasonCodes.includes("PROMOTION_EVIDENCE"));
+  assert.equal(coldStartPromotion.status, "REVIEW_REQUIRED");
+  assert.equal(coldStartPromotion.benchmarkAssessment, "BUILDING");
+  assert.ok(coldStartPromotion.reasonCodes.includes("PROMOTION_EVIDENCE"));
+});
+
+test("quality evaluator rejects incomplete candidate hard facts before auto approval", () => {
+  const evaluator = loadQualityEvaluator();
+  assert.ok(evaluator);
+  const baseline = {
+    ...clearCandidateFacts,
+    candidatePricePerPiece: 2200,
+    evidenceReviewDecision: "AUTO_APPROVE",
+    matchedEntityType: "material_master",
+    matchedEntityId: "SKU-1",
+    promoType: null,
+    benchmark: null,
+  };
+
+  for (const override of [
+    { matchScore: 0.89 },
+    { hasWarnings: true },
+    { hasConflicts: true },
+    { hasSourceImage: false },
+    { hasValidPackageFacts: false },
+  ]) {
+    const result = evaluator.evaluatePriceQualityGate({ ...baseline, ...override });
+    assert.equal(result.status, "REVIEW_REQUIRED");
+    assert.equal(result.reviewDecision, "NEED_REVIEW");
+  }
+});
+
+test("quality claim returns all hard facts from the same fenced candidate row", () => {
+  assert.match(coldStartMigration, /claim_ai_price_candidates_for_quality_gate/i);
+  assert.match(coldStartMigration, /candidate\.match_score/i);
+  assert.match(coldStartMigration, /jsonb_array_length\(coalesce\(candidate\.warnings/i);
+  assert.match(coldStartMigration, /jsonb_array_length\(coalesce\(candidate\.conflicts/i);
+  assert.match(coldStartMigration, /candidate\.source_image_id is not null/i);
+  assert.match(coldStartMigration, /coalesce\(candidate\.net_price_idr, candidate\.parsed_price_idr\) > 0/i);
+  assert.match(jobs, /match_score/);
+  assert.match(jobs, /has_valid_package_facts/);
+});
+
+test("cold-start V2 finalization and approval persist assessment atomically", () => {
+  assert.match(coldStartMigration, /finalize_ai_price_candidate_quality_gate[\s\S]*p_benchmark_assessment text/i);
+  assert.match(coldStartMigration, /benchmark_assessment = p_benchmark_assessment/i);
+  assert.match(coldStartMigration, /price_quality_gate_evaluations[\s\S]*benchmark_assessment_reason/i);
+  assert.match(coldStartMigration, /approve_ai_price_candidate_with_quality_gate_core/i);
+  assert.match(coldStartMigration, /approve_ai_price_candidate_with_quality_gate[\s\S]*update public\.price_snapshots/i);
+  assert.match(coldStartMigration, /benchmark_assessment_at_approval = v_benchmark_assessment/i);
+  assert.match(coldStartMigration, /v_existing_snapshot_id is null/i);
+  assert.match(coldStartMigration, /benchmark_assessment_at_approval is null/i);
+  assert.match(jobs, /benchmarkAssessment/);
+  assert.match(jobs, /p_benchmark_assessment/);
+});
+
+test("manual product correction cannot copy the previous product benchmark assessment", () => {
+  assert.match(coldStartMigration, /v_original_matched_entity_type/i);
+  assert.match(coldStartMigration, /v_original_matched_entity_id/i);
+  assert.match(coldStartMigration, /p_matched_entity_type is distinct from v_original_matched_entity_type/i);
+  assert.match(coldStartMigration, /v_benchmark_assessment := 'NOT_EVALUATED'/i);
+});
+
+test("cold-start V2 requeues only complete non-legacy evidence", () => {
+  assert.match(coldStartMigration, /create function public\.requeue_ai_price_candidates_for_cold_start_v2\(\)/i);
+  assert.doesNotMatch(coldStartMigration, /select public\.requeue_ai_price_candidates_for_cold_start_v2\(\)/i);
+  assert.match(coldStartMigration, /quality_gate_status = 'INSUFFICIENT_BENCHMARK'/i);
+  assert.match(coldStartMigration, /evidence_review_decision = 'AUTO_APPROVE'/i);
+  assert.match(coldStartMigration, /price_evidence_detail is not null/i);
+  assert.match(coldStartMigration, /price_evidence_reason_code[^;]*LEGACY_EVIDENCE_UNAVAILABLE/i);
+  assert.match(coldStartMigration, /match_score >= 0\.9/i);
+  assert.match(coldStartMigration, /jsonb_array_length\(coalesce\(candidate\.warnings/i);
+  assert.match(coldStartMigration, /jsonb_array_length\(coalesce\(candidate\.conflicts/i);
+  assert.match(coldStartMigration, /quality_gate_status = 'PENDING'/i);
+});
+
+test("cold-start V2 keeps the V1 finalizer during rolling deployment", () => {
+  assert.doesNotMatch(coldStartMigration, /drop function if exists public\.finalize_ai_price_candidate_quality_gate\([\s\S]{0,180}integer, integer, text\s*\);/i);
+  assert.match(coldStartMigration, /finalize_ai_price_candidate_quality_gate\([\s\S]*p_benchmark_assessment text/i);
 });
 
 test("quality work uses fenced claim and finalize RPCs", () => {
@@ -443,6 +628,9 @@ test("price architecture documents the implemented asynchronous T+1 quality boun
   assert.match(architecture, /price_quality_benchmark_daily/);
   assert.match(architecture, /D-30[\s\S]*D-1/);
   assert.match(architecture, /ai_price_candidates[\s\S]*quality/i);
+  assert.match(architecture, /benchmark_assessment_at_approval/);
+  assert.match(architecture, /BUILDING[\s\S]*参与[\s\S]*T\+1/);
+  assert.match(architecture, /不实时计算中位数/);
   assert.match(architecture, /Visit[\s\S]*(?:never waits|不等待|不会等待)/i);
   assert.match(architecture, /price_snapshots[\s\S]*(?:confirmed|已确认|事实)/i);
 });

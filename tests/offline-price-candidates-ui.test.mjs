@@ -35,7 +35,7 @@ test("operator price review keeps only compact business filters", () => {
   assert.match(candidatesPage, /DateRangeFilter/);
   assert.match(candidatesPage, /aria-label=\{label\}/);
   assert.match(candidatesPage, /<Card className="mb-4">/);
-  assert.match(candidatesPage, /<form className="grid gap-3/);
+  assert.match(candidatesPage, /<QueryForm className="grid gap-3/);
   assert.match(candidatesPage, /BatchCodeFilter/);
   assert.doesNotMatch(candidatesPage, /Export CSV|image_id|ImageIdFilter/);
   assert.doesNotMatch(candidatesPage, /TextInput name="date_from"/);

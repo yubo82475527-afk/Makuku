@@ -1,5 +1,6 @@
 import { requireAdminSession } from "@/lib/auth-session";
 import { getOperatorPriceReviewsPage } from "@/lib/operator-price-review";
+import { normalizeOperatorPriceReviewReason } from "@/lib/operator-price-review-reasons";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,7 @@ export async function GET(request: Request) {
     dateFrom: cleanText(url.searchParams.get("date_from")),
     dateTo: cleanText(url.searchParams.get("date_to")),
     visitCode: cleanText(url.searchParams.get("visit_code")),
+    reason: normalizeOperatorPriceReviewReason(url.searchParams.get("reason")),
     page,
     perPage,
     locale,
