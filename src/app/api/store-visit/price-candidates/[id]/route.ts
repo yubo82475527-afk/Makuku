@@ -1,5 +1,5 @@
 import { requireAppSession } from "@/lib/auth-session";
-import { approveAiPriceCandidate, syncCandidateMatchToPriceSnapshot, syncCandidateReviewInputToPriceSnapshot } from "@/lib/ai-price-review";
+import { approveAiPriceCandidate, rejectAiPriceCandidate } from "@/lib/ai-price-review";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import type { AiPriceCandidate, AiPriceCandidateMatchType } from "@/lib/types";
 
@@ -88,20 +88,6 @@ async function buildMatchPatch(
   };
 }
 
-async function deleteLinkedSnapshot(
-  supabase: ReturnType<typeof createSupabaseServiceClient>,
-  snapshotId: string | null,
-) {
-  if (!snapshotId) return false;
-  const { error, data } = await supabase
-    .from("price_snapshots")
-    .delete()
-    .eq("id", snapshotId)
-    .select("id");
-  if (error) throw new Error(error.message);
-  return (data?.length ?? 0) > 0;
-}
-
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
     const auth = await requireAppSession(request);
@@ -111,9 +97,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     const body = await request.json().catch(() => ({}));
     const action = String(body.action ?? "").trim();
     const supabase = createSupabaseServiceClient();
-    const candidateStatuses = action === "delete_h5_row"
-      ? ["pending", "approved", "rejected"]
-      : ["pending", "approved"];
+    const candidateStatuses = ["pending"];
 
     const { data: sourceCandidate, error: sourceCandidateError } = await supabase
       .from("ai_price_candidates")
@@ -122,7 +106,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
       .in("status", candidateStatuses)
       .maybeSingle();
     if (sourceCandidateError) throw new Error(sourceCandidateError.message);
-    if (!sourceCandidate) throw new Error("Pending or approved candidate not found");
+    if (!sourceCandidate) throw new Error("Pending candidate not found");
 
     if (action === "save_review_input") {
       const h5RowPatch = buildReviewInputPatch(body);
@@ -131,12 +115,10 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
         .from("ai_price_candidates")
         .update(h5RowPatch.patch)
         .eq("id", id)
+        .eq("status", "pending")
         .select("*")
         .single();
-      if (error || !candidate) throw new Error(error?.message ?? "Pending or approved candidate not found");
-      if (candidate.price_snapshot_id) {
-        await syncCandidateReviewInputToPriceSnapshot(supabase, candidate as AiPriceCandidate);
-      }
+      if (error || !candidate) throw new Error(error?.message ?? "Pending candidate not found");
       return Response.json({ candidate });
     }
 
@@ -147,12 +129,10 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
         .from("ai_price_candidates")
         .update(matchPatch.patch)
         .eq("id", id)
+        .eq("status", "pending")
         .select("*")
         .single();
-      if (error || !candidate) throw new Error(error?.message ?? "Pending or approved candidate not found");
-      if (candidate.price_snapshot_id) {
-        await syncCandidateMatchToPriceSnapshot(supabase, candidate as AiPriceCandidate);
-      }
+      if (error || !candidate) throw new Error(error?.message ?? "Pending candidate not found");
       return Response.json({ candidate });
     }
 
@@ -169,13 +149,10 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
           ...matchPatch.patch,
         })
         .eq("id", id)
+        .eq("status", "pending")
         .select("*")
         .single();
-      if (error || !candidate) throw new Error(error?.message ?? "Pending or approved candidate not found");
-      if (candidate.price_snapshot_id) {
-        await syncCandidateReviewInputToPriceSnapshot(supabase, candidate as AiPriceCandidate);
-        await syncCandidateMatchToPriceSnapshot(supabase, candidate as AiPriceCandidate);
-      }
+      if (error || !candidate) throw new Error(error?.message ?? "Pending candidate not found");
       return Response.json({ candidate });
     }
 
@@ -201,31 +178,23 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
         reviewer: auth.session.id,
         reviewMethod: "manual",
         promoType: candidateRow.promo_type,
+        reviewToken: candidateRow.approval_input_fingerprint,
       });
       return Response.json(result);
     }
 
     if (action === "delete_h5_row") {
-      const candidateRow = sourceCandidate as AiPriceCandidate;
-      const deletedSnapshot = await deleteLinkedSnapshot(supabase, candidateRow.price_snapshot_id);
-      const deletedAt = new Date().toISOString();
-      const { data: candidate, error } = await supabase
-        .from("ai_price_candidates")
-        .update({
-          status: "rejected",
-          price_snapshot_id: null,
-          reviewed_at: deletedAt,
-          reviewed_by: auth.session.id,
-          review_method: "manual",
-          rejection_reason: "H5 deleted this SKU row.",
-          h5_lifecycle_status: "deleted",
-          h5_lifecycle_at: deletedAt,
-        })
-        .eq("id", id)
-        .select("*")
-        .single();
-      if (error || !candidate) throw new Error(error?.message ?? "Pending or approved candidate not found");
-      return Response.json({ candidate, deleted_snapshot: deletedSnapshot });
+      const candidate = await rejectAiPriceCandidate({
+        supabase,
+        candidateId: id,
+        reason: "H5 deleted this SKU row.",
+        reviewer: auth.session.id,
+        reviewMethod: "manual",
+        reviewToken: sourceCandidate.approval_input_fingerprint,
+        requireTerminalQuality: false,
+        h5LifecycleStatus: "deleted",
+      });
+      return Response.json({ candidate, deleted_snapshot: false });
     }
 
     return Response.json({ error: "Unsupported action" }, { status: 400 });

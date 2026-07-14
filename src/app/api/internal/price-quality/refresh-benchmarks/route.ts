@@ -1,17 +1,18 @@
-import { after } from "next/server";
 import { requireAdminSession } from "@/lib/auth-session";
-import { triggerPriceQualityGateRunner } from "@/lib/price-quality-gate-jobs";
+import { refreshPriceQualityBenchmarks } from "@/lib/price-quality-benchmarks";
 import { readRequestBody } from "@/lib/request";
-import {
-  runStoreVisitAiJob,
-  triggerStoreVisitAiJobRunner,
-} from "@/lib/store-visit-ai-jobs";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 function clean(value: unknown) {
   return String(value ?? "").trim();
+}
+
+function isValidBenchmarkDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
 function readAuthorizationToken(request: Request) {
@@ -21,7 +22,7 @@ function readAuthorizationToken(request: Request) {
 }
 
 function hasCronSecret(request: Request) {
-  const secret = clean(process.env.CRON_SECRET);
+  const secret = clean(process.env.CRON_SECRET ?? process.env.INTERNAL_JOB_SECRET);
   return Boolean(secret && readAuthorizationToken(request) === secret);
 }
 
@@ -31,25 +32,10 @@ async function requireCronSecretOrAdmin(request: Request) {
   return auth.response;
 }
 
-async function runAndRespond(request: Request, jobId?: string | null) {
-  const result = await runStoreVisitAiJob({ jobId });
-  if (result.job && result.remaining_count > 0) {
-    after(() => triggerStoreVisitAiJobRunner({ requestUrl: request.url, jobId: result.job?.id }));
-  } else if (!jobId && result.processed > 0) {
-    after(() => triggerStoreVisitAiJobRunner({ requestUrl: request.url }));
-  }
-  if (result.processed > 0) {
-    after(() => triggerPriceQualityGateRunner({ requestUrl: request.url }));
-  }
-  return Response.json(result);
-}
-
 export async function GET(request: Request) {
   const authResponse = await requireCronSecretOrAdmin(request);
   if (authResponse) return authResponse;
-
-  const url = new URL(request.url);
-  return runAndRespond(request, clean(url.searchParams.get("job_id")) || null);
+  return Response.json(await refreshPriceQualityBenchmarks());
 }
 
 export async function POST(request: Request) {
@@ -57,5 +43,9 @@ export async function POST(request: Request) {
   if (authResponse) return authResponse;
 
   const { body } = await readRequestBody(request).catch(() => ({ body: {} }));
-  return runAndRespond(request, clean((body as Record<string, unknown>).job_id) || null);
+  const benchmarkDate = clean((body as Record<string, unknown>).benchmark_date) || null;
+  if (benchmarkDate && !isValidBenchmarkDate(benchmarkDate)) {
+    return Response.json({ error: "benchmark_date must be a valid YYYY-MM-DD date" }, { status: 400 });
+  }
+  return Response.json(await refreshPriceQualityBenchmarks({ benchmarkDate }));
 }

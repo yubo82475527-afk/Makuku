@@ -9,25 +9,12 @@ const AUTO_REVIEW_CONCURRENCY = 10;
 const MIN_MATCH_SCORE = 0.9;
 const REQUIRE_MATCHED_ENTITY = true;
 
-type CandidateUpdatePayload = {
-  status: "approved" | "rejected";
-  parsed_price_idr?: number;
-  reviewed_piece_count?: number;
-  reviewed_price_per_piece?: number;
-  price_snapshot_id?: string | null;
-  matched_entity_type?: "material_master" | "competitor_product" | "unmatched";
-  matched_entity_id?: string | null;
-  matched_label?: string | null;
-  match_score?: number;
-  rejection_reason?: string | null;
-  reviewed_at: string;
-  reviewed_by: string | null;
-  review_job_id: string | null;
-  review_method?: AiPriceCandidateReviewMethod;
-};
-
 export function candidateMatchesReviewRule(candidate: AiPriceCandidate, _rule: AiPriceReviewRule) {
+  void _rule;
   if (candidate.status !== "pending") return { eligible: false, reason: "Only pending candidates can be bulk reviewed." };
+  if (candidate.quality_gate_status !== "PASSED") {
+    return { eligible: false, reason: "Historical price quality gate has not passed." };
+  }
   if (candidate.review_decision !== "AUTO_APPROVE") return { eligible: false, reason: "Candidate requires manual review." };
   if (candidate.match_score < MIN_MATCH_SCORE) return { eligible: false, reason: "Match score is below the fixed auto-approval threshold." };
   if (REQUIRE_MATCHED_ENTITY && (!candidate.matched_entity_id || candidate.matched_entity_type === "unmatched")) {
@@ -61,6 +48,11 @@ export async function approveAiPriceCandidate({
   reviewJobId,
   reviewMethod = "manual",
   promoType,
+  autoApprovalWorkerId,
+  reviewToken,
+  matchedEntityType,
+  matchedEntityId,
+  matchedLabel,
 }: {
   supabase: SupabaseServiceClient;
   candidateId: string;
@@ -70,6 +62,11 @@ export async function approveAiPriceCandidate({
   reviewJobId?: string | null;
   reviewMethod?: AiPriceCandidateReviewMethod;
   promoType?: string | null;
+  autoApprovalWorkerId?: string | null;
+  reviewToken?: string | null;
+  matchedEntityType?: AiPriceCandidate["matched_entity_type"] | null;
+  matchedEntityId?: string | null;
+  matchedLabel?: string | null;
 }) {
   const { data: candidate, error } = await supabase
     .from("ai_price_candidates")
@@ -83,136 +80,113 @@ export async function approveAiPriceCandidate({
   }
 
   const candidateRow = candidate as AiPriceCandidate;
-  const price = Number(priceIdr ?? candidate.net_price_idr ?? candidate.parsed_price_idr);
-  if (!Number.isFinite(price) || price <= 0) {
+  const requiresPassedQualityGate = reviewMethod === "auto_rule" || reviewMethod === "bulk_manual";
+  if (requiresPassedQualityGate && candidate.quality_gate_status !== "PASSED") {
+    throw new Error("Historical price quality gate has not passed.");
+  }
+  if (reviewMethod === "manual") {
+    const manualReviewReady = candidate.quality_gate_status === "REVIEW_REQUIRED"
+      || candidate.quality_gate_status === "INSUFFICIENT_BENCHMARK"
+      || (candidate.quality_gate_status === "FAILED" && candidate.quality_gate_attempt_count >= 3);
+    if (!manualReviewReady) {
+      throw new Error("Candidate is not ready for operator review.");
+    }
+    if (!reviewToken) {
+      throw new Error("Review token is required; reload before reviewing.");
+    }
+  }
+  const currentPrice = Number(candidate.net_price_idr ?? candidate.parsed_price_idr);
+  const price = Number(priceIdr ?? currentPrice);
+  if (!Number.isFinite(currentPrice) || currentPrice <= 0 || !Number.isFinite(price) || price <= 0) {
     throw new Error("Valid price is required");
   }
-  const listPrice = positiveNumberOrFallback(candidate.list_price_idr, price);
-  const packagePrice = positiveNumberOrFallback(candidate.package_price_idr, price);
-  const netPrice = positiveNumberOrFallback(candidateRow.net_price_idr, price);
-  const reviewedPieceCount = Number(pieceCount ?? candidate.reviewed_piece_count ?? candidate.piece_count);
-  if (!Number.isFinite(reviewedPieceCount) || reviewedPieceCount <= 0) {
+  const currentPieceCount = Number(candidate.reviewed_piece_count ?? candidate.piece_count);
+  const reviewedPieceCount = Number(pieceCount ?? currentPieceCount);
+  if (!Number.isFinite(currentPieceCount) || currentPieceCount <= 0 || !Number.isFinite(reviewedPieceCount) || reviewedPieceCount <= 0) {
     throw new Error("Valid piece count is required");
   }
+  const currentPromoType = cleanCandidatePromoType(candidateRow.promo_type);
+  const requestedPromoType = cleanCandidatePromoType(promoType ?? candidateRow.promo_type);
+  if (requiresPassedQualityGate && (
+    price !== currentPrice
+    || Math.floor(reviewedPieceCount) !== Math.floor(currentPieceCount)
+    || requestedPromoType !== currentPromoType
+  )) {
+    throw new Error("Save the correction and wait for historical price re-evaluation before approving.");
+  }
+  if (!candidateRow.approval_input_fingerprint) {
+    throw new Error("Candidate approval fingerprint is unavailable; reload after applying the quality migration.");
+  }
 
-  let competitorProduct: CompetitorProduct | null = null;
-  let skuMasterId: string | null = null;
-  let materialSkuCode: string | null = null;
-  if (candidateRow.matched_entity_type === "material_master" && candidateRow.matched_entity_id) {
-    materialSkuCode = candidateRow.matched_entity_id;
-    skuMasterId = await ensureSkuMasterFromMaterial(supabase, materialSkuCode);
-  } else if (candidateRow.matched_entity_type === "competitor_product") {
-    competitorProduct = await ensureCompetitorProduct(supabase, candidate, Math.floor(reviewedPieceCount));
+  const finalMatchType = reviewMethod === "manual"
+    ? matchedEntityType ?? candidateRow.matched_entity_type
+    : candidateRow.matched_entity_type;
+  const finalMatchId = reviewMethod === "manual"
+    ? matchedEntityId ?? candidateRow.matched_entity_id
+    : candidateRow.matched_entity_id;
+  const finalMatchLabel = reviewMethod === "manual"
+    ? matchedLabel ?? candidateRow.matched_label
+    : candidateRow.matched_label;
+
+  const ownershipChanged = finalMatchType !== candidateRow.matched_entity_type
+    || finalMatchId !== candidateRow.matched_entity_id;
+  if (reviewMethod === "manual" && ownershipChanged && !candidateAllowsProductCorrection(candidateRow)) {
+    throw new Error("Product match is already confident and cannot be changed from this review.");
+  }
+
+  if (!finalMatchId || finalMatchType === "unmatched") {
+    throw new Error("Please match a product before approving this candidate");
+  }
+
+  if (finalMatchType === "material_master") {
+    // The approval RPC validates/materializes the SKU bridge in the same transaction as the snapshot.
+  } else if (finalMatchType === "competitor_product") {
+    await loadCompetitorProductById(supabase, finalMatchId);
   } else {
     throw new Error("Please match a product before approving this candidate");
   }
-  if (candidateRow.matched_entity_type === "competitor_product" && !competitorProduct) {
-    throw new Error("Matched competitor product is required");
+
+  const { data: approvalRows, error: approvalError } = await supabase.rpc(
+    "approve_ai_price_candidate_with_quality_gate",
+    {
+      p_candidate_id: candidateId,
+      p_review_token: reviewMethod === "manual" ? reviewToken : candidateRow.approval_input_fingerprint,
+      p_price_idr: price,
+      p_piece_count: Math.floor(reviewedPieceCount),
+      p_promo_type: requestedPromoType,
+      p_matched_entity_type: finalMatchType,
+      p_matched_entity_id: finalMatchId,
+      p_matched_label: finalMatchLabel,
+      p_reviewer: reviewer ?? null,
+      p_review_job_id: reviewJobId ?? null,
+      p_review_method: reviewMethod,
+      p_auto_approval_worker_id: autoApprovalWorkerId ?? null,
+    },
+  );
+  if (approvalError) throw new Error(approvalError.message);
+  const approval = Array.isArray(approvalRows)
+    ? approvalRows[0] as { candidate_id?: string; snapshot_id?: string } | undefined
+    : null;
+  if (!approval?.candidate_id || !approval.snapshot_id) {
+    throw new Error("Atomic candidate approval returned no result.");
   }
 
-  const normalized = normalizePriceSnapshot({
-    promo_price_idr: packagePrice,
-    voucher_value_idr: 0,
-    shipping_subsidy_idr: 0,
-    net_price_idr: netPrice,
-    piece_count: Math.floor(reviewedPieceCount),
-  });
-  const reviewedPricePerPiece = resolveCandidateReviewPricePerPiece(candidateRow, normalized.price_per_piece);
+  const [{ data: updatedCandidate, error: candidateError }, { data: snapshot, error: snapshotError }] = await Promise.all([
+    supabase
+      .from("ai_price_candidates")
+      .select("*, offline_store_visits(*)")
+      .eq("id", approval.candidate_id)
+      .single(),
+    supabase
+      .from("price_snapshots")
+      .select("*")
+      .eq("id", approval.snapshot_id)
+      .single(),
+  ]);
+  if (candidateError || !updatedCandidate) throw new Error(candidateError?.message ?? "Approved candidate not found");
+  if (snapshotError || !snapshot) throw new Error(snapshotError?.message ?? "Approved price snapshot not found");
 
-  const visit = candidate.offline_store_visits as {
-    store_id?: string | null;
-    store_name?: string | null;
-    visit_date?: string | null;
-  } | null;
-  const sourceVisitId = candidateRow.visit_id;
-  const sourceImageId = candidateRow.source_image_id ?? null;
-  if (!sourceImageId) {
-    throw new Error("AI price candidate is missing source_image_id and cannot create a price snapshot");
-  }
-  const sourceOfflineStoreId = visit?.store_id ?? null;
-  const sourceMatchedEntityType = candidateRow.matched_entity_type;
-  const sourceMatchedEntityId = candidateRow.matched_entity_type === "material_master"
-    ? materialSkuCode
-    : competitorProduct?.id ?? candidateRow.matched_entity_id;
-  const snapshotPayload = candidateRow.matched_entity_type === "material_master"
-    ? {
-        competitor_product_id: null,
-        sku_master_id: skuMasterId,
-        material_sku_code: materialSkuCode,
-      }
-    : {
-        competitor_product_id: competitorProduct!.id,
-        sku_master_id: null,
-        material_sku_code: null,
-      };
-  const existingSnapshot = await findExistingOfflineAiSnapshot({
-    supabase,
-    visitId: sourceVisitId,
-    sourceImageId,
-    matchedEntityType: sourceMatchedEntityType,
-    matchedEntityId: sourceMatchedEntityId,
-    netPrice,
-  });
-  if (existingSnapshot) {
-    const snapshotWithStore = sourceOfflineStoreId && !existingSnapshot.offline_store_id
-      ? await attachOfflineStoreToSnapshot(supabase, existingSnapshot.id, sourceOfflineStoreId)
-      : existingSnapshot;
-    const updated = await updateAiPriceCandidateWithReviewMethodFallback(supabase, candidateId, {
-      status: "approved",
-      parsed_price_idr: netPrice,
-      reviewed_piece_count: Math.floor(reviewedPieceCount),
-      reviewed_price_per_piece: reviewedPricePerPiece,
-      price_snapshot_id: snapshotWithStore.id,
-      reviewed_at: new Date().toISOString(),
-      reviewed_by: reviewer ?? null,
-      review_job_id: reviewJobId ?? null,
-      review_method: reviewMethod,
-      rejection_reason: null,
-    });
-
-    return { candidate: updated as AiPriceCandidate, snapshot: snapshotWithStore };
-  }
-
-  const { data: snapshot, error: snapshotError } = await supabase
-    .from("price_snapshots")
-    .insert({
-      ...snapshotPayload,
-      offline_store_id: sourceOfflineStoreId,
-      channel: "offline",
-      list_price_idr: listPrice,
-      package_price_idr: packagePrice,
-      promo_price_idr: packagePrice,
-      voucher_value_idr: 0,
-      shipping_subsidy_idr: 0,
-      net_price_idr: normalized.net_price_idr,
-      price_per_piece: reviewedPricePerPiece,
-      promo_type: normalizeCandidatePromoType(promoType ?? candidateRow.promo_type),
-      captured_at: visit?.visit_date ? new Date(`${visit.visit_date}T00:00:00`).toISOString() : new Date().toISOString(),
-      source: "offline_ai_confirmed",
-      source_visit_id: sourceVisitId,
-      source_image_id: sourceImageId,
-      source_matched_entity_type: sourceMatchedEntityType,
-      source_matched_entity_id: sourceMatchedEntityId,
-      evidence_url: null,
-    })
-    .select("*")
-    .single();
-  if (snapshotError) throw new Error(snapshotError.message);
-
-  const updated = await updateAiPriceCandidateWithReviewMethodFallback(supabase, candidateId, {
-    status: "approved",
-    parsed_price_idr: netPrice,
-    reviewed_piece_count: Math.floor(reviewedPieceCount),
-    reviewed_price_per_piece: reviewedPricePerPiece,
-    price_snapshot_id: snapshot.id,
-    reviewed_at: new Date().toISOString(),
-    reviewed_by: reviewer ?? null,
-    review_job_id: reviewJobId ?? null,
-    review_method: reviewMethod,
-    rejection_reason: null,
-  });
-
-  return { candidate: updated as AiPriceCandidate, snapshot };
+  return { candidate: updatedCandidate as AiPriceCandidate, snapshot };
 }
 
 export async function rejectAiPriceCandidate({
@@ -222,6 +196,9 @@ export async function rejectAiPriceCandidate({
   reviewer,
   reviewJobId,
   reviewMethod = "manual",
+  reviewToken,
+  requireTerminalQuality = reviewMethod === "manual",
+  h5LifecycleStatus,
 }: {
   supabase: SupabaseServiceClient;
   candidateId: string;
@@ -229,28 +206,69 @@ export async function rejectAiPriceCandidate({
   reviewer?: string | null;
   reviewJobId?: string | null;
   reviewMethod?: Exclude<AiPriceCandidateReviewMethod, "auto_rule">;
+  reviewToken?: string | null;
+  requireTerminalQuality?: boolean;
+  h5LifecycleStatus?: "deleted" | null;
 }) {
   const cleanReason = reason.trim();
   if (!cleanReason) throw new Error("Rejection reason is required");
+  if (reviewMethod === "manual" && !reviewToken) {
+    throw new Error("Review token is required; reload before reviewing.");
+  }
 
-  const { data: candidate, error: lookupError } = await supabase
+  let effectiveReviewToken = reviewToken;
+  if (!effectiveReviewToken) {
+    const { data: currentCandidate, error: currentCandidateError } = await supabase
+      .from("ai_price_candidates")
+      .select("approval_input_fingerprint")
+      .eq("id", candidateId)
+      .single();
+    if (currentCandidateError || !currentCandidate?.approval_input_fingerprint) {
+      throw new Error(currentCandidateError?.message ?? "Candidate review token is unavailable");
+    }
+    effectiveReviewToken = currentCandidate.approval_input_fingerprint;
+  }
+
+  const { data: rejectionRows, error: rejectionError } = await supabase.rpc(
+    "reject_ai_price_candidate_with_quality_gate",
+    {
+      p_candidate_id: candidateId,
+      p_review_token: effectiveReviewToken,
+      p_reason: cleanReason,
+      p_reviewer: reviewer ?? null,
+      p_review_job_id: reviewJobId ?? null,
+      p_review_method: reviewMethod,
+      p_require_terminal_quality: requireTerminalQuality,
+      p_h5_lifecycle_status: h5LifecycleStatus ?? null,
+    },
+  );
+  if (rejectionError) throw new Error(rejectionError.message);
+  const rejection = Array.isArray(rejectionRows)
+    ? rejectionRows[0] as { candidate_id?: string } | undefined
+    : null;
+  if (!rejection?.candidate_id) {
+    throw new Error("Atomic candidate rejection returned no result.");
+  }
+
+  const { data, error } = await supabase
     .from("ai_price_candidates")
-    .select("id,status")
-    .eq("id", candidateId)
+    .select("*")
+    .eq("id", rejection.candidate_id)
     .single();
-  if (lookupError || !candidate) throw new Error(lookupError?.message ?? "Candidate not found");
-  if (candidate.status === "approved") throw new Error("Approved candidates cannot be rejected");
-
-  const data = await updateAiPriceCandidateWithReviewMethodFallback(supabase, candidateId, {
-    status: "rejected",
-    rejection_reason: cleanReason,
-    reviewed_at: new Date().toISOString(),
-    reviewed_by: reviewer ?? null,
-    review_job_id: reviewJobId ?? null,
-    review_method: reviewMethod,
-  });
+  if (error || !data) {
+    throw new Error(error?.message ?? "Rejected candidate not found");
+  }
 
   return data as AiPriceCandidate;
+}
+
+function candidateAllowsProductCorrection(candidate: Pick<AiPriceCandidate,
+  "matched_entity_type" | "matched_entity_id" | "match_score" | "quality_gate_reason_codes"
+>) {
+  return candidate.matched_entity_type === "unmatched"
+    || !candidate.matched_entity_id
+    || Number(candidate.match_score ?? 0) < MIN_MATCH_SCORE
+    || (candidate.quality_gate_reason_codes ?? []).includes("SKU_MATCH_UNCERTAIN");
 }
 
 export async function autoApproveAiPriceCandidatesForVisit({
@@ -322,6 +340,55 @@ export async function autoApproveAiPriceCandidatesForVisit({
   await Promise.all(Array.from({ length: workerCount }, () => autoReviewWorker()));
 
   return { approvedCount, failedCount, skippedCount, errors };
+}
+
+export async function autoApprovePassedAiPriceCandidates(input: {
+  supabase: SupabaseServiceClient;
+  limit?: number;
+}) {
+  const limit = Math.max(1, Math.min(input.limit ?? 50, 100));
+  const workerId = `price-auto-approval-${Date.now()}-${globalThis.crypto.randomUUID()}`;
+  const { data, error } = await input.supabase.rpc("claim_ai_price_candidates_for_auto_approval", {
+    p_worker_id: workerId,
+    p_limit: limit,
+  });
+  if (error) throw new Error(error.message);
+
+  let approved = 0;
+  let failed = 0;
+  const claimedIds = ((data ?? []) as { candidate_id?: string }[])
+    .map((row) => String(row.candidate_id ?? ""))
+    .filter(Boolean);
+  for (const candidateId of claimedIds) {
+    try {
+      await approveAiPriceCandidate({
+        supabase: input.supabase,
+        candidateId,
+        reviewer: "auto_rule",
+        reviewMethod: "auto_rule",
+        autoApprovalWorkerId: workerId,
+      });
+      approved += 1;
+    } catch (error) {
+      failed += 1;
+      const message = error instanceof Error ? error.message : String(error);
+      const { error: finalizeError } = await input.supabase.rpc(
+        "finalize_ai_price_candidate_auto_approval_failure",
+        {
+          p_candidate_id: candidateId,
+          p_worker_id: workerId,
+          p_error: message,
+        },
+      );
+      console.error("[price-quality-gate] auto approval failed", {
+        candidate_id: candidateId,
+        error: message,
+        finalize_error: finalizeError?.message ?? null,
+      });
+    }
+  }
+
+  return { claimed: claimedIds.length, approved, failed };
 }
 
 export async function ensureCompetitorProduct(supabase: SupabaseServiceClient, candidate: Record<string, unknown>, pieceCount: number) {
@@ -402,6 +469,16 @@ export async function ensureCompetitorProduct(supabase: SupabaseServiceClient, c
     .single();
   if (productCreateError) throw new Error(productCreateError.message);
   return createdProduct as CompetitorProduct;
+}
+
+async function loadCompetitorProductById(supabase: SupabaseServiceClient, productId: string) {
+  const { data, error } = await supabase
+    .from("competitor_products")
+    .select("*, brands(id,name), sku_matches(*, sku_master(*))")
+    .eq("id", productId)
+    .single();
+  if (error || !data) throw new Error(error?.message ?? "Competitor product not found");
+  return data as CompetitorProduct;
 }
 
 export function competitorLabel(product: CompetitorProduct) {
@@ -505,70 +582,15 @@ function positiveNumberOrFallback(value: unknown, fallback: number) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-async function attachOfflineStoreToSnapshot(
-  supabase: SupabaseServiceClient,
-  snapshotId: string,
-  offlineStoreId: string,
-) {
-  const { data, error } = await supabase
-    .from("price_snapshots")
-    .update({ offline_store_id: offlineStoreId })
-    .eq("id", snapshotId)
-    .select("*")
-    .single();
-  if (error) throw new Error(error.message);
-  return data;
-}
-
-async function findExistingOfflineAiSnapshot({
-  supabase,
-  visitId,
-  sourceImageId,
-  matchedEntityType,
-  matchedEntityId,
-  netPrice,
-}: {
-  supabase: SupabaseServiceClient;
-  visitId: string | null;
-  sourceImageId: string | null;
-  matchedEntityType: "material_master" | "competitor_product" | "unmatched";
-  matchedEntityId: string | null | undefined;
-  netPrice: number;
-}) {
-  if (!visitId || !sourceImageId || !matchedEntityId || matchedEntityType === "unmatched") return null;
-
-  const { data, error } = await supabase
-    .from("price_snapshots")
-    .select("*")
-    .eq("source", "offline_ai_confirmed")
-    .eq("source_visit_id", visitId)
-    .eq("source_image_id", sourceImageId)
-    .eq("source_matched_entity_type", matchedEntityType)
-    .eq("source_matched_entity_id", matchedEntityId)
-    .eq("net_price_idr", netPrice)
-    .limit(1)
-    .maybeSingle();
-  if (error && !isMissingSourceTrackingColumnError(error)) {
-    throw new Error(error.message);
-  }
-  return data ?? null;
-}
-
 function normalizeCandidatePromoType(value: string | null | undefined) {
   const text = String(value ?? "").trim();
   if (!text || /^none|no activity|no promo|normal$/i.test(text)) return "offline_ai_confirmed";
   return text;
 }
 
-function isMissingSourceTrackingColumnError(error: { message?: string | null } | null) {
-  const message = error?.message ?? "";
-  return [
-    "source_visit_id",
-    "source_image_id",
-    "source_matched_entity_type",
-    "source_matched_entity_id",
-    "schema cache",
-  ].some((column) => message.includes(column));
+function cleanCandidatePromoType(value: string | null | undefined) {
+  const text = String(value ?? "").trim();
+  return text || null;
 }
 
 async function findReusableMatchedCompetitorProduct(supabase: SupabaseServiceClient, candidate: Record<string, unknown>) {
@@ -604,38 +626,4 @@ function competitorBrandsMatch(candidateBrand: string | null | undefined, produc
   const product = compactText(productBrand);
   if (!candidate || !product) return false;
   return candidate === product;
-}
-
-async function updateAiPriceCandidateWithReviewMethodFallback(
-  supabase: SupabaseServiceClient,
-  candidateId: string,
-  payload: CandidateUpdatePayload,
-) {
-  const { data, error } = await supabase
-    .from("ai_price_candidates")
-    .update(payload)
-    .eq("id", candidateId)
-    .select("*")
-    .single();
-  if (!error && data) return data;
-
-  if (!isMissingReviewMethodError(error)) {
-    throw new Error(error?.message ?? "Candidate not found");
-  }
-
-  const legacyPayload = { ...payload };
-  delete legacyPayload.review_method;
-  const { data: legacyData, error: legacyError } = await supabase
-    .from("ai_price_candidates")
-    .update(legacyPayload)
-    .eq("id", candidateId)
-    .select("*")
-    .single();
-  if (legacyError || !legacyData) throw new Error(legacyError?.message ?? "Candidate not found");
-  return legacyData;
-}
-
-function isMissingReviewMethodError(error: { message?: string | null } | null) {
-  const message = error?.message ?? "";
-  return message.includes("review_method") || message.includes("schema cache");
 }

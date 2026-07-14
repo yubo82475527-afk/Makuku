@@ -1,5 +1,5 @@
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
-import { parseIdrPrice, reconcilePackagePriceMetrics } from "@/lib/price-utils";
+import { derivePriceEvidenceReasonCode, parseIdrPrice, reconcilePackagePriceMetrics } from "@/lib/price-utils";
 import { normalizePieceCount, normalizePieceCountFromCandidates, normalizePieceCountFromEvidence, parsePieceCountText } from "@/lib/piece-count";
 import type { AiPriceCandidate, CompetitorProduct, MaterialMaster, PriceEvidenceStatus, PriceReviewDecision, StoreVisitAiResult } from "@/lib/types";
 
@@ -309,6 +309,7 @@ function isExtendedCandidateColumnError(error: { message?: string } | null) {
     "source_image_id",
     "source_image_path",
     "source_row_index",
+    "price_evidence_reason_code",
   ].some((column) => message.includes(column));
 }
 
@@ -503,6 +504,13 @@ function buildAiPriceCandidateRow(input: {
   const packagePrice = reconciledPrices.packagePriceIdr ?? parsedPrice;
   const netPrice = reconciledPrices.netPriceIdr ?? parsedPrice;
   const pricePerPiece = reconciledPrices.pricePerPieceIdr;
+  const priceEvidenceStatus = item.price_evidence_status ?? reconciledPrices.priceEvidenceStatus;
+  const priceEvidenceDetail = item.price_evidence_detail ?? reconciledPrices.priceEvidenceDetail;
+  const priceEvidenceReasonCode = derivePriceEvidenceReasonCode({
+    status: priceEvidenceStatus,
+    detail: priceEvidenceDetail,
+  });
+  const evidenceReviewDecision = item.review_decision ?? reconciledPrices.reviewDecision;
   const warnings: Warning[] = [];
   if (!item.brand) warnings.push({ type: "MISSING_DATA", message: "AI did not extract a brand." });
   if (!item.product) warnings.push({ type: "MISSING_DATA", message: "AI did not extract a product name." });
@@ -566,11 +574,16 @@ function buildAiPriceCandidateRow(input: {
     candidate_type: item.type,
     ai_confidence: item.confidence,
     legacy_confidence_fallback: item.legacy_confidence_fallback ?? item.confidence === null,
-    price_evidence_status: item.price_evidence_status ?? reconciledPrices.priceEvidenceStatus,
+    price_evidence_status: priceEvidenceStatus,
     price_evidence_confidence: item.price_evidence_confidence ?? reconciledPrices.priceEvidenceConfidence,
-    price_evidence_detail: item.price_evidence_detail ?? reconciledPrices.priceEvidenceDetail,
+    price_evidence_detail: priceEvidenceDetail,
+    price_evidence_reason_code: priceEvidenceReasonCode,
     conflicts: item.conflicts ?? reconciledPrices.conflicts,
-    review_decision: item.review_decision ?? reconciledPrices.reviewDecision,
+    evidence_review_decision: evidenceReviewDecision,
+    review_decision: "NEED_REVIEW",
+    quality_gate_status: item.type === "SKU" ? "PENDING" : "NOT_REQUIRED",
+    quality_gate_reason_codes: [],
+    quality_gate_version: null,
     matched_entity_type: matchedEntityType,
     matched_entity_id: matchedEntityId,
     matched_label: materialMatch ? materialLabel(materialMatch.item) : competitorMatch ? competitorLabel(competitorMatch.item) : null,
@@ -666,8 +679,13 @@ export async function insertAiPriceCandidateRows(input: {
     .select(candidateVisitSelect);
 
   if (isExtendedCandidateColumnError(error)) {
-    const legacyRows = rows.map(({ source_row_index: _sourceRowIndex, ...row }) => {
+    const legacyRows = rows.map(({
+      source_row_index: _sourceRowIndex,
+      price_evidence_reason_code: _priceEvidenceReasonCode,
+      ...row
+    }) => {
       void _sourceRowIndex;
+      void _priceEvidenceReasonCode;
       return row;
     });
     const legacyInsert = await supabase

@@ -34,6 +34,13 @@ export type PriceBasis =
   | "RECONCILED_PACKAGE_PRICE";
 export type PriceEvidenceStatus = "CLEAR" | "LOW_CONFIDENCE" | "DERIVED" | "CONFLICT" | "REVIEW_REQUIRED";
 export type PriceReviewDecision = "AUTO_APPROVE" | "NEED_REVIEW";
+export type PriceEvidenceReasonCode =
+  | "PRODUCT_PRICE_BINDING_UNCLEAR"
+  | "PRICE_TAG_UNCLEAR"
+  | "PIECE_COUNT_UNCLEAR"
+  | "PRICE_MATH_CONFLICT"
+  | "PRICE_DERIVED"
+  | "LEGACY_EVIDENCE_UNAVAILABLE";
 
 export type StoreVisitAiResult = {
   raw_extraction: {
@@ -161,6 +168,7 @@ export type StoreVisitPriceImageRow = {
   price_evidence_status?: PriceEvidenceStatus | null;
   price_evidence_confidence?: number | null;
   price_evidence_detail?: Record<string, unknown> | null;
+  price_evidence_reason_code?: PriceEvidenceReasonCode | null;
   conflicts?: { type?: string; message: string }[];
   review_decision?: PriceReviewDecision;
   promo_type: string | null;
@@ -653,6 +661,7 @@ export type PriceSnapshot = {
   voucher_value_idr: number;
   shipping_subsidy_idr: number;
   net_price_idr: number;
+  piece_count?: number | null;
   price_per_piece: number;
   promo_type: string | null;
   captured_at: string;
@@ -661,6 +670,7 @@ export type PriceSnapshot = {
   source_image_id?: string | null;
   source_matched_entity_type?: AiPriceCandidateMatchType | null;
   source_matched_entity_id?: string | null;
+  benchmark_assessment_at_approval?: BenchmarkAssessment | null;
   evidence_url: string | null;
   created_at: string;
   competitor_products?: CompetitorProduct | null;
@@ -813,6 +823,28 @@ export type OfflineStoreVisit = {
 export type AiPriceCandidateStatus = "pending" | "approved" | "rejected";
 export type AiPriceCandidateMatchType = "material_master" | "competitor_product" | "unmatched";
 export type AiPriceCandidateReviewMethod = "auto_rule" | "manual" | "bulk_manual";
+export type BenchmarkAssessment = "READY" | "BUILDING" | "NOT_EVALUATED";
+export type BenchmarkAssessmentReason =
+  | "NO_HISTORY"
+  | "LOW_SAMPLE"
+  | "LOW_STORE"
+  | "LOW_SAMPLE_AND_STORE";
+export type AiPriceQualityGateStatus =
+  | "PENDING"
+  | "PROCESSING"
+  | "PASSED"
+  | "REVIEW_REQUIRED"
+  | "INSUFFICIENT_BENCHMARK"
+  | "FAILED"
+  | "NOT_REQUIRED";
+export type PriceQualityReasonCode =
+  | "EVIDENCE_REVIEW_REQUIRED"
+  | "SKU_MATCH_UNCERTAIN"
+  | "INSUFFICIENT_BENCHMARK"
+  | "PRICE_DEVIATION_HIGH"
+  | "PRICE_DEVIATION_CRITICAL"
+  | "AMOUNT_SCALE_SUSPECTED"
+  | "PROMOTION_EVIDENCE";
 
 export type AiPriceCandidate = {
   id: string;
@@ -849,8 +881,32 @@ export type AiPriceCandidate = {
   price_evidence_status?: PriceEvidenceStatus | null;
   price_evidence_confidence?: number | null;
   price_evidence_detail?: Record<string, unknown> | null;
+  price_evidence_reason_code?: PriceEvidenceReasonCode | null;
   conflicts?: { type?: string; message: string }[];
   review_decision?: PriceReviewDecision;
+  evidence_review_decision?: PriceReviewDecision | null;
+  quality_gate_status?: AiPriceQualityGateStatus;
+  quality_gate_reason_codes?: PriceQualityReasonCode[];
+  quality_gate_version?: string | null;
+  benchmark_date?: string | null;
+  benchmark_price_per_piece?: number | null;
+  benchmark_deviation_pct?: number | null;
+  benchmark_sample_count?: number | null;
+  benchmark_store_count?: number | null;
+  benchmark_assessment?: BenchmarkAssessment;
+  benchmark_assessment_reason?: BenchmarkAssessmentReason | null;
+  quality_gate_evaluated_at?: string | null;
+  quality_gate_error?: string | null;
+  quality_gate_attempt_count?: number;
+  quality_gate_worker_id?: string | null;
+  quality_gate_claimed_at?: string | null;
+  quality_gate_input_fingerprint?: string | null;
+  approval_input_fingerprint?: string | null;
+  auto_approval_status?: "PENDING" | "PROCESSING" | "FAILED" | "EXHAUSTED" | "COMPLETED" | "NOT_REQUIRED";
+  auto_approval_attempt_count?: number;
+  auto_approval_worker_id?: string | null;
+  auto_approval_claimed_at?: string | null;
+  auto_approval_error?: string | null;
   ai_matched_entity_type?: AiPriceCandidateMatchType | null;
   ai_matched_entity_id?: string | null;
   ai_matched_label?: string | null;
@@ -873,6 +929,63 @@ export type AiPriceCandidate = {
   h5_lifecycle_status?: "deleted" | "replaced" | "reanalyzed" | null;
   h5_lifecycle_at?: string | null;
   offline_store_visits?: Pick<OfflineStoreVisit, "id" | "visit_code" | "store_name" | "city" | "province" | "city_name" | "district" | "channel_type" | "visit_date" | "created_at" | "uploader_name"> | null;
+};
+
+export type OperatorPriceReviewState = "pending" | "processed";
+export type OperatorPriceReviewDecision = "confirmed" | "corrected" | "rejected";
+
+export type OperatorPriceReviewReasonGroup = {
+  kind: "PRICE" | "CONFIRMATION";
+  title: string;
+  messages: string[];
+};
+
+export type OperatorPriceReviewListItem = {
+  id: string;
+  state: OperatorPriceReviewState;
+  source_thumbnail_url: string | null;
+  source_image_available: boolean;
+  product_name: string;
+  sku_label: string | null;
+  ai_package_price: number | null;
+  ai_piece_count: number | null;
+  ai_price_per_piece: number | null;
+  operator_reason: string;
+  operator_reason_groups: OperatorPriceReviewReasonGroup[];
+  requires_product_correction: boolean;
+  processed_decision: OperatorPriceReviewDecision | null;
+  processed_at: string | null;
+};
+
+export type OperatorPriceReviewDetail = OperatorPriceReviewListItem & {
+  source_image_id: string | null;
+  source_image_url: string | null;
+  evidence_product_text: string;
+  evidence_package_price: number | null;
+  evidence_piece_count: number | null;
+  evidence_price_per_piece: number | null;
+  historical_common_price_per_piece: number | null;
+  current_match_type: AiPriceCandidateMatchType;
+  current_match_id: string | null;
+  current_match_label: string | null;
+  review_token: string;
+  visit_detail_href: string;
+};
+
+export type PriceQualityBenchmarkDaily = {
+  id: string;
+  benchmark_date: string;
+  matched_entity_type: Exclude<AiPriceCandidateMatchType, "unmatched">;
+  matched_entity_id: string;
+  channel: PriceSnapshot["channel"];
+  window_start_date: string;
+  window_end_date: string;
+  median_price_per_piece: number;
+  sample_count: number;
+  store_count: number;
+  benchmark_status: "READY" | "INSUFFICIENT";
+  calculation_version: string;
+  generated_at: string;
 };
 
 export type AiPriceReviewRule = {

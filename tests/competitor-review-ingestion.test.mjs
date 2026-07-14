@@ -6,6 +6,7 @@ const candidateService = readFileSync("src/lib/ai-price-candidates.ts", "utf8");
 const reviewService = readFileSync("src/lib/ai-price-review.ts", "utf8");
 const bulkRunRoute = readFileSync("src/app/api/ai-price-candidates/bulk-review/[jobId]/run/route.ts", "utf8");
 const idempotencyMigration = readFileSync("supabase/migrations/202606220001_offline_ai_price_snapshot_idempotency.sql", "utf8");
+const qualityGateMigration = readFileSync("supabase/migrations/202607130001_price_quality_gate_phase1.sql", "utf8");
 
 test("AI candidate generation assigns stable candidate keys for idempotent reanalysis", () => {
   assert.match(candidateService, /function candidateKey/);
@@ -39,17 +40,14 @@ test("AI candidate generation deduplicates candidate keys before inserting", () 
 });
 
 test("AI price approval reuses existing offline AI snapshots for the same image product and net price", () => {
-  assert.match(reviewService, /findExistingOfflineAiSnapshot/);
-  assert.match(reviewService, /const sourceOfflineStoreId = visit\?\.store_id \?\? null/);
-  assert.match(reviewService, /offline_store_id: sourceOfflineStoreId/);
-  assert.match(reviewService, /attachOfflineStoreToSnapshot/);
-  assert.match(reviewService, /source_visit_id/);
-  assert.match(reviewService, /source_image_id/);
-  assert.match(reviewService, /source_matched_entity_type/);
-  assert.match(reviewService, /source_matched_entity_id/);
-  assert.match(reviewService, /\.eq\("net_price_idr", netPrice\)/);
-  assert.match(reviewService, /if \(existingSnapshot\)/);
-  assert.match(reviewService, /price_snapshot_id: snapshotWithStore\.id/);
+  assert.match(reviewService, /approve_ai_price_candidate_with_quality_gate/);
+  assert.match(qualityGateMigration, /source_visit_id = v_candidate\.visit_id/);
+  assert.match(qualityGateMigration, /source_image_id = v_candidate\.source_image_id/);
+  assert.match(qualityGateMigration, /source_matched_entity_type = v_candidate\.matched_entity_type/);
+  assert.match(qualityGateMigration, /source_matched_entity_id = v_source_matched_entity_id/);
+  assert.match(qualityGateMigration, /snapshot\.net_price_idr = v_net_price/);
+  assert.match(qualityGateMigration, /on conflict do nothing/);
+  assert.match(qualityGateMigration, /price_snapshot_id = v_snapshot_id/);
 });
 
 test("offline AI price idempotency migration constrains candidates and snapshots by image product and net price", () => {

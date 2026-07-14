@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { runStoreVisitAnalysis } from "@/lib/store-visit-analysis";
 import { refreshStoreVisitStoredPriceState } from "@/lib/store-visit-image-maintenance";
 import { syncStoreVisitPriceCandidatesFromImages } from "@/lib/store-visit-price-candidate-sync";
+import { triggerPriceQualityGateRunner } from "@/lib/price-quality-gate-jobs";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import type {
   StoreVisitAiJob,
@@ -107,6 +108,9 @@ async function reconcileStoreVisitAiJobFromImages(input: {
   job: StoreVisitAiJob;
   items: StoreVisitAiJobItem[];
 }) {
+  if (input.job.job_type !== "initial_analysis") {
+    return { job: input.job, items: input.items };
+  }
   const reconcilableItems = input.items.filter((item) => item.status === "queued");
   if (reconcilableItems.length === 0) return { job: input.job, items: input.items };
 
@@ -629,7 +633,10 @@ export async function triggerStoreVisitAiJobRunner(input: {
 }) {
   const secret = String(process.env.CRON_SECRET ?? "").trim();
   if (!secret) {
-    await runStoreVisitAiJob({ jobId: input.jobId });
+    const result = await runStoreVisitAiJob({ jobId: input.jobId });
+    if (result.processed > 0) {
+      await triggerPriceQualityGateRunner({ requestUrl: input.requestUrl });
+    }
     return;
   }
 

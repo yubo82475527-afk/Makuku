@@ -1,0 +1,342 @@
+import { existsSync, readFileSync } from "node:fs";
+import test from "node:test";
+import assert from "node:assert/strict";
+import vm from "node:vm";
+import ts from "typescript";
+
+const read = (path) => existsSync(path) ? readFileSync(path, "utf8") : "";
+
+const domain = read("src/lib/operator-price-review.ts");
+const listRoute = read("src/app/api/operator-price-reviews/route.ts");
+const detailRoute = read("src/app/api/operator-price-reviews/[id]/route.ts");
+const page = read("src/app/[locale]/offline-price-candidates/page.tsx");
+const appShell = read("src/components/app-shell.tsx");
+const workbench = read("src/components/operator-price-review-workbench.tsx");
+const drawer = read("src/components/operator-price-review-drawer.tsx");
+const reviewService = read("src/lib/ai-price-review.ts");
+const legacyCandidateRoute = read("src/app/api/ai-price-candidates/[id]/route.ts");
+const h5CandidateRoute = read("src/app/api/store-visit/price-candidates/[id]/route.ts");
+const migration = read("supabase/migrations/202607130002_operator_price_review_phase2.sql");
+const reasonFilters = read("src/lib/operator-price-review-reasons.ts");
+const reasonGroups = read("src/lib/operator-price-review-reason-groups.ts");
+
+function loadReasonGroups() {
+  if (!reasonGroups) return null;
+  const transpiled = ts.transpileModule(reasonGroups, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const testModule = { exports: {} };
+  vm.runInNewContext(transpiled, { module: testModule, exports: testModule.exports });
+  return testModule.exports;
+}
+
+test("operator reason filters use one complete shared catalog", () => {
+  assert.match(reasonFilters, /OPERATOR_PRICE_REVIEW_REASON_FILTERS/);
+  for (const key of [
+    "SKU_MATCH_UNCERTAIN",
+    "PRODUCT_PRICE_BINDING_UNCLEAR",
+    "PRICE_TAG_UNCLEAR",
+    "PIECE_COUNT_UNCLEAR",
+    "PRICE_MATH_CONFLICT",
+    "PRICE_DERIVED",
+    "LEGACY_EVIDENCE_UNAVAILABLE",
+    "OTHER_EVIDENCE_REVIEW_REQUIRED",
+    "AMOUNT_SCALE_SUSPECTED",
+    "PRICE_DEVIATION_CRITICAL",
+    "PRICE_DEVIATION_HIGH",
+    "PROMOTION_EVIDENCE",
+    "INSUFFICIENT_BENCHMARK",
+    "QUALITY_CHECK_FAILED",
+    "OTHER_REVIEW_REQUIRED",
+  ]) assert.match(reasonFilters, new RegExp(key));
+  assert.match(reasonFilters, /normalizeOperatorPriceReviewReason/);
+});
+
+test("operator queue includes only terminal human-review candidates", () => {
+  assert.match(domain, /MAX_QUALITY_GATE_ATTEMPTS\s*=\s*3/);
+  assert.match(domain, /REVIEW_REQUIRED/);
+  assert.match(domain, /INSUFFICIENT_BENCHMARK/);
+  assert.match(domain, /quality_gate_attempt_count/);
+  assert.match(domain, /auto_rule/);
+  assert.match(domain, /h5_lifecycle_status/);
+  assert.match(domain, /candidate_type/);
+});
+
+test("operator review filters use the shared query form to preserve filter parameters", () => {
+  assert.match(page, /import \{ QueryForm, QuerySubmitButton \} from "@\/components\/query-form"/);
+  assert.match(page, /<QueryForm[\s\S]*?<\/QueryForm>/);
+  assert.match(page, /<QuerySubmitButton[\s\S]*?\/>/);
+  assert.doesNotMatch(page, /<form className=/);
+});
+
+test("operator reason filtering happens in the database before pagination", () => {
+  assert.match(domain, /reason\?: OperatorPriceReviewReasonFilter/);
+  assert.match(domain, /PRICE_DEVIATION_HIGH[\s\S]*filter\("quality_gate_reason_codes", "cs"/);
+  assert.match(domain, /PRICE_DEVIATION_CRITICAL[\s\S]*filter\("quality_gate_reason_codes", "cs"/);
+  assert.match(domain, /PRICE_TAG_UNCLEAR[\s\S]*eq\("price_evidence_reason_code"/);
+  assert.match(domain, /QUALITY_CHECK_FAILED[\s\S]*eq\("quality_gate_status", "FAILED"\)/);
+  assert.ok(domain.indexOf("switch (filters.reason)") < domain.indexOf("query = query.range"));
+});
+
+test("operator JSONB reason filters send valid JSON instead of Postgres array syntax", () => {
+  assert.doesNotMatch(domain, /\.contains\("quality_gate_reason_codes"/);
+  assert.doesNotMatch(domain, /\.eq\("quality_gate_reason_codes", \[\]\)/);
+  assert.match(domain, /filter\("quality_gate_reason_codes", "cs", JSON\.stringify\(\[filters\.reason\]\)\)/);
+  assert.match(domain, /filter\("quality_gate_reason_codes", "eq", JSON\.stringify\(\[\]\)\)/);
+});
+
+test("operator review API normalizes and forwards the reason filter", () => {
+  assert.match(listRoute, /normalizeOperatorPriceReviewReason/);
+  assert.match(listRoute, /reason:\s*normalizeOperatorPriceReviewReason/);
+});
+
+test("operator review page renders the shared anomaly reason filter", () => {
+  assert.match(page, /OPERATOR_PRICE_REVIEW_REASON_FILTERS/);
+  assert.match(page, /name="reason"/);
+  assert.match(page, /异常原因/);
+  assert.match(page, /全部原因/);
+  assert.match(page, /reason:\s*reason/);
+});
+
+test("operator navigation preserves the anomaly reason filter", () => {
+  assert.match(workbench, /reason\?: OperatorPriceReviewReasonFilter/);
+  assert.match(workbench, /if \(filters\.reason\) params\.set\("reason", filters\.reason\)/);
+});
+
+test("operator reason mapping is server-owned and follows business priority", () => {
+  assert.match(domain, /buildOperatorReason/);
+  assert.match(domain, /SKU_MATCH_UNCERTAIN[\s\S]*EVIDENCE_REVIEW_REQUIRED[\s\S]*AMOUNT_SCALE_SUSPECTED[\s\S]*PRICE_DEVIATION_CRITICAL[\s\S]*PRICE_DEVIATION_HIGH/);
+  assert.match(domain, /INSUFFICIENT_BENCHMARK/);
+  assert.match(domain, /PROMOTION_EVIDENCE/);
+  assert.match(domain, /Intl\.NumberFormat/);
+});
+
+test("operator reason groups put stored price deviation before confirmation evidence", () => {
+  assert.match(reasonGroups, /buildOperatorPriceReviewReasonGroups/);
+  assert.match(reasonGroups, /kind:\s*"PRICE"/);
+  assert.match(reasonGroups, /kind:\s*"CONFIRMATION"/);
+  assert.match(reasonGroups, /benchmark_price_per_piece/);
+  assert.match(reasonGroups, /benchmark_deviation_pct/);
+  assert.match(reasonGroups, /AI 识别/);
+  assert.match(reasonGroups, /偏差/);
+  assert.match(domain, /operator_reason_groups/);
+  assert.match(workbench, /operator_reason_groups/);
+  assert.match(drawer, /operator_reason_groups/);
+
+  const groups = loadReasonGroups()?.buildOperatorPriceReviewReasonGroups({
+    quality_gate_reason_codes: ["PRICE_DEVIATION_CRITICAL", "EVIDENCE_REVIEW_REQUIRED"],
+    benchmark_price_per_piece: 2142,
+    ai_price_per_piece: 3854,
+    benchmark_deviation_pct: 79.9253,
+    price_evidence_reason_code: "PRICE_TAG_UNCLEAR",
+    price_evidence_status: "REVIEW_REQUIRED",
+    matched_entity_type: "material_master",
+    matched_entity_id: "SKU-1",
+    match_score: 0.95,
+    conflicts: [],
+  }, "zh");
+  assert.equal(groups?.[0]?.kind, "PRICE");
+  assert.match(groups?.[0]?.messages.join(" ") ?? "", /Rp 2,142\/片.*AI 识别 Rp 3,854\/片.*\+80%/);
+  assert.equal(groups?.[1]?.kind, "CONFIRMATION");
+  assert.match(groups?.[1]?.messages.join(" ") ?? "", /价格牌或金额不清晰/);
+});
+
+test("operator reason reserves legacy evidence copy for candidates without current evidence", () => {
+  assert.match(domain, /const hasCurrentEvidence = Boolean\(candidate\.price_evidence_reason_code\)\s*\|\| Boolean\(candidate\.price_evidence_status\)/);
+  assert.match(domain, /if \(!hasCurrentEvidence\) \{[\s\S]*historical record lacks the original recognition evidence/i);
+  assert.match(domain, /Current recognition evidence exists, but the product, price, or package facts still need confirmation/);
+});
+
+test("operator view models expose an explicit minimal contract", () => {
+  assert.match(domain, /OperatorPriceReviewListItem/);
+  assert.match(domain, /OperatorPriceReviewDetail/);
+  assert.match(domain, /operator_reason/);
+  assert.match(domain, /review_token/);
+  assert.match(domain, /visit_detail_href/);
+  assert.doesNotMatch(domain, /\.\.\.candidate/);
+});
+
+test("operator candidate queries select only persisted columns and enrich SKU labels in batches", () => {
+  const candidateSelect = domain.match(/const CANDIDATE_SELECT = \[([\s\S]*?)\]\.join/)?.[1] ?? "";
+  assert.doesNotMatch(candidateSelect, /matched_sku_label/);
+  assert.match(domain, /loadMatchedLabelMap/);
+  assert.match(domain, /from\("material_master"\)[\s\S]*tenant_sku_code,tenant_sku_name/);
+  assert.match(domain, /from\("competitor_products"\)[\s\S]*brands\(name\)/);
+  assert.match(domain, /candidate\.matched_label/);
+});
+
+test("operator detail loads only the exact candidate source image", () => {
+  assert.match(domain, /source_image_id/);
+  assert.match(domain, /offline_visit_images/);
+  assert.match(domain, /createSignedUrl/);
+  assert.doesNotMatch(domain, /offline_visit_images\(\*\)/);
+  assert.match(drawer, /原始证据不可用|Source evidence unavailable/);
+});
+
+test("a missing source image id never falls back to another path and signing failure is unavailable", () => {
+  assert.match(domain, /filter\(\(candidate\) => !candidate\.source_image_id\)/);
+  assert.match(domain, /if \(candidate\.source_image_id\) \{[\s\S]*return byId\?\.visit_id === candidate\.visit_id \? byId : null;[\s\S]*\}/);
+  assert.match(domain, /source_image_available: Boolean\(sourceImageUrl\)/);
+});
+
+test("manual review mutations are token fenced and atomic", () => {
+  assert.match(migration, /p_review_token text/i);
+  assert.match(migration, /for update of candidate/i);
+  assert.match(migration, /approval_input_fingerprint is distinct from p_review_token/i);
+  assert.match(migration, /p_review_method = 'manual'/i);
+  assert.match(migration, /insert into public\.price_snapshots/i);
+  assert.match(migration, /p_matched_entity_type text/i);
+  assert.match(reviewService, /reviewToken/);
+});
+
+test("manual approval permits final values while automated approval remains strict", () => {
+  assert.match(migration, /p_review_method in \('auto_rule', 'bulk_manual'\)[\s\S]*p_price_idr is distinct from v_net_price/i);
+  assert.match(migration, /p_review_method = 'manual'[\s\S]*v_net_price := p_price_idr/i);
+  assert.match(migration, /v_piece_count := p_piece_count/i);
+  assert.match(migration, /v_price_per_piece := round\(v_net_price \/ v_piece_count/i);
+});
+
+test("price snapshots persist the reviewed piece-count fact without trigger overwrite", () => {
+  assert.match(migration, /alter table public\.price_snapshots[\s\S]*add column if not exists piece_count integer/i);
+  assert.match(migration, /price_snapshots_piece_count_check/i);
+  assert.match(migration, /create or replace function public\.normalize_price_snapshot/i);
+  assert.match(migration, /new\.piece_count := coalesce\(new\.piece_count, product_piece_count\)/i);
+  assert.match(migration, /if new\.price_per_piece is null[\s\S]*new\.net_price_idr \/ new\.piece_count/i);
+  assert.doesNotMatch(migration, /new\.price_per_piece := round\(new\.net_price_idr \/ product_piece_count/i);
+  assert.match(migration, /insert into public\.price_snapshots \([\s\S]*piece_count[\s\S]*price_per_piece/i);
+});
+
+test("automatic approvals preserve the evaluated per-piece fact while corrections recompute it", () => {
+  assert.match(migration, /p_review_method in \('auto_rule', 'bulk_manual'\)[\s\S]*visible_price_per_piece_idr[\s\S]*reviewed_price_per_piece[\s\S]*price_per_piece[\s\S]*round\(v_net_price \/ v_piece_count/i);
+  assert.match(migration, /p_review_method = 'manual'[\s\S]*v_price_per_piece := round\(v_net_price \/ v_piece_count/i);
+});
+
+test("manual decisions require an active SKU candidate and a terminal result for current inputs", () => {
+  assert.match(migration, /v_candidate\.candidate_type <> 'SKU'/i);
+  assert.match(migration, /h5_lifecycle_status[\s\S]*deleted[\s\S]*replaced[\s\S]*reanalyzed/i);
+  assert.match(migration, /quality_gate_input_fingerprint is distinct from v_candidate\.approval_input_fingerprint/i);
+  assert.match(migration, /p_require_terminal_quality boolean/i);
+  assert.match(migration, /if p_require_terminal_quality[\s\S]*REVIEW_REQUIRED[\s\S]*INSUFFICIENT_BENCHMARK[\s\S]*FAILED/i);
+  assert.match(detailRoute, /requireTerminalQuality:\s*true/);
+  assert.match(h5CandidateRoute, /requireTerminalQuality:\s*false/);
+});
+
+test("H5 row deletion commits rejection and lifecycle state in one locked mutation", () => {
+  assert.match(migration, /p_h5_lifecycle_status text/i);
+  assert.match(migration, /h5_lifecycle_status = p_h5_lifecycle_status/i);
+  assert.match(migration, /h5_lifecycle_at = case[\s\S]*now\(\)/i);
+  assert.match(h5CandidateRoute, /h5LifecycleStatus:\s*"deleted"/);
+  const deleteBranch = h5CandidateRoute.slice(h5CandidateRoute.indexOf('if \(action === "delete_h5_row"\)'), h5CandidateRoute.indexOf('return Response.json\(\{ error: "Unsupported action"'));
+  assert.doesNotMatch(deleteBranch, /\.from\("ai_price_candidates"\)[\s\S]*\.update\(/);
+});
+
+test("confident product ownership cannot be changed by a crafted review request", () => {
+  assert.match(detailRoute, /detail\.requires_product_correction/);
+  assert.match(reviewService, /candidateAllowsProductCorrection/);
+  assert.match(migration, /v_product_correction_allowed/i);
+  assert.match(migration, /SKU_MATCH_UNCERTAIN/i);
+  assert.match(migration, /Product match is already confident/i);
+});
+
+test("operator API maps stale state and invalid ownership conflicts without returning 500", () => {
+  assert.match(detailRoute, /quality result is stale[\s\S]*return 409/i);
+  assert.match(detailRoute, /Inactive candidates[\s\S]*return 409/i);
+  assert.match(detailRoute, /Only SKU candidates[\s\S]*return 400/i);
+  assert.match(detailRoute, /Product match is already confident[\s\S]*return 400/i);
+});
+
+test("snapshot reuse never overwrites an already confirmed price fact", () => {
+  assert.match(migration, /select[\s\S]*snapshot\.piece_count[\s\S]*snapshot\.price_per_piece[\s\S]*into[\s\S]*v_snapshot_piece_count[\s\S]*v_snapshot_price_per_piece/i);
+  assert.match(migration, /where snapshot\.id = v_snapshot_id\s+for update of snapshot;/i);
+  assert.match(migration, /Existing price snapshot facts differ from this review/i);
+  assert.doesNotMatch(migration, /update public\.price_snapshots snapshot\s+set[\s\S]{0,200}piece_count = v_piece_count/i);
+});
+
+test("manual SKU correction validates one legal product owner", () => {
+  assert.match(migration, /material_master/i);
+  assert.match(migration, /competitor_products/i);
+  assert.match(migration, /Please match a product before approving/i);
+  assert.match(migration, /v_competitor_product_id[\s\S]*v_sku_master_id/i);
+  assert.match(migration, /Exactly one product owner is required/i);
+});
+
+test("rejection is protected by the same review token", () => {
+  assert.match(migration, /reject_ai_price_candidate_with_quality_gate\([\s\S]*p_review_token text/i);
+  assert.match(migration, /approval_input_fingerprint is distinct from p_review_token/i);
+});
+
+test("legacy and H5 manual review callers carry the candidate fingerprint", () => {
+  assert.match(legacyCandidateRoute, /reviewToken:\s*cleanOptionalText\(body\.review_token\)/);
+  assert.match(h5CandidateRoute, /reviewToken:\s*candidateRow\.approval_input_fingerprint/);
+  assert.match(h5CandidateRoute, /reviewToken:\s*sourceCandidate\.approval_input_fingerprint/);
+});
+
+test("operator APIs require admin auth and return minimal review actions", () => {
+  assert.match(listRoute, /requireAdminSession/);
+  assert.match(detailRoute, /requireAdminSession/);
+  assert.match(detailRoute, /action === "confirm"/);
+  assert.match(detailRoute, /action === "correct"/);
+  assert.match(detailRoute, /action === "reject"/);
+  assert.match(detailRoute, /return 409/);
+});
+
+test("rejecting an invalid candidate does not require a valid product match", () => {
+  const rejectIndex = detailRoute.indexOf('if (action === "reject")');
+  const normalizeMatchIndex = detailRoute.indexOf("const match = normalizeMatch");
+  assert.notEqual(rejectIndex, -1);
+  assert.notEqual(normalizeMatchIndex, -1);
+  assert.ok(rejectIndex < normalizeMatchIndex);
+});
+
+test("the existing photo-review route renders the operator workbench", () => {
+  assert.match(page, /OperatorPriceReviewWorkbench/);
+  assert.match(page, /getOperatorPriceReviewsPage/);
+  assert.doesNotMatch(page, /AiPriceCandidatesWorkbench/);
+  assert.doesNotMatch(page, /getAiPriceReviewRule/);
+  assert.match(appShell, /价格异常审核/);
+  assert.match(appShell, /Price Anomaly Review/);
+});
+
+test("operator list exposes only two states and no technical bulk workflow", () => {
+  assert.match(workbench, /待处理/);
+  assert.match(workbench, /已处理/);
+  assert.match(workbench, /查看并处理/);
+  assert.doesNotMatch(workbench, /benchmark_sample_count|benchmark_store_count|ai_confidence|match_score|quality_gate_version|raw JSON/i);
+  assert.doesNotMatch(workbench, /bulk|批量批准/i);
+});
+
+test("operator navigation derives rows from fresh props and preserves filter state", () => {
+  assert.match(workbench, /removedPendingIds/);
+  assert.match(workbench, /useMemo\([\s\S]*items\.filter/);
+  assert.doesNotMatch(workbench, /useState\(items\)/);
+  assert.match(page, /type="hidden" name="state"/);
+  assert.match(page, /type="hidden" name="per_page"/);
+});
+
+test("drawer exposes evidence, three final actions, conditional SKU correction and Visit link", () => {
+  assert.match(drawer, /这个价格需要确认/);
+  assert.match(drawer, /确认价格正确/);
+  assert.match(drawer, /修正后通过/);
+  assert.match(drawer, /判定为错误/);
+  assert.match(drawer, /查看完整 Visit 详情/);
+  assert.match(drawer, /requires_product_correction/);
+  assert.match(drawer, /\/api\/store-visit\/match-options/);
+  assert.doesNotMatch(drawer, /benchmark_sample_count|benchmark_store_count|ai_confidence|match_score|quality_gate_version/i);
+});
+
+test("operators can confirm an existing AI product suggestion without selecting it again", () => {
+  assert.match(drawer, /const currentMatch: MatchOption \| null/);
+  assert.match(drawer, /const finalMatch = selectedMatch \?\? currentMatch/);
+  assert.match(drawer, /确认商品与价格正确/);
+  assert.match(drawer, /AI 建议商品/);
+  assert.match(workbench, /return isZh \? "待确认" : "Needs confirmation"/);
+  assert.doesNotMatch(workbench, /AI 建议商品，待确认/);
+  assert.match(workbench, /item\.requires_product_correction/);
+});
+
+test("operator list keeps matched SKU label even when product correction is allowed", () => {
+  assert.match(
+    workbench,
+    /function productAssociationLabel[\s\S]*if \(item\.sku_label\) return item\.sku_label;[\s\S]*item\.requires_product_correction/,
+  );
+});

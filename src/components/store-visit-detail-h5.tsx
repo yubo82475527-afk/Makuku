@@ -947,7 +947,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
 
   function openRowEditor(section: PriceParseSection, row: StoreVisitPriceImageAnalysis["rows"][number], rowIndex: number) {
     const candidate = exactCandidateForRow(visit?.ai_price_candidates ?? [], section.image.id, rowIndex);
-    if (!candidate || candidate.h5_lifecycle_status === "deleted") {
+    if (!candidate || candidate.status !== "pending" || candidate.h5_lifecycle_status === "deleted") {
       setError(text.saveRowFailed);
       return;
     }
@@ -1513,13 +1513,10 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   retryingImageIds={retryingImageIds}
                   aiJobImageIds={activeAiJob?.target_image_ids ?? []}
                   onOpenActions={(imageId, imageCategory, label) => setActionSheet({ imageId, category: imageCategory, label })}
-                  onOpenRowActions={(section, row, rowIndex, candidate) => setRowActionSheet({
-                    section,
-                    row,
-                    rowIndex,
-                    candidate,
-                    label: row.sku,
-                  })}
+                  onOpenRowActions={(section, row, rowIndex, candidate) => {
+                    if (candidate.status !== "pending") return;
+                    setRowActionSheet({ section, row, rowIndex, candidate, label: row.sku });
+                  }}
                   onConfirmRow={(candidateId) => void confirmRow(candidateId)}
                   confirmingRowCandidateIds={confirmingRowCandidateIds}
                   deletingRowCandidateIds={deletingRowCandidateIds}
@@ -1553,13 +1550,10 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   retryingImageIds={retryingImageIds}
                   aiJobImageIds={activeAiJob?.target_image_ids ?? []}
                   onOpenActions={(imageId, imageCategory, label) => setActionSheet({ imageId, category: imageCategory, label })}
-                  onOpenRowActions={(section, row, rowIndex, candidate) => setRowActionSheet({
-                    section,
-                    row,
-                    rowIndex,
-                    candidate,
-                    label: row.sku,
-                  })}
+                  onOpenRowActions={(section, row, rowIndex, candidate) => {
+                    if (candidate.status !== "pending") return;
+                    setRowActionSheet({ section, row, rowIndex, candidate, label: row.sku });
+                  }}
                   onConfirmRow={(candidateId) => void confirmRow(candidateId)}
                   confirmingRowCandidateIds={confirmingRowCandidateIds}
                   deletingRowCandidateIds={deletingRowCandidateIds}

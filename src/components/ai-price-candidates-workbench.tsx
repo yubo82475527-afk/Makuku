@@ -317,10 +317,11 @@ export function AiPriceCandidatesWorkbench({
   }
 
   async function rejectSingle(candidateId: string, reason: string) {
+    const candidate = items.find((item) => item.id === candidateId);
     const response = await fetch(`/api/ai-price-candidates/${candidateId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "reject", reason }),
+      body: JSON.stringify({ action: "reject", reason, review_token: candidate?.approval_input_fingerprint ?? null }),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error ?? copy.reviewActionFailed);
@@ -1126,6 +1127,7 @@ function CandidateDetailDrawerContent({
           net_price_idr: Number(price),
           promo_type: promoType.trim() || null,
           piece_count: Number(pieces),
+          review_token: candidate.approval_input_fingerprint ?? null,
         }),
       });
       const payload = await response.json().catch(() => ({}));
