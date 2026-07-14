@@ -12,6 +12,7 @@ const detailRoute = read("src/app/api/operator-price-reviews/[id]/route.ts");
 const page = read("src/app/[locale]/offline-price-candidates/page.tsx");
 const appShell = read("src/components/app-shell.tsx");
 const workbench = read("src/components/operator-price-review-workbench.tsx");
+const sourceImageDialog = read("src/components/operator-price-source-image-dialog.tsx");
 const drawer = read("src/components/operator-price-review-drawer.tsx");
 const reviewService = read("src/lib/ai-price-review.ts");
 const legacyCandidateRoute = read("src/app/api/ai-price-candidates/[id]/route.ts");
@@ -339,4 +340,16 @@ test("operator list keeps matched SKU label even when product correction is allo
     workbench,
     /function productAssociationLabel[\s\S]*if \(item\.sku_label\) return item\.sku_label;[\s\S]*item\.requires_product_correction/,
   );
+});
+
+test("operator list displays full matched SKU labels and lazily previews the source image", () => {
+  assert.match(workbench, /w-\[32%\]/);
+  assert.match(workbench, /whitespace-normal break-words/);
+  assert.doesNotMatch(workbench, /mt-1 truncate text-xs text-slate-500/);
+  assert.match(workbench, /previewCandidateId/);
+  assert.match(workbench, /<OperatorPriceSourceImageDialog/);
+  assert.match(sourceImageDialog, /useEffect/);
+  assert.match(sourceImageDialog, /fetch\(`\/api\/operator-price-reviews\/\$\{candidateId\}`\)/);
+  assert.match(sourceImageDialog, /const \[sourceImageUrl, setSourceImageUrl\] = useState<string \| null>\(null\)/);
+  assert.match(sourceImageDialog, /object-contain/);
 });
