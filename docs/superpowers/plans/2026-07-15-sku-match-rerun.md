@@ -6,6 +6,8 @@
 
 **Architecture:** Separate the stable matching engine from the versioned business rule set. Candidate creation and manual reruns share one application service and one compiled master-data context; future alias or filter changes stay in the versioned rule module while the Visit lifecycle stays unchanged. Keep rerun execution synchronous through one admin endpoint and reuse the existing asynchronous quality-gate runner, avoiding a new task/status subsystem.
 
+**Mapping boundary:** H5 matching identifies the actual own or competitor product. Competitor benchmarking uses only `competitor_series_mappings` (`competitor brand + series -> Makuku series`). The SKU-level `sku_matches` path is removed from application code and UI so the system has one benchmark-mapping authority.
+
 **Tech Stack:** Next.js App Router, TypeScript, Supabase/Postgres, existing H5 candidate/snapshot lifecycle, Node built-in test runner.
 
 ---
@@ -73,11 +75,41 @@
 - [ ] Preview and validate the full workbook before any write. Verify 327 rows, 21 brands, no blank required fields, and no own-brand rows.
 - [ ] Add one small transactional RPC that receives already-validated rows and resolved brand IDs, disables current active competitor products, and bulk-inserts the new active rows. A failed insert must roll back the disable operation.
 - [ ] Reuse the existing competitor-code trigger and unique index. Add only an active-master lookup index if query plans require it.
-- [ ] Do not delete `sku_matches`. They belong to competitor-to-own benchmark mapping, not photo-to-master matching; old mappings remain attached to disabled products, and new mappings require a separate source/decision.
 - [ ] Do not delete competitor products or historical price facts.
 - [ ] Run the parser tests and a read-only preview against `C:/Users/29014/Desktop/LIST SKU.xlsx` before invoking the replacement RPC.
 
-### Task 5: Implement one match-only rerun service and endpoint
+### Task 5: Remove the SKU-level competitor-to-own mapping path
+
+**Files:**
+- Modify: `src/lib/types.ts`
+- Modify: `src/lib/data.ts`
+- Modify: `src/lib/price-snapshot-business.ts`
+- Modify: `src/lib/ai-price-review.ts`
+- Modify: `src/lib/competitor-series-mapping.ts`
+- Modify: `src/app/api/price-snapshots/route.ts`
+- Modify: `src/app/api/price-snapshots/export/route.ts`
+- Modify: `src/app/api/offline-visit-images/[id]/confirm/route.ts`
+- Modify: `src/app/api/offline-uploads/[id]/confirm/route.ts`
+- Modify: `src/app/api/competitor-products/import/route.ts`
+- Modify: `src/app/api/competitor-products/export/route.ts`
+- Modify: `src/app/api/competitors/route.ts`
+- Delete: `src/app/api/sku-matches/route.ts`
+- Modify: `src/app/[locale]/competitor-mappings/page.tsx`
+- Modify: `src/components/competitor-products-table.tsx`
+- Modify: `src/components/competitor-product-import-workbench.tsx`
+- Delete if confirmed unused: `src/components/competitor-mapping-table.tsx`
+- Delete if confirmed unused: `src/components/competitor-mappings-table.tsx`
+- Test: `tests/competitor-series-mapping.test.ts`
+
+- [ ] Rename the existing page title from “Auto SKU Mapping” to “Competitor Series Mapping” so the UI describes its real grain.
+- [ ] Remove SKU-level mapping forms, status columns, target-material import/export fields, `/api/sku-matches`, and automatic `sku_matches` writes from competitor APIs.
+- [ ] Remove all `sku_matches(...)` joins and TypeScript fallbacks from H5, review, price snapshot, export, dashboard, and competitor-master reads.
+- [ ] Make `competitor_series_mappings` the only competitor-to-Makuku benchmark authority. Reuse `findMatchingMaterialForSeries` when a downstream calculation needs a concrete Makuku material; do not reintroduce a persisted per-product relation.
+- [ ] Tighten `findMatchingMaterialForSeries` tests for normalized series, size, and shape. Piece count may rank candidates only after series/size/shape compatibility because price comparisons are per piece.
+- [ ] Keep the physical `sku_matches` table during this release but leave it unread and unwritten. After the code release is deployed and read-only checks show zero consumers, drop it in a separate forward migration; do not combine a destructive table drop with the compatibility removal release.
+- [ ] Verify competitor series rules, default benchmark selection, price comparison, and exports work without a SKU-level fallback.
+
+### Task 6: Implement one match-only rerun service and endpoint
 
 **Files:**
 - Create: `src/lib/store-visit-matching-rerun.ts`
@@ -95,7 +127,7 @@
 - [ ] Protect the endpoint with `requireAdminSession`. Do not add a status endpoint, in-memory job registry, new job table, or mobile route.
 - [ ] Run rerun tests and verify GREEN.
 
-### Task 6: Add minimal controls to Store Visit Monitor
+### Task 7: Add minimal controls to Store Visit Monitor
 
 **Files:**
 - Modify: `src/app/[locale]/store-visit-monitor/page.tsx`
@@ -109,12 +141,12 @@
 - [ ] After success, reload monitor data. The existing details link shows new candidates immediately and later reflects pending/approved snapshot results from the existing review pipeline.
 - [ ] Hide controls from non-manager/admin users and disable them for demo data. Do not add a new page or a mobile H5 control.
 
-### Task 7: Verify behavior and performance
+### Task 8: Verify behavior and performance
 
 - [ ] Run `npm test` and verify zero failures.
 - [ ] Run `npm run lint` and `npm run build` with zero errors.
 - [ ] Benchmark one compiled context with 220 material rows, 327 competitor rows, and 100 source SKUs; verify no database or AI call occurs inside the candidate loop.
-- [ ] Run read-only data checks after import: 327 active new products, 21 brands, zero own brands, unique competitor codes, old products disabled, old products and their `sku_matches` still present.
+- [ ] Run read-only data checks after import: 327 active new products, 21 brands, zero own brands, unique competitor codes, old products disabled, no application query/write to `sku_matches`, and all benchmark resolution sourced from active series mappings.
 - [ ] From Store Visit Monitor, rerun one Visit and one date range. Verify old candidates are `reanalyzed`, selected snapshots are replaced, new pending/approved candidates appear, H5 detail shows the new SKU/method, and no image AI request is issued.
 
 ---
@@ -124,6 +156,7 @@
 - Rule-only changes can be made in `product-match-rules-v2.ts` and its tests without editing Visit rerun, candidate lifecycle, API, or UI code.
 - The stable engine uses indexed lookup and explicit methods; ambiguous, conflicting, or inactive products stay unmatched.
 - The new workbook atomically becomes the active competitor catalog; old products are disabled, not deleted.
+- Competitor-to-Makuku benchmarking has one authority: `competitor_series_mappings`. SKU-level mapping UI, API, import/export fields, and runtime fallbacks are removed.
 - Manual rerun supports a date range and one Visit from Store Visit Monitor, replaces candidates/snapshots, and does not call image AI.
 - No new page, mobile H5 action, task table, status endpoint, or package-expression model is introduced.
 - Tests, lint, build, and focused performance verification pass with fresh output.
