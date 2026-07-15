@@ -24,11 +24,11 @@ Add `"test": "node --experimental-strip-types --test tests/**/*.test.ts"` to `pa
 
 - [ ] **Step 2: Write the matcher tests first**
 
-Cover these exact behaviors: `DRYCARE`, `DRY CARE`, and `DRY-CARE` resolve to one series; `MEDIUM` and `LARGE` normalize to `M` and `L`; Pants never matches Tape; `10+4` normalizes to total piece count `14`; a duplicate candidate remains `UNMATCHED`; an inactive product is excluded; and a unique exact signature returns `FULL_SIGNATURE` or `UNIQUE_SIGNATURE` with no probability score semantics.
+Cover these exact behaviors: `DRYCARE`, `DRY CARE`, and `DRY-CARE` resolve to one series; `MEDIUM` and `LARGE` normalize to `M` and `L`; Pants never matches Tape; a duplicate candidate remains `UNMATCHED`; an inactive product is excluded; and a unique exact signature returns `FULL_SIGNATURE` or `UNIQUE_SIGNATURE` with no probability score semantics.
 
 - [ ] **Step 3: Write the workbook parser tests first**
 
-Use an in-memory XLSX workbook with one sheet and assert that a `piece_count` value of `10+4` yields `pack_expression: "10+4"` and `piece_count: 14`, while all 327-row source fields remain accepted and blank required fields are rejected.
+Use an in-memory XLSX workbook with one sheet and assert that an integer `piece_count` is accepted as the total piece count, while non-integer values and blank required fields are rejected. The importer does not calculate or persist package expressions.
 
 - [ ] **Step 4: Write rerun service tests first**
 
@@ -72,7 +72,7 @@ Export `SkuSignature`, `MasterMatchIndex`, `MatchMethod`, `MatchEvidence`, `buil
 
 - [ ] **Step 2: Implement normalization**
 
-Create token and compact keys; map controlled series aliases (`drycare`, `procare`, `comfortfit`, `skinhealth`, `slimcare`, `mediumflow`, `heavyflow`), brand aliases (`MamyPoko`, `Swety`), size aliases (`MEDIUM`, `LARGE`, `3XL`, `NB S`), shape aliases (`CELANA`, `PANTS`), and pack expressions. Preserve raw values in evidence.
+Create token and compact keys; map controlled series aliases (`drycare`, `procare`, `comfortfit`, `skinhealth`, `slimcare`, `mediumflow`, `heavyflow`), brand aliases (`MamyPoko`, `Swety`), size aliases (`MEDIUM`, `LARGE`, `3XL`, `NB S`), and shape aliases (`CELANA`, `PANTS`). Use the provided integer total piece count directly and preserve raw text evidence only for explainability.
 
 - [ ] **Step 3: Implement hard filtering**
 
@@ -100,7 +100,7 @@ Run `node --experimental-strip-types --test tests/sku-matcher-v2.test.ts`. Expec
 
 - [ ] **Step 1: Parse the new workbook shape**
 
-Accept the single `sku` sheet fields (`no`, `brand`, `product_series`, `product_name`, `package_type`, `size`, `piece_count`). Parse `10+4`-style values into `piece_count` total and a separate `pack_expression`; reject malformed expressions and non-positive totals.
+Accept the single `sku` sheet fields (`no`, `brand`, `product_series`, `product_name`, `package_type`, `size`, `piece_count`). Treat `piece_count` as the already-prepared positive integer total; reject non-integer or non-positive values without doing additional arithmetic.
 
 - [ ] **Step 2: Add replacement import intent**
 
@@ -108,7 +108,7 @@ Support an explicit `replace_competitor_master=true` import flag. Before inserti
 
 - [ ] **Step 3: Import all 327 rows as active**
 
-Generate stable competitor codes through the existing trigger, write `pack_expression`, `piece_count`, normalized series/name fields, and `status = 'active'`. Reject rows whose brand is marked `is_own_brand=true`. Do not create target SKU mappings from the workbook because this source is competitor-only.
+Generate stable competitor codes through the existing trigger, write `piece_count`, normalized series/name fields, and `status = 'active'`. Reject rows whose brand is marked `is_own_brand=true`. Do not create target SKU mappings from the workbook because this source is competitor-only.
 
 - [ ] **Step 4: Clear old competitor SKU mappings only after validation**
 
@@ -116,11 +116,11 @@ Delete `sku_matches` for disabled competitor products, then allow the new master
 
 - [ ] **Step 5: Add database constraints/indexes**
 
-Ensure the migration has the `pack_expression` column, a unique partial index on `competitor_sku_code`, and an active-product index used by the matcher. Keep the existing `status in ('active','disabled')` constraint and code trigger.
+Do not add a package-expression column or migration. Keep the existing unique partial index on `competitor_sku_code`, add the active-product index used by the matcher, and preserve the `status in ('active','disabled')` constraint and code trigger.
 
 - [ ] **Step 6: Run parser tests and a read-only workbook preview**
 
-Run `node --experimental-strip-types --test tests/competitor-product-excel-import.test.ts`, then preview `C:/Users/29014/Desktop/LIST SKU.xlsx` through the import parser and verify 327 valid rows, 22 brands, 11 pack expressions, and zero own-brand rows before any database import.
+Run `node --experimental-strip-types --test tests/competitor-product-excel-import.test.ts`, then preview `C:/Users/29014/Desktop/LIST SKU.xlsx` through the import parser and verify 327 valid rows, 21 brands, integer total piece counts, and zero own-brand rows before any database import.
 
 ### Task 5: Implement match-only rerun service and backend endpoints
 
@@ -217,7 +217,7 @@ Use the running app with an admin session to exercise date-range and single-Visi
 
 ## Acceptance Criteria
 
-- The new workbook imports as 327 active competitor products, with 22 brands, no own-brand rows, and all `10+4` expressions parsed to totals while preserving their raw expression.
+- The new workbook imports as 327 active competitor products, with 21 brands, no own-brand rows, and integer `piece_count` values imported directly as total pieces.
 - All old competitor products are disabled, not deleted; old `sku_matches` are cleared only for disabled products; unrelated price facts remain intact.
 - New matching uses only explicit hard-rule methods and active master data; `DRYCARE`, `Medium`, and `Large` cases normalize correctly; ambiguous or conflicting products remain unmatched.
 - Manual rerun supports an inclusive date range and one Visit ID/code from Store Visit Monitor, without calling image parsing AI.
