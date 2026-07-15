@@ -4,7 +4,6 @@ import assert from "node:assert/strict";
 
 const competitorsPage = readFileSync("src/app/[locale]/competitor-mappings/page.tsx", "utf8");
 const competitorProductPage = readFileSync("src/app/[locale]/competitor-products/page.tsx", "utf8");
-const competitorMappingTable = readFileSync("src/components/competitor-mappings-table.tsx", "utf8");
 const componentPath = "src/components/product-master-search-select.tsx";
 const searchSelect = existsSync(componentPath) ? readFileSync(componentPath, "utf8") : "";
 
@@ -13,8 +12,8 @@ test("product master picker remains reusable but is not mounted on 1.0 competito
   assert.match(competitorsPage, /materials=\{materialResult\.data\}/);
   assert.doesNotMatch(competitorsPage, /CompetitorMappingsTable/);
   assert.doesNotMatch(competitorsPage, /ProductMasterSearchSelect/);
-  assert.match(competitorMappingTable, /ProductMasterSearchSelect/);
-  assert.match(competitorMappingTable, /materials=\{materials\}/);
+  assert.equal(existsSync("src/components/competitor-mappings-table.tsx"), false);
+  assert.equal(existsSync("src/components/competitor-mapping-table.tsx"), false);
   assert.doesNotMatch(competitorsPage, /<SelectInput name="material_sku_code"/);
   assert.doesNotMatch(competitorProductPage, /ProductMasterSearchSelect/);
 });

@@ -6,8 +6,6 @@ import type { Locale } from "@/lib/i18n/config";
 import type { Dictionary } from "@/lib/i18n/get-dictionary";
 
 export function PageShellState({
-  locale: _locale,
-  dict: _dict,
   title,
   currentPath,
   isDemo,

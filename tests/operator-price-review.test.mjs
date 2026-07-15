@@ -12,7 +12,6 @@ const detailRoute = read("src/app/api/operator-price-reviews/[id]/route.ts");
 const page = read("src/app/[locale]/offline-price-candidates/page.tsx");
 const appShell = read("src/components/app-shell.tsx");
 const workbench = read("src/components/operator-price-review-workbench.tsx");
-const sourceImageDialog = read("src/components/operator-price-source-image-dialog.tsx");
 const drawer = read("src/components/operator-price-review-drawer.tsx");
 const reviewService = read("src/lib/ai-price-review.ts");
 const legacyCandidateRoute = read("src/app/api/ai-price-candidates/[id]/route.ts");
@@ -315,9 +314,11 @@ test("operator navigation derives rows from fresh props and preserves filter sta
 });
 
 test("drawer exposes evidence, three final actions, conditional SKU correction and Visit link", () => {
-  assert.match(drawer, /这个价格需要确认/);
-  assert.match(drawer, /确认价格正确/);
-  assert.match(drawer, /修正后通过/);
+  assert.match(drawer, /价格异常审核/);
+  assert.match(drawer, /左侧看原图，右侧确认价格、片数和商品匹配/);
+  assert.match(drawer, /确认商品和价格|确认/);
+  assert.match(drawer, /修改价格/);
+  assert.match(drawer, /提交修改/);
   assert.match(drawer, /判定为错误/);
   assert.match(drawer, /查看完整 Visit 详情/);
   assert.match(drawer, /requires_product_correction/);
@@ -328,10 +329,9 @@ test("drawer exposes evidence, three final actions, conditional SKU correction a
 test("operators can confirm an existing AI product suggestion without selecting it again", () => {
   assert.match(drawer, /const currentMatch: MatchOption \| null/);
   assert.match(drawer, /const finalMatch = selectedMatch \?\? currentMatch/);
-  assert.match(drawer, /确认商品与价格正确/);
-  assert.match(drawer, /AI 建议商品/);
+  assert.match(drawer, /确认商品和价格/);
+  assert.match(drawer, /匹配到的商品名称/);
   assert.match(workbench, /return isZh \? "待确认" : "Needs confirmation"/);
-  assert.doesNotMatch(workbench, /AI 建议商品，待确认/);
   assert.match(workbench, /item\.requires_product_correction/);
 });
 
@@ -342,14 +342,13 @@ test("operator list keeps matched SKU label even when product correction is allo
   );
 });
 
-test("operator list displays full matched SKU labels and lazily previews the source image", () => {
+test("operator list displays full matched SKU labels and opens the unified review drawer from source image", () => {
   assert.match(workbench, /w-\[32%\]/);
   assert.match(workbench, /whitespace-normal break-words/);
   assert.doesNotMatch(workbench, /mt-1 truncate text-xs text-slate-500/);
-  assert.match(workbench, /previewCandidateId/);
-  assert.match(workbench, /<OperatorPriceSourceImageDialog/);
-  assert.match(sourceImageDialog, /useEffect/);
-  assert.match(sourceImageDialog, /fetch\(`\/api\/operator-price-reviews\/\$\{candidateId\}`\)/);
-  assert.match(sourceImageDialog, /const \[sourceImageUrl, setSourceImageUrl\] = useState<string \| null>\(null\)/);
-  assert.match(sourceImageDialog, /object-contain/);
+  assert.match(workbench, /function SourceThumbnail/);
+  assert.match(workbench, /onOpenReview\(item\.id\)/);
+  assert.match(workbench, /<OperatorPriceReviewDrawer/);
+  assert.doesNotMatch(workbench, /previewCandidateId/);
+  assert.doesNotMatch(workbench, /<OperatorPriceSourceImageDialog/);
 });

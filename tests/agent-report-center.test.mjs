@@ -229,14 +229,14 @@ test("formal report delivery routes daily country reports to png while keeping o
 });
 
 test("subscription scheduling and delivery summary helpers validate definition-aware rules and create recipients", async () => {
-  const module = await import("../src/lib/agent-report-subscriptions.ts");
+  const subscriptionsModule = await import("../src/lib/agent-report-subscriptions.ts");
   const definitionsModule = await import("../src/lib/agent-report-definitions.ts");
 
   assert.match(definitionsFile, /supported_scope_types/);
   assert.equal(definitionsModule.getAgentReportDefinition("weekly_price_management").family, "weekly");
 
   assert.deepEqual(
-    module.normalizeSubscriptionInput({
+    subscriptionsModule.normalizeSubscriptionInput({
       report_definition_code: "weekly_price_organization",
       recipient_type: "user",
       app_user_id: "user-1",
@@ -266,7 +266,7 @@ test("subscription scheduling and delivery summary helpers validate definition-a
   );
 
   assert.throws(
-    () => module.normalizeSubscriptionInput({
+    () => subscriptionsModule.normalizeSubscriptionInput({
       report_definition_code: "monthly_price_country_summary",
       recipient_type: "chat",
       feishu_chat_id: "oc_123",
@@ -281,7 +281,7 @@ test("subscription scheduling and delivery summary helpers validate definition-a
   );
 
   assert.throws(
-    () => module.normalizeSubscriptionInput({
+    () => subscriptionsModule.normalizeSubscriptionInput({
       report_definition_code: "daily_price_country",
       recipient_type: "user",
       app_user_id: "user-1",
@@ -296,7 +296,7 @@ test("subscription scheduling and delivery summary helpers validate definition-a
   );
 
   assert.equal(
-    module.formatSubscriptionSchedule({
+    subscriptionsModule.formatSubscriptionSchedule({
       report_family: "daily",
       send_time_local: "08:30:00",
       send_weekday: null,
@@ -306,7 +306,7 @@ test("subscription scheduling and delivery summary helpers validate definition-a
   );
 
   assert.equal(
-    module.formatSubscriptionSchedule({
+    subscriptionsModule.formatSubscriptionSchedule({
       report_family: "weekly",
       send_time_local: "09:00:00",
       send_weekday: 1,
@@ -316,7 +316,7 @@ test("subscription scheduling and delivery summary helpers validate definition-a
   );
 
   assert.equal(
-    module.formatSubscriptionSchedule({
+    subscriptionsModule.formatSubscriptionSchedule({
       report_family: "monthly",
       send_time_local: "10:00:00",
       send_weekday: null,
@@ -325,7 +325,7 @@ test("subscription scheduling and delivery summary helpers validate definition-a
     "Monthly Day 1 10:00",
   );
 
-  const recipient = module.buildRecipientPayload({
+  const recipient = subscriptionsModule.buildRecipientPayload({
     subscription: {
       id: "sub-1",
       report_definition_code: "daily_price_country",
@@ -356,7 +356,7 @@ test("subscription scheduling and delivery summary helpers validate definition-a
     send_status: "pending",
   });
 
-  assert.deepEqual(module.summarizeRecipients([
+  assert.deepEqual(subscriptionsModule.summarizeRecipients([
     { send_status: "pending" },
     { send_status: "sent" },
     { send_status: "sent" },
@@ -369,7 +369,7 @@ test("subscription scheduling and delivery summary helpers validate definition-a
   });
 
   assert.equal(
-    module.subscriptionMatchesReport(
+    subscriptionsModule.subscriptionMatchesReport(
       {
         report_definition_code: "weekly_price_organization",
         scope_type: "organization",
@@ -395,7 +395,7 @@ test("subscription scheduling and delivery summary helpers validate definition-a
   );
 
   assert.equal(
-    module.subscriptionMatchesReport(
+    subscriptionsModule.subscriptionMatchesReport(
       {
         report_definition_code: "weekly_price_organization",
         scope_type: "organization",
@@ -421,7 +421,7 @@ test("subscription scheduling and delivery summary helpers validate definition-a
   );
 
   assert.equal(
-    module.subscriptionMatchesReport(
+    subscriptionsModule.subscriptionMatchesReport(
       {
         report_definition_code: "weekly_price_organization",
         scope_type: "organization",
@@ -447,7 +447,7 @@ test("subscription scheduling and delivery summary helpers validate definition-a
   );
 
   assert.equal(
-    module.subscriptionIsDueAt(
+    subscriptionsModule.subscriptionIsDueAt(
       {
         report_family: "daily",
         recipient_type: "chat",
@@ -468,7 +468,7 @@ test("subscription scheduling and delivery summary helpers validate definition-a
   );
 
   assert.equal(
-    module.subscriptionIsDueAt(
+    subscriptionsModule.subscriptionIsDueAt(
       {
         report_family: "weekly",
         recipient_type: "chat",
@@ -489,7 +489,7 @@ test("subscription scheduling and delivery summary helpers validate definition-a
   );
 
   assert.equal(
-    module.subscriptionIsDueAt(
+    subscriptionsModule.subscriptionIsDueAt(
       {
         report_family: "monthly",
         recipient_type: "chat",
@@ -510,7 +510,7 @@ test("subscription scheduling and delivery summary helpers validate definition-a
   );
 
   assert.equal(
-    module.resolveSubscriptionPeriodAnchor(
+    subscriptionsModule.resolveSubscriptionPeriodAnchor(
       {
         report_definition_code: "daily_price_country",
         report_family: "daily",
@@ -532,7 +532,7 @@ test("subscription scheduling and delivery summary helpers validate definition-a
   );
 
   assert.equal(
-    module.resolveSubscriptionPeriodAnchor(
+    subscriptionsModule.resolveSubscriptionPeriodAnchor(
       {
         report_definition_code: "weekly_price_management",
         report_family: "weekly",
@@ -554,7 +554,7 @@ test("subscription scheduling and delivery summary helpers validate definition-a
   );
 
   assert.equal(
-    module.resolveSubscriptionPeriodAnchor(
+    subscriptionsModule.resolveSubscriptionPeriodAnchor(
       {
         report_definition_code: "monthly_price_country_summary",
         report_family: "monthly",

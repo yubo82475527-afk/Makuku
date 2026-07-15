@@ -1,7 +1,6 @@
 "use client";
 
 import { X } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { Badge, Button, SelectInput, TextInput } from "@/components/ui";
@@ -81,14 +80,11 @@ export function CompetitorProductsTable({ products, brands, locale, dict }: Comp
               <th className="w-24 px-3 py-2 whitespace-nowrap">{dict.common.size}</th>
               <th className="w-24 px-3 py-2 whitespace-nowrap">{dict.common.pcs}</th>
               <th className="w-28 px-3 py-2 whitespace-nowrap">{dict.common.status}</th>
-              <th className="w-28 px-3 py-2 whitespace-nowrap">{copy.mappingStatus}</th>
               <th className="w-40 px-3 py-2 whitespace-nowrap">{copy.createdAt}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200 bg-white">
-            {products.map((product) => {
-              const isMapped = Boolean(product.sku_matches?.[0]);
-              return (
+            {products.map((product) => (
                 <tr
                   key={product.id}
                   onClick={() => openProduct(product)}
@@ -115,15 +111,9 @@ export function CompetitorProductsTable({ products, brands, locale, dict }: Comp
                   <td className="px-3 py-3">
                     <Badge tone={product.status === "disabled" ? "medium" : "low"}>{product.status === "disabled" ? copy.disabled : copy.active}</Badge>
                   </td>
-                  <td className="px-3 py-3 whitespace-nowrap" onClick={(event) => event.stopPropagation()}>
-                    <Link href={`/${locale}/competitor-mappings?mapping=${isMapped ? "mapped" : "pending"}&product=${encodeURIComponent(product.normalized_name)}`} className="inline-flex items-center gap-2 text-blue-700 hover:underline">
-                      <Badge tone={isMapped ? "low" : "neutral"}>{isMapped ? copy.mapped : copy.unmapped}</Badge>
-                    </Link>
-                  </td>
                   <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-600">{formatDateTime(product.created_at, locale)}</td>
                 </tr>
-              );
-            })}
+            ))}
           </tbody>
         </table>
       </div>

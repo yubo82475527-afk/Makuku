@@ -9,7 +9,6 @@ export type CompetitorProductExcelRow = {
   package_type: string;
   size: string;
   piece_count: number;
-  target_material_sku_code: string | null;
   errors: string[];
 };
 
@@ -29,7 +28,6 @@ export type CompetitorProductExcelImportInput = {
   package_type?: string | null;
   size?: string | null;
   piece_count?: number | string | null;
-  target_material_sku_code?: string | null;
 };
 
 export function parseCompetitorProductExcel(buffer: ArrayBuffer): CompetitorProductExcelPreview {
@@ -57,7 +55,6 @@ function normalizeRow(row: Record<string, unknown>, row_number: number): Competi
   const product_name = cleanText(row.product_name) ?? "";
   const package_type = cleanText(row.package_type) || "unknown";
   const size = (cleanText(row.size) ?? "").toUpperCase();
-  const target_material_sku_code = cleanText(row.target_material_sku_code);
   const piece_count = normalizePieceCount(row.piece_count);
 
   if (!brand) errors.push("brand is required");
@@ -75,7 +72,6 @@ function normalizeRow(row: Record<string, unknown>, row_number: number): Competi
     package_type,
     size,
     piece_count,
-    target_material_sku_code,
     errors,
   };
 }

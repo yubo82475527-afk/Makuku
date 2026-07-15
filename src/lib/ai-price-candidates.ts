@@ -1,29 +1,11 @@
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
 import { derivePriceEvidenceReasonCode, parseIdrPrice, reconcilePackagePriceMetrics } from "@/lib/price-utils";
 import { normalizePieceCount, normalizePieceCountFromCandidates, normalizePieceCountFromEvidence, parsePieceCountText } from "@/lib/piece-count";
+import { compileProductMatchIndex, matchProduct, type CompiledProductMatchIndex, type ProductMatchMaster } from "@/lib/product-match-engine";
+import { productMatchRulesV2 } from "@/lib/product-match-rules-v2";
 import type { AiPriceCandidate, CompetitorProduct, MaterialMaster, PriceEvidenceStatus, PriceReviewDecision, StoreVisitAiResult } from "@/lib/types";
 
 type Warning = { type?: string; message: string };
-
-type SkuMatchAttributes = {
-  normalizedText: string;
-  series: string | null;
-  size: string | null;
-  pieceCount: number | null;
-  format: "tape" | "pants" | null;
-};
-
-type RankedSkuCandidate<T> = {
-  item: T;
-  score: number;
-  rank: {
-    tokenCoverage: number;
-    formatScore: number;
-    packageExpressionScore: number;
-    versionScore: number;
-    activeScore: number;
-  };
-};
 
 type CandidateInput = {
   visitId: string;
@@ -57,6 +39,9 @@ export type AiPriceCandidateSourceItem = {
   tag?: string | null;
   confidence: number | null;
   source: "key_sku" | "raw";
+  productFamilyText?: string | null;
+  sectionTitle?: string | null;
+  rowAnchor?: string | null;
   sourceImageId?: string | null;
   sourceImagePath?: string | null;
   sourceRowIndex?: number | null;
@@ -74,153 +59,8 @@ function normalizeText(value: string | null | undefined) {
     .trim();
 }
 
-function tokens(value: string | null | undefined) {
-  return normalizeText(value).split(/\s+/).filter(Boolean);
-}
-
-function tokenScore(query: string, target: string) {
-  const queryTokens = tokens(query);
-  if (queryTokens.length === 0) return 0;
-  const targetText = normalizeText(target);
-  const hits = queryTokens.filter((token) => targetText.includes(token)).length;
-  return hits / queryTokens.length;
-}
-
-function compactText(value: string | null | undefined) {
-  return normalizeText(value).replace(/\s+/g, "");
-}
-
-function seriesKey(value: string | null | undefined) {
-  return normalizeText(value).replace(/\b(?:makuku|air|diapers?|3|0|2)\b/g, " ").replace(/\s+/g, " ").trim() || null;
-}
-
-function extractKnownSeries(value: string | null | undefined) {
-  const text = normalizeText(value);
-  if (text.includes("pro care")) return "pro care";
-  if (text.includes("dry care")) return "dry care";
-  if (text.includes("comfort fit")) return "comfort fit";
-  if (text.includes("skin health")) return "skin health";
-  if (text.includes("slim")) return "slim";
-  return null;
-}
-
-function extractFormat(value: string | null | undefined): "tape" | "pants" | null {
-  const text = normalizeText(value);
-  if (text.includes("tape")) return "tape";
-  if (text.includes("pants") || text.includes("celana")) return "pants";
-  return null;
-}
-
-function normalizedPackageExpression(size: string | null, pieceCount: number | null) {
-  return size && pieceCount ? `${size.toLowerCase()}${pieceCount}` : null;
-}
-
-function hasPackageExpression(text: string, size: string | null, pieceCount: number | null) {
-  const expression = normalizedPackageExpression(size, pieceCount);
-  if (!expression) return false;
-  return compactText(text).includes(expression);
-}
-
-function extractProductVersionScore(value: string | null | undefined) {
-  const versions = Array.from(normalizeText(value).matchAll(/\b(\d+)\s+0\b/g))
-    .map((match) => Number(match[1]))
-    .filter((version) => Number.isFinite(version));
-  return versions.length > 0 ? Math.max(...versions) : 0;
-}
-
-export function extractSkuMatchAttributes(
-  text: string | null | undefined,
-  structuredFields?: {
-    series?: string | null;
-    size?: string | null;
-    pieceCount?: number | null;
-    format?: "tape" | "pants" | string | null;
-  },
-): SkuMatchAttributes {
-  const normalizedText = normalizeText(text);
-  const normalizedFormat = extractFormat(structuredFields?.format) ?? extractFormat(text);
-  return {
-    normalizedText,
-    series: seriesKey(structuredFields?.series) ?? extractKnownSeries(text),
-    size: normalizedMaterialSize(structuredFields?.size) ?? extractCandidateSize(text),
-    pieceCount: normalizePieceCount(structuredFields?.pieceCount) ?? extractPieceCount(text),
-    format: normalizedFormat === "tape" || normalizedFormat === "pants" ? normalizedFormat : null,
-  };
-}
-
-function seriesMatches(candidate: SkuMatchAttributes, target: SkuMatchAttributes) {
-  if (!target.series) return false;
-  if (candidate.series && candidate.series === target.series) return true;
-  return candidate.normalizedText.includes(target.series);
-}
-
-export function skuAttributesHardMatch(candidate: SkuMatchAttributes, target: SkuMatchAttributes) {
-  if (!seriesMatches(candidate, target)) return false;
-  if (!candidate.size || !target.size || candidate.size !== target.size) return false;
-  if (!candidate.pieceCount || !target.pieceCount || candidate.pieceCount !== target.pieceCount) return false;
-  return true;
-}
-
-function compareRank(left: RankedSkuCandidate<unknown>, right: RankedSkuCandidate<unknown>) {
-  return left.rank.tokenCoverage - right.rank.tokenCoverage
-    || left.rank.formatScore - right.rank.formatScore
-    || left.rank.packageExpressionScore - right.rank.packageExpressionScore
-    || left.rank.versionScore - right.rank.versionScore
-    || left.rank.activeScore - right.rank.activeScore;
-}
-
-function sameRank(left: RankedSkuCandidate<unknown>, right: RankedSkuCandidate<unknown>) {
-  return compareRank(left, right) === 0;
-}
-
-export function rankHardMatchedSkuCandidate<T>({
-  candidate,
-  target,
-  item,
-  targetText,
-  active,
-}: {
-  candidate: SkuMatchAttributes;
-  target: SkuMatchAttributes;
-  item: T;
-  targetText: string;
-  active?: boolean;
-}): RankedSkuCandidate<T> {
-  return {
-    item,
-    score: 1,
-    rank: {
-      tokenCoverage: tokenScore(candidate.normalizedText, targetText),
-      formatScore: candidate.format && target.format && candidate.format === target.format ? 1 : 0,
-      packageExpressionScore: hasPackageExpression(targetText, candidate.size, candidate.pieceCount) ? 1 : 0,
-      versionScore: extractProductVersionScore(targetText),
-      activeScore: active === false ? 0 : 1,
-    },
-  };
-}
-
-export function pickUniqueHardMatchedCandidate<T>(ranked: RankedSkuCandidate<T>[]) {
-  if (ranked.length === 0) return null;
-  const sorted = [...ranked].sort((left, right) => compareRank(right, left));
-  if (sorted.length > 1 && sameRank(sorted[0], sorted[1])) return null;
-  return { item: sorted[0].item, score: sorted[0].score };
-}
-
-function competitorBrandsMatch(candidateBrand: string | null | undefined, productBrand: string | null | undefined) {
-  const candidate = compactText(candidateBrand);
-  const product = compactText(productBrand);
-  if (!candidate || !product) return false;
-  return candidate === product;
-}
-
 function extractPieceCount(value: string | null | undefined) {
   return parsePieceCountText(value);
-}
-
-function extractCandidateSize(value: string | null | undefined) {
-  const text = String(value ?? "");
-  const match = text.match(/\b(nb|xxxxl|xxxl|xxl|xl|l|m|s)\s*(?:\d{1,3})?\b/i);
-  return match ? match[1].toUpperCase() : null;
 }
 
 function hasNonPricePromotionText(item: { brand: string; product: string; price: string }) {
@@ -310,6 +150,9 @@ function isExtendedCandidateColumnError(error: { message?: string } | null) {
     "source_image_path",
     "source_row_index",
     "price_evidence_reason_code",
+    "ai_match_rule_version",
+    "ai_match_method",
+    "ai_match_evidence",
   ].some((column) => message.includes(column));
 }
 
@@ -333,10 +176,6 @@ function candidateProductKey(value: string) {
     .trim();
 }
 
-function isMakukuBrand(brand: string) {
-  return normalizeText(brand).includes("makuku");
-}
-
 function materialLabel(item: MaterialMaster) {
   return `${item.tenant_sku_code} ${item.tenant_sku_name}`;
 }
@@ -345,87 +184,112 @@ function competitorLabel(item: CompetitorProduct) {
   return `${item.brands?.name ?? ""} ${item.normalized_name}`.trim();
 }
 
-function normalizedMaterialSize(value: string | null | undefined) {
-  const text = String(value ?? "").trim().toUpperCase();
-  return text || null;
-}
+export type ProductMatchContext = {
+  index: CompiledProductMatchIndex;
+  rules: typeof productMatchRulesV2;
+};
 
-function normalizedCompetitorSize(value: string | null | undefined) {
-  const directSize = String(value ?? "").trim().toUpperCase();
-  if (directSize) return directSize;
-  return null;
-}
-
-function materialTargetAttributes(item: MaterialMaster) {
-  return extractSkuMatchAttributes(
-    [item.tenant_sku_name, item.type, item.sub_type, item.pack_count].filter(Boolean).join(" "),
-    {
+function materialMatchMaster(item: MaterialMaster): ProductMatchMaster {
+  return {
+    id: item.tenant_sku_code,
+    entityType: "material_master",
+    code: item.tenant_sku_code,
+    active: new Date(item.f_expiry_date).getTime() >= Date.now(),
+    signature: {
+      brand: item.brand,
       series: item.sub_brand,
+      packageLevel: null,
+      shape: null,
       size: item.sub_type,
       pieceCount: normalizePieceCount(item.pack_count),
-      format: extractFormat([item.tenant_sku_name, item.sub_category, item.type].filter(Boolean).join(" ")),
+      version: null,
     },
-  );
+    raw: {
+      brand: item.brand,
+      name: item.tenant_sku_name,
+      title: [item.tenant_sku_name, item.category, item.sub_category, item.type].filter(Boolean).join(" "),
+      shape: [item.tenant_sku_name, item.sub_category, item.type].filter(Boolean).join(" "),
+      label: materialLabel(item),
+      source: item,
+    },
+  };
 }
 
-export function pickBestMaterialForCandidate(candidate: { brand: string; product: string; parsedPrice: number | null; pieceCount: number | null }, materials: MaterialMaster[]) {
-  const candidateAttributes = extractSkuMatchAttributes(candidate.product, {
-    pieceCount: normalizePieceCount(candidate.pieceCount),
-  });
-  const ranked = materials.flatMap((item) => {
-    const target = materialTargetAttributes(item);
-    if (!skuAttributesHardMatch(candidateAttributes, target)) return [];
-    return rankHardMatchedSkuCandidate({
-      candidate: candidateAttributes,
-      target,
-      item,
-      targetText: [item.tenant_sku_name, item.type, item.sub_type, item.pack_count].filter(Boolean).join(" "),
-    });
-  });
-  return pickUniqueHardMatchedCandidate(ranked);
+function competitorMatchMaster(item: CompetitorProduct): ProductMatchMaster {
+  return {
+    id: item.id,
+    entityType: "competitor_product",
+    code: item.competitor_sku_code ?? null,
+    active: item.status !== "disabled",
+    signature: {
+      brand: item.brands?.name ?? null,
+      series: item.product_series ?? null,
+      packageLevel: item.package_type ?? null,
+      shape: null,
+      size: item.size,
+      pieceCount: normalizePieceCount(item.piece_count),
+      version: null,
+    },
+    raw: {
+      brand: item.brands?.name ?? null,
+      name: item.normalized_name,
+      title: item.raw_title,
+      shape: item.pack_type,
+      packageLevel: item.package_type,
+      label: competitorLabel(item),
+      source: item,
+    },
+  };
 }
 
-function pickBestMaterial(candidate: { brand: string; product: string; parsedPrice: number | null; pieceCount: number | null }, materials: MaterialMaster[]) {
-  const best = pickBestMaterialForCandidate(candidate, materials);
-  if (!best) return null;
-  if (best.score < 0.65) return null;
-  return best;
+export async function loadProductMatchContext(supabase: SupabaseServiceClient = createSupabaseServiceClient()): Promise<ProductMatchContext> {
+  const [{ data: materials, error: materialError }, { data: products, error: productError }] = await Promise.all([
+    supabase.from("material_master").select("*").limit(5000),
+    supabase.from("competitor_products").select("*, brands(id,name)").eq("status", "active").limit(5000),
+  ]);
+  if (materialError) throw new Error(materialError.message);
+  if (productError) throw new Error(productError.message);
+  const masters = [
+    ...(materials ?? []).map((item) => materialMatchMaster(item as MaterialMaster)),
+    ...(products ?? []).map((item) => competitorMatchMaster(item as CompetitorProduct)),
+  ];
+  return { index: compileProductMatchIndex(masters, productMatchRulesV2), rules: productMatchRulesV2 };
 }
 
-function competitorTargetAttributes(item: CompetitorProduct) {
-  const targetText = [item.product_series, item.normalized_name, item.raw_title, item.size, item.piece_count].filter(Boolean).join(" ");
-  return extractSkuMatchAttributes(targetText, {
-    series: item.product_series,
-    size: normalizedCompetitorSize(item.size) ?? extractCandidateSize(item.normalized_name) ?? extractCandidateSize(item.raw_title),
-    pieceCount: normalizePieceCount(item.piece_count),
-    format: extractFormat(targetText),
-  });
-}
-
-export function pickBestCompetitorForCandidate(candidate: { brand: string; product: string; pieceCount: number | null }, products: CompetitorProduct[]) {
-  const candidateAttributes = extractSkuMatchAttributes(candidate.product, {
-    pieceCount: normalizePieceCount(candidate.pieceCount),
-  });
-  const brandMatchedProducts = products.filter((item) => competitorBrandsMatch(candidate.brand, item.brands?.name));
-  const ranked = brandMatchedProducts.flatMap((item) => {
-    const target = competitorTargetAttributes(item);
-    if (!skuAttributesHardMatch(candidateAttributes, target)) return [];
-    return rankHardMatchedSkuCandidate({
-      candidate: candidateAttributes,
-      target,
-      item,
-      targetText: [item.product_series, item.normalized_name, item.raw_title, item.size, item.piece_count].filter(Boolean).join(" "),
-      active: item.status !== "disabled",
-    });
-  });
-  return pickUniqueHardMatchedCandidate(ranked);
-}
-
-function pickBestCompetitor(candidate: { brand: string; product: string; pieceCount: number | null }, products: CompetitorProduct[]) {
-  const best = pickBestCompetitorForCandidate(candidate, products);
-  if (!best) return null;
-  if (best.score < 0.65) return null;
-  return best;
+function productMatchEvidence(item: AiPriceCandidateSourceItem, pieceCount: number | null) {
+  return {
+    code: String(item.product ?? "").trim() || null,
+    entityType: null,
+    signature: {
+      brand: item.brand,
+      series: item.productFamilyText ?? null,
+      packageLevel: null,
+      shape: null,
+      size: null,
+      pieceCount,
+      version: null,
+    },
+    sources: ["brand", "product_family_text", "section_title", "sku", "row_anchor", "piece_count"]
+      .filter((key) => {
+        const values: Record<string, unknown> = {
+          brand: item.brand,
+          product_family_text: item.productFamilyText,
+          section_title: item.sectionTitle,
+          sku: item.product,
+          row_anchor: item.rowAnchor,
+          piece_count: pieceCount,
+        };
+        return values[key] !== null && values[key] !== undefined && String(values[key]).trim() !== "";
+      }),
+    raw: {
+      brand: item.brand,
+      productFamilyText: item.productFamilyText,
+      sectionTitle: item.sectionTitle,
+      sku: item.product,
+      rowAnchor: item.rowAnchor,
+      pieceCount,
+    },
+  };
 }
 
 function isPriceCandidate(item: AiPriceCandidateSourceItem) {
@@ -480,8 +344,7 @@ function sourceItems(aiResult: StoreVisitAiResult) {
 function buildAiPriceCandidateRow(input: {
   visitId: string;
   item: AiPriceCandidateSourceItem;
-  materials: MaterialMaster[];
-  products: CompetitorProduct[];
+  matchContext: ProductMatchContext;
 }) {
   const { item } = input;
   const parsedPrice = parseCandidatePrice(item.price);
@@ -522,23 +385,18 @@ function buildAiPriceCandidateRow(input: {
     warnings.push({ type: "PARSE_RISK", message: reconciledPrices.warningMessage });
   }
 
-  const isOwnBrandCandidate = isMakukuBrand(item.brand);
-  const materialMatch = isOwnBrandCandidate
-    ? pickBestMaterial({ brand: item.brand, product: item.product, parsedPrice, pieceCount }, input.materials)
-    : null;
-  const competitorMatch = !materialMatch && !isOwnBrandCandidate
-    ? pickBestCompetitor({ brand: item.brand, product: item.product, pieceCount }, input.products)
-    : null;
-  const matchScore = materialMatch?.score ?? competitorMatch?.score ?? 0;
-  const matchedEntityType = materialMatch ? "material_master" : competitorMatch ? "competitor_product" : "unmatched";
-  const matchedEntityId = materialMatch?.item.tenant_sku_code ?? competitorMatch?.item.id ?? null;
+  const productMatch = matchProduct(productMatchEvidence(item, pieceCount), input.matchContext.index, input.matchContext.rules);
+  const matchScore = productMatch.product ? 1 : 0;
+  const matchedEntityType = productMatch.product?.entityType ?? "unmatched";
+  const matchedEntityId = productMatch.product?.id ?? null;
+  const matchedLabel = String(productMatch.product?.raw.label ?? "").trim() || null;
   const itemCandidateKey = candidateKey({
     item,
     matchedEntityType,
     matchedEntityId,
     netPrice,
   });
-  if (matchScore < 0.65) warnings.push({ type: "LOW_CONFIDENCE", message: "No reliable product/master-data match found." });
+  if (!productMatch.product) warnings.push({ type: "LOW_CONFIDENCE", message: `No deterministic product match: ${productMatch.reason ?? "UNMATCHED"}.` });
 
   return {
     visit_id: input.visitId,
@@ -551,7 +409,10 @@ function buildAiPriceCandidateRow(input: {
     raw_price: item.price,
     ai_matched_entity_type: matchedEntityType,
     ai_matched_entity_id: matchedEntityId,
-    ai_matched_label: materialMatch ? materialLabel(materialMatch.item) : competitorMatch ? competitorLabel(competitorMatch.item) : null,
+    ai_matched_label: matchedLabel,
+    ai_match_rule_version: productMatch.ruleVersion,
+    ai_match_method: productMatch.method,
+    ai_match_evidence: productMatch.evidence,
     ai_list_price_idr: listPrice,
     ai_package_price_idr: packagePrice,
     ai_net_price_idr: netPrice,
@@ -586,7 +447,7 @@ function buildAiPriceCandidateRow(input: {
     quality_gate_version: null,
     matched_entity_type: matchedEntityType,
     matched_entity_id: matchedEntityId,
-    matched_label: materialMatch ? materialLabel(materialMatch.item) : competitorMatch ? competitorLabel(competitorMatch.item) : null,
+    matched_label: matchedLabel,
     match_score: matchScore,
     warnings,
     status: "pending",
@@ -599,6 +460,7 @@ type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceClient>;
 export async function buildAiPriceCandidateRows(input: {
   visitId: string;
   sourceItems: AiPriceCandidateSourceItem[];
+  matchContext?: ProductMatchContext;
   supabase?: SupabaseServiceClient;
 }) {
   const supabase = input.supabase ?? createSupabaseServiceClient();
@@ -611,16 +473,12 @@ export async function buildAiPriceCandidateRows(input: {
   const scopedItems = items.filter((item) => item.sourceImageId);
   if (scopedItems.length === 0) return [];
 
-  const [{ data: materials }, { data: products }] = await Promise.all([
-    supabase.from("material_master").select("*").limit(5000),
-    supabase.from("competitor_products").select("*, brands(id,name)").limit(5000),
-  ]);
+  const matchContext = input.matchContext ?? await loadProductMatchContext(supabase);
 
   return scopedItems.map((item) => buildAiPriceCandidateRow({
     visitId: input.visitId,
     item,
-    materials: (materials ?? []) as MaterialMaster[],
-    products: (products ?? []) as CompetitorProduct[],
+    matchContext,
   }));
 }
 
@@ -682,10 +540,16 @@ export async function insertAiPriceCandidateRows(input: {
     const legacyRows = rows.map(({
       source_row_index: _sourceRowIndex,
       price_evidence_reason_code: _priceEvidenceReasonCode,
+      ai_match_rule_version: _aiMatchRuleVersion,
+      ai_match_method: _aiMatchMethod,
+      ai_match_evidence: _aiMatchEvidence,
       ...row
     }) => {
       void _sourceRowIndex;
       void _priceEvidenceReasonCode;
+      void _aiMatchRuleVersion;
+      void _aiMatchMethod;
+      void _aiMatchEvidence;
       return row;
     });
     const legacyInsert = await supabase

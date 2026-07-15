@@ -8,11 +8,14 @@ export function makukuSeriesOptions(materials: MaterialMaster[]) {
   return Array.from(new Set(materials.map((material) => cleanText(material.sub_brand)).filter(Boolean) as string[])).sort((left, right) => left.localeCompare(right));
 }
 
-export function findMatchingMaterialForSeries(product: Pick<CompetitorProduct, "size" | "piece_count" | "normalized_name" | "raw_title">, targetMakukuSeries: string, materials: MaterialMaster[]) {
+export function findMatchingMaterialForSeries(product: Pick<CompetitorProduct, "size" | "piece_count" | "normalized_name" | "raw_title" | "pack_type">, targetMakukuSeries: string, materials: MaterialMaster[]) {
   const candidatePieceCounts = productPieceCountCandidates(product);
   const sameSeriesSizeMaterials = materials.filter((material) => {
     if (seriesKey(material.sub_brand) !== seriesKey(targetMakukuSeries)) return false;
     if (seriesKey(material.sub_type) !== seriesKey(product.size)) return false;
+    const productShape = productShapeKey(product.pack_type, product.normalized_name, product.raw_title);
+    const materialShape = materialShapeKey(material.type, material.sub_category, material.tenant_sku_name);
+    if (productShape && materialShape && productShape !== materialShape) return false;
     return true;
   });
   if (sameSeriesSizeMaterials.length === 0 || candidatePieceCounts.length === 0) {
@@ -53,4 +56,15 @@ function productPieceCountCandidates(product: Pick<CompetitorProduct, "size" | "
   const candidates = new Set<number>();
   if (Number(product.piece_count) > 0) candidates.add(Number(product.piece_count));
   return Array.from(candidates);
+}
+
+function productShapeKey(packType: string | null | undefined, ...values: Array<string | null | undefined>) {
+  const text = `${packType ?? ""} ${values.join(" ")}`.toLowerCase();
+  if (text.includes("tape") || text.includes("粘贴")) return "tape";
+  if (text.includes("pants") || text.includes("pant") || text.includes("裤")) return "pants";
+  return null;
+}
+
+function materialShapeKey(...values: Array<string | null | undefined>) {
+  return productShapeKey(null, ...values);
 }

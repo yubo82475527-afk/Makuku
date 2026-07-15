@@ -1,5 +1,4 @@
 import {
-  calculatePriceGapVsMakuku,
   detectPromoEvent,
   normalizePriceSnapshot,
   shouldCreateAlertFromPromoEvent,
@@ -9,7 +8,7 @@ import { createSupabaseServiceClient } from "@/lib/supabase";
 import { formReturnRedirect, readRequestBody } from "@/lib/request";
 import { requireAdminSession } from "@/lib/auth-session";
 import { ensureSkuMasterFromMaterial } from "@/lib/sku-master-bridge";
-import type { CompetitorProduct, PriceSnapshot, PromoEvent, SkuMatch, SkuMaster } from "@/lib/types";
+import type { CompetitorProduct, PriceSnapshot, PromoEvent } from "@/lib/types";
 
 export async function POST(request: Request) {
   try {
@@ -20,7 +19,7 @@ export async function POST(request: Request) {
 
     const { data: product, error: productError } = await supabase
       .from("competitor_products")
-      .select("*, brands(id,name), sku_matches(*, sku_master(*))")
+      .select("*, brands(id,name)")
       .eq("id", body.competitor_product_id)
       .single();
     if (productError || !product) {
@@ -68,13 +67,11 @@ export async function POST(request: Request) {
       .limit(1)
       .maybeSingle();
 
-    const skuMatch = competitorProduct.sku_matches?.[0] as SkuMatch | undefined;
-    const skuMaster = skuMatch?.sku_master as SkuMaster | undefined;
     const eventPayload = detectPromoEvent({
       priceSnapshot: snapshot as PriceSnapshot,
       previousSnapshot: previous as PriceSnapshot | null,
       competitorProduct,
-      skuMaster,
+      skuMaster: undefined,
     });
 
     let promoEvent: PromoEvent | null = null;
@@ -91,7 +88,7 @@ export async function POST(request: Request) {
         await supabase.from("alerts").insert({
           promo_event_id: promoEvent.id,
           title: promoEvent.severity === "critical" ? "Critical competitor price alert" : "High risk competitor promo",
-          message: `${promoEvent.event_title} (${calculatePriceGapVsMakuku(promoEvent.new_price_per_piece ?? 0, skuMaster?.target_price_per_piece ?? 1)}% vs Makuku target).`,
+          message: `${promoEvent.event_title} needs benchmark review.`,
           severity: promoEvent.severity,
         });
       }
@@ -134,7 +131,7 @@ export async function PATCH(request: Request) {
     if (ownerType === "competitor") {
       const { data: product, error: productError } = await supabase
         .from("competitor_products")
-        .select("*, brands(id,name), sku_matches(*, sku_master(*))")
+        .select("*, brands(id,name)")
         .eq("id", competitorProductId)
         .single();
       if (productError || !product) {
@@ -178,7 +175,7 @@ export async function PATCH(request: Request) {
         price_per_piece: normalized.price_per_piece,
       })
       .eq("id", snapshotId)
-      .select("*, sku_master(*, material_master(*)), material_master(*), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*, material_master(*))))")
+      .select("*, sku_master(*, material_master(*)), material_master(*), competitor_products(*, brands(id,name))")
       .single();
     if (updateError) return Response.json({ error: updateError.message }, { status: 400 });
 

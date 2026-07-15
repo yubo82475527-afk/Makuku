@@ -347,6 +347,7 @@ export async function getOperatorPriceReviewDetail(id: string, locale = "zh"): P
   return {
     data: {
       ...listItem,
+      visit_code: candidate.offline_store_visits?.visit_code ?? null,
       source_image_available: Boolean(sourceImageUrl),
       source_image_id: sourceImage?.id ?? candidate.source_image_id ?? null,
       source_image_url: sourceImageUrl,

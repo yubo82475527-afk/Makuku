@@ -17,7 +17,6 @@ type Preview = {
     package_type: string;
     size: string;
     piece_count: number;
-    target_material_sku_code: string | null;
     errors: string[];
   }>;
   errors: Array<{ row_number: number; errors: string[] }>;
@@ -25,9 +24,8 @@ type Preview = {
 
 type ImportResult = {
   brands: number;
+  disabled_competitor_products: number;
   competitor_products: number;
-  mapped_count: number;
-  skipped_manual_mappings: number;
   row_errors: Array<{ row_number: number; errors: string[] }>;
 };
 
@@ -39,19 +37,9 @@ const templateColumns = [
   "package_type",
   "size",
   "piece_count",
-  "target_material_sku_code",
 ];
 
-const templateExample = [
-  "",
-  "SWEETY",
-  "BRONZE",
-  "SWEETY BRONZE PANTS M34",
-  "JUMBO",
-  "M",
-  "34",
-  "14022043650",
-];
+const templateExample = ["", "SWEETY", "BRONZE", "SWEETY BRONZE PANTS M34", "JUMBO", "M", "34"];
 
 export function CompetitorProductImportWorkbench({ locale }: { locale: string }) {
   const copy = getCopy(locale);
@@ -149,17 +137,12 @@ export function CompetitorProductImportWorkbench({ locale }: { locale: string })
       {result ? (
         <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
           {copy.imported(result)}
-          {result.row_errors.length > 0 ? (
-            <ul className="mt-2 space-y-1">
-              {result.row_errors.map((item) => <li key={item.row_number}>Row {item.row_number}: {item.errors.join(", ")}</li>)}
-            </ul>
-          ) : null}
         </section>
       ) : null}
 
       {preview ? (
         <section className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-          <table className="min-w-[1160px] w-full text-left text-sm">
+          <table className="min-w-[980px] w-full text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500">
               <tr>
                 <th className="px-3 py-2">Row</th>
@@ -170,7 +153,6 @@ export function CompetitorProductImportWorkbench({ locale }: { locale: string })
                 <th className="px-3 py-2">{copy.packageType}</th>
                 <th className="px-3 py-2">{copy.size}</th>
                 <th className="px-3 py-2">{copy.pcs}</th>
-                <th className="px-3 py-2">{copy.targetSku}</th>
                 <th className="px-3 py-2">{copy.errorColumn}</th>
               </tr>
             </thead>
@@ -185,7 +167,6 @@ export function CompetitorProductImportWorkbench({ locale }: { locale: string })
                   <td className="px-3 py-2">{row.package_type}</td>
                   <td className="px-3 py-2">{row.size}</td>
                   <td className="px-3 py-2">{row.piece_count || "-"}</td>
-                  <td className="px-3 py-2">{row.target_material_sku_code ?? "-"}</td>
                   <td className="px-3 py-2 text-amber-700">{row.errors.join(", ") || "-"}</td>
                 </tr>
               ))}
@@ -230,26 +211,25 @@ function getCopy(locale: string) {
     failed: isZh ? "Excel 处理失败" : "Excel processing failed",
     preview: isZh ? "预览" : "Preview",
     previewing: isZh ? "预览中..." : "Previewing...",
-    import: isZh ? "确认导入" : "Import",
-    importing: isZh ? "导入中..." : "Importing...",
+    import: isZh ? "确认替换" : "Replace master",
+    importing: isZh ? "替换中..." : "Replacing...",
     downloadTemplate: isZh ? "下载导入模板" : "Download template",
-    templateHint: "competitor_sku_code, brand, product_series, product_name, package_type, size, piece_count, target_material_sku_code",
+    templateHint: "competitor_sku_code, brand, product_series, product_name, package_type, size, piece_count",
     totalRows: isZh ? "总行数" : "Rows",
     products: isZh ? "竞品数" : "Products",
     brands: isZh ? "品牌数" : "Brands",
     errors: isZh ? "异常行" : "Errors",
-    fixErrors: isZh ? "存在异常行，修正后才能导入。" : "Fix error rows before importing.",
+    fixErrors: isZh ? "存在异常行，修正后才能替换主数据。" : "Fix error rows before replacing the master data.",
     code: isZh ? "竞品编码" : "Competitor Code",
     brand: isZh ? "品牌" : "Brand",
     series: isZh ? "系列" : "Series",
     product: isZh ? "商品" : "Product",
     packageType: isZh ? "包装类型" : "Package Type",
     size: isZh ? "尺码" : "Size",
-    pcs: isZh ? "片数" : "Pcs",
-    targetSku: isZh ? "映射物料编码" : "Target Material SKU",
+    pcs: isZh ? "总片数" : "Total pieces",
     errorColumn: isZh ? "异常" : "Error",
     imported: (result: ImportResult) => isZh
-      ? `导入完成：新增品牌 ${result.brands} 个，处理竞品 ${result.competitor_products} 个，映射 ${result.mapped_count} 个，跳过人工映射 ${result.skipped_manual_mappings} 个。`
-      : `Import complete: ${result.brands} brands, ${result.competitor_products} products, ${result.mapped_count} mappings, ${result.skipped_manual_mappings} manual mappings skipped.`,
+      ? `替换完成：新增品牌 ${result.brands} 个，停用旧竞品 ${result.disabled_competitor_products} 个，新建竞品 ${result.competitor_products} 个。`
+      : `Import complete: ${result.brands} new brands, ${result.disabled_competitor_products} competitors disabled, ${result.competitor_products} new products inserted.`,
   };
 }

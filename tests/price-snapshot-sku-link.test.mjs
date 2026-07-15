@@ -139,7 +139,8 @@ test("prices page and export use Makuku benchmark SKU business segment filters",
   assert.match(priceSnapshotBusiness, /export function priceSnapshotBenchmarkSku/);
   assert.match(priceSnapshotBusiness, /export function priceSnapshotBusinessSegment/);
   assert.match(priceSnapshotBusiness, /export function priceSnapshotBusinessSize/);
-  assert.match(priceSnapshotBusiness, /snapshot\.sku_master \?\? snapshot\.competitor_products\?\.sku_matches\?\.\[0\]\?\.sku_master/);
+  assert.match(priceSnapshotBusiness, /snapshot\.sku_master/);
+  assert.doesNotMatch(priceSnapshotBusiness, /sku_matches/);
   assert.match(priceSnapshotBusiness, /priceSnapshotBenchmarkSku\(snapshot\)\?\.segment[\s\S]*snapshot\.competitor_products\?\.segment[\s\S]*"unknown"/);
   assert.match(pricesPage, /priceSnapshotBusinessSegment\(snapshot\)/);
   assert.match(pricesPage, /priceSnapshotBusinessSize\(snapshot\)/);

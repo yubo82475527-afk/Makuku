@@ -8,7 +8,7 @@ const deleteStart = offlineStoresApi.indexOf("export async function DELETE(reque
 const postBlock = postStart >= 0 && deleteStart > postStart ? offlineStoresApi.slice(postStart, deleteStart) : "";
 
 test("store create API does not rerun synchronous organization assignment after insert", () => {
-  assert.match(postBlock, /resolveOrganizationForRegion/);
-  assert.match(postBlock, /organizationAssignmentPatch\(assignment\)/);
+  assert.doesNotMatch(postBlock, /resolveOrganizationForRegion/);
+  assert.doesNotMatch(postBlock, /organizationAssignmentPatch/);
   assert.doesNotMatch(postBlock, /if \(data\?\.id\)\s*\{[\s\S]*assignOrganizationForStore/);
 });

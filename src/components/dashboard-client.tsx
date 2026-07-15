@@ -28,10 +28,6 @@ export function DashboardClient({
 
   useEffect(() => {
     const controller = new AbortController();
-    setPricePayload(null);
-    setExceptionPayload(null);
-    setExecutionPayload(null);
-    setLoadError(null);
 
     async function loadDashboardSection<T>(
       section: string,
@@ -55,10 +51,19 @@ export function DashboardClient({
       }
     }
 
-    void loadDashboardSection<DashboardPricePayload>("price", setPricePayload);
-    void loadDashboardSection<DashboardExceptionPayload>("exceptions", setExceptionPayload);
-    void loadDashboardSection<DashboardExecutionPayload>("execution", setExecutionPayload);
-    return () => controller.abort();
+    const timer = window.setTimeout(() => {
+      setPricePayload(null);
+      setExceptionPayload(null);
+      setExecutionPayload(null);
+      setLoadError(null);
+      void loadDashboardSection<DashboardPricePayload>("price", setPricePayload);
+      void loadDashboardSection<DashboardExceptionPayload>("exceptions", setExceptionPayload);
+      void loadDashboardSection<DashboardExecutionPayload>("execution", setExecutionPayload);
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [locale, queryString]);
 
   const dataError = pricePayload?.error ?? exceptionPayload?.error ?? executionPayload?.error ?? loadError;

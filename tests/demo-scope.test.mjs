@@ -22,7 +22,7 @@ test("board navigation exposes the one-week product workflow", () => {
   assert.match(appShell, /Price Monitoring/);
   assert.match(appShell, /Real Market Price/);
   assert.match(appShell, /真实市场价格|\\u771f\\u5b9e\\u5e02\\u573a\\u4ef7\\u683c/);
-  assert.match(appShell, /Photo Price Review/);
+  assert.match(appShell, /Price Anomaly Review/);
   assert.match(appShell, /Price Positioning/);
   assert.match(appShell, /Competitor Mapping/);
   assert.match(appShell, /Master Data/);
@@ -74,9 +74,9 @@ test("visible sample data does not look like throwaway mock data", () => {
 });
 
 test("dashboard states the price 1.0 homepage objective", () => {
-  assert.match(dashboardPage, /Price Index/);
-  assert.match(dashboardPage, /Price Exception Follow-up/);
-  assert.match(dashboardPage, /Promoter Execution/);
+  assert.match(dashboardPage, /Dashboard under refactor/);
+  assert.match(dashboardPage, /All dashboard report queries are temporarily disabled/);
+  assert.doesNotMatch(dashboardPage, /PriceIndexTreeTable/);
 });
 
 test("dashboard keeps the weekly coefficient board but is no longer a single-panel page", () => {
@@ -88,24 +88,24 @@ test("dashboard keeps the weekly coefficient board but is no longer a single-pan
   assert.match(dataFile, /is_default_benchmark/);
   assert.match(dataFile, /materialMaster\.map\(\(item\) => cleanText\(item\.sub_brand\)\)/);
   assert.match(dataFile, /ownAvgPrice \/ benchmarkAvgPrice/);
-  assert.match(dashboardPage, /PriceIndexTreeTable/);
+  assert.doesNotMatch(dashboardPage, /PriceIndexTreeTable/);
   assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /PRICE\/PCS \{week\.label\}/);
   assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /CombinedMetricCell/);
   assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /WEEK_COLUMN_CLASS/);
   assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /competitorSeries/);
-  assert.match(dashboardPage, /name="month"/);
-  assert.match(dashboardPage, /name="organization"/);
-  assert.match(dashboardPage, /name="ownSeries"/);
+  assert.doesNotMatch(dashboardPage, /name="month"/);
+  assert.doesNotMatch(dashboardPage, /name="organization"/);
+  assert.doesNotMatch(dashboardPage, /name="ownSeries"/);
   assert.doesNotMatch(dashboardPage, /name="sku"/);
   assert.doesNotMatch(dashboardPage, /name="benchmarkRuleId"/);
-  assert.match(dashboardPage, /Exception Follow-up/);
-  assert.match(dashboardPage, /Promoter Execution/);
-  assert.match(dashboardPage, /flattenProblemStoreRows/);
-  assert.match(dashboardPage, /buildExecutionBoard/);
+  assert.doesNotMatch(dashboardPage, /Exception Follow-up/);
+  assert.doesNotMatch(dashboardPage, /Promoter Execution/);
+  assert.doesNotMatch(dashboardPage, /flattenProblemStoreRows/);
+  assert.doesNotMatch(dashboardPage, /buildExecutionBoard/);
 });
 
-test("dashboard serves the product board directly instead of a loading shell", () => {
-  assert.equal(existsSync("src/app/[locale]/dashboard/loading.tsx"), false);
+test("dashboard exposes a lightweight loading shell while the entrypoint is paused", () => {
+  assert.equal(existsSync("src/app/[locale]/dashboard/loading.tsx"), true);
 });
 
 test("prices table is store-region focused without manual snapshot entry", () => {
@@ -156,7 +156,7 @@ test("prices table is store-region focused without manual snapshot entry", () =>
   assert.doesNotMatch(pricesPage, /name="line"/);
   assert.doesNotMatch(pricesPage, /dict\.prices\.promoType/);
   assert.doesNotMatch(pricesPage, /PriceSnapshotActions/);
-  assert.equal(existsSync("src/app/[locale]/prices/loading.tsx"), false);
+  assert.equal(existsSync("src/app/[locale]/prices/loading.tsx"), true);
 });
 
 test("price snapshot CSV export follows the current language and table columns", () => {

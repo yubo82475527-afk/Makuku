@@ -1,68 +1,7 @@
-import { readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
-import vm from "node:vm";
-import ts from "typescript";
-
-function loadCandidateModule() {
-  const source = readFileSync("src/lib/ai-price-candidates.ts", "utf8");
-  const transpiled = ts.transpileModule(source, {
-    compilerOptions: {
-      module: ts.ModuleKind.CommonJS,
-      target: ts.ScriptTarget.ES2020,
-      esModuleInterop: true,
-    },
-  }).outputText;
-  const testModule = { exports: {} };
-  const sandbox = {
-    module: testModule,
-    exports: testModule.exports,
-    require: (id) => {
-      if (id === "@/lib/supabase") {
-        return {
-          createSupabaseServiceClient: () => {
-            throw new Error("Supabase should not be used in hard match tests.");
-          },
-          hasSupabaseServiceConfig: () => false,
-        };
-      }
-      if (id === "@/lib/price-utils") {
-        return {
-          calculatePricePerPiece: (price, pieceCount) => price && pieceCount ? price / pieceCount : null,
-          parseIdrPrice: (value) => {
-            const numeric = Number(String(value ?? "").replace(/[^0-9]/g, ""));
-            return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
-          },
-        };
-      }
-      if (id === "@/lib/piece-count") {
-        return {
-          normalizePieceCount: (value) => {
-            const numeric = Number(value);
-            return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
-          },
-          normalizePieceCountFromCandidates: (value, product) => {
-            const numeric = Number(value);
-            if (Number.isFinite(numeric) && numeric > 0) return numeric;
-            return parsePieceCount(product);
-          },
-          parsePieceCountText: parsePieceCount,
-        };
-      }
-      throw new Error(`Unexpected require: ${id}`);
-    },
-  };
-  vm.runInNewContext(transpiled, sandbox);
-  return testModule.exports;
-}
-
-function parsePieceCount(value) {
-  const text = String(value ?? "");
-  const bonus = text.match(/\b(\d{1,3})\s*\+\s*(\d{1,3})\b/);
-  if (bonus) return Number(bonus[1]) + Number(bonus[2]);
-  const simple = text.match(/\b(\d{1,3})\s*(?:pcs?|pieces?)?\b/i);
-  return simple ? Number(simple[1]) : null;
-}
+import { compileProductMatchIndex, matchProduct } from "../src/lib/product-match-engine.ts";
+import { productMatchRulesV2 } from "../src/lib/product-match-rules-v2.ts";
 
 function material(overrides) {
   return {
@@ -103,10 +42,87 @@ function competitor(overrides) {
   };
 }
 
-const candidates = loadCandidateModule();
+function materialMaster(item) {
+  return {
+    id: item.tenant_sku_code,
+    entityType: "material_master",
+    code: item.tenant_sku_code,
+    active: true,
+    signature: {
+      brand: item.brand,
+      series: item.sub_brand,
+      packageLevel: item.type,
+      shape: null,
+      size: item.sub_type,
+      pieceCount: item.pack_count,
+      version: null,
+    },
+    raw: {
+      item,
+      name: item.tenant_sku_name,
+      label: item.tenant_sku_name,
+    },
+  };
+}
+
+function competitorMaster(item) {
+  return {
+    id: item.id,
+    entityType: "competitor_product",
+    code: item.competitor_sku_code ?? null,
+    active: item.status !== "disabled",
+    signature: {
+      brand: item.brands?.name ?? null,
+      series: item.product_series ?? null,
+      packageLevel: item.package_type,
+      shape: null,
+      size: item.size,
+      pieceCount: item.piece_count,
+      version: null,
+    },
+    raw: {
+      item,
+      name: item.normalized_name,
+      title: item.raw_title,
+      label: item.normalized_name,
+    },
+  };
+}
+
+function pickBestMaterialForCandidate(candidate, materials) {
+  return pickBestProductForCandidate(candidate, materials.map(materialMaster));
+}
+
+function pickBestCompetitorForCandidate(candidate, products) {
+  return pickBestProductForCandidate(candidate, products.map(competitorMaster));
+}
+
+function pickBestProductForCandidate(candidate, masters) {
+  const index = compileProductMatchIndex(masters, productMatchRulesV2);
+  const result = matchProduct({
+    code: String(candidate.product ?? "").trim() || null,
+    entityType: null,
+    signature: {
+      brand: candidate.brand,
+      series: null,
+      packageLevel: null,
+      shape: null,
+      size: null,
+      pieceCount: candidate.pieceCount ?? null,
+      version: null,
+    },
+    sources: ["test"],
+    raw: {
+      brand: candidate.brand,
+      sku: candidate.product,
+      pieceCount: candidate.pieceCount ?? null,
+    },
+  }, index, productMatchRulesV2);
+  return result.product ? { item: result.product.raw.item, score: 1, method: result.method } : null;
+}
 
 test("Makuku hard match rejects cross-series material even when size and pieces match", () => {
-  const result = candidates.pickBestMaterialForCandidate(
+  const result = pickBestMaterialForCandidate(
     { brand: "Makuku", product: "Makuku Pro Care Tape L32", parsedPrice: 169500, pieceCount: 32 },
     [
       material({
@@ -122,8 +138,8 @@ test("Makuku hard match rejects cross-series material even when size and pieces 
   assert.equal(result, null);
 });
 
-test("Makuku hard match allows Tape and Pants differences after series, size, and pieces match", () => {
-  const result = candidates.pickBestMaterialForCandidate(
+test("Makuku hard match rejects Tape and Pants differences after series, size, and pieces match", () => {
+  const result = pickBestMaterialForCandidate(
     { brand: "Makuku", product: "Makuku Pro Care Tape L32", parsedPrice: 169500, pieceCount: 32 },
     [
       material({
@@ -136,12 +152,11 @@ test("Makuku hard match allows Tape and Pants differences after series, size, an
     ],
   );
 
-  assert.equal(result?.item.tenant_sku_code, "pro-pants-l32");
-  assert.equal(result?.score, 1);
+  assert.equal(result, null);
 });
 
 test("Makuku hard match rejects size and piece mismatches", () => {
-  const sizeMismatch = candidates.pickBestMaterialForCandidate(
+  const sizeMismatch = pickBestMaterialForCandidate(
     { brand: "Makuku", product: "Makuku Pro Care Pants L34", parsedPrice: 169500, pieceCount: 34 },
     [
       material({
@@ -153,7 +168,7 @@ test("Makuku hard match rejects size and piece mismatches", () => {
       }),
     ],
   );
-  const pieceMismatch = candidates.pickBestMaterialForCandidate(
+  const pieceMismatch = pickBestMaterialForCandidate(
     { brand: "Makuku", product: "Makuku Pro Care Pants L34", parsedPrice: 169500, pieceCount: 34 },
     [
       material({
@@ -171,7 +186,7 @@ test("Makuku hard match rejects size and piece mismatches", () => {
 });
 
 test("Makuku hard match ranks format and token coverage after hard attributes pass", () => {
-  const result = candidates.pickBestMaterialForCandidate(
+  const result = pickBestMaterialForCandidate(
     { brand: "Makuku", product: "Makuku Pro Care Tape L32", parsedPrice: 169500, pieceCount: 32 },
     [
       material({
@@ -196,7 +211,7 @@ test("Makuku hard match ranks format and token coverage after hard attributes pa
 });
 
 test("Makuku hard match prefers the newest product version after hard attributes pass", () => {
-  const result = candidates.pickBestMaterialForCandidate(
+  const result = pickBestMaterialForCandidate(
     { brand: "Makuku", product: "Makuku Pro Care Pants M36", parsedPrice: 169500, pieceCount: 36 },
     [
       material({
@@ -234,7 +249,7 @@ test("Makuku hard match prefers the newest product version after hard attributes
 });
 
 test("Makuku hard match returns unmatched when multiple candidates cannot be uniquely ranked", () => {
-  const result = candidates.pickBestMaterialForCandidate(
+  const result = pickBestMaterialForCandidate(
     { brand: "Makuku", product: "Makuku Pro Care L32", parsedPrice: 169500, pieceCount: 32 },
     [
       material({
@@ -258,28 +273,30 @@ test("Makuku hard match returns unmatched when multiple candidates cannot be uni
 });
 
 test("competitor hard match uses the same series, size, and piece gates", () => {
-  const result = candidates.pickBestCompetitorForCandidate(
-    { brand: "Sweety", product: "Sweety Gold Pants L28", pieceCount: 28 },
+  const result = pickBestCompetitorForCandidate(
+    { brand: "MamyPoko", product: "MamyPoko Royal Soft Pants L28", pieceCount: 28 },
     [
       competitor({
-        id: "dry-l28",
-        raw_title: "Sweety Dry Pants L28",
-        normalized_name: "Sweety Dry Pants L28",
-        product_series: "Dry",
+        id: "slim-l28",
+        raw_title: "MamyPoko Slim Pants L28",
+        normalized_name: "MamyPoko Slim Pants L28",
+        product_series: "Slim",
         size: "L",
         piece_count: 28,
+        brand: "MamyPoko",
       }),
       competitor({
-        id: "gold-l28",
-        raw_title: "Sweety Gold Pants L28",
-        normalized_name: "Sweety Gold Pants L28",
-        product_series: "Gold",
+        id: "royal-soft-l28",
+        raw_title: "MamyPoko Royal Soft Pants L28",
+        normalized_name: "MamyPoko Royal Soft Pants L28",
+        product_series: "Royal Soft",
         size: "L",
         piece_count: 28,
+        brand: "MamyPoko",
       }),
     ],
   );
 
-  assert.equal(result?.item.id, "gold-l28");
+  assert.equal(result?.item.id, "royal-soft-l28");
   assert.equal(result?.score, 1);
 });

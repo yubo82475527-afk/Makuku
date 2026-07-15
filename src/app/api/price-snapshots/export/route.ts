@@ -90,7 +90,7 @@ export async function GET(request: Request) {
 
     const { data, error } = await supabase
       .from("price_snapshots")
-      .select("*, sku_master(*, material_master(*)), material_master(*), offline_store_visits!source_visit_id(id,visit_code,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at), offline_stores(id,name,city,province,city_name,district,channel_type), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*, material_master(*)))), ai_price_candidates(id, offline_store_visits(id,visit_code,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))")
+      .select("*, sku_master(*, material_master(*)), material_master(*), offline_store_visits!source_visit_id(id,visit_code,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at), offline_stores(id,name,city,province,city_name,district,channel_type), competitor_products(*, brands(id,name)), ai_price_candidates(id, offline_store_visits(id,visit_code,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))")
       .order("created_at", { ascending: false })
       .order("captured_at", { ascending: false })
       .limit(5000);

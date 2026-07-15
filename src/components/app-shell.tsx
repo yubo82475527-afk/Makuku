@@ -29,6 +29,7 @@ import { localeLabels, replacePathLocale, type Locale } from "@/lib/i18n/config"
 import type { Dictionary } from "@/lib/i18n/get-dictionary";
 import { writeLocalePreferenceCookie } from "@/lib/locale-preference";
 import { StoreVisitMonitorExportMenu } from "@/components/store-visit-monitor-export-menu";
+import { StoreVisitRerunJobMenu } from "@/components/store-visit-rerun-job-menu";
 
 const sidebarStorageKey = "makuku_sidebar_collapsed";
 
@@ -188,6 +189,7 @@ function AppShellFrame({
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
     window.location.href = `/${locale}/login`;
   }
+  const showStoreVisitRerunJobs = state.currentPath === "/store-visit-monitor" || state.currentPath.startsWith("/store-visit-monitor?");
 
   return (
     <div className="min-h-screen">
@@ -237,6 +239,7 @@ function AppShellFrame({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {showStoreVisitRerunJobs ? <StoreVisitRerunJobMenu locale={locale} /> : null}
             <StoreVisitMonitorExportMenu locale={locale} />
             {state.headerUser ? (
               <div className="hidden items-center gap-2 text-xs text-slate-600 sm:flex">

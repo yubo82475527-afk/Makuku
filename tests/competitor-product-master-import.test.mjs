@@ -33,11 +33,11 @@ test("competitor product master exports the import template columns next to Exce
     "package_type",
     "size",
     "piece_count",
-    "target_material_sku_code",
   ]) {
     assert.match(exportRoute, new RegExp(column));
   }
-  assert.match(exportRoute, /sku_master\(material_sku_code\)/);
+  assert.doesNotMatch(exportRoute, /target_material_sku_code/);
+  assert.doesNotMatch(exportRoute, /sku_master\(material_sku_code\)/);
   assert.match(exportRoute, /Content-Disposition/);
   assert.match(exportRoute, /competitor-products-\$\{date\}\.csv/);
 });
@@ -51,24 +51,26 @@ test("competitor product import parser supports code-based upsert template", () 
     "package_type",
     "size",
     "piece_count",
-    "target_material_sku_code",
   ]) {
     assert.match(parser, new RegExp(field));
   }
+  assert.doesNotMatch(parser, /target_material_sku_code/);
   assert.match(parser, /parseCompetitorProductExcel/);
   assert.match(parser, /piece_count must be a positive integer/);
   assert.match(readFileSync("src/components/competitor-product-import-workbench.tsx", "utf8"), /downloadTemplate/);
   assert.match(readFileSync("src/components/competitor-product-import-workbench.tsx", "utf8"), /competitor-product-master-template\.csv/);
 });
 
-test("competitor product import API upserts by existing competitor SKU code only", () => {
+test("competitor product import API replaces competitor master data without SKU-level mappings", () => {
   assert.match(route, /parseCompetitorProductExcel/);
   assert.match(route, /intent !== "import"/);
   assert.match(route, /competitor_sku_code/);
-  assert.match(route, /Competitor SKU code not found/);
-  assert.match(route, /ensureSkuMasterFromMaterial/);
-  assert.match(route, /match_method: "manual"/);
-  assert.match(route, /skipped_manual_mappings/);
+  assert.match(route, /replaceCompetitorMaster/);
+  assert.match(route, /replace_competitor_product_master/);
+  assert.doesNotMatch(route, /Competitor SKU code not found/);
+  assert.doesNotMatch(route, /ensureSkuMasterFromMaterial/);
+  assert.doesNotMatch(route, /match_method: "manual"/);
+  assert.doesNotMatch(route, /skipped_manual_mappings/);
   assert.doesNotMatch(route, /price_snapshots/);
   assert.doesNotMatch(route, /offline_stores/);
 });

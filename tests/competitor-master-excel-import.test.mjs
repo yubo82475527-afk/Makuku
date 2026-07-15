@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
@@ -8,7 +8,6 @@ import ts from "typescript";
 const competitorProductsPage = readFileSync("src/app/[locale]/competitor-products/page.tsx", "utf8");
 const competitorProductsTable = readFileSync("src/components/competitor-products-table.tsx", "utf8");
 const competitorsRoute = readFileSync("src/app/api/competitors/route.ts", "utf8");
-const skuMatchesRoute = readFileSync("src/app/api/sku-matches/route.ts", "utf8");
 const migration = readFileSync("supabase/migrations/202606130001_competitor_master_excel_import.sql", "utf8");
 const excelUpsertMigration = readFileSync("supabase/migrations/202606130002_excel_price_snapshot_upsert.sql", "utf8");
 const excelRoute = readFileSync("src/app/api/internal/excel-price-import/route.ts", "utf8");
@@ -42,12 +41,11 @@ test("competitor product master is framed as product master data with editable m
   assert.match(competitorsRoute, /normalizePieceCount/);
 });
 
-test("competitor to Makuku mapping is saved as one current relation per competitor product", () => {
-  assert.match(migration, /uniq_sku_matches_competitor_product/);
-  assert.match(migration, /partition by competitor_product_id/);
-  assert.match(skuMatchesRoute, /\.delete\(\)[\s\S]*\.eq\("competitor_product_id", competitorProductId\)/);
-  assert.match(skuMatchesRoute, /cleared: true/);
-  assert.doesNotMatch(skuMatchesRoute, /match_id/);
+test("competitor to Makuku SKU-level mapping route is removed from the application", () => {
+  assert.equal(existsSync("src/app/api/sku-matches/route.ts"), false);
+  assert.equal(existsSync("src/components/competitor-mappings-table.tsx"), false);
+  assert.equal(existsSync("src/components/competitor-mapping-table.tsx"), false);
+  assert.doesNotMatch(competitorsRoute, /sku_matches/);
 });
 
 test("Excel price import has preview and import entrypoints without joining the main navigation", () => {

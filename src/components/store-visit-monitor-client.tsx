@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { StoreVisitMonitorExportButton } from "@/components/store-visit-monitor-export-button";
+import { StoreVisitMatchingRerunDialog, type MatchingRerunTarget } from "@/components/store-visit-matching-rerun-dialog";
 import StoreVisitMonitorLoading from "@/app/[locale]/store-visit-monitor/loading";
 import { Badge, Button, Card, DataNotice, EmptyState, MetricCard } from "@/components/ui";
-import { formatJakartaDateTimeSeconds, formatJakartaTime, formatPercent } from "@/lib/format";
+import { formatJakartaDateTimeSeconds, formatPercent } from "@/lib/format";
 import type { StoreVisitMonitorResult } from "@/lib/data";
 import type { Dictionary } from "@/lib/i18n/get-dictionary";
 
@@ -35,20 +36,21 @@ export function StoreVisitMonitorClient({
   locale,
   dict,
   queryString,
+  canRerunMatching,
 }: {
   locale: string;
   dict: Dictionary;
   queryString: string;
+  canRerunMatching: boolean;
 }) {
   const searchParams = useMemo(() => new URLSearchParams(queryString), [queryString]);
   const [payload, setPayload] = useState<StoreVisitMonitorPayload | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [rerunTarget, setRerunTarget] = useState<MatchingRerunTarget | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
-    setPayload(null);
-    setLoadError(null);
-
     const monitorUrl = `/api/store-visit-monitor${queryString ? `?${queryString}` : ""}`;
     const qualityUrl = `/api/store-visit-monitor${queryString ? `?${queryString}&include_quality=1` : "?include_quality=1"}`;
 
@@ -78,7 +80,7 @@ export function StoreVisitMonitorClient({
 
     void loadMonitor();
     return () => controller.abort();
-  }, [queryString]);
+  }, [queryString, reloadKey]);
 
   if (!payload) {
     return (
@@ -177,6 +179,14 @@ export function StoreVisitMonitorClient({
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {canRerunMatching && !payload.isDemo ? (
+              <Button
+                type="button"
+                onClick={() => setRerunTarget({ kind: "date_range", dateFrom: monitor.filters.dateFrom, dateTo: monitor.filters.dateTo })}
+              >
+                Rerun matching
+              </Button>
+            ) : null}
             <StoreVisitMonitorExportButton locale={locale} filters={exportFilters} />
           </div>
         </div>
@@ -227,14 +237,25 @@ export function StoreVisitMonitorClient({
                     <td className="whitespace-nowrap py-3 pr-3">{visit.startedAt ? formatJakartaDateTimeSeconds(visit.startedAt) : "-"}</td>
                     <td className="whitespace-nowrap py-3 pr-3">{visit.completedAt ? formatJakartaDateTimeSeconds(visit.completedAt) : "-"}</td>
                     <td className="whitespace-nowrap py-3 pr-3">
-                      <Link
-                        href={`/${locale}/mobile/offline-capture/${visit.visitId}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="font-medium text-blue-700 underline-offset-2 hover:underline"
-                      >
-                        Open details
-                      </Link>
+                      <div className="flex items-center gap-3">
+                        <Link
+                          href={`/${locale}/mobile/offline-capture/${visit.visitId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-medium text-blue-700 underline-offset-2 hover:underline"
+                        >
+                          Open details
+                        </Link>
+                        {canRerunMatching && !payload.isDemo ? (
+                          <button
+                            type="button"
+                            onClick={() => setRerunTarget({ kind: "visit", visitId: visit.visitId, visitCode: visit.visitCode })}
+                            className="font-medium text-blue-700 underline-offset-2 hover:underline"
+                          >
+                            Rerun matching
+                          </button>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -297,6 +318,19 @@ export function StoreVisitMonitorClient({
           </div>
         </div>
       </Card>
+      {rerunTarget ? (
+        <StoreVisitMatchingRerunDialog
+          key={rerunTarget.kind === "visit" ? rerunTarget.visitId : `${rerunTarget.dateFrom}:${rerunTarget.dateTo}`}
+          target={rerunTarget}
+          locale={locale}
+          isDemo={payload.isDemo}
+          onClose={() => setRerunTarget(null)}
+          onSucceeded={() => {
+            setReloadKey((current) => current + 1);
+            window.dispatchEvent(new Event("store-visit-rerun-jobs:refresh"));
+          }}
+        />
+      ) : null}
     </>
   );
 }

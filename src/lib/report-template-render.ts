@@ -1,6 +1,6 @@
 import type { AgentReport, AgentReportMetricRow } from "./types.ts";
 
-export function renderReportTemplatePreviewHtml(report: AgentReport, _locale: string) {
+export function renderReportTemplatePreviewHtml(report: AgentReport, locale: string) {
   const title = "SFA Execution Daily Report (HQ)";
   const dateLabel = "Date";
   const scopeLabel = "Province";
@@ -11,7 +11,7 @@ export function renderReportTemplatePreviewHtml(report: AgentReport, _locale: st
   const rows = resolveDisplayRows(report);
 
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${escapeHtml(locale)}">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />

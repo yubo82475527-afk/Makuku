@@ -11,7 +11,7 @@ test("competitor pages exclude Makuku own-brand products", () => {
     assert.match(page, /ownBrandIds/);
     assert.match(page, /isOwnBrandName/);
     assert.match(page, /brand\.is_own_brand/);
-    assert.match(page, /!isOwnBrandName\(brand\.name\)/);
+    assert.doesNotMatch(page, /brandsResult\.data\.filter\(\(brand\) => !isOwnBrandName\(brand\.name\)\)/);
     assert.match(page, /ownBrandIds\.has\(product\.brand_id\)/);
     assert.match(page, /product\.brands\?\.name/);
   }

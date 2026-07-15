@@ -1,19 +1,15 @@
-import type { CompetitorProduct, MaterialMaster, PackType, PriceSnapshot, Segment, SkuMaster } from "@/lib/types";
+import type { CompetitorProduct, MaterialMaster, PackType, PriceSnapshot, Segment } from "@/lib/types";
 
 type SnapshotWithBenchmark = Pick<PriceSnapshot, "sku_master"> & {
   material_master?: MaterialMaster | null;
-  competitor_products?: (Pick<
+  competitor_products?: Pick<
     CompetitorProduct,
     "segment" | "size" | "raw_title" | "normalized_name" | "pack_type"
-  > & {
-    sku_matches?: {
-      sku_master?: SkuMaster | null;
-    }[];
-  }) | null;
+  > | null;
 };
 
 export function priceSnapshotBenchmarkSku(snapshot: SnapshotWithBenchmark) {
-  return snapshot.sku_master ?? snapshot.competitor_products?.sku_matches?.[0]?.sku_master ?? null;
+  return snapshot.sku_master ?? null;
 }
 
 export function priceSnapshotBenchmarkMaterial(snapshot: SnapshotWithBenchmark) {

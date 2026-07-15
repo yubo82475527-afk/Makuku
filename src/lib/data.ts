@@ -178,8 +178,8 @@ export type PriceSnapshotPageFilters = PriceSnapshotFilters & {
 };
 
 const priceSnapshotVisitColumns = "id,visit_code,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at";
-const priceSnapshotSelectWithMaterial = `*, sku_master(*, material_master(*)), material_master(*), offline_stores(id,name,city,province,city_name,district,channel_type,organization_id,organizations(id,name,status)), offline_store_visits!source_visit_id(${priceSnapshotVisitColumns}), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*, material_master(*)))), ai_price_candidates(id, offline_store_visits(${priceSnapshotVisitColumns}))`;
-const legacyPriceSnapshotSelect = `*, sku_master(*), offline_stores(id,name,city,province,city_name,district,channel_type,organization_id,organizations(id,name,status)), offline_store_visits!source_visit_id(${priceSnapshotVisitColumns}), competitor_products(*, brands(id,name), sku_matches(*, sku_master(*))), ai_price_candidates(id, offline_store_visits(${priceSnapshotVisitColumns}))`;
+const priceSnapshotSelectWithMaterial = `*, sku_master(*, material_master(*)), material_master(*), offline_stores(id,name,city,province,city_name,district,channel_type,organization_id,organizations(id,name,status)), offline_store_visits!source_visit_id(${priceSnapshotVisitColumns}), competitor_products(*, brands(id,name)), ai_price_candidates(id, offline_store_visits(${priceSnapshotVisitColumns}))`;
+const legacyPriceSnapshotSelect = `*, sku_master(*), offline_stores(id,name,city,province,city_name,district,channel_type,organization_id,organizations(id,name,status)), offline_store_visits!source_visit_id(${priceSnapshotVisitColumns}), competitor_products(*, brands(id,name)), ai_price_candidates(id, offline_store_visits(${priceSnapshotVisitColumns}))`;
 
 export type ProductSegmentPriceIndexFilters = {
   province?: string;
@@ -278,7 +278,7 @@ export async function getMarketBenchmarks(): Promise<QueryResult<MarketBenchmark
   const supabase = createSupabaseServiceClient();
   const { data, error } = await supabase
     .from("market_benchmarks")
-    .select("*, competitor_products(*, brands(id,name), sku_matches(*, sku_master(*)))")
+    .select("*, competitor_products(*, brands(id,name))")
     .order("market")
     .order("product_line")
     .order("size");
@@ -933,7 +933,7 @@ export async function getCompetitorProducts(): Promise<QueryResult<CompetitorPro
   return fromSupabase<CompetitorProduct[]>(
     supabase
       .from("competitor_products")
-      .select("*, brands(id,name), sku_matches(*, sku_master(*))")
+      .select("*, brands(id,name)")
       .order("created_at", { ascending: false }),
     demoCompetitors,
   );
@@ -1485,7 +1485,7 @@ async function getWeeklyBoardSnapshotsForPeriod(filters: {
   }
 
   const supabase = createSupabaseServiceClient();
-  const select = "id,competitor_product_id,material_sku_code,price_per_piece,captured_at,created_at,sku_master_id,offline_store_id,sku_master(material_sku_code),material_master(tenant_sku_code),offline_stores(id,name,city,province,city_name,district,channel_type,organization_id,organizations(id,name,status)),competitor_products(id,brand_id,product_series,raw_title,normalized_name,size,piece_count,brands(id,name),sku_matches(match_method,sku_master(material_sku_code))),ai_price_candidates(id,offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))";
+  const select = "id,competitor_product_id,material_sku_code,price_per_piece,captured_at,created_at,sku_master_id,offline_store_id,sku_master(material_sku_code),material_master(tenant_sku_code),offline_stores(id,name,city,province,city_name,district,channel_type,organization_id,organizations(id,name,status)),competitor_products(id,brand_id,product_series,raw_title,normalized_name,size,piece_count,brands(id,name)),ai_price_candidates(id,offline_store_visits(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))";
 
   const ownRows: PriceSnapshot[] = [];
   if (filters.materialCodes.length > 0) {
@@ -2150,12 +2150,6 @@ function snapshotMaterialCode(snapshot: PriceSnapshot) {
 }
 
 function competitorSnapshotMaterialCode(snapshot: PriceSnapshot, mappings: CompetitorSeriesMapping[], materials: MaterialMaster[]) {
-  const manualCode = snapshot.competitor_products?.sku_matches
-    ?.filter((match) => String(match.match_method ?? "") !== "series_rule")
-    ?.map((match) => cleanText(match.sku_master?.material_sku_code))
-    .find(Boolean);
-  if (manualCode) return manualCode;
-
   const product = snapshot.competitor_products;
   if (!product) return null;
   const mapping = mappings.find((item) => item.active && benchmarkSeriesKey(item.brand_id, item.product_series) === benchmarkSeriesKey(product.brand_id, product.product_series));
@@ -2300,10 +2294,6 @@ function buildProductSegmentBattles(input: {
     groups.set(key, group);
   }
 
-  const skuSegment = new Map<string, string>();
-  for (const [key, group] of groups) {
-    for (const sku of group.skus) skuSegment.set(sku.id, key);
-  }
   const competitorSegment = new Map<string, string>();
   for (const product of input.competitors) {
     const segment = competitorProductSegment(product);
@@ -2320,21 +2310,18 @@ function buildProductSegmentBattles(input: {
   const battles = Array.from(groups.entries()).map(([key, group]) => {
     const skuIds = new Set(group.skus.map((sku) => sku.id));
     const competitors = input.competitors.filter((product) => {
-      if (product.sku_matches?.some((match) => skuIds.has(match.sku_master_id))) return true;
       return competitorSegment.get(product.id) === key;
     });
     const snapshots = input.snapshots.filter((snapshot) => {
       if (snapshot.sku_master_id && skuIds.has(snapshot.sku_master_id)) return true;
       const product = snapshot.competitor_products;
       if (!product) return false;
-      if (product.sku_matches?.some((match) => skuIds.has(match.sku_master_id))) return true;
       return competitorSegment.get(product.id) === key;
     });
     const promos = input.promos.filter((promo) => {
       if (promo.sku_master_id && skuIds.has(promo.sku_master_id)) return true;
       const product = promo.competitor_products;
       if (!product) return false;
-      if (product.sku_matches?.some((match) => skuSegment.get(match.sku_master_id) === key)) return true;
       return competitorSegment.get(product.id) === key;
     });
     const candidates = input.candidates.filter((candidate) => candidateSegment.get(candidate.id) === key);
@@ -3627,25 +3614,6 @@ async function loadStoreVisitMonitorQualityRows(visitIds: string[]) {
     rows.push(...pageRows);
     if (pageRows.length < pageSize) return { rows, error: null };
   }
-}
-
-async function getStoreVisitMonitorQuality(visitIds: string[]): Promise<QueryResult<StoreVisitMonitorQuality>> {
-  if (!hasSupabaseServiceConfig() || visitIds.length === 0) {
-    return { data: emptyStoreVisitMonitorQuality(), error: null, isDemo: !hasSupabaseServiceConfig() };
-  }
-
-  const { rows, error } = await loadStoreVisitMonitorQualityRows(visitIds);
-
-  if (isMissingStoreVisitQualityViewError(error) || (error?.message ?? "").includes("ai_matched_entity_type")) {
-    return { data: emptyStoreVisitMonitorQuality(), error: null, isDemo: false };
-  }
-  if (error) return { data: emptyStoreVisitMonitorQuality(), error: error.message, isDemo: false };
-
-  return {
-    data: summarizeStoreVisitMonitorQualityRows(rows),
-    error: null,
-    isDemo: false,
-  };
 }
 
 async function getStoreVisitMonitorVisitQuality(visitIds: string[]): Promise<QueryResult<Record<string, StoreVisitMonitorQuality>>> {

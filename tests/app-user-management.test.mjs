@@ -23,7 +23,8 @@ const feishuOrgMismatchMigration = readIfExists("supabase/migrations/20260625000
 test("PC navigation exposes app user management", () => {
   assert.match(appShell, /href:\s*"\/users"/);
   assert.match(appShell, /User Management/);
-  assert.ok(usersPage.includes("<AppShell"), "users page should use the PC app shell");
+  assert.match(usersPage, /PageShellState/);
+  assert.match(usersPage, /currentPath=\{currentPath\}/);
   assert.match(usersPage, /getFilteredAppUsers/);
   assert.match(usersPage, /app-user-management-table|AppUserManagementTable/);
   assert.match(usersPage, /searchParams:/);

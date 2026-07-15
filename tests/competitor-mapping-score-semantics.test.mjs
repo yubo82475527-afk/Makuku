@@ -1,10 +1,9 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 
 const legacyCompetitorsPage = readFileSync("src/app/[locale]/competitors/page.tsx", "utf8");
 const competitorMappingsPage = readFileSync("src/app/[locale]/competitor-mappings/page.tsx", "utf8");
-const competitorMappingTable = readFileSync("src/components/competitor-mappings-table.tsx", "utf8");
 const competitorSeriesRulesPanel = readFileSync("src/components/competitor-series-rules-panel.tsx", "utf8");
 const competitorProductsPage = readFileSync("src/app/[locale]/competitor-products/page.tsx", "utf8");
 const competitorProductsTable = readFileSync("src/components/competitor-products-table.tsx", "utf8");
@@ -42,6 +41,9 @@ test("competitor mapping filters by competitor brand and series only", () => {
 });
 
 test("competitor mapping page does not expose sku-level score or manual exception columns", () => {
+  assert.equal(existsSync("src/components/competitor-mappings-table.tsx"), false);
+  assert.equal(existsSync("src/components/competitor-mapping-table.tsx"), false);
+  assert.equal(existsSync("src/app/api/sku-matches/route.ts"), false);
   assert.match(competitorSeriesRulesPanel, /Default benchmark/);
   assert.match(competitorSeriesRulesPanel, /Set benchmark/);
   assert.match(competitorSeriesRulesPanel, /clear_benchmark/);
@@ -49,7 +51,7 @@ test("competitor mapping page does not expose sku-level score or manual exceptio
   assert.doesNotMatch(competitorMappingsPage, /Math\.round\(match\.match_score \* 100\)/);
   assert.doesNotMatch(competitorMappingsPage, /Manual override/);
   assert.doesNotMatch(competitorSeriesRulesPanel, /manualOverrides/);
-  assert.match(competitorMappingTable, /ProductMasterSearchSelect/);
+  assert.doesNotMatch(competitorMappingsPage, /ProductMasterSearchSelect/);
 });
 
 test("competitor product master owns only 1.0 required product field maintenance", () => {

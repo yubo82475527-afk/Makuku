@@ -32,7 +32,7 @@ test("app shell groups the backend navigation for price positioning and master d
   assert.match(appShell, /Dashboard/);
   assert.match(appShell, /Price Monitoring/);
   assert.match(appShell, /鐪熷疄甯傚満浠锋牸|Real Market Price/);
-  assert.match(appShell, /Photo Price Review/);
+  assert.match(appShell, /Price Anomaly Review/);
   assert.match(appShell, /Price Positioning/);
   assert.match(appShell, /Competitor Mapping/);
   assert.doesNotMatch(appShell, /Market Benchmarks/);

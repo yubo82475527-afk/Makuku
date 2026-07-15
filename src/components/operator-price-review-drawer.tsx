@@ -161,88 +161,114 @@ export function OperatorPriceReviewDrawer({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-slate-950/40 md:justify-end" role="dialog" aria-modal="true" onClick={onBackdropClick}>
-      <aside className="max-h-[95vh] w-full overflow-y-auto rounded-t-2xl bg-white shadow-2xl md:h-full md:max-h-none md:max-w-xl md:rounded-none">
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4">
-          <h2 className="text-lg font-semibold text-slate-950">{isZh ? "这个价格需要确认" : "This price needs confirmation"}</h2>
-          <button type="button" onClick={onClose} disabled={submitting} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-600">{isZh ? "关闭" : "Close"}</button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-3 md:p-6" role="dialog" aria-modal="true" onClick={onBackdropClick}>
+      <section className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-950">{isZh ? "价格异常审核" : "Price anomaly review"}</h2>
+            <p className="mt-0.5 text-xs text-slate-500">{isZh ? "左侧看原图，右侧确认价格、片数和商品匹配。" : "Review the image, price, pieces, and matched product in one view."}</p>
+          </div>
+          <button type="button" onClick={onClose} disabled={submitting} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50">{isZh ? "关闭" : "Close"}</button>
         </div>
 
-        <div className="space-y-5 p-5">
-          {loading ? <div className="py-12 text-center text-sm text-slate-500">{isZh ? "加载中…" : "Loading…"}</div> : null}
-          {!loading && !detail ? <div className="rounded-md bg-rose-50 p-3 text-sm text-rose-700">{error ?? (isZh ? "审核详情不可用" : "Review details unavailable")}</div> : null}
-          {detail ? (
-            <>
-              <ReasonGroups groups={detail.operator_reason_groups} fallback={detail.operator_reason} />
-
-              <section>
+        {loading ? <div className="py-16 text-center text-sm text-slate-500">{isZh ? "加载中…" : "Loading…"}</div> : null}
+        {!loading && !detail ? <div className="m-5 rounded-md bg-rose-50 p-3 text-sm text-rose-700">{error ?? (isZh ? "审核详情不可用" : "Review details unavailable")}</div> : null}
+        {detail ? (
+          <div className="grid min-h-0 flex-1 overflow-y-auto md:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
+            <section className="bg-slate-950 p-3 md:min-h-[680px] md:p-4">
+              <div className="sticky top-0 flex h-full min-h-[360px] items-center justify-center overflow-hidden rounded-lg bg-slate-900 md:min-h-[calc(92vh-7.5rem)]">
                 {detail.source_image_url ? (
-                  <a href={detail.source_image_url} target="_blank" rel="noreferrer" aria-label={isZh ? "查看原始证据图片" : "View source evidence image"}>
-                    <div className="aspect-[4/3] w-full rounded-lg bg-slate-100 bg-contain bg-center bg-no-repeat" style={{ backgroundImage: `url(${JSON.stringify(detail.source_image_url).slice(1, -1)})` }} />
+                  <a href={detail.source_image_url} target="_blank" rel="noreferrer" aria-label={isZh ? "查看原始证据图片" : "View source evidence image"} className="flex h-full w-full items-center justify-center">
+                    {/* Signed Supabase URLs are loaded directly so reviewers can inspect the original photo. */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={detail.source_image_url} alt={isZh ? "价格证据原图" : "Source evidence"} className="max-h-full max-w-full object-contain" />
                   </a>
                 ) : (
-                  <div className="flex aspect-[4/3] w-full items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-500">
+                  <div className="flex h-full w-full items-center justify-center border border-dashed border-slate-600 px-4 text-center text-sm text-slate-300">
                     {isZh ? "原始证据不可用" : "Source evidence unavailable"}
                   </div>
                 )}
-              </section>
+              </div>
+            </section>
+
+            <section className="space-y-4 p-4 md:overflow-y-auto md:p-5">
+              <ReasonGroups groups={detail.operator_reason_groups} fallback={detail.operator_reason} />
 
               <section className="rounded-lg border border-slate-200 p-4">
-                <h3 className="text-sm font-semibold text-slate-950">{isZh ? "图片中识别到的内容" : "Evidence read from the image"}</h3>
-                <dl className="mt-3 grid grid-cols-[7rem_1fr] gap-x-3 gap-y-2 text-sm">
-                  <dt className="text-slate-500">{isZh ? "商品" : "Product"}</dt><dd className="text-slate-900">{detail.evidence_product_text || "-"}</dd>
-                  <dt className="text-slate-500">{isZh ? "包装价" : "Package price"}</dt><dd className="text-slate-900">{formatIdr(detail.evidence_package_price)}</dd>
-                  <dt className="text-slate-500">{isZh ? "片数" : "Pieces"}</dt><dd className="text-slate-900">{detail.evidence_piece_count ?? "-"}</dd>
-                  <dt className="text-slate-500">{isZh ? "换算单片价" : "Per-piece price"}</dt><dd className="text-slate-900">{formatIdr(detail.evidence_price_per_piece)}</dd>
-                  {detail.historical_common_price_per_piece ? <><dt className="text-slate-500">{isZh ? "历史常见单片价" : "Common historical price"}</dt><dd className="text-slate-900">{formatIdr(detail.historical_common_price_per_piece)}</dd></> : null}
+                <h3 className="text-sm font-semibold text-slate-950">{isZh ? "来源信息" : "Source"}</h3>
+                <dl className="mt-3 grid grid-cols-[5.5rem_1fr] gap-x-3 gap-y-2 text-sm">
+                  <dt className="text-slate-500">Visit ID</dt>
+                  <dd className="break-all font-medium text-slate-900">{detail.visit_code ?? detail.visit_detail_href.split("/").at(-1) ?? "-"}</dd>
+                  <dt className="text-slate-500">Image ID</dt>
+                  <dd className="break-all text-slate-900">{detail.source_image_id ?? "-"}</dd>
                 </dl>
               </section>
 
-              {detail.requires_product_correction ? (
-                <section className="rounded-lg border border-amber-200 bg-amber-50/50 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-sm font-semibold text-slate-950">{isZh ? "AI 建议商品" : "AI suggested product"}</h3>
-                      <p className="mt-1 text-xs text-slate-600">{currentMatch?.label || (isZh ? "系统未能给出商品建议，请选择正确商品。" : "No product was suggested. Select the correct product.")}</p>
-                      <p className="mt-1 text-xs text-slate-500">{isZh ? "确认商品与价格正确，即会按此商品生成价格记录。" : "Confirming accepts this product and price together."}</p>
-                    </div>
-                    {!matchEditorOpen ? <button type="button" onClick={openMatchEditor} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700">{isZh ? "修正商品" : "Correct product"}</button> : null}
-                  </div>
-                  {matchEditorOpen ? (
-                    <div className="mt-3 space-y-2">
-                      <input value={matchQuery} onChange={(event) => setMatchQuery(event.target.value)} placeholder={isZh ? "搜索商品或 SKU" : "Search product or SKU"} className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none" />
-                      {matchLoading ? <div className="text-sm text-slate-500">{isZh ? "加载商品…" : "Loading products…"}</div> : (
-                        <select value={selectedMatchKey} onChange={(event) => setSelectedMatchKey(event.target.value)} className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none">
-                          <option value="">{isZh ? "请选择商品" : "Select a product"}</option>
-                          {filteredMatchOptions.map((option) => <option key={`${option.type}:${option.id}`} value={`${option.type}:${option.id}`}>{option.label}</option>)}
-                        </select>
-                      )}
-                    </div>
+              <section className="rounded-lg border border-slate-200 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-slate-950">{isZh ? "图片识别内容" : "Evidence read from the image"}</h3>
+                  {detail.state === "pending" && mode !== "correct" ? (
+                    <button type="button" disabled={submitting} onClick={() => setMode("correct")} className="shrink-0 rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-700 disabled:opacity-50">
+                      {isZh ? "修改价格" : "Edit price"}
+                    </button>
                   ) : null}
-                </section>
-              ) : null}
+                </div>
+                <dl className="mt-3 grid grid-cols-[6.5rem_1fr] gap-x-3 gap-y-2 text-sm">
+                  <dt className="text-slate-500">{isZh ? "商品" : "Product"}</dt><dd className="break-words text-slate-900">{detail.evidence_product_text || "-"}</dd>
+                  <dt className="text-slate-500">{isZh ? "包装价" : "Package price"}</dt><dd className="font-medium text-slate-950">{formatIdr(detail.evidence_package_price)}</dd>
+                  <dt className="text-slate-500">{isZh ? "片数" : "Pieces"}</dt><dd className="text-slate-900">{detail.evidence_piece_count ?? "-"}</dd>
+                  <dt className="text-slate-500">{isZh ? "换算单片价" : "Per-piece price"}</dt><dd className="font-medium text-slate-950">{formatIdr(detail.evidence_price_per_piece)}</dd>
+                  {detail.historical_common_price_per_piece ? <><dt className="text-slate-500">{isZh ? "历史单片价" : "Common price"}</dt><dd className="text-slate-900">{formatIdr(detail.historical_common_price_per_piece)}</dd></> : null}
+                </dl>
+
+                {mode === "correct" ? (
+                  <div className="mt-4 rounded-lg bg-slate-50 p-3">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="text-sm text-slate-600">{isZh ? "包装价" : "Package price"}<input type="number" min="1" step="1" value={packagePrice} onChange={(event) => setPackagePrice(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200" /></label>
+                      <label className="text-sm text-slate-600">{isZh ? "片数" : "Pieces"}<input type="number" min="1" step="1" value={pieceCount} onChange={(event) => setPieceCount(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200" /></label>
+                    </div>
+                    <div className="mt-3 text-sm text-slate-600">{isZh ? "修正后单片价：" : "Corrected per-piece price: "}<span className="font-semibold text-slate-950">{formatIdr(previewPricePerPiece)}</span></div>
+                  </div>
+                ) : null}
+              </section>
+
+              <section className={`rounded-lg border p-4 ${detail.requires_product_correction ? "border-amber-200 bg-amber-50/50" : "border-slate-200"}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold text-slate-950">{isZh ? "匹配到的商品名称" : "Matched product"}</h3>
+                    <p className="mt-1 break-words text-sm text-slate-700">{finalMatch?.label || currentMatch?.label || (isZh ? "未匹配到商品" : "No product matched")}</p>
+                    {detail.requires_product_correction ? <p className="mt-1 text-xs text-amber-800">{isZh ? "这条记录需要确认商品匹配后才能通过。" : "Confirm the matched product before approving this record."}</p> : null}
+                  </div>
+                  {detail.state === "pending" && !matchEditorOpen ? (
+                    <button type="button" onClick={openMatchEditor} className="shrink-0 rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-700">
+                      {isZh ? "修改匹配" : "Edit match"}
+                    </button>
+                  ) : null}
+                </div>
+                {matchEditorOpen ? (
+                  <div className="mt-3 space-y-2">
+                    <input value={matchQuery} onChange={(event) => setMatchQuery(event.target.value)} placeholder={isZh ? "搜索商品或 SKU" : "Search product or SKU"} className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200" />
+                    {matchLoading ? <div className="text-sm text-slate-500">{isZh ? "加载商品…" : "Loading products…"}</div> : (
+                      <select value={selectedMatchKey} onChange={(event) => setSelectedMatchKey(event.target.value)} className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200">
+                        <option value="">{isZh ? "请选择商品" : "Select a product"}</option>
+                        {filteredMatchOptions.map((option) => <option key={`${option.type}:${option.id}`} value={`${option.type}:${option.id}`}>{option.label}</option>)}
+                      </select>
+                    )}
+                  </div>
+                ) : null}
+              </section>
 
               {detail.state === "pending" ? (
-                <section className="space-y-3 border-t border-slate-200 pt-5">
-                  {mode === "correct" ? (
-                    <div className="rounded-lg bg-slate-50 p-4">
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <label className="text-sm text-slate-600">{isZh ? "包装价" : "Package price"}<input type="number" min="1" step="1" value={packagePrice} onChange={(event) => setPackagePrice(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none" /></label>
-                        <label className="text-sm text-slate-600">{isZh ? "片数" : "Pieces"}<input type="number" min="1" step="1" value={pieceCount} onChange={(event) => setPieceCount(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-slate-950 outline-none" /></label>
-                      </div>
-                      <div className="mt-3 text-sm text-slate-600">{isZh ? "修正后单片价：" : "Corrected per-piece price: "}<span className="font-semibold text-slate-950">{formatIdr(previewPricePerPiece)}</span></div>
-                    </div>
-                  ) : null}
-
+                <section className="space-y-3 border-t border-slate-200 pt-4">
                   {error ? <div className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
                   <div className="grid gap-2 sm:grid-cols-3">
-                    <button type="button" disabled={submitting || !finalMatchValid} onClick={() => submit("confirm")} className="inline-flex h-10 items-center justify-center rounded-md bg-emerald-600 px-3 text-sm font-medium text-white disabled:opacity-40">{detail.requires_product_correction ? (isZh ? "确认商品与价格正确" : "Confirm product and price") : (isZh ? "确认价格正确" : "Confirm price")}</button>
+                    <button type="button" disabled={submitting || !finalMatchValid} onClick={() => submit("confirm")} className="inline-flex h-10 items-center justify-center rounded-md bg-emerald-600 px-3 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-40">{detail.requires_product_correction ? (isZh ? "确认商品和价格" : "Confirm product and price") : (isZh ? "确认" : "Confirm")}</button>
                     {mode === "correct" ? (
-                      <button type="button" disabled={submitting || !finalMatchValid || previewPricePerPiece === null} onClick={() => submit("correct")} className="inline-flex h-10 items-center justify-center rounded-md bg-slate-900 px-3 text-sm font-medium text-white disabled:opacity-40">{isZh ? "提交修正并通过" : "Submit correction"}</button>
+                      <button type="button" disabled={submitting || !finalMatchValid || previewPricePerPiece === null} onClick={() => submit("correct")} className="inline-flex h-10 items-center justify-center rounded-md bg-slate-900 px-3 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-40">{isZh ? "提交修改" : "Submit correction"}</button>
                     ) : (
-                      <button type="button" disabled={submitting} onClick={() => setMode("correct")} className="inline-flex h-10 items-center justify-center rounded-md border border-slate-300 px-3 text-sm font-medium text-slate-700">{isZh ? "修正后通过" : "Correct and approve"}</button>
+                      <button type="button" disabled={submitting} onClick={() => setMode("correct")} className="inline-flex h-10 items-center justify-center rounded-md border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">{isZh ? "修改价格" : "Correct price"}</button>
                     )}
-                    <button type="button" disabled={submitting} onClick={() => submit("reject")} className="inline-flex h-10 items-center justify-center rounded-md border border-rose-300 px-3 text-sm font-medium text-rose-700 disabled:opacity-40">{isZh ? "判定为错误" : "Mark as incorrect"}</button>
+                    <button type="button" disabled={submitting} onClick={() => submit("reject")} className="inline-flex h-10 items-center justify-center rounded-md border border-rose-300 px-3 text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-40">{isZh ? "判定为错误" : "Mark as incorrect"}</button>
                   </div>
                 </section>
               ) : (
@@ -252,10 +278,10 @@ export function OperatorPriceReviewDrawer({
               <Link href={detail.visit_detail_href} className="inline-flex text-sm font-medium text-slate-700 underline underline-offset-4">
                 {isZh ? "查看完整 Visit 详情 →" : "View full Visit details →"}
               </Link>
-            </>
-          ) : null}
-        </div>
-      </aside>
+            </section>
+          </div>
+        ) : null}
+      </section>
     </div>
   );
 }

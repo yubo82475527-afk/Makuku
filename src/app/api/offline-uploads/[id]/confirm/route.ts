@@ -1,8 +1,8 @@
-import { calculatePriceGapVsMakuku, normalizePriceSnapshot } from "@/lib/business";
+import { normalizePriceSnapshot } from "@/lib/business";
 import { formReturnRedirect, readRequestBody } from "@/lib/request";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import { requireAdminSession } from "@/lib/auth-session";
-import type { CompetitorProduct, SkuMatch, SkuMaster } from "@/lib/types";
+import type { CompetitorProduct } from "@/lib/types";
 
 export async function POST(request: Request, ctx: RouteContext<"/api/offline-uploads/[id]/confirm">) {
   try {
@@ -45,7 +45,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/offline-upl
 
     const { data: product } = await supabase
       .from("competitor_products")
-      .select("*, brands(id,name), sku_matches(*, sku_master(*))")
+      .select("*, brands(id,name)")
       .eq("brand_id", brand.id)
       .eq("channel", "offline")
       .eq("size", body.size || null)
@@ -70,13 +70,12 @@ export async function POST(request: Request, ctx: RouteContext<"/api/offline-upl
           piece_count: pieceCount,
           segment: "unknown",
         })
-        .select("*, brands(id,name), sku_matches(*, sku_master(*))")
+        .select("*, brands(id,name)")
         .single();
       if (createError) return Response.json({ error: createError.message }, { status: 400 });
       competitorProduct = created as CompetitorProduct;
     }
 
-    const skuMaster = (competitorProduct.sku_matches?.[0] as SkuMatch | undefined)?.sku_master as SkuMaster | undefined;
     const normalized = normalizePriceSnapshot({
       promo_price_idr: price,
       voucher_value_idr: 0,
@@ -105,18 +104,14 @@ export async function POST(request: Request, ctx: RouteContext<"/api/offline-upl
       .single();
     if (snapshotError) return Response.json({ error: snapshotError.message }, { status: 400 });
 
-    const gap = skuMaster ? calculatePriceGapVsMakuku(normalized.price_per_piece, skuMaster.target_price_per_piece) : null;
-    const severity = skuMaster && normalized.price_per_piece < skuMaster.floor_price_per_piece
-      ? "critical"
-      : gap !== null && gap <= -8
-        ? "high"
-        : "medium";
+    const gap = null;
+    const severity = "medium";
 
     const { data: event, error: eventError } = await supabase
       .from("promo_events")
       .insert({
         competitor_product_id: competitorProduct.id,
-        sku_master_id: skuMaster?.id ?? null,
+        sku_master_id: null,
         channel: "offline",
         event_type: "offline_display",
         event_title: `${brandName} offline promo at ${upload.store_name}`,
@@ -134,15 +129,6 @@ export async function POST(request: Request, ctx: RouteContext<"/api/offline-upl
     if (eventError) return Response.json({ error: eventError.message }, { status: 400 });
 
     await supabase.from("offline_uploads").update({ upload_status: "reviewed" }).eq("id", id);
-    if (severity === "high" || severity === "critical") {
-      await supabase.from("alerts").insert({
-        promo_event_id: event.id,
-        title: "Offline promo needs review",
-        message: `${brandName} offline event in ${upload.city} is ${severity}.`,
-        severity,
-      });
-    }
-
     if (isForm) return formReturnRedirect(request, body, "/offline-uploads");
     return Response.json({ snapshot, event });
   } catch (error) {

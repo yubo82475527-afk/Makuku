@@ -1,8 +1,8 @@
-import { calculatePriceGapVsMakuku, normalizePriceSnapshot } from "@/lib/business";
+import { normalizePriceSnapshot } from "@/lib/business";
 import { formReturnRedirect, readRequestBody } from "@/lib/request";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import { requireAdminSession } from "@/lib/auth-session";
-import type { CompetitorProduct, SkuMatch, SkuMaster } from "@/lib/types";
+import type { CompetitorProduct } from "@/lib/types";
 
 export async function POST(request: Request, ctx: RouteContext<"/api/offline-visit-images/[id]/confirm">) {
   try {
@@ -43,7 +43,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/offline-vis
     const visit = image.offline_store_visits as { store_id?: string | null; store_name: string; city: string } | null;
     const { data: existingProduct } = await supabase
       .from("competitor_products")
-      .select("*, brands(id,name), sku_matches(*, sku_master(*))")
+      .select("*, brands(id,name)")
       .eq("brand_id", brand.id)
       .eq("channel", "offline")
       .eq("normalized_name", productName)
@@ -68,13 +68,12 @@ export async function POST(request: Request, ctx: RouteContext<"/api/offline-vis
           piece_count: pieceCount,
           segment: "unknown",
         })
-        .select("*, brands(id,name), sku_matches(*, sku_master(*))")
+        .select("*, brands(id,name)")
         .single();
       if (createError) return Response.json({ error: createError.message }, { status: 400 });
       competitorProduct = created as CompetitorProduct;
     }
 
-    const skuMaster = (competitorProduct.sku_matches?.[0] as SkuMatch | undefined)?.sku_master as SkuMaster | undefined;
     const normalized = normalizePriceSnapshot({
       promo_price_idr: price,
       voucher_value_idr: 0,
@@ -106,17 +105,13 @@ export async function POST(request: Request, ctx: RouteContext<"/api/offline-vis
 
     let event = null;
     if (body.create_event === "on" || body.create_event === "true" || body.create_event === true) {
-      const gap = skuMaster ? calculatePriceGapVsMakuku(normalized.price_per_piece, skuMaster.target_price_per_piece) : null;
-      const severity = skuMaster && normalized.price_per_piece < skuMaster.floor_price_per_piece
-        ? "critical"
-        : gap !== null && gap <= -8
-          ? "high"
-          : "medium";
+      const gap = null;
+      const severity = "medium";
       const { data: createdEvent, error: eventError } = await supabase
         .from("promo_events")
         .insert({
           competitor_product_id: competitorProduct.id,
-          sku_master_id: skuMaster?.id ?? null,
+          sku_master_id: null,
           channel: "offline",
           event_type: promoMechanic === "unknown" ? "offline_display" : promoMechanic,
           event_title: `${brandName} offline promo at ${visit?.store_name ?? "store"}`,
@@ -134,14 +129,6 @@ export async function POST(request: Request, ctx: RouteContext<"/api/offline-vis
       if (eventError) return Response.json({ error: eventError.message }, { status: 400 });
       event = createdEvent;
 
-      if (severity === "high" || severity === "critical") {
-        await supabase.from("alerts").insert({
-          promo_event_id: createdEvent.id,
-          title: "Offline promo needs review",
-          message: `${brandName} offline event in ${visit?.city ?? "unknown city"} is ${severity}.`,
-          severity,
-        });
-      }
     }
 
     await supabase.from("offline_visit_images").update({ analysis_status: "reviewed" }).eq("id", id);

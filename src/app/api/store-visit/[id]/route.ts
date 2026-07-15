@@ -32,12 +32,18 @@ class RouteError extends Error {
   }
 }
 
-const aiPriceCandidateSelect = "id,visit_id,candidate_key,source_image_id,source_image_path,source_row_index,raw_brand,raw_product,raw_price,parsed_price_idr,ai_list_price_idr,ai_package_price_idr,ai_net_price_idr,list_price_idr,package_price_idr,net_price_idr,raw_piece_count_text,raw_package_price_text,raw_net_price_text,raw_price_per_piece_text,visible_price_per_piece_idr,price_basis,ai_promo_type,promo_type,ai_piece_count,ai_price_per_piece,piece_count,price_per_piece,candidate_type,ai_confidence,legacy_confidence_fallback,price_evidence_status,price_evidence_confidence,price_evidence_detail,conflicts,review_decision,ai_matched_entity_type,ai_matched_entity_id,ai_matched_label,matched_entity_type,matched_entity_id,matched_label,match_score,warnings,status,price_snapshot_id,reviewed_piece_count,reviewed_price_per_piece,created_at,reviewed_at,reviewed_by,rejection_reason,review_method,h5_lifecycle_status,h5_lifecycle_at";
-const visitSelect = `id,visit_code,store_name,region,channel,promoter,visit_date,visit_status,analysis_status,analysis_error,summary_result,image_urls,image_thumbnail_paths,image_categories,offline_visit_images(id,visit_id,replaces_image_id,replaced_by_image_id,deleted_at,deletion_reason,image_type,image_path,thumbnail_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at),ai_price_candidates(${aiPriceCandidateSelect})`;
-const legacyVisitSelect = `id,visit_code,store_name,region,channel,promoter,visit_date,visit_status,analysis_status,analysis_error,summary_result,image_urls,image_thumbnail_paths,image_categories,offline_visit_images(id,visit_id,image_type,image_path,thumbnail_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at),ai_price_candidates(${aiPriceCandidateSelect})`;
-const aiPriceCandidateLegacySelect = aiPriceCandidateSelect.replace("source_row_index,", "");
-const visitLegacyCandidateSelect = `id,visit_code,store_name,region,channel,promoter,visit_date,visit_status,analysis_status,analysis_error,summary_result,image_urls,image_thumbnail_paths,image_categories,offline_visit_images(id,visit_id,replaces_image_id,replaced_by_image_id,deleted_at,deletion_reason,image_type,image_path,thumbnail_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at),ai_price_candidates(${aiPriceCandidateLegacySelect})`;
-const fullyLegacyVisitSelect = `id,visit_code,store_name,region,channel,promoter,visit_date,visit_status,analysis_status,analysis_error,summary_result,image_urls,image_thumbnail_paths,image_categories,offline_visit_images(id,visit_id,image_type,image_path,thumbnail_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at),ai_price_candidates(${aiPriceCandidateLegacySelect})`;
+const aiPriceCandidateSelect = "id,visit_id,candidate_key,source_image_id,source_image_path,source_row_index,raw_brand,raw_product,raw_price,parsed_price_idr,ai_list_price_idr,ai_package_price_idr,ai_net_price_idr,list_price_idr,package_price_idr,net_price_idr,raw_piece_count_text,raw_package_price_text,raw_net_price_text,raw_price_per_piece_text,visible_price_per_piece_idr,price_basis,ai_promo_type,promo_type,ai_piece_count,ai_price_per_piece,piece_count,price_per_piece,candidate_type,ai_confidence,legacy_confidence_fallback,price_evidence_status,price_evidence_confidence,price_evidence_detail,conflicts,review_decision,ai_matched_entity_type,ai_matched_entity_id,ai_matched_label,ai_match_rule_version,ai_match_method,ai_match_evidence,matched_entity_type,matched_entity_id,matched_label,match_score,warnings,status,price_snapshot_id,reviewed_piece_count,reviewed_price_per_piece,created_at,reviewed_at,reviewed_by,rejection_reason,review_method,h5_lifecycle_status,h5_lifecycle_at";
+const aiPriceCandidatePreV2Select = aiPriceCandidateSelect.replace("ai_match_rule_version,ai_match_method,ai_match_evidence,", "");
+const aiPriceCandidateLegacySelect = aiPriceCandidatePreV2Select.replace("source_row_index,", "");
+const visitColumns = "id,visit_code,store_name,region,channel,promoter,visit_date,visit_status,analysis_status,analysis_error,summary_result,image_urls,image_thumbnail_paths,image_categories";
+const currentImageSelect = "offline_visit_images(id,visit_id,replaces_image_id,replaced_by_image_id,deleted_at,deletion_reason,image_type,image_path,thumbnail_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at)";
+const legacyImageSelect = "offline_visit_images(id,visit_id,image_type,image_path,thumbnail_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at)";
+const visitSelect = `${visitColumns},${currentImageSelect},ai_price_candidates(${aiPriceCandidateSelect})`;
+const visitPreV2CandidateSelect = `${visitColumns},${currentImageSelect},ai_price_candidates(${aiPriceCandidatePreV2Select})`;
+const visitLegacyCandidateSelect = `${visitColumns},${currentImageSelect},ai_price_candidates(${aiPriceCandidateLegacySelect})`;
+const legacyVisitSelect = `${visitColumns},${legacyImageSelect},ai_price_candidates(${aiPriceCandidateSelect})`;
+const legacyVisitPreV2CandidateSelect = `${visitColumns},${legacyImageSelect},ai_price_candidates(${aiPriceCandidatePreV2Select})`;
+const fullyLegacyVisitSelect = `${visitColumns},${legacyImageSelect},ai_price_candidates(${aiPriceCandidateLegacySelect})`;
 
 async function createSignedThumbnailUrl(input: {
   bucket: "store-visits" | "offline-visit-images";
@@ -108,55 +114,56 @@ function isMissingImageLifecycleColumnsError(error: { message?: string } | null)
     || message.includes("schema cache");
 }
 
-function isMissingCandidateRowColumnError(error: { message?: string } | null) {
+function isMissingCandidateColumnError(error: { message?: string } | null) {
   const message = error?.message ?? "";
-  return message.includes("source_row_index") || message.includes("schema cache");
+  return message.includes("source_row_index")
+    || message.includes("ai_match_rule_version")
+    || message.includes("ai_match_method")
+    || message.includes("ai_match_evidence")
+    || message.includes("schema cache");
+}
+
+function normalizeLegacyVisitImages(data: unknown) {
+  const legacyData = data as (Record<string, unknown> & { offline_visit_images?: Record<string, unknown>[] | null }) | null;
+  if (!legacyData) return null;
+  return {
+    ...legacyData,
+    offline_visit_images: ((legacyData.offline_visit_images ?? []) as Record<string, unknown>[]).map((image) => ({
+      ...image,
+      replaces_image_id: null,
+      replaced_by_image_id: null,
+      deleted_at: null,
+      deletion_reason: null,
+    })) as OfflineVisitImage[],
+  };
 }
 
 async function loadVisitWithFallback(supabase: ReturnType<typeof createSupabaseServiceClient>, id: string) {
-  const primaryResult = await supabase
-    .from("offline_store_visits")
-    .select(visitSelect)
-    .eq("id", id)
-    .single();
-  let data: unknown = primaryResult.data;
-  let error = primaryResult.error;
+  const attempts = [
+    { select: visitSelect, legacyImages: false },
+    { select: visitPreV2CandidateSelect, legacyImages: false },
+    { select: visitLegacyCandidateSelect, legacyImages: false },
+    { select: legacyVisitSelect, legacyImages: true },
+    { select: legacyVisitPreV2CandidateSelect, legacyImages: true },
+    { select: fullyLegacyVisitSelect, legacyImages: true },
+  ];
+  let lastError: { message?: string } | null = null;
 
-  if (isMissingCandidateRowColumnError(error)) {
-    const candidateLegacyResult = await supabase
+  for (const attempt of attempts) {
+    const result = await supabase
       .from("offline_store_visits")
-      .select(visitLegacyCandidateSelect)
+      .select(attempt.select)
       .eq("id", id)
       .single();
-    data = candidateLegacyResult.data;
-    error = candidateLegacyResult.error;
+    if (!result.error && result.data) {
+      const data = attempt.legacyImages ? normalizeLegacyVisitImages(result.data) : result.data;
+      return data as unknown as StoreVisitWithPriceCandidates;
+    }
+    lastError = result.error;
+    if (!isMissingImageLifecycleColumnsError(result.error) && !isMissingCandidateColumnError(result.error)) break;
   }
 
-  if (isMissingImageLifecycleColumnsError(error)) {
-    const legacyResult = await supabase
-      .from("offline_store_visits")
-      .select(isMissingCandidateRowColumnError(error) ? fullyLegacyVisitSelect : legacyVisitSelect)
-      .eq("id", id)
-      .single();
-    const legacyData = legacyResult.data as (Record<string, unknown> & { offline_visit_images?: Record<string, unknown>[] | null }) | null;
-    data = legacyData ? {
-      ...legacyData,
-      offline_visit_images: ((legacyData.offline_visit_images ?? []) as Record<string, unknown>[]).map((image) => ({
-        ...image,
-        replaces_image_id: null,
-        replaced_by_image_id: null,
-        deleted_at: null,
-        deletion_reason: null,
-      })) as OfflineVisitImage[],
-    } : null;
-    error = legacyResult.error;
-  }
-
-  if (error || !data) {
-    throw new RouteError(error?.message ?? "Visit not found", 404);
-  }
-
-  return data as unknown as StoreVisitWithPriceCandidates;
+  throw new RouteError(lastError?.message ?? "Visit not found", 404);
 }
 
 export async function GET(request: Request, ctx: RouteContext) {

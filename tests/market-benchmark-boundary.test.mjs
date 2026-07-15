@@ -5,12 +5,9 @@ import assert from "node:assert/strict";
 const pricesPage = readFileSync("src/app/[locale]/prices/page.tsx", "utf8");
 const priceSnapshotsTable = readFileSync("src/components/price-snapshots-table.tsx", "utf8");
 const competitorMappingsPage = readFileSync("src/app/[locale]/competitor-mappings/page.tsx", "utf8");
-const competitorMappingTable = readFileSync("src/components/competitor-mappings-table.tsx", "utf8");
 const competitorSeriesRulesPanel = readFileSync("src/components/competitor-series-rules-panel.tsx", "utf8");
 const competitorProductsTable = readFileSync("src/components/competitor-products-table.tsx", "utf8");
 const competitorsRoute = readFileSync("src/app/api/competitors/route.ts", "utf8");
-const skuMatchesRoute = readFileSync("src/app/api/sku-matches/route.ts", "utf8");
-const skuMasterBridge = readFileSync("src/lib/sku-master-bridge.ts", "utf8");
 const dashboardPage = readFileSync("src/app/[locale]/dashboard/page.tsx", "utf8");
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const productMasterSearchSelect = readFileSync("src/components/product-master-search-select.tsx", "utf8");
@@ -38,9 +35,8 @@ test("competitor mapping exposes automatic series rules and benchmark selection"
   assert.doesNotMatch(competitorMappingsPage, /ProductMasterSearchSelect/);
   assert.doesNotMatch(competitorSeriesRulesPanel, /manualOverrides/);
   assert.doesNotMatch(competitorSeriesRulesPanel, /Manual override/);
-  assert.doesNotMatch(competitorMappingTable, /\/api\/competitors/);
-  assert.doesNotMatch(competitorMappingTable, /intent: "update_segment"/);
-  assert.doesNotMatch(competitorMappingTable, /onBlur=\{\(\) => saveProductFields/);
+  assert.equal(existsSync("src/components/competitor-mappings-table.tsx"), false);
+  assert.equal(existsSync("src/components/competitor-mapping-table.tsx"), false);
   assert.doesNotMatch(competitorProductsTable, /intent: "update_segment"/);
   assert.doesNotMatch(competitorProductsTable, /Product Grade|Grade/);
   assert.doesNotMatch(competitorMappingsPage, /getSkuMaster/);
@@ -49,13 +45,13 @@ test("competitor mapping exposes automatic series rules and benchmark selection"
   assert.match(productMasterSearchSelect, /name="material_sku_code"/);
 });
 
-test("manual competitor mapping remains an explicit SKU exception path", () => {
-  assert.match(skuMatchesRoute, /reviewed: true/);
-  assert.match(skuMatchesRoute, /\.delete\(\)[\s\S]*\.eq\("competitor_product_id", competitorProductId\)/);
-  assert.match(skuMatchesRoute, /sku_matches/);
-  assert.match(skuMatchesRoute, /material_sku_code/);
-  assert.match(skuMatchesRoute, /ensureSkuMasterFromMaterial/);
-  assert.match(skuMasterBridge, /\.from\("material_master"\)/);
+test("manual competitor SKU exception path is removed in favor of series mappings", () => {
+  assert.equal(existsSync("src/app/api/sku-matches/route.ts"), false);
+  assert.equal(existsSync("src/components/competitor-mappings-table.tsx"), false);
+  assert.equal(existsSync("src/components/competitor-mapping-table.tsx"), false);
+  assert.doesNotMatch(competitorMappingsPage, /material_sku_code/);
+  assert.doesNotMatch(competitorMappingsPage, /ProductMasterSearchSelect/);
+  assert.match(competitorMappingsPage, /CompetitorSeriesRulesPanel/);
   assert.doesNotMatch(competitorsRoute, /body\.reviewed/);
 });
 
@@ -67,7 +63,7 @@ test("standalone market benchmark management is removed from product routes", ()
   assert.doesNotMatch(appShell, /market-benchmarks/);
   assert.doesNotMatch(appShell, /Market Benchmarks/);
   assert.doesNotMatch(dashboardPage, /Maintain benchmark rules/);
-  assert.match(dashboardPage, /competitor-mappings/);
+  assert.match(dashboardPage, /Dashboard under refactor|仪表盘重构中/);
 });
 
 test("dashboard price index derives benchmark selection from competitor mappings", () => {

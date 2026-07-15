@@ -36,6 +36,9 @@ function sourceItemsFromImage(image: PriceImageRow): AiPriceCandidateSourceItem[
   return result.rows.map((row, rowIndex) => ({
     brand: row.brand ?? "Unknown",
     product: row.sku,
+    productFamilyText: row.product_family_text,
+    sectionTitle: row.section_title,
+    rowAnchor: row.row_anchor,
     price: row.net_price_idr ? String(row.net_price_idr) : "",
     list_price: row.list_price_idr ? String(row.list_price_idr) : null,
     package_price: row.package_price_idr ? String(row.package_price_idr) : null,
@@ -62,6 +65,10 @@ function sourceItemsFromImage(image: PriceImageRow): AiPriceCandidateSourceItem[
     sourceImagePath: image.image_path,
     sourceRowIndex: rowIndex,
   }));
+}
+
+export function sourceItemsFromStoredPriceImages(images: PriceImageRow[]) {
+  return images.flatMap(sourceItemsFromImage);
 }
 
 function rowKey(imageId: string | null | undefined, rowIndex: number | null | undefined) {
@@ -91,7 +98,7 @@ export async function syncStoreVisitPriceCandidatesFromImages(input: {
   const { data: images, error: imageError } = await imageQuery;
   if (imageError) throw new Error(imageError.message);
 
-  const sourceItems = ((images ?? []) as PriceImageRow[]).flatMap(sourceItemsFromImage);
+  const sourceItems = sourceItemsFromStoredPriceImages((images ?? []) as PriceImageRow[]);
   if (sourceItems.length === 0) {
     return { inserted_count: 0, skipped_existing_count: 0, eligible_row_count: 0 };
   }

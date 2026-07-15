@@ -19,6 +19,9 @@ function buildSourceItems(
       imageResult.result.rows.map((row, rowIndex) => ({
         brand: row.brand ?? "Unknown",
         product: row.sku,
+        productFamilyText: row.product_family_text,
+        sectionTitle: row.section_title,
+        rowAnchor: row.row_anchor,
         price: row.net_price_idr ? String(row.net_price_idr) : "",
         list_price: row.list_price_idr ? String(row.list_price_idr) : null,
         package_price: row.package_price_idr ? String(row.package_price_idr) : null,

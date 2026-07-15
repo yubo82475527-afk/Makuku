@@ -69,40 +69,35 @@ test("store link repair migration backfills offline store ids for offline AI sna
 });
 
 test("AI candidate matching refuses to reuse competitor products from a different brand", () => {
-  assert.match(candidateService, /function competitorBrandsMatch/);
-  assert.match(candidateService, /const brandMatchedProducts = products\.filter\(\(item\) => competitorBrandsMatch\(candidate\.brand, item\.brands\?\.name\)\)/);
-  assert.match(candidateService, /brandMatchedProducts\.flatMap/);
-  assert.doesNotMatch(candidateService, /const candidateProducts = .*brandMatchedProducts/);
+  assert.match(candidateService, /compileProductMatchIndex/);
+  assert.match(candidateService, /matchProduct\(productMatchEvidence/);
+  assert.match(candidateService, /productMatchRulesV2/);
+  assert.match(candidateService, /matched_entity_type: matchedEntityType/);
+  assert.doesNotMatch(candidateService, /const candidateProducts = .*products/);
 });
 
 test("AI candidate competitor matching requires series size and piece count before ranking", () => {
-  assert.match(candidateService, /export function pickBestCompetitorForCandidate/);
-  assert.match(candidateService, /function competitorTargetAttributes/);
+  assert.match(candidateService, /function competitorMatchMaster/);
+  assert.match(candidateService, /entityType: "competitor_product"/);
   assert.match(candidateService, /product_series/);
-  assert.match(candidateService, /normalizedCompetitorSize/);
-  assert.match(candidateService, /skuAttributesHardMatch\(candidateAttributes, target\)/);
-  assert.match(candidateService, /rankHardMatchedSkuCandidate/);
+  assert.match(candidateService, /pieceCount: normalizePieceCount\(item\.piece_count\)/);
   assert.match(candidateService, /active: item\.status !== "disabled"/);
+  assert.match(candidateService, /ai_match_method: productMatch\.method/);
   assert.doesNotMatch(candidateService, /competitorSizePieceExactMatches/);
   assert.doesNotMatch(candidateService, /competitorCandidateRank/);
-  assert.match(candidateService, /pickBestCompetitor\(\{ brand: item\.brand, product: item\.product, pieceCount \}/);
+  assert.match(candidateService, /matchProduct\(productMatchEvidence\(item, pieceCount\)/);
 });
 
 test("AI candidate material matching requires series size and piece count before ranking", () => {
-  assert.match(candidateService, /export function pickBestMaterialForCandidate/);
-  assert.match(candidateService, /export function extractSkuMatchAttributes/);
-  assert.match(candidateService, /export function skuAttributesHardMatch/);
-  assert.match(candidateService, /export function pickUniqueHardMatchedCandidate/);
-  assert.match(candidateService, /function materialTargetAttributes/);
-  assert.match(candidateService, /extractCandidateSize/);
+  assert.match(candidateService, /function materialMatchMaster/);
+  assert.match(candidateService, /entityType: "material_master"/);
   assert.match(candidateService, /pack_count/);
   assert.match(candidateService, /sub_type/);
   assert.match(candidateService, /sub_brand/);
-  assert.match(candidateService, /skuAttributesHardMatch\(candidateAttributes, target\)/);
   assert.doesNotMatch(candidateService, /sizePieceExactMatches/);
-  assert.match(candidateService, /pickBestMaterial\(\{ brand: item\.brand, product: item\.product, parsedPrice, pieceCount \}/);
-  assert.match(candidateService, /const isOwnBrandCandidate = isMakukuBrand\(item\.brand\)/);
-  assert.match(candidateService, /!materialMatch && !isOwnBrandCandidate/);
+  assert.match(candidateService, /loadProductMatchContext/);
+  assert.match(candidateService, /matchProduct\(productMatchEvidence\(item, pieceCount\)/);
+  assert.match(candidateService, /ai_match_evidence: productMatch\.evidence/);
 });
 
 test("price review approval validates matched competitor brand before reusing it", () => {

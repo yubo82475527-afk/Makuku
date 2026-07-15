@@ -44,9 +44,10 @@ export function StoreVisitMonitorExportMenu({ locale }: { locale: string }) {
   useEffect(() => {
     if (!open) return;
     let disposed = false;
-    void loadJobs(() => disposed);
+    const timer = window.setTimeout(() => void loadJobs(() => disposed), 0);
     return () => {
       disposed = true;
+      window.clearTimeout(timer);
     };
   }, [loadJobs, open]);
 

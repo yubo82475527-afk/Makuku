@@ -139,15 +139,15 @@ export const demoOfflineStores: OfflineStore[] = [
 ];
 
 export const demoCompetitors: CompetitorProduct[] = [
-  ["c1", "b2", "Royal Soft", "MamyPoko Pants Royal Soft M32", "Royal Soft Pants M32", "shopee", "MamyPoko Official", "pants", "M", 32, "BD MID", "s2", 0.94, true],
-  ["c2", "b3", "Gold", "Sweety Gold Pants L32", "Gold Pants L32", "shopee", "Sweety Official", "pants", "L", 32, "BD MID", "s7", 0.91, true],
-  ["c3", "b4", null, "Merries Pants L30", "Merries Pants L30", "offline", "Transmart Bandung", "pants", "L", 30, "BD MID", "s3", 0.9, true],
-  ["c4", "b5", "Premium", "Goo.N Premium Pants M32", "Premium Pants M32", "shopee", "GooN Official", "pants", "M", 32, "BD MID", "s2", 0.88, false],
-  ["c5", "b6", "Baby Dry", "Pampers Baby Dry Pants XL30", "Baby Dry Pants XL30", "offline", "Lottemart Jakarta", "pants", "XL", 30, "BD MID", "s8", 0.86, false],
-  ["c6", "b4", "Tape", "Merries Tape NB44", "Tape NB44", "shopee", "Merries Official", "tape", "NB", 44, "BD MID", "s13", 0.93, true],
-  ["c7", "b2", "Tape", "MamyPoko Tape L32", "Tape L32", "shopee", "MamyPoko Official", "tape", "L", 32, "BD MID", "s16", 0.87, false],
-  ["c8", "b6", "Premium Care", "Pampers Premium Care S34", "Premium Care Pants S34", "tiktok", "Pampers TikTok Shop", "pants", "S", 34, "BD MID", "s1", 0.82, false],
-].map(([id, brand_id, product_series, raw_title, normalized_name, channel, shop_name, pack_type, size, piece_count, segment, skuId, score, reviewed]) => ({
+  ["c1", "b2", "Royal Soft", "MamyPoko Pants Royal Soft M32", "Royal Soft Pants M32", "shopee", "MamyPoko Official", "pants", "M", 32, "BD MID"],
+  ["c2", "b3", "Gold", "Sweety Gold Pants L32", "Gold Pants L32", "shopee", "Sweety Official", "pants", "L", 32, "BD MID"],
+  ["c3", "b4", null, "Merries Pants L30", "Merries Pants L30", "offline", "Transmart Bandung", "pants", "L", 30, "BD MID"],
+  ["c4", "b5", "Premium", "Goo.N Premium Pants M32", "Premium Pants M32", "shopee", "GooN Official", "pants", "M", 32, "BD MID"],
+  ["c5", "b6", "Baby Dry", "Pampers Baby Dry Pants XL30", "Baby Dry Pants XL30", "offline", "Lottemart Jakarta", "pants", "XL", 30, "BD MID"],
+  ["c6", "b4", "Tape", "Merries Tape NB44", "Tape NB44", "shopee", "Merries Official", "tape", "NB", 44, "BD MID"],
+  ["c7", "b2", "Tape", "MamyPoko Tape L32", "Tape L32", "shopee", "MamyPoko Official", "tape", "L", 32, "BD MID"],
+  ["c8", "b6", "Premium Care", "Pampers Premium Care S34", "Premium Care Pants S34", "tiktok", "Pampers TikTok Shop", "pants", "S", 34, "BD MID"],
+].map(([id, brand_id, product_series, raw_title, normalized_name, channel, shop_name, pack_type, size, piece_count, segment]) => ({
   id,
   brand_id,
   product_series,
@@ -164,16 +164,6 @@ export const demoCompetitors: CompetitorProduct[] = [
   segment,
   created_at: iso(160),
   brands: demoBrands.find((brand) => brand.id === brand_id) ?? null,
-  sku_matches: [{
-    id: `m-${id}`,
-    competitor_product_id: id,
-    sku_master_id: skuId,
-    match_score: score,
-    match_method: "rule",
-    reviewed,
-    created_at: iso(100),
-    sku_master: demoSkuMaster.find((sku) => sku.id === skuId) ?? null,
-  }],
 }) as CompetitorProduct);
 
 export const demoCompetitorSeriesMappings: CompetitorSeriesMapping[] = [

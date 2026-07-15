@@ -1,10 +1,10 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 
 const migration = readFileSync("supabase/migrations/202606120002_competitor_package_type_import.sql", "utf8");
 const typesFile = readFileSync("src/lib/types.ts", "utf8");
-const competitorMappingTable = readFileSync("src/components/competitor-mapping-table.tsx", "utf8");
+const competitorProductsTable = readFileSync("src/components/competitor-products-table.tsx", "utf8");
 const competitorRoute = readFileSync("src/app/api/competitors/route.ts", "utf8");
 const aiPriceReview = readFileSync("src/lib/ai-price-review.ts", "utf8");
 const offlineUploadConfirm = readFileSync("src/app/api/offline-uploads/[id]/confirm/route.ts", "utf8");
@@ -13,15 +13,17 @@ const offlineVisitImageConfirm = readFileSync("src/app/api/offline-visit-images/
 test("competitor products have a separate package type field", () => {
   assert.match(migration, /add column if not exists package_type text not null default 'unknown'/);
   assert.match(typesFile, /package_type: string/);
-  assert.match(competitorMappingTable, /packageType: isZh \? "包装类型" : "Package Type"/);
-  assert.match(competitorMappingTable, /product\.package_type \?\? "unknown"/);
-  assert.match(competitorMappingTable, /ProductDraft/);
-  assert.match(competitorMappingTable, /saveProductFields/);
-  assert.match(competitorMappingTable, /intent: "update_fields"/);
+  assert.equal(existsSync("src/components/competitor-mapping-table.tsx"), false);
+  assert.match(competitorProductsTable, /packageType: isZh \? "包装类型" : "Package Type"/);
+  assert.match(competitorProductsTable, /product\.package_type \?\? "unknown"/);
+  assert.match(competitorProductsTable, /ProductDraft/);
+  assert.match(competitorProductsTable, /function saveProduct/);
+  assert.match(competitorProductsTable, /method: "PATCH"/);
+  assert.match(competitorRoute, /body\.intent === "update_fields"/);
   assert.match(competitorRoute, /body\.intent === "update_package_type"/);
   assert.match(competitorRoute, /package_type: cleanPackageType/);
-  assert.match(competitorMappingTable, /\{dict\.common\.brand\}/);
-  assert.match(competitorMappingTable, /\{copy\.competitorGrade\}/);
+  assert.match(competitorProductsTable, /\{dict\.common\.brand\}/);
+  assert.match(competitorProductsTable, /\{copy\.packageType\}/);
 });
 
 test("competitor spec import keeps exact brand names and package tiers", () => {

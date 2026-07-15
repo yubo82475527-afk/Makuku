@@ -8,6 +8,12 @@ type SupabaseServiceClient = ReturnType<typeof import("@/lib/supabase").createSu
 const AUTO_REVIEW_CONCURRENCY = 10;
 const MIN_MATCH_SCORE = 0.9;
 const REQUIRE_MATCHED_ENTITY = true;
+const AUTO_APPROVE_MATCH_METHODS = new Set(["EXACT_CODE", "FULL_SIGNATURE", "UNIQUE_SIGNATURE"]);
+
+function hasAllowedProductMatch(candidate: Pick<AiPriceCandidate, "ai_match_rule_version" | "ai_match_method" | "match_score">) {
+  if (candidate.ai_match_rule_version) return AUTO_APPROVE_MATCH_METHODS.has(String(candidate.ai_match_method ?? ""));
+  return Number(candidate.match_score ?? 0) >= MIN_MATCH_SCORE;
+}
 
 export function candidateMatchesReviewRule(candidate: AiPriceCandidate, _rule: AiPriceReviewRule) {
   void _rule;
@@ -16,7 +22,7 @@ export function candidateMatchesReviewRule(candidate: AiPriceCandidate, _rule: A
     return { eligible: false, reason: "Historical price quality gate has not passed." };
   }
   if (candidate.review_decision !== "AUTO_APPROVE") return { eligible: false, reason: "Candidate requires manual review." };
-  if (candidate.match_score < MIN_MATCH_SCORE) return { eligible: false, reason: "Match score is below the fixed auto-approval threshold." };
+  if (!hasAllowedProductMatch(candidate)) return { eligible: false, reason: "Product match method requires manual review." };
   if (REQUIRE_MATCHED_ENTITY && (!candidate.matched_entity_id || candidate.matched_entity_type === "unmatched")) {
     return { eligible: false, reason: "Missing matched product or material master data." };
   }
@@ -263,11 +269,11 @@ export async function rejectAiPriceCandidate({
 }
 
 function candidateAllowsProductCorrection(candidate: Pick<AiPriceCandidate,
-  "matched_entity_type" | "matched_entity_id" | "match_score" | "quality_gate_reason_codes"
+  "matched_entity_type" | "matched_entity_id" | "match_score" | "quality_gate_reason_codes" | "ai_match_rule_version" | "ai_match_method"
 >) {
   return candidate.matched_entity_type === "unmatched"
     || !candidate.matched_entity_id
-    || Number(candidate.match_score ?? 0) < MIN_MATCH_SCORE
+    || !hasAllowedProductMatch(candidate)
     || (candidate.quality_gate_reason_codes ?? []).includes("SKU_MATCH_UNCERTAIN");
 }
 
@@ -427,7 +433,7 @@ export async function ensureCompetitorProduct(supabase: SupabaseServiceClient, c
 
   const { data: existingProduct, error: productLookupError } = await supabase
     .from("competitor_products")
-    .select("*, brands(id,name), sku_matches(*, sku_master(*))")
+    .select("*, brands(id,name)")
     .eq("brand_id", brand.id)
     .eq("channel", "offline")
     .eq("normalized_name", productName)
@@ -440,7 +446,7 @@ export async function ensureCompetitorProduct(supabase: SupabaseServiceClient, c
         .from("competitor_products")
         .update({ size })
         .eq("id", existingProduct.id)
-        .select("*, brands(id,name), sku_matches(*, sku_master(*))")
+        .select("*, brands(id,name)")
         .single();
       if (updateError) throw new Error(updateError.message);
       return updatedProduct as CompetitorProduct;
@@ -465,7 +471,7 @@ export async function ensureCompetitorProduct(supabase: SupabaseServiceClient, c
       piece_count: pieceCount,
       segment: "unknown",
     })
-    .select("*, brands(id,name), sku_matches(*, sku_master(*))")
+    .select("*, brands(id,name)")
     .single();
   if (productCreateError) throw new Error(productCreateError.message);
   return createdProduct as CompetitorProduct;
@@ -474,7 +480,7 @@ export async function ensureCompetitorProduct(supabase: SupabaseServiceClient, c
 async function loadCompetitorProductById(supabase: SupabaseServiceClient, productId: string) {
   const { data, error } = await supabase
     .from("competitor_products")
-    .select("*, brands(id,name), sku_matches(*, sku_master(*))")
+    .select("*, brands(id,name)")
     .eq("id", productId)
     .single();
   if (error || !data) throw new Error(error?.message ?? "Competitor product not found");
@@ -598,7 +604,7 @@ async function findReusableMatchedCompetitorProduct(supabase: SupabaseServiceCli
 
   const { data: product, error: productError } = await supabase
     .from("competitor_products")
-    .select("*, brands(id,name), sku_matches(*, sku_master(*))")
+    .select("*, brands(id,name)")
     .eq("id", candidate.matched_entity_id)
     .single();
   if (productError || !product) throw new Error(productError?.message ?? "Matched product not found");

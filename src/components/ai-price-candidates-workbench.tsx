@@ -141,8 +141,8 @@ export function AiPriceCandidatesWorkbench({
     ? "AI 置信度 = AI 对品牌、商品、价格识别结果的整体把握，当前按识别模型输出的 confidence 展示。"
     : "Recognition confidence is the model confidence that product, tag, row, and section are visually associated. It is not final price reliability.";
   const matchScoreHelp = locale === "zh"
-    ? "商品命中度 = 自动匹配商品的算法分数。Makuku: 片数35% + 尺码30% + 品牌/系列15% + 商品名15% + 价格接近度5%。竞品: 片数40% + 尺码30% + 品牌15% + 商品名15%。"
-    : "Match score is the auto-match score. Makuku: 35% piece count + 30% size + 15% brand/series + 15% product text + 5% price proximity. Competitors: 40% piece count + 30% size + 15% brand + 15% product text.";
+    ? "商品匹配方式说明本条记录命中了哪条确定性规则，不代表概率。"
+    : "The product match method names the deterministic rule that matched this row; it is not a probability.";
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [activeCandidate, setActiveCandidate] = useState<AiPriceCandidate | null>(null);
   const [activeJob, setActiveJob] = useState<AiPriceReviewJob | null>(null);
@@ -495,6 +495,7 @@ export function AiPriceCandidatesWorkbench({
                       <MatchedSkuCell
                         candidate={candidate}
                         copy={copy}
+                        locale={locale}
                         onEdit={() => setMatchDialog({ candidate })}
                       />
                     </td>
@@ -735,16 +736,18 @@ function RejectReasonDialog({
 function MatchedSkuCell({
   candidate,
   copy,
+  locale,
   onEdit,
 }: {
   candidate: AiPriceCandidate;
   copy: WorkbenchCopy;
+  locale: string;
   onEdit: () => void;
 }) {
   const label = matchedSkuLabel(candidate, copy);
   return (
     <div className="space-y-1">
-      <div className="font-medium text-slate-900">{Math.round(candidate.match_score * 100)}%</div>
+      <div className="font-medium text-slate-900">{productMatchMethodLabel(candidate, locale)}</div>
       <div className="max-w-72 whitespace-normal break-words text-xs leading-5 text-slate-500" title={label}>{label}</div>
       {candidate.status === "pending" ? (
         <button type="button" onClick={onEdit} className="text-xs font-medium text-blue-700 hover:underline">
@@ -1163,7 +1166,7 @@ function CandidateDetailDrawerContent({
           <DetailMetric label={copy.table.reviewDecision ?? "Review decision"} value={formatReviewDecision(candidate, copy)} />
           <DetailMetric label={copy.table.issueCount ?? "Issue count"} value={String(countEvidenceIssues(candidate))} />
           <DetailMetric label={copy.table.priceEvidence ?? "Price evidence"} value={formatPriceEvidenceStatus(candidate)} />
-          <DetailMetric label={copy.matchScore} value={`${Math.round(candidate.match_score * 100)}%`} />
+          <DetailMetric label={copy.matchScore} value={productMatchMethodLabel(candidate, locale)} />
           <DetailMetric label={copy.matchedTo} value={matchedSkuLabel(candidate, copy)} />
           <DetailMetric label={copy.table.status} value={copy.status[candidate.status] ?? candidate.status} />
         </div>
@@ -1432,6 +1435,26 @@ function countEvidenceIssues(candidate: AiPriceCandidate) {
   return getRiskIssues(candidate).length;
 }
 
+function productMatchMethodLabel(candidate: AiPriceCandidate, locale: string) {
+  if (!candidate.ai_match_rule_version || !candidate.ai_match_method) {
+    return `${Math.round(candidate.match_score * 100)}%`;
+  }
+  const labels = locale === "zh"
+    ? {
+        EXACT_CODE: "编码精确匹配",
+        FULL_SIGNATURE: "完整规格匹配",
+        UNIQUE_SIGNATURE: "唯一规格匹配",
+        UNMATCHED: "未匹配",
+      }
+    : {
+        EXACT_CODE: "Exact code",
+        FULL_SIGNATURE: "Full signature",
+        UNIQUE_SIGNATURE: "Unique signature",
+        UNMATCHED: "Unmatched",
+      };
+  return labels[candidate.ai_match_method];
+}
+
 function formatAiConfidence(value: number | null | undefined, legacyConfidenceFallback?: boolean | null) {
   if (legacyConfidenceFallback || value === null || value === undefined || Number.isNaN(value)) return "— / Legacy";
   return `${Math.round(value * 100)}%`;
@@ -1571,7 +1594,7 @@ function getWorkbenchCopy(locale: string) {
         ],
       },
       aiConfidence: "AI 置信度",
-      matchScore: "商品命中度",
+      matchScore: "匹配方式",
       requireMatch: "必须有匹配对象",
       noWarnings: "无风险提示",
       priceAndPcs: "价格和片数完整",
@@ -1689,7 +1712,7 @@ function getWorkbenchCopy(locale: string) {
       ],
     },
     aiConfidence: "AI confidence",
-    matchScore: "Match score",
+    matchScore: "Match method",
     requireMatch: "Require match",
     noWarnings: "No warnings",
     priceAndPcs: "Price + pcs",

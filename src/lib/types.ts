@@ -274,7 +274,6 @@ export type CompetitorProduct = {
   updated_at?: string | null;
   created_at: string;
   brands?: Pick<Brand, "id" | "name"> | null;
-  sku_matches?: SkuMatch[];
 };
 
 export type SkuMaster = {
@@ -822,6 +821,7 @@ export type OfflineStoreVisit = {
 
 export type AiPriceCandidateStatus = "pending" | "approved" | "rejected";
 export type AiPriceCandidateMatchType = "material_master" | "competitor_product" | "unmatched";
+export type AiProductMatchMethod = "EXACT_CODE" | "FULL_SIGNATURE" | "UNIQUE_SIGNATURE" | "UNMATCHED";
 export type AiPriceCandidateReviewMethod = "auto_rule" | "manual" | "bulk_manual";
 export type BenchmarkAssessment = "READY" | "BUILDING" | "NOT_EVALUATED";
 export type BenchmarkAssessmentReason =
@@ -910,6 +910,9 @@ export type AiPriceCandidate = {
   ai_matched_entity_type?: AiPriceCandidateMatchType | null;
   ai_matched_entity_id?: string | null;
   ai_matched_label?: string | null;
+  ai_match_rule_version?: string | null;
+  ai_match_method?: AiProductMatchMethod | null;
+  ai_match_evidence?: Record<string, unknown> | null;
   matched_entity_type: AiPriceCandidateMatchType;
   matched_entity_id: string | null;
   matched_label: string | null;
@@ -958,6 +961,7 @@ export type OperatorPriceReviewListItem = {
 };
 
 export type OperatorPriceReviewDetail = OperatorPriceReviewListItem & {
+  visit_code: string | null;
   source_image_id: string | null;
   source_image_url: string | null;
   evidence_product_text: string;
@@ -1080,6 +1084,44 @@ export type StoreVisitAiJobSummary = Pick<
   "id" | "job_type" | "status" | "total_count" | "success_count" | "failed_count" | "retake_required_count" | "remaining_count"
 > & {
   target_image_ids: string[];
+};
+
+export type StoreVisitRerunJobMode = "match_only" | "ai_reanalysis";
+export type StoreVisitRerunJobStatus = "queued" | "running" | "completed" | "failed";
+
+export type StoreVisitRerunJobFailure = {
+  visitId: string;
+  visitCode: string | null;
+  error: string;
+};
+
+export type StoreVisitRerunChildAiJob = {
+  visitId: string;
+  visitCode: string | null;
+  jobId: string;
+};
+
+export type StoreVisitRerunJob = {
+  id: string;
+  mode: StoreVisitRerunJobMode;
+  status: StoreVisitRerunJobStatus;
+  selector: Record<string, unknown>;
+  locale: string;
+  requested_by: string | null;
+  total_visits: number;
+  processed_visits: number;
+  skipped_visits: number;
+  failed_visits: number;
+  inserted_candidate_count: number;
+  deleted_snapshot_count: number;
+  method_counts: Record<string, number>;
+  child_ai_jobs: StoreVisitRerunChildAiJob[];
+  failures: StoreVisitRerunJobFailure[];
+  error_message: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type StoreVisitMonitorExportJobStatus = "queued" | "running" | "completed" | "failed";

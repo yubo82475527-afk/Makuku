@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { OperatorPriceReviewDrawer } from "@/components/operator-price-review-drawer";
-import { OperatorPriceSourceImageDialog } from "@/components/operator-price-source-image-dialog";
 import { formatIdr, formatJakartaTime } from "@/lib/format";
 import type { OperatorPriceReviewReasonFilter } from "@/lib/operator-price-review-reasons";
 import type { OperatorPriceReviewListItem, OperatorPriceReviewReasonGroup, OperatorPriceReviewState } from "@/lib/types";
@@ -34,7 +33,6 @@ export function OperatorPriceReviewWorkbench({
 }) {
   const router = useRouter();
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [previewCandidateId, setPreviewCandidateId] = useState<string | null>(null);
   const [removedPendingIds, setRemovedPendingIds] = useState<Set<string>>(() => new Set());
   const visibleItems = useMemo(
     () => filters.state === "pending" ? items.filter((item) => !removedPendingIds.has(item.id)) : items,
@@ -80,6 +78,8 @@ export function OperatorPriceReviewWorkbench({
                   <th className="w-24 px-4 py-3">{isZh ? "来源" : "Source"}</th>
                   <th className="w-[32%] px-4 py-3">{isZh ? "商品" : "Product"}</th>
                   <th className="w-36 px-4 py-3">{isZh ? "AI 识别价格" : "AI price"}</th>
+                  <th className="w-24 px-4 py-3">{isZh ? "片数量" : "Pieces"}</th>
+                  <th className="w-32 px-4 py-3">{isZh ? "片单价" : "Per-piece"}</th>
                   <th className="px-4 py-3">{isZh ? "异常原因" : "Reason"}</th>
                   <th className="w-36 px-4 py-3" />
                 </tr>
@@ -87,12 +87,14 @@ export function OperatorPriceReviewWorkbench({
               <tbody className="divide-y divide-slate-100">
                 {visibleItems.map((item) => (
                   <tr key={item.id} className="align-middle">
-                    <td className="px-4 py-3"><SourceThumbnail item={item} locale={locale} onPreview={setPreviewCandidateId} /></td>
+                    <td className="px-4 py-3"><SourceThumbnail item={item} locale={locale} onOpenReview={setActiveId} /></td>
                     <td className="px-4 py-3">
                       <div className="font-medium text-slate-950">{item.product_name}</div>
                       <div className="mt-1 whitespace-normal break-words text-xs text-slate-500">{productAssociationLabel(item, isZh)}</div>
                     </td>
                     <td className="px-4 py-3 font-semibold text-slate-950">{formatIdr(item.ai_package_price)}</td>
+                    <td className="px-4 py-3 font-semibold text-slate-950">{item.ai_piece_count ?? "-"}</td>
+                    <td className="px-4 py-3 font-semibold text-slate-950">{formatIdr(item.ai_price_per_piece)}</td>
                     <td className="px-4 py-3"><ReasonSummary groups={item.operator_reason_groups} fallback={item.operator_reason} /></td>
                     <td className="px-4 py-3 text-right">
                       <button type="button" onClick={() => setActiveId(item.id)} className="inline-flex h-9 items-center rounded-md bg-slate-900 px-3 text-sm font-medium text-white hover:bg-slate-800">
@@ -109,11 +111,15 @@ export function OperatorPriceReviewWorkbench({
             {visibleItems.map((item) => (
               <article key={item.id} className="rounded-lg border border-slate-200 p-3">
                 <div className="flex gap-3">
-                  <SourceThumbnail item={item} locale={locale} onPreview={setPreviewCandidateId} />
+                  <SourceThumbnail item={item} locale={locale} onOpenReview={setActiveId} />
                   <div className="min-w-0 flex-1">
                     <div className="font-medium text-slate-950">{item.product_name}</div>
                     <div className="mt-1 whitespace-normal break-words text-xs text-slate-500">{productAssociationLabel(item, isZh)}</div>
                     <div className="mt-2 text-base font-semibold text-slate-950">{formatIdr(item.ai_package_price)}</div>
+                    <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
+                      <span>{isZh ? "片数量" : "Pieces"}: <span className="font-semibold text-slate-950">{item.ai_piece_count ?? "-"}</span></span>
+                      <span>{isZh ? "片单价" : "Per-piece"}: <span className="font-semibold text-slate-950">{formatIdr(item.ai_price_per_piece)}</span></span>
+                    </div>
                   </div>
                 </div>
                 <div className="mt-3"><ReasonSummary groups={item.operator_reason_groups} fallback={item.operator_reason} /></div>
@@ -145,7 +151,6 @@ export function OperatorPriceReviewWorkbench({
           onProcessed={onProcessed}
         />
       ) : null}
-      {previewCandidateId ? <OperatorPriceSourceImageDialog candidateId={previewCandidateId} locale={locale} onClose={() => setPreviewCandidateId(null)} /> : null}
     </div>
   );
 }
@@ -169,13 +174,13 @@ function ReasonSummary({ groups, fallback }: { groups: OperatorPriceReviewReason
   );
 }
 
-function SourceThumbnail({ item, locale, onPreview }: { item: OperatorPriceReviewListItem; locale: string; onPreview: (candidateId: string) => void }) {
+function SourceThumbnail({ item, locale, onOpenReview }: { item: OperatorPriceReviewListItem; locale: string; onOpenReview: (candidateId: string) => void }) {
   const label = locale === "zh" ? "来源图片" : "Source image";
   if (!item.source_thumbnail_url) {
     return <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-md bg-slate-100 px-1 text-center text-[10px] text-slate-400">{locale === "zh" ? "无来源图片" : "No image"}</div>;
   }
   return (
-    <button type="button" aria-label={label} title={locale === "zh" ? "点击放大" : "Click to enlarge"} onClick={() => onPreview(item.id)} className="h-16 w-16 shrink-0 cursor-zoom-in overflow-hidden rounded-md bg-slate-100 transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2">
+    <button type="button" aria-label={label} title={locale === "zh" ? "查看并处理" : "View and handle"} onClick={() => onOpenReview(item.id)} className="h-16 w-16 shrink-0 overflow-hidden rounded-md bg-slate-100 transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2">
       <span className="block h-full w-full bg-cover bg-center" style={{ backgroundImage: `url(${JSON.stringify(item.source_thumbnail_url).slice(1, -1)})` }} />
     </button>
   );

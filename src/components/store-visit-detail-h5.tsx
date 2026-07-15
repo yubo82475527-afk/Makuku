@@ -330,7 +330,8 @@ function candidateDisplayPricePerPiece(candidate: AiPriceCandidate | null, fallb
 function candidateMatchDisplay(candidate: AiPriceCandidate | null) {
   const label = String(candidate?.matched_sku_label ?? candidate?.matched_label ?? candidate?.matched_entity_id ?? "").trim();
   const matched = Boolean(candidate && candidate.matched_entity_type !== "unmatched" && candidate.matched_entity_id && label);
-  return { matched, label };
+  const method = candidate?.ai_match_rule_version ? candidate.ai_match_method ?? "UNMATCHED" : null;
+  return { matched, label, method };
 }
 
 function exactCandidateForRow(
@@ -2253,7 +2254,7 @@ function PriceSectionGroup({
                       </span>
                     ) : null}
                     <span className={`break-words text-[10px] leading-4 ${matchInfo.matched ? "text-slate-500" : "font-semibold text-red-600"}`}>
-                      {matchInfo.matched ? matchInfo.label : text.rowUnmatched}
+                      {matchInfo.matched ? `${matchInfo.label}${matchInfo.method ? ` · ${matchInfo.method}` : ""}` : text.rowUnmatched}
                     </span>
                   </div>
                   <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1">

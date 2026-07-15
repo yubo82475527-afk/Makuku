@@ -12,7 +12,6 @@ const columns = [
   "package_type",
   "size",
   "piece_count",
-  "target_material_sku_code",
 ];
 
 function csvEscape(value: string | number | null | undefined) {
@@ -40,7 +39,7 @@ export async function GET(request: Request) {
   const [{ data: products, error: productsError }, { data: brands, error: brandsError }] = await Promise.all([
     supabase
       .from("competitor_products")
-      .select("*, brands(id,name,is_own_brand), sku_matches(id, sku_master(material_sku_code))")
+      .select("*, brands(id,name,is_own_brand)")
       .order("created_at", { ascending: false }),
     supabase.from("brands").select("id,name,is_own_brand"),
   ]);
@@ -71,7 +70,6 @@ export async function GET(request: Request) {
       item.package_type || "",
       item.size || "",
       item.piece_count ?? "",
-      item.sku_matches?.[0]?.sku_master?.material_sku_code ?? "",
     ].map(csvEscape).join(","));
 
   const csv = [columns.map(csvEscape).join(","), ...rows].join("\r\n");

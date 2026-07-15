@@ -6,15 +6,14 @@ const migrationPath = "supabase/migrations/202606150002_competitor_series_mappin
 const migration = existsSync(migrationPath) ? readFileSync(migrationPath, "utf8") : "";
 const benchmarkMigrationPath = "supabase/migrations/202606280001_competitor_series_mapping_default_benchmark.sql";
 const benchmarkMigration = existsSync(benchmarkMigrationPath) ? readFileSync(benchmarkMigrationPath, "utf8") : "";
-const methodMigration = readFileSync("supabase/migrations/202606150003_sku_matches_series_rule_method.sql", "utf8");
+const methodMigrationPath = "supabase/migrations/202606150003_sku_matches_series_rule_method.sql";
+const methodMigration = existsSync(methodMigrationPath) ? readFileSync(methodMigrationPath, "utf8") : "";
 const removeSeriesRuleMigrationPath = "supabase/migrations/202606280002_remove_series_rule_sku_matches.sql";
 const removeSeriesRuleMigration = existsSync(removeSeriesRuleMigrationPath) ? readFileSync(removeSeriesRuleMigrationPath, "utf8") : "";
 const service = readFileSync("src/lib/competitor-series-mapping.ts", "utf8");
 const apiRoute = readFileSync("src/app/api/competitor-series-matches/route.ts", "utf8");
-const skuMatchesRoute = readFileSync("src/app/api/sku-matches/route.ts", "utf8");
 const page = readFileSync("src/app/[locale]/competitor-mappings/page.tsx", "utf8");
 const panel = readFileSync("src/components/competitor-series-rules-panel.tsx", "utf8");
-const mappingTable = readFileSync("src/components/competitor-mappings-table.tsx", "utf8");
 const searchSelect = readFileSync("src/components/product-master-search-select.tsx", "utf8");
 const types = readFileSync("src/lib/types.ts", "utf8");
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
@@ -34,6 +33,7 @@ test("competitor series mapping schema is added", () => {
   assert.match(benchmarkMigration, /uniq_competitor_series_mappings_default_benchmark/);
   assert.match(types, /is_default_benchmark: boolean/);
   assert.doesNotMatch(types, /"series_rule"/);
+  assert.equal(existsSync("src/app/api/sku-matches/route.ts"), false);
 });
 
 test("series mapping helpers do not persist sku-level series rule matches", () => {
@@ -65,7 +65,7 @@ test("series mapping API saves and deletes rules without writing sku matches", (
   assert.doesNotMatch(apiRoute, /clearSeriesRuleMatches/);
   assert.doesNotMatch(apiRoute, /sku_matches/);
   assert.doesNotMatch(apiRoute, /summary/);
-  assert.match(skuMatchesRoute, /match_method: "manual"/);
+  assert.equal(existsSync("src/app/api/sku-matches/route.ts"), false);
 });
 
 test("reports derive automatic series mapping at runtime instead of relying on sku matches", () => {
@@ -73,10 +73,10 @@ test("reports derive automatic series mapping at runtime instead of relying on s
   assert.match(dataFile, /findMatchingMaterialForSeries/);
   assert.match(dataFile, /mappings: CompetitorSeriesMapping\[\]/);
   assert.match(dataFile, /materialMaster: MaterialMaster\[\]/);
-  assert.match(dataFile, /sku_matches\(match_method,sku_master\(material_sku_code\)\)/);
-  assert.match(dataFile, /match\.match_method[\s\S]*!== "series_rule"/);
+  assert.doesNotMatch(dataFile, /sku_matches/);
+  assert.doesNotMatch(dataFile, /series_rule/);
   assert.match(dataFile, /scopedMaterialCodes\.has\(benchmarkMaterialCode\)/);
-  assert.match(dataFile, /snapshot\.competitor_products\?\.sku_matches[\s\S]*findMatchingMaterialForSeries/);
+  assert.match(dataFile, /competitorSnapshotMaterialCode\(snapshot, mappedSeries, input\.materialMaster\)/);
 });
 
 test("competitor mapping page exposes only automatic series mapping rules", () => {
@@ -99,7 +99,7 @@ test("competitor mapping page exposes only automatic series mapping rules", () =
 });
 
 test("competitor mapping page is framed as automatic sku mapping configuration", () => {
-  assert.match(page, /Auto SKU Mapping|自动 SKU 映射/);
+  assert.match(page, /Competitor Series Mapping|竞品系列映射/);
   assert.match(page, /<form className="grid gap-3 md:grid-cols-3">/);
   assert.doesNotMatch(page, /automaticRules/);
   assert.doesNotMatch(page, /filteredCompetitorSkus/);
@@ -120,7 +120,8 @@ test("competitor mapping page is framed as automatic sku mapping configuration",
 });
 
 test("manual SKU picker displays existing sku even when material master option is missing", () => {
-  assert.match(mappingTable, /selectedLabel=\{formatSelectedSkuLabel\(match\?\.sku_master\)\}/);
+  assert.equal(existsSync("src/components/competitor-mappings-table.tsx"), false);
+  assert.equal(existsSync("src/components/competitor-mapping-table.tsx"), false);
   assert.match(searchSelect, /selectedLabel/);
   assert.match(searchSelect, /initialSelectedCode/);
 });

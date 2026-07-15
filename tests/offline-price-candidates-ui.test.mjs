@@ -199,6 +199,24 @@ test("operator price review removes image-id filtering and shows exact source ev
   assert.match(operatorDrawer, /原始证据不可用/);
 });
 
+test("operator price review source thumbnail opens the same drawer as view and handle", () => {
+  assert.match(operatorWorkbench, /<SourceThumbnail item=\{item\} locale=\{locale\} onOpenReview=\{setActiveId\} \/>/);
+  assert.match(operatorWorkbench, /function SourceThumbnail\(\{ item, locale, onOpenReview \}/);
+  assert.match(operatorWorkbench, /onClick=\{\(\) => onOpenReview\(item\.id\)\}/);
+  assert.doesNotMatch(operatorWorkbench, /OperatorPriceSourceImageDialog/);
+  assert.doesNotMatch(operatorWorkbench, /previewCandidateId/);
+});
+
+test("operator price review list shows piece count and per-piece price", () => {
+  assert.match(operatorWorkbench, /片数量/);
+  assert.match(operatorWorkbench, /片单价/);
+  assert.match(operatorWorkbench, /item\.ai_piece_count/);
+  assert.match(operatorWorkbench, /<td className="px-4 py-3 font-semibold text-slate-950">\{item\.ai_piece_count \?\? "-"\}<\/td>/);
+  assert.match(operatorWorkbench, /<span className="font-semibold text-slate-950">\{item\.ai_piece_count \?\? "-"\}<\/span>/);
+  assert.match(operatorWorkbench, /item\.ai_price_per_piece/);
+  assert.match(operatorWorkbench, /formatIdr\(item\.ai_price_per_piece\)/);
+});
+
 test("photo price review image filter no longer falls back to 5000-row client filtering", () => {
   assert.doesNotMatch(dataFile, /limit:\s*Math\.max\(page \* perPage, 5000\)/);
   assert.doesNotMatch(dataFile, /const imageFilteredResult = await getAiPriceCandidates\(/);
@@ -362,8 +380,11 @@ test("store visit detail route returns signed photos from new image table and le
   assert.match(storeVisitRoute, /const aiPriceCandidateSelect = /);
   assert.match(storeVisitRoute, /attachAiPriceCandidateMatchLabels/);
   assert.match(storeVisitRoute, /ai_price_candidates: await attachAiPriceCandidateMatchLabels\(supabase, signedVisit\.ai_price_candidates \?\? \[\]\)/);
-  assert.match(storeVisitRoute, /const visitSelect = `id,visit_code,[\s\S]+offline_visit_images\(id,visit_id,replaces_image_id,replaced_by_image_id,deleted_at,deletion_reason,image_type,image_path,thumbnail_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at\),ai_price_candidates\(\$\{aiPriceCandidateSelect\}\)`/);
-  assert.match(storeVisitRoute, /const legacyVisitSelect = `id,visit_code,[\s\S]+offline_visit_images\(id,visit_id,image_type,image_path,thumbnail_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at\),ai_price_candidates\(\$\{aiPriceCandidateSelect\}\)`/);
+  assert.match(storeVisitRoute, /const visitColumns = "id,visit_code,[^"]+image_categories"/);
+  assert.match(storeVisitRoute, /const currentImageSelect = "offline_visit_images\(id,visit_id,replaces_image_id,replaced_by_image_id,deleted_at,deletion_reason,image_type,image_path,thumbnail_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at\)"/);
+  assert.match(storeVisitRoute, /const legacyImageSelect = "offline_visit_images\(id,visit_id,image_type,image_path,thumbnail_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at\)"/);
+  assert.match(storeVisitRoute, /const visitSelect = `\$\{visitColumns\},\$\{currentImageSelect\},ai_price_candidates\(\$\{aiPriceCandidateSelect\}\)`/);
+  assert.match(storeVisitRoute, /const legacyVisitSelect = `\$\{visitColumns\},\$\{legacyImageSelect\},ai_price_candidates\(\$\{aiPriceCandidateSelect\}\)`/);
   assert.match(storeVisitRoute, /offline-visit-images/);
   assert.match(storeVisitRoute, /store-visits/);
   assert.match(storeVisitRoute, /active_signed_images/);
@@ -492,7 +513,7 @@ test("mobile store visit detail displays matched SKU status in each parsed price
   assert.match(storeVisitDetailH5, /text-\[10px\]/);
   assert.match(storeVisitDetailH5, /break-words text-\[10px\] leading-4/);
   assert.match(storeVisitDetailH5, /matchInfo\.matched \? "text-slate-500" : "font-semibold text-red-600"/);
-  assert.match(storeVisitDetailH5, /\{matchInfo\.matched \? matchInfo\.label : text\.rowUnmatched\}/);
+  assert.match(storeVisitDetailH5, /\{matchInfo\.matched \? `\$\{matchInfo\.label\}\$\{matchInfo\.method \? ` · \$\{matchInfo\.method\}` : ""\}` : text\.rowUnmatched\}/);
   assert.doesNotMatch(storeVisitDetailH5, /matchSkuPrefix/);
   assert.doesNotMatch(storeVisitDetailH5, /truncate text-\[11px\] font-semibold \$\{matchInfo\.matched/);
 });

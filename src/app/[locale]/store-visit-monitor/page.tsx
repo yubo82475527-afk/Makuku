@@ -1,6 +1,7 @@
 import { PageShellState } from "@/components/page-shell-state";
 import { StoreVisitMonitorClient } from "@/components/store-visit-monitor-client";
 import { getPageI18n } from "@/lib/i18n/server";
+import { isAllowedAdminRole, readSessionFromCookies } from "@/lib/auth-session";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,8 @@ export default async function StoreVisitMonitorPage({
   const { locale, dict } = await getPageI18n(params);
   const filters = await searchParams;
   const queryString = monitorSearchSuffix(filters);
+  const session = await readSessionFromCookies();
+  const canRerunMatching = isAllowedAdminRole(session?.role);
 
   return (
     <>
@@ -33,7 +36,7 @@ export default async function StoreVisitMonitorPage({
         title="Store Visit Monitor"
         currentPath={`/store-visit-monitor${queryString}`}
       />
-      <StoreVisitMonitorClient locale={locale} dict={dict} queryString={queryString.slice(1)} />
+      <StoreVisitMonitorClient locale={locale} dict={dict} queryString={queryString.slice(1)} canRerunMatching={canRerunMatching} />
     </>
   );
 }

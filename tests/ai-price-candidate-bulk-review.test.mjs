@@ -67,12 +67,15 @@ test("candidate review service centralizes approve reject and rule eligibility",
 test("candidate review trusts resolver auto-approve decision and does not hard-block lower visual confidence", () => {
   assert.match(reviewService, /const MIN_MATCH_SCORE\s*=\s*0\.9/);
   assert.match(reviewService, /const REQUIRE_MATCHED_ENTITY\s*=\s*true/);
+  assert.match(reviewService, /AUTO_APPROVE_MATCH_METHODS/);
+  assert.match(reviewService, /function hasAllowedProductMatch/);
+  assert.match(reviewService, /candidate\.ai_match_rule_version/);
+  assert.match(reviewService, /AUTO_APPROVE_MATCH_METHODS\.has\(String\(candidate\.ai_match_method/);
   assert.match(reviewService, /candidate\.review_decision !== "AUTO_APPROVE"/);
   assert.doesNotMatch(reviewService, /MIN_RECOGNITION_CONFIDENCE/);
   assert.doesNotMatch(reviewService, /candidate\.ai_confidence == null/);
   assert.doesNotMatch(reviewService, /legacy_confidence_fallback/);
   assert.doesNotMatch(reviewService, /candidate\.ai_confidence < MIN_RECOGNITION_CONFIDENCE/);
-  assert.match(reviewService, /candidate\.match_score < MIN_MATCH_SCORE/);
   assert.doesNotMatch(reviewService, /candidate\.ai_confidence < rule\.min_ai_confidence/);
   assert.doesNotMatch(reviewService, /candidate\.match_score < rule\.min_match_score/);
 });

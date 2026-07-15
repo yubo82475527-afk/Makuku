@@ -103,17 +103,6 @@ export async function POST(request: Request) {
       .single();
     if (error) return Response.json({ error: error.message }, { status: 400 });
 
-    if (body.sku_master_id) {
-      const { error: matchError } = await supabase.from("sku_matches").insert({
-        competitor_product_id: product.id,
-        sku_master_id: body.sku_master_id,
-        match_score: Number(body.match_score ?? 0.85),
-        match_method: body.match_method ?? "manual",
-        reviewed: true,
-      });
-      if (matchError) return Response.json({ error: matchError.message }, { status: 400 });
-    }
-
     if (isForm) return formReturnRedirect(request, body, "/competitor-products");
     return Response.json({ data: product });
   } catch (error) {

@@ -23,7 +23,6 @@ const protectedRoutes = [
   "src/app/api/offline-stores/route.ts",
   "src/app/api/app-users/route.ts",
   "src/app/api/competitor-series-matches/route.ts",
-  "src/app/api/sku-matches/route.ts",
   "src/app/api/competitors/route.ts",
   "src/app/api/ai-price-candidates/bulk-review/route.ts",
   "src/app/api/ai-price-candidates/[id]/route.ts",

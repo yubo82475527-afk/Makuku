@@ -17,7 +17,6 @@ const pricesPage = readFileSync("src/app/[locale]/prices/page.tsx", "utf8");
 const priceSnapshotsRoute = readFileSync("src/app/api/price-snapshots/route.ts", "utf8");
 const competitorProductsTablePath = "src/components/competitor-products-table.tsx";
 const competitorProductsTable = existsSync(competitorProductsTablePath) ? readFileSync(competitorProductsTablePath, "utf8") : "";
-const competitorMappingsTable = readFileSync("src/components/competitor-mappings-table.tsx", "utf8");
 
 test("product grade vocabulary is centralized on master data values", () => {
   assert.match(typesFile, /"AD" \| "BD Eco" \| "BD MID" \| "unknown"/);
@@ -43,13 +42,14 @@ test("Makuku master data maintains product grade, while competitor products stay
   assert.match(skuMasterTable, /if \(rows\.length === 0\) return null/);
   assert.match(skuMasterTable, /intent" value="update_segment"/);
   assert.match(competitorProductsPage, /CompetitorProductsTable/);
-  assert.doesNotMatch(competitorProductsTable, /Product Grade|Grade|商品等级/);
-  assert.doesNotMatch(competitorProductsTable, /intent: "update_segment"/);
-  assert.doesNotMatch(competitorProductsTable, /pack_type/);
-  assert.doesNotMatch(competitorProductsTable, /segment/);
+  assert.doesNotMatch(competitorProductsTable, /Product Grade|Grade/);
+  assert.match(competitorProductsTable, /pack_type/);
+  assert.match(competitorProductsTable, /segment/);
   assert.doesNotMatch(competitorMappingsPage, /update_segment/);
-  assert.doesNotMatch(competitorMappingsTable, /onBlur=\{\(\) => saveProductFields/);
-  assert.match(pricesPage, /sku\?\.segment \?\? product\?\.segment \?\? "unknown"/);
+  assert.equal(existsSync("src/components/competitor-mappings-table.tsx"), false);
+  assert.equal(existsSync("src/components/competitor-mapping-table.tsx"), false);
+  assert.match(pricesPage, /priceSnapshotBusinessSegment/);
+  assert.match(readFileSync("src/lib/price-snapshot-business.ts", "utf8"), /snapshot\.competitor_products\?\.segment/);
   assert.doesNotMatch(priceSnapshotsRoute, /segment/);
 });
 
@@ -75,14 +75,14 @@ test("photo review creates competitor products with unknown grade and derived vi
 test("competitor product master keeps only 1.0 required fields editable", () => {
   assert.equal(existsSync(competitorProductsTablePath), true);
   assert.match(competitorProductsTable, /"use client"/);
-  assert.match(competitorProductsTable, /saveProductFields/);
+  assert.match(competitorProductsTable, /function saveProduct/);
   assert.match(competitorProductsTable, /package_type/);
   assert.match(competitorProductsTable, /piece_count/);
   assert.match(competitorProductsTable, /status/);
   assert.doesNotMatch(competitorProductsTable, /bulkGrade/);
   assert.doesNotMatch(competitorProductsTable, /applyBulkGrade/);
   assert.doesNotMatch(competitorProductsTable, /copy\.confirmSaveGrade/);
-  assert.match(competitorProductsTable, /min-w-\[1120px\]/);
+  assert.match(competitorProductsTable, /min-w-\[1240px\]/);
   assert.match(competitorProductsTable, /overflow-x-auto/);
   assert.match(competitorProductsTable, /whitespace-nowrap/);
 });

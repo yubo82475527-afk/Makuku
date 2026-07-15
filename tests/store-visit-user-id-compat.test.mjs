@@ -87,6 +87,11 @@ function loadRefreshRoute({ requireAppSession, supabase, createStoreVisitAiJob }
           triggerStoreVisitAiJobRunner: () => {},
         };
       }
+      if (id === "@/lib/store-visit-price-candidate-sync") {
+        return {
+          syncStoreVisitPriceCandidatesFromImages: async () => ({ inserted: 0, deleted: 0, skipped: 0 }),
+        };
+      }
       throw new Error(`Unexpected require: ${id}`);
     },
   });
