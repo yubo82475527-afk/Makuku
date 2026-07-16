@@ -74,7 +74,7 @@ export const STORE_VISIT_AI_PROMPT = [
   '{"raw_extraction":{"detected_items":[{"brand":"string","product":"string","price":"string","type":"SKU|PROMO|SHELF_SIGNAL","confidence":0.8}]},"validation":{"is_valid":true,"warnings":[{"type":"MISSING_DATA|LOW_CONFIDENCE|PARSE_RISK","message":"string"}]},"shelf_understanding":{"brands_present":[{"brand":"string","shelf_share_estimate":0}],"category_coverage":"FULL|PARTIAL|FRAGMENTED","shelf_condition":"WELL_ORGANISED|NORMAL|MESSY","facings_estimate":[{"brand":"string","facing_count_estimate":0}]},"price_insights":{"brand_price_range":[{"brand":"string","min_price":"string","max_price":"string"}],"key_sku_prices":[{"brand":"string","product":"string","price":"string","list_price":"string","package_price":"string","net_price":"string","promo_type":"string","piece_count":44,"tag":"HERO|PROMO|ANOMALY","confidence":0.8}]},"stock_risk":{"level":"Normal|Low Stock|Out of Stock Risk","affected_brands":[{"brand":"string","risk_signal":"EMPTY_FACING|LOW_FACING|BLOCKED_SHELF"}],"reason":"string"},"promotion_insights":{"competitor_promotions":[{"brand":"string","type":"Discount|Buy 1 Get 1|Buy 2 Get 1|Promo Tag|Special Offer","visibility":"LOW|MEDIUM|HIGH","description":"string"}],"promo_pressure_level":"LOW|MEDIUM|HIGH"},"store_summary":"string"}',
 ].join("\n");
 
-export const PRICE_IMAGE_PROMPT_VERSION = "price-evidence-v1.4-primary-board-gate";
+export const PRICE_IMAGE_PROMPT_VERSION = "price-evidence-v1.5-table-cell-verification";
 
 function simpleHash(value: string) {
   let hash = 0;
@@ -106,6 +106,8 @@ const STORE_VISIT_PRICE_IMAGE_PROMPT = [
   "group_id should uniquely distinguish different visual evidence groups within the image. The exact naming format is not important as long as it is consistent inside the same response.",
   "row_anchor should be constructed only from visible row identity such as SKU, Size, Pcs, or Variant. row_anchor must not use prices.",
   "BOARD / SECTION RULE: if the image contains multiple price boards, tables, cards, or product sections, treat each one independently. For PRICE_BOARD_ROW, identify the board or card, its section, and the same horizontal row; anchor the row by SKU / size / Pcs cells and read only cells that visually intersect that same row.",
+  "TABLE CELL VERIFICATION: For PRICE_BOARD_ROW, use the visible SIZE + PCS cells together as the row key. When both are visible, row_anchor must include both values, for example S|38. Do not output an alternate Pcs value for the same size.",
+  "Before final response, visually re-read every output cell in its original table cell: product-family title, section title, Size, Pcs, normal price, promo package price, and promo per-piece price. Preserve the exact visible product-family title; do not replace it with a generic product label. If a cell cannot be visually confirmed, leave it empty or add PARSE_RISK. Do not substitute a plausible-looking digit or price.",
   "If a cell is unclear, keep that cell empty or add PARSE_RISK; never replace it with a value from another row, a computed value, or a repeated pattern.",
   "Rows under one section must not inherit prices from another section. Example: rows under SLIM REGULAR (TAPE) must not use prices from SLIM LUXURY SILKY, SLIM JUMBO, or another board.",
   "For PRICE_TAG, extract only text visible on the same individual tag, card, or label. Do not combine product name from one tag with price from another tag.",

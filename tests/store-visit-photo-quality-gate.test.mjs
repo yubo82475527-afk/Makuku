@@ -36,6 +36,17 @@ test("price image prompt scopes promotion-card titles and handwritten evidence t
   assert.match(storeVisitAi, /Do not require retake because a price is handwritten or crossed out/i);
 });
 
+test("price image prompt requires exact title and Size-Pcs cell verification for handwritten boards", () => {
+  assert.match(storeVisitAi, /TABLE CELL VERIFICATION:/);
+  assert.match(storeVisitAi, /SIZE \+ PCS cells together as the row key/i);
+  assert.match(storeVisitAi, /row_anchor must include both values/i);
+  assert.match(storeVisitAi, /S\|38/i);
+  assert.match(storeVisitAi, /preserve the exact visible product-family title/i);
+  assert.match(storeVisitAi, /do not replace it with a generic product label/i);
+  assert.match(storeVisitAi, /visually re-read every output cell/i);
+  assert.match(storeVisitAi, /Do not substitute a plausible-looking digit or price/i);
+});
+
 test("price image prompt is evidence-only and does not ask vision to output business price fields", () => {
   assert.match(storeVisitAi, /PRIMARY PRINCIPLE/i);
   assert.match(storeVisitAi, /evidence extractor, not a pricing engine/i);
