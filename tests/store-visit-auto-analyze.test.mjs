@@ -385,6 +385,13 @@ test("store visit refresh replaces old price impact only after image AI success"
   );
 });
 
+test("store visit refresh clears old candidates when a forced photo now requires retake", () => {
+  assert.match(storeVisitAnalysis, /retakeRequiredForcedImageIds/);
+  assert.match(storeVisitAnalysis, /retakeRequiredImageIdSet\.has\(imageId\)/);
+  assert.match(storeVisitAnalysis, /imageIds:\s*\[\.\.\.successfulForcedImageIds,\s*\.\.\.retakeRequiredForcedImageIds\]/);
+  assert.match(storeVisitAnalysis, /H5 re-analyze replaced or cleared the previous price result\./);
+});
+
 test("store visit reanalysis can clear snapshot links without scanning every price candidate", () => {
   assert.match(
     candidateSnapshotFkIndexMigration,

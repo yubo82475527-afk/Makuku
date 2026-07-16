@@ -96,15 +96,18 @@ export async function runStoreVisitAnalysis(input: {
   const successfulForcedImageIds = (aiAnalysis.price_image_results ?? [])
     .map((item) => item.imageId)
     .filter((imageId) => forcedImageIdSet.has(imageId) && !retakeRequiredImageIdSet.has(imageId));
+  const retakeRequiredForcedImageIds = (input.forceAnalyzeImageIds ?? [])
+    .map((value) => value.trim())
+    .filter((imageId) => Boolean(imageId) && retakeRequiredImageIdSet.has(imageId));
 
   let replacedCandidateCount = 0;
   let deletedSnapshotCount = 0;
-  if (input.invalidateAffectedImageSnapshots && successfulForcedImageIds.length > 0) {
+  if (input.invalidateAffectedImageSnapshots && (successfulForcedImageIds.length > 0 || retakeRequiredForcedImageIds.length > 0)) {
     const invalidation = await invalidateStoreVisitImagePriceImpact({
       visitId: input.visitId,
-      imageIds: successfulForcedImageIds,
+      imageIds: [...successfulForcedImageIds, ...retakeRequiredForcedImageIds],
       lifecycleStatus: "reanalyzed",
-      rejectionReason: "H5 re-analyze replaced the previous price result.",
+      rejectionReason: "H5 re-analyze replaced or cleared the previous price result.",
       supabase,
     });
     replacedCandidateCount = invalidation.rejectedCandidateCount;

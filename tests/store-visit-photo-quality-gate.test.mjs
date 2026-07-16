@@ -12,21 +12,28 @@ const typesFile = readFileSync("src/lib/types.ts", "utf8");
 test("price image prompt uses a majority-readable photo quality gate without adding OCR precheck calls", () => {
   assert.match(storeVisitAi, /photo_quality/);
   assert.match(storeVisitAi, /pass\|retake_required/);
-  assert.match(storeVisitAi, /wide shelf overview/);
   assert.match(storeVisitAi, /rows must be \[\]/i);
-  assert.match(storeVisitAi, /PHOTO QUALITY PASS GATE/);
-  assert.match(storeVisitAi, /intended price-tag or price-board capture area/);
-  assert.match(storeVisitAi, /product-to-price binding must be reliable/);
-  assert.match(storeVisitAi, /clear majority of target rows\/tags/i);
-  assert.match(storeVisitAi, /does not require every row\/tag to be readable/i);
-  assert.match(storeVisitAi, /only a minority of target tags\/rows/i);
-  assert.match(storeVisitAi, /one or two front price tags or isolated rows are readable/);
-  assert.match(storeVisitAi, /most target rows\/tags in the foreground intended capture area/);
-  assert.match(storeVisitAi, /long side-angle shelf shot/);
+  assert.match(storeVisitAi, /PHOTO QUALITY:/);
+  assert.match(storeVisitAi, /primary price board, price tag, or promotion card/i);
+  assert.match(storeVisitAi, /clear majority of visible rows are readable/i);
+  assert.match(storeVisitAi, /One or two isolated readable rows are not enough/i);
+  assert.match(storeVisitAi, /other distant, cropped, or unrelated boards/i);
+  assert.match(storeVisitAi, /actual effect on digit readability and same-row binding/i);
+  assert.match(storeVisitAi, /Do not treat handwriting or strike-throughs as price_obstructed/i);
   assert.doesNotMatch(storeVisitAi, /at least one product-price relationship is visually reliable/);
-  assert.doesNotMatch(storeVisitAi, /pass when at least one/i);
+  assert.doesNotMatch(storeVisitAi, /long side-angle shelf shot/i);
   assert.doesNotMatch(storeVisitAi, /OCR|optical character recognition|precheck/i);
   assert.doesNotMatch(storeVisitAi, /\/api\/.*precheck|photo-quality|quality-gate/i);
+});
+
+test("price image prompt scopes promotion-card titles and handwritten evidence to the same visual section", () => {
+  assert.match(storeVisitAi, /TITLE AND PRODUCT CONTEXT:/);
+  assert.match(storeVisitAi, /applies to all following rows inside that same visual card or section/i);
+  assert.match(storeVisitAi, /until the next title, card boundary, or board boundary/i);
+  assert.match(storeVisitAi, /Do not apply it to a neighboring card, board, or section/i);
+  assert.match(storeVisitAi, /crossed-out handwritten price in the same row is the original\/list price/i);
+  assert.match(storeVisitAi, /following visible price in that same row is the promotion price/i);
+  assert.match(storeVisitAi, /Do not require retake because a price is handwritten or crossed out/i);
 });
 
 test("price image prompt is evidence-only and does not ask vision to output business price fields", () => {
@@ -43,6 +50,14 @@ test("price image prompt is evidence-only and does not ask vision to output busi
   assert.doesNotMatch(storeVisitAi, /"package_price_idr":119900/);
   assert.doesNotMatch(storeVisitAi, /"net_price_idr":119900/);
   assert.doesNotMatch(storeVisitAi, /"visible_price_per_piece_idr":2725/);
+});
+
+test("price image prompt forbids calculated or pattern-filled board prices", () => {
+  assert.match(storeVisitAi, /CELL TRANSCRIPTION RULE/i);
+  assert.match(storeVisitAi, /copy each visible cell exactly as printed or handwritten in that same row/i);
+  assert.match(storeVisitAi, /Do not calculate, infer, complete, average, normalize, or propagate prices across rows/i);
+  assert.match(storeVisitAi, /never replace it with a value from another row, a computed value, or a repeated pattern/i);
+  assert.match(storeVisitAi, /Never derive HARGA\/PCS by dividing HARGA\/PACK by PCS/i);
 });
 
 test("price image prompt forces same-row Pcs bonus extraction instead of truncating to base quantity", () => {
@@ -66,10 +81,21 @@ test("price image prompt requires row-level evidence and Indonesian handwritten 
   assert.match(storeVisitAi, /promo_piece_text/);
   assert.match(storeVisitAi, /promo_label/);
   assert.match(storeVisitAi, /same visual evidence group/i);
-  assert.match(storeVisitAi, /same board, same section, and same horizontal row/i);
+  assert.match(storeVisitAi, /same horizontal row/i);
   assert.match(storeVisitAi, /same individual tag/i);
   assert.match(storeVisitAi, /handwritten digit 7 may contain a horizontal middle stroke/i);
   assert.match(storeVisitAi, /2\.678.*means 2678/i);
+});
+
+test("price image prompt retains the complete compact JSON output contract", () => {
+  assert.match(storeVisitAi, /Return ONLY valid compact JSON/i);
+  assert.match(storeVisitAi, /No markdown/i);
+  assert.match(storeVisitAi, /No explanation/i);
+  assert.match(storeVisitAi, /"photo_quality":\{"status":"pass\|retake_required"/);
+  assert.match(storeVisitAi, /"source_type":"PRICE_BOARD_ROW\|PRICE_TAG"/);
+  assert.match(storeVisitAi, /"normal_package_price_confidence":0\.9/);
+  assert.match(storeVisitAi, /"product_identity_confidence":0\.9/);
+  assert.match(storeVisitAi, /"warnings":\[\]/);
 });
 
 test("price image prompt keeps promo package and promo per-piece evidence together", () => {
