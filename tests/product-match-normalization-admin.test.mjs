@@ -10,6 +10,8 @@ const pagePath = "src/app/[locale]/product-match-normalizations/page.tsx";
 const page = existsSync(pagePath) ? readFileSync(pagePath, "utf8") : "";
 const panelPath = "src/components/product-match-normalizations-panel.tsx";
 const panel = existsSync(panelPath) ? readFileSync(panelPath, "utf8") : "";
+const drawerPath = "src/components/product-match-normalization-drawer.tsx";
+const drawer = existsSync(drawerPath) ? readFileSync(drawerPath, "utf8") : "";
 const types = readFileSync("src/lib/types.ts", "utf8");
 const shell = readFileSync("src/components/app-shell.tsx", "utf8");
 
@@ -33,8 +35,8 @@ test("normalization admin is manager-only and rendered as master data", () => {
   assert.match(page, /ProductMatchNormalizationsPanel/);
   assert.match(panel, /canonical_value/);
   assert.match(panel, /brand_scope/);
-  assert.match(panel, /editingRule/);
-  assert.match(panel, /intent" value="deactivate"/);
+  assert.match(panel, /ProductMatchNormalizationDrawer/);
+  assert.match(panel, /intent: "deactivate"/);
   assert.match(types, /ProductMatchNormalization/);
   assert.match(shell, /product-match-normalizations/);
 });
@@ -42,7 +44,17 @@ test("normalization admin is manager-only and rendered as master data", () => {
 test("normalization admin keeps validation failures in the editor and shows an alert", () => {
   assert.match(panel, /"use client"/);
   assert.match(panel, /fetch\("\/api\/product-match-normalizations"/);
-  assert.match(panel, /event\.preventDefault\(\)/);
+  assert.match(drawer, /event\.preventDefault\(\)/);
   assert.match(panel, /window\.alert/);
   assert.match(panel, /router\.refresh\(\)/);
+});
+
+test("normalization admin filters rules and uses modal editing with field-specific canonical options", () => {
+  assert.match(panel, /filterField/);
+  assert.match(panel, /ProductMatchNormalizationDrawer/);
+  assert.match(panel, /pendingDelete/);
+  assert.match(panel, /确认删除/);
+  assert.match(drawer, /role="dialog"/);
+  assert.match(drawer, /canonicalOptions\[field\]/);
+  assert.match(drawer, /setCanonicalValue\(""\)/);
 });
