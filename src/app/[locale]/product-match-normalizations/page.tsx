@@ -5,8 +5,9 @@ import { getCompetitorProducts, getMaterialMaster, getProductMatchNormalizations
 import { getPageI18n } from "@/lib/i18n/server";
 import type { ProductMatchNormalizationField } from "@/lib/types";
 
-export default async function ProductMatchNormalizationsPage({ params }: { params: Promise<{ locale: string }> }) {
+export default async function ProductMatchNormalizationsPage({ params, searchParams }: { params: Promise<{ locale: string }>; searchParams: Promise<{ edit?: string }> }) {
   const { locale, dict } = await getPageI18n(params);
+  const query = await searchParams;
   const [materialsResult, productsResult, rulesResult] = await Promise.all([
     getMaterialMaster(),
     getCompetitorProducts(),
@@ -14,6 +15,7 @@ export default async function ProductMatchNormalizationsPage({ params }: { param
   ]);
   const options = canonicalOptions(materialsResult.data, productsResult.data);
   const title = locale === "zh" ? "商品匹配标准化" : "Product Match Normalization";
+  const editingRule = rulesResult.data.find((rule) => rule.id === query.edit) ?? null;
   return (
     <>
       <PageShellState locale={locale} dict={dict} title={title} currentPath="/product-match-normalizations" isDemo={materialsResult.isDemo || productsResult.isDemo || rulesResult.isDemo} />
@@ -23,7 +25,7 @@ export default async function ProductMatchNormalizationsPage({ params }: { param
           <h2 className="font-semibold text-slate-900">{title}</h2>
           <p className="mt-1 text-sm text-slate-500">{locale === "zh" ? "新建巡店解析与匹配重跑共用这些规则。" : "New Visit analysis and matching reruns use the same rules."}</p>
         </div>
-        <ProductMatchNormalizationsPanel locale={locale} rules={rulesResult.data} brandOptions={options.brand} canonicalOptions={options} />
+        <ProductMatchNormalizationsPanel locale={locale} rules={rulesResult.data} brandOptions={options.brand} canonicalOptions={options} editingRule={editingRule} />
       </Card>
     </>
   );

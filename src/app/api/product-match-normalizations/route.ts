@@ -28,6 +28,7 @@ export async function POST(request: Request) {
 
     const field = cleanField(body.field);
     const brandScope = cleanOptional(body.brand_scope);
+    const editingRuleId = cleanOptional(body.editing_rule_id);
     const sourceValue = cleanRequired(body.source_value, "source_value");
     const canonicalValue = cleanRequired(body.canonical_value, "canonical_value");
     if (normalized(sourceValue) === normalized(canonicalValue)) throw new Error("source_value must differ from canonical_value");
@@ -45,15 +46,16 @@ export async function POST(request: Request) {
       .eq("field", field)
       .eq("active", true);
     if (activeError) throw new Error(activeError.message);
-    const replacedIds = (activeRows ?? [])
+    const replacedIds = new Set((activeRows ?? [])
       .filter((row) => normalized((row as { source_value?: string }).source_value) === normalized(sourceValue))
       .filter((row) => normalized((row as { brand_scope?: string | null }).brand_scope) === normalized(brandScope))
-      .map((row) => String((row as { id: string }).id));
-    if (replacedIds.length > 0) {
+      .map((row) => String((row as { id: string }).id)));
+    if (editingRuleId) replacedIds.add(editingRuleId);
+    if (replacedIds.size > 0) {
       const { error } = await supabase
         .from("product_match_normalizations")
         .update({ active: false, updated_at: new Date().toISOString() })
-        .in("id", replacedIds);
+        .in("id", Array.from(replacedIds));
       if (error) throw new Error(error.message);
     }
 

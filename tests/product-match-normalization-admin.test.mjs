@@ -28,10 +28,13 @@ test("normalization admin is manager-only and rendered as master data", () => {
   assert.match(route, /requireAdminSession/);
   assert.match(route, /product_match_normalizations/);
   assert.match(route, /intent === "deactivate"/);
+  assert.match(route, /editing_rule_id/);
   assert.match(route, /piece_count rules cannot remap a bare integer/);
   assert.match(page, /ProductMatchNormalizationsPanel/);
   assert.match(panel, /canonical_value/);
   assert.match(panel, /brand_scope/);
+  assert.match(panel, /editingRule/);
+  assert.match(panel, /intent" value="deactivate"/);
   assert.match(types, /ProductMatchNormalization/);
   assert.match(shell, /product-match-normalizations/);
 });

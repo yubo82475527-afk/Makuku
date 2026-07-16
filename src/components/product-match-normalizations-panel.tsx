@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ProductMatchNormalization, ProductMatchNormalizationField } from "@/lib/types";
 
 type ProductMatchNormalizationsPanelProps = {
@@ -5,6 +6,7 @@ type ProductMatchNormalizationsPanelProps = {
   rules: ProductMatchNormalization[];
   brandOptions: string[];
   canonicalOptions: Record<ProductMatchNormalizationField, string[]>;
+  editingRule?: ProductMatchNormalization | null;
 };
 
 const fields: Array<{ value: ProductMatchNormalizationField; zh: string; en: string }> = [
@@ -14,40 +16,43 @@ const fields: Array<{ value: ProductMatchNormalizationField; zh: string; en: str
   { value: "piece_count", zh: "片数", en: "Pieces" },
 ];
 
-export function ProductMatchNormalizationsPanel({ locale, rules, brandOptions, canonicalOptions }: ProductMatchNormalizationsPanelProps) {
+export function ProductMatchNormalizationsPanel({ locale, rules, brandOptions, canonicalOptions, editingRule = null }: ProductMatchNormalizationsPanelProps) {
   const isZh = locale === "zh";
+  const formPath = `/${locale}/product-match-normalizations`;
   const label = (field: ProductMatchNormalizationField) => fields.find((item) => item.value === field)?.[isZh ? "zh" : "en"] ?? field;
   return (
     <div className="space-y-4">
       <form action="/api/product-match-normalizations" method="post" className="grid gap-3 rounded-md border border-slate-200 bg-white p-4 md:grid-cols-4">
-        <input type="hidden" name="return_to" value={`/${locale}/product-match-normalizations`} />
+        <input type="hidden" name="return_to" value={formPath} />
+        {editingRule ? <input type="hidden" name="editing_rule_id" value={editingRule.id} /> : null}
         <label className="text-sm font-medium text-slate-700">
           {isZh ? "字段" : "Field"}
-          <select name="field" required defaultValue="series" className="mt-1 h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm">
+          <select name="field" required defaultValue={editingRule?.field ?? "series"} className="mt-1 h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm">
             {fields.map((field) => <option key={field.value} value={field.value}>{field[isZh ? "zh" : "en"]}</option>)}
           </select>
         </label>
         <label className="text-sm font-medium text-slate-700">
           {isZh ? "品牌范围" : "Brand scope"}
-          <input name="brand_scope" list="match-normalization-brands" placeholder={isZh ? "留空表示全品牌" : "Empty for all brands"} className="mt-1 h-9 w-full rounded-md border border-slate-300 px-2 text-sm" />
+          <input name="brand_scope" list="match-normalization-brands" defaultValue={editingRule?.brand_scope ?? ""} placeholder={isZh ? "留空表示全品牌" : "Empty for all brands"} className="mt-1 h-9 w-full rounded-md border border-slate-300 px-2 text-sm" />
         </label>
         <datalist id="match-normalization-brands">
           {brandOptions.map((brand) => <option key={brand} value={brand} />)}
         </datalist>
         <label className="text-sm font-medium text-slate-700">
           {isZh ? "原始写法" : "Source value"}
-          <input name="source_value" required placeholder="SLIMCARE" className="mt-1 h-9 w-full rounded-md border border-slate-300 px-2 text-sm" />
+          <input name="source_value" required defaultValue={editingRule?.source_value ?? ""} placeholder="SLIMCARE" className="mt-1 h-9 w-full rounded-md border border-slate-300 px-2 text-sm" />
         </label>
         <label className="text-sm font-medium text-slate-700">
           {isZh ? "规范值" : "Canonical value"}
-          <input name="canonical_value" list="match-normalization-values" required placeholder={isZh ? "选择当前主档值" : "Select a current master value"} className="mt-1 h-9 w-full rounded-md border border-slate-300 px-2 text-sm" />
+          <input name="canonical_value" list="match-normalization-values" required defaultValue={editingRule?.canonical_value ?? ""} placeholder={isZh ? "选择当前主档值" : "Select a current master value"} className="mt-1 h-9 w-full rounded-md border border-slate-300 px-2 text-sm" />
         </label>
         <datalist id="match-normalization-values">
           {fields.flatMap((field) => canonicalOptions[field.value].map((value) => <option key={`${field.value}:${value}`} value={value}>{label(field.value)}</option>))}
         </datalist>
-        <div className="md:col-span-4 flex justify-end">
+        <div className="md:col-span-4 flex justify-end gap-3">
+          {editingRule ? <Link href={formPath} className="inline-flex h-9 items-center text-sm font-medium text-slate-600 hover:underline">{isZh ? "取消" : "Cancel"}</Link> : null}
           <button type="submit" className="h-9 rounded-md bg-slate-950 px-4 text-sm font-medium text-white hover:bg-slate-800">
-            {isZh ? "保存规则" : "Save rule"}
+            {editingRule ? (isZh ? "保存修改" : "Save changes") : (isZh ? "保存规则" : "Save rule")}
           </button>
         </div>
       </form>
@@ -71,12 +76,15 @@ export function ProductMatchNormalizationsPanel({ locale, rules, brandOptions, c
                 <td className="px-3 py-2 font-medium">{rule.source_value}</td>
                 <td className="px-3 py-2">{rule.canonical_value}</td>
                 <td className="px-3 py-2">
+                  <div className="flex items-center gap-3">
+                    <Link href={`${formPath}?edit=${encodeURIComponent(rule.id)}`} className="text-sm font-medium text-blue-700 hover:underline">{isZh ? "编辑" : "Edit"}</Link>
                   <form action="/api/product-match-normalizations" method="post">
                     <input type="hidden" name="intent" value="deactivate" />
                     <input type="hidden" name="id" value={rule.id} />
-                    <input type="hidden" name="return_to" value={`/${locale}/product-match-normalizations`} />
-                    <button type="submit" className="text-sm font-medium text-red-700 hover:underline">{isZh ? "停用" : "Deactivate"}</button>
+                    <input type="hidden" name="return_to" value={formPath} />
+                    <button type="submit" className="text-sm font-medium text-red-700 hover:underline">{isZh ? "删除" : "Delete"}</button>
                   </form>
+                  </div>
                 </td>
               </tr>
             ))}
