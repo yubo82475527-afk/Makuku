@@ -90,6 +90,7 @@ const navGroups = [
     items: [
       { href: "/sku-master", label: { zh: "产品主数据", en: "Product Master" }, icon: Database },
       { href: "/competitor-products", label: { zh: "竞品主数据", en: "Competitor Product Master" }, icon: Tags },
+      { href: "/product-match-normalizations", label: { zh: "商品匹配标准化", en: "Product Match Normalization" }, icon: Tags },
       { href: "/offline-stores", label: { zh: "门店主数据", en: "Store Master" }, icon: Store },
       { href: "/organizations", label: { zh: "组织管理", en: "Organization Management" }, icon: Building2 },
       { href: "/users", label: { zh: "用户管理", en: "User Management" }, icon: Users },

@@ -628,6 +628,19 @@ export type CompetitorSeriesMapping = {
   brands?: Pick<Brand, "id" | "name"> | null;
 };
 
+export type ProductMatchNormalizationField = "brand" | "series" | "size" | "piece_count";
+
+export type ProductMatchNormalization = {
+  id: string;
+  field: ProductMatchNormalizationField;
+  brand_scope: string | null;
+  source_value: string;
+  canonical_value: string;
+  active: boolean;
+  created_at: string;
+  updated_at: string | null;
+};
+
 export type PriceSnapshotVisit = {
   id: string;
   visit_code?: string | null;

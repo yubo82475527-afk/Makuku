@@ -10,6 +10,7 @@ import type {
   SkuSignature,
 } from "./product-match-engine.ts";
 import { buildEvidenceSkuSignature, parseSkuSignatureFromText } from "./sku-signature.ts";
+import type { ProductMatchNormalizationField, ProductMatchNormalizedValue } from "./product-match-normalizations.ts";
 
 export const PRODUCT_MATCH_RULE_VERSION = "sku-match-v2";
 
@@ -266,6 +267,99 @@ function selectPreferredCandidate(evidence: NormalizedMatchInput, products: Norm
   const maxRank = Math.max(...ranked.map((item) => item.rank ?? 0));
   const winners = ranked.filter((item) => item.rank === maxRank);
   return winners.length === 1 ? winners[0].product : null;
+}
+
+type ProductMatchNormalizations = {
+  normalizeExact(field: ProductMatchNormalizationField, rawValue: unknown, brand?: string | null): ProductMatchNormalizedValue;
+  findInText(field: ProductMatchNormalizationField, rawValue: unknown, brand?: string | null): ProductMatchNormalizedValue;
+};
+
+function firstNormalizedValue(
+  normalizations: ProductMatchNormalizations,
+  field: ProductMatchNormalizationField,
+  values: unknown[],
+  brand?: string | null,
+) {
+  for (const value of values) {
+    const exact = normalizations.normalizeExact(field, value, brand);
+    if (exact.value) return exact.value;
+  }
+  for (const value of values) {
+    const found = normalizations.findInText(field, value, brand);
+    if (found.value) return found.value;
+  }
+  return null;
+}
+
+function normalizedPieceCount(normalizations: ProductMatchNormalizations, value: unknown, brand?: string | null) {
+  const normalized = normalizations.normalizeExact("piece_count", value, brand).value;
+  const number = Number(normalized ?? value);
+  return Number.isInteger(number) && number > 0 ? number : null;
+}
+
+export function createProductMatchRulesV2(normalizations: ProductMatchNormalizations): MatchRuleSet {
+  function normalizeProductWithContext(product: ProductMatchMaster): NormalizedMatchMaster {
+    const legacy = normalizedSignature(product.signature, product.raw);
+    const text = [product.raw.name, product.raw.title, product.raw.shape, product.raw.packageLevel].filter(Boolean).join(" ");
+    const brand = firstNormalizedValue(normalizations, "brand", [product.signature?.brand, product.raw.brand, text]);
+    return {
+      ...product,
+      code: cleanTokens(product.code),
+      signature: {
+        brand,
+        series: firstNormalizedValue(normalizations, "series", [product.signature?.series, product.raw.name, product.raw.title, text], brand),
+        packageLevel: legacy.packageLevel,
+        shape: legacy.shape,
+        size: firstNormalizedValue(normalizations, "size", [product.signature?.size, product.raw.name, product.raw.title, text], brand),
+        pieceCount: normalizedPieceCount(normalizations, product.signature?.pieceCount ?? product.raw.pieceCount, brand),
+        version: legacy.version,
+      },
+    };
+  }
+
+  function normalizeEvidenceWithContext(evidence: ProductMatchEvidence, context: MatchNormalizationContext): NormalizedMatchInput {
+    const fallback = normalizeEvidence(evidence, context);
+    const raw = evidence.raw;
+    const texts = [raw.productFamilyText, raw.sectionTitle, raw.sku, raw.rowAnchor];
+    const brand = firstNormalizedValue(normalizations, "brand", [evidence.signature?.brand, raw.brand, ...texts]);
+    const series = firstNormalizedValue(normalizations, "series", [evidence.signature?.series, ...texts], brand);
+    const size = firstNormalizedValue(normalizations, "size", [evidence.signature?.size, raw.rowAnchor, ...texts], brand);
+    const pieceCount = normalizedPieceCount(normalizations, evidence.signature?.pieceCount ?? raw.pieceCount, brand);
+    const entityType = resolveEvidenceEntityType(brand, evidence.entityType, context);
+    return {
+      ...fallback,
+      entityType,
+      signature: {
+        ...fallback.signature,
+        brand,
+        series,
+        size,
+        pieceCount,
+      },
+    };
+  }
+
+  function selectPreferredWithContext(evidence: NormalizedMatchInput, products: NormalizedMatchMaster[]) {
+    let candidates = products;
+    for (const field of ["shape", "packageLevel", "version"] as const) {
+      const value = evidence.signature[field];
+      if (!value) continue;
+      const matching = candidates.filter((product) => product.signature[field] === value);
+      if (matching.length > 0) candidates = matching;
+      if (candidates.length === 1) return candidates[0];
+    }
+    return selectPreferredCandidate(evidence, candidates);
+  }
+
+  return {
+    version: "sku-match-v3",
+    normalizeProduct: normalizeProductWithContext,
+    normalizeEvidence: normalizeEvidenceWithContext,
+    coreKey,
+    isCompatible: () => true,
+    isFullSignature,
+    selectPreferredCandidate: selectPreferredWithContext,
+  };
 }
 
 export const productMatchRulesV2: MatchRuleSet = {
