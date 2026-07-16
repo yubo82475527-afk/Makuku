@@ -35,7 +35,7 @@ test("rerun dialog supports async match-only and AI reanalysis modes", () => {
   assert.doesNotMatch(dialog, /\/api\/store-visit-monitor\/rerun-matching"/);
 });
 
-test("store visit monitor exposes rerun job menu with progress and failures", () => {
+test("app shell exposes rerun job menu globally with progress and failures", () => {
   assert.match(menu, /StoreVisitRerunJobMenu/);
   assert.match(menu, /\/api\/store-visit-monitor\/rerun-jobs/);
   assert.match(menu, /processed_visits/);
@@ -45,6 +45,8 @@ test("store visit monitor exposes rerun job menu with progress and failures", ()
   assert.match(menu, /ai_reanalysis/);
   assert.match(appShell, /StoreVisitRerunJobMenu/);
   assert.match(appShell, /StoreVisitRerunJobMenu[\s\S]*StoreVisitMonitorExportMenu/);
+  assert.doesNotMatch(appShell, /showStoreVisitRerunJobs/);
+  assert.doesNotMatch(appShell, /currentPath === "\/store-visit-monitor"/);
   assert.doesNotMatch(monitorClient, /<StoreVisitRerunJobMenu/);
 });
 

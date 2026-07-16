@@ -189,7 +189,6 @@ function AppShellFrame({
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
     window.location.href = `/${locale}/login`;
   }
-  const showStoreVisitRerunJobs = state.currentPath === "/store-visit-monitor" || state.currentPath.startsWith("/store-visit-monitor?");
 
   return (
     <div className="min-h-screen">
@@ -239,7 +238,7 @@ function AppShellFrame({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {showStoreVisitRerunJobs ? <StoreVisitRerunJobMenu locale={locale} /> : null}
+            <StoreVisitRerunJobMenu locale={locale} />
             <StoreVisitMonitorExportMenu locale={locale} />
             {state.headerUser ? (
               <div className="hidden items-center gap-2 text-xs text-slate-600 sm:flex">
