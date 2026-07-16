@@ -1,4 +1,8 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState, type FormEvent } from "react";
 import type { ProductMatchNormalization, ProductMatchNormalizationField } from "@/lib/types";
 
 type ProductMatchNormalizationsPanelProps = {
@@ -17,12 +21,36 @@ const fields: Array<{ value: ProductMatchNormalizationField; zh: string; en: str
 ];
 
 export function ProductMatchNormalizationsPanel({ locale, rules, brandOptions, canonicalOptions, editingRule = null }: ProductMatchNormalizationsPanelProps) {
+  const router = useRouter();
   const isZh = locale === "zh";
   const formPath = `/${locale}/product-match-normalizations`;
+  const [submitting, setSubmitting] = useState(false);
   const label = (field: ProductMatchNormalizationField) => fields.find((item) => item.value === field)?.[isZh ? "zh" : "en"] ?? field;
+
+  async function submitRule(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/product-match-normalizations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget).entries())),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(typeof payload.error === "string" ? payload.error : "Request failed");
+      router.replace(formPath);
+      router.refresh();
+    } catch (error) {
+      window.alert(formatError(error, isZh));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
-      <form action="/api/product-match-normalizations" method="post" className="grid gap-3 rounded-md border border-slate-200 bg-white p-4 md:grid-cols-4">
+      <form onSubmit={submitRule} className="grid gap-3 rounded-md border border-slate-200 bg-white p-4 md:grid-cols-4">
         <input type="hidden" name="return_to" value={formPath} />
         {editingRule ? <input type="hidden" name="editing_rule_id" value={editingRule.id} /> : null}
         <label className="text-sm font-medium text-slate-700">
@@ -51,7 +79,7 @@ export function ProductMatchNormalizationsPanel({ locale, rules, brandOptions, c
         </datalist>
         <div className="md:col-span-4 flex justify-end gap-3">
           {editingRule ? <Link href={formPath} className="inline-flex h-9 items-center text-sm font-medium text-slate-600 hover:underline">{isZh ? "取消" : "Cancel"}</Link> : null}
-          <button type="submit" className="h-9 rounded-md bg-slate-950 px-4 text-sm font-medium text-white hover:bg-slate-800">
+          <button type="submit" disabled={submitting} className="h-9 rounded-md bg-slate-950 px-4 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50">
             {editingRule ? (isZh ? "保存修改" : "Save changes") : (isZh ? "保存规则" : "Save rule")}
           </button>
         </div>
@@ -78,11 +106,11 @@ export function ProductMatchNormalizationsPanel({ locale, rules, brandOptions, c
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-3">
                     <Link href={`${formPath}?edit=${encodeURIComponent(rule.id)}`} className="text-sm font-medium text-blue-700 hover:underline">{isZh ? "编辑" : "Edit"}</Link>
-                  <form action="/api/product-match-normalizations" method="post">
+                  <form onSubmit={submitRule}>
                     <input type="hidden" name="intent" value="deactivate" />
                     <input type="hidden" name="id" value={rule.id} />
                     <input type="hidden" name="return_to" value={formPath} />
-                    <button type="submit" className="text-sm font-medium text-red-700 hover:underline">{isZh ? "删除" : "Delete"}</button>
+                    <button type="submit" disabled={submitting} className="text-sm font-medium text-red-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50">{isZh ? "删除" : "Delete"}</button>
                   </form>
                   </div>
                 </td>
@@ -94,4 +122,19 @@ export function ProductMatchNormalizationsPanel({ locale, rules, brandOptions, c
       </div>
     </div>
   );
+}
+
+function formatError(error: unknown, isZh: boolean) {
+  const message = error instanceof Error ? error.message : "Request failed";
+  if (!isZh) return message;
+  if (message === "canonical_value must exist in active product master data") {
+    return "规范值不在当前启用的商品主档中，请从下拉建议中选择。";
+  }
+  if (message === "source_value must differ from canonical_value") {
+    return "原始写法不能与规范值相同。";
+  }
+  if (message === "piece_count rules cannot remap a bare integer") {
+    return "片数规则不能把单独的整数改为另一个片数。";
+  }
+  return `操作失败：${message}`;
 }

@@ -38,3 +38,11 @@ test("normalization admin is manager-only and rendered as master data", () => {
   assert.match(types, /ProductMatchNormalization/);
   assert.match(shell, /product-match-normalizations/);
 });
+
+test("normalization admin keeps validation failures in the editor and shows an alert", () => {
+  assert.match(panel, /"use client"/);
+  assert.match(panel, /fetch\("\/api\/product-match-normalizations"/);
+  assert.match(panel, /event\.preventDefault\(\)/);
+  assert.match(panel, /window\.alert/);
+  assert.match(panel, /router\.refresh\(\)/);
+});
