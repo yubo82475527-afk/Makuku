@@ -55,6 +55,9 @@ export type StoreVisitMatchingRerunProgress = StoreVisitMatchingRerunResult;
 
 export type StoreVisitMatchingRerunOptions = {
   onVisitProgress?: (progress: StoreVisitMatchingRerunProgress) => void | Promise<void>;
+  startOffset?: number;
+  maxVisits?: number;
+  initialProgress?: Partial<Omit<StoreVisitMatchingRerunResult, "selectedVisitCount">>;
 };
 
 function clean(value: unknown) {
@@ -97,19 +100,23 @@ export async function rerunStoreVisitMatching(
   const visits = await gateway.selectVisits(selector);
   if (visits.length === 0) throw new Error("No Visits found for the selected rerun target.");
   const matchContext = await gateway.loadMatchContext();
+  const initialProgress = options.initialProgress ?? {};
   const result: StoreVisitMatchingRerunResult = {
     selectedVisitCount: visits.length,
-    processedVisitCount: 0,
-    skippedVisitCount: 0,
-    failedVisitCount: 0,
-    insertedCandidateCount: 0,
-    deletedSnapshotCount: 0,
-    methodCounts: {},
-    failures: [],
+    processedVisitCount: initialProgress.processedVisitCount ?? 0,
+    skippedVisitCount: initialProgress.skippedVisitCount ?? 0,
+    failedVisitCount: initialProgress.failedVisitCount ?? 0,
+    insertedCandidateCount: initialProgress.insertedCandidateCount ?? 0,
+    deletedSnapshotCount: initialProgress.deletedSnapshotCount ?? 0,
+    methodCounts: { ...(initialProgress.methodCounts ?? {}) },
+    failures: [...(initialProgress.failures ?? [])],
   };
   const processedVisitIds: string[] = [];
+  const startOffset = Math.max(0, Math.min(Math.floor(options.startOffset ?? 0), visits.length));
+  const maxVisits = options.maxVisits === undefined ? visits.length : Math.max(0, Math.floor(options.maxVisits));
+  const visitsToProcess = visits.slice(startOffset, startOffset + maxVisits);
 
-  for (const visit of visits) {
+  for (const visit of visitsToProcess) {
     try {
       const rows = await gateway.loadStoredVisionRows(visit);
       if (rows.length === 0) {

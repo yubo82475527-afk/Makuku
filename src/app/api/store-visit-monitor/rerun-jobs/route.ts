@@ -7,8 +7,22 @@ import {
   listStoreVisitRerunJobs,
   triggerStoreVisitRerunJobRunner,
 } from "@/lib/store-visit-rerun-jobs";
+import type { StoreVisitRerunJob } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+const staleJobMs = 2 * 60 * 1000;
+
+function isActiveRerunJob(job: StoreVisitRerunJob) {
+  return job.status === "queued" || job.status === "running";
+}
+
+function shouldWakeRerunJob(job: StoreVisitRerunJob) {
+  if (!isActiveRerunJob(job)) return false;
+  if (job.status === "queued") return true;
+  const updatedAt = new Date(job.updated_at).getTime();
+  return Number.isNaN(updatedAt) || Date.now() - updatedAt > staleJobMs;
+}
 
 export async function GET(request: Request) {
   const auth = await requireAdminSession(request);
@@ -16,6 +30,13 @@ export async function GET(request: Request) {
 
   try {
     const jobs = await listStoreVisitRerunJobs({ requestedBy: auth.session.id });
+    for (const job of jobs.filter(shouldWakeRerunJob)) {
+      after(() => triggerStoreVisitRerunJobRunner({
+        requestUrl: request.url,
+        jobId: job.id,
+        detached: true,
+      }));
+    }
     return Response.json({ jobs });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });

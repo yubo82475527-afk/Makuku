@@ -47,6 +47,15 @@ test("store visit rerun job service separates match-only and AI reanalysis execu
   );
 });
 
+test("match-only rerun jobs run in resumable batches and reschedule unfinished work", () => {
+  assert.match(serviceFile, /maxMatchOnlyVisitsPerRun/);
+  assert.match(serviceFile, /startOffset:\s*job\.processed_visits/);
+  assert.match(serviceFile, /maxVisits:\s*maxMatchOnlyVisitsPerRun/);
+  assert.match(serviceFile, /initialProgress:\s*progressFromJob\(job\)/);
+  assert.match(serviceFile, /isMatchingResultComplete\(result\)/);
+  assert.match(serviceFile, /triggerStoreVisitRerunJobRunner\(\{[\s\S]*detached:\s*true/);
+});
+
 test("AI reanalysis rerun jobs refresh existing child jobs instead of creating duplicates", () => {
   assert.match(serviceFile, /job\.mode === "ai_reanalysis"/);
   assert.match(serviceFile, /job\.child_ai_jobs\.length > 0/);

@@ -13,6 +13,7 @@ type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceClient>;
 
 const activeJobStatuses = ["queued", "running"] as const;
 const maxFailureRecords = 200;
+const maxMatchOnlyVisitsPerRun = 25;
 const historyLimit = 10;
 
 function nowIso() {
@@ -82,6 +83,26 @@ function selectorForRun(job: StoreVisitRerunJob): StoreVisitMatchingRerunSelecto
   const dateFrom = clean(selector.date_from);
   const dateTo = clean(selector.date_to);
   return { kind: "date_range", dateFrom, dateTo };
+}
+
+function progressFromJob(job: StoreVisitRerunJob): Partial<Omit<StoreVisitMatchingRerunResult, "selectedVisitCount">> {
+  return {
+    processedVisitCount: Math.max(0, job.processed_visits - job.skipped_visits - job.failed_visits),
+    skippedVisitCount: job.skipped_visits,
+    failedVisitCount: job.failed_visits,
+    insertedCandidateCount: job.inserted_candidate_count,
+    deletedSnapshotCount: job.deleted_snapshot_count,
+    methodCounts: job.method_counts,
+    failures: job.failures,
+  };
+}
+
+function consumedVisitCount(result: StoreVisitMatchingRerunResult) {
+  return result.processedVisitCount + result.skippedVisitCount + result.failedVisitCount;
+}
+
+function isMatchingResultComplete(result: StoreVisitMatchingRerunResult) {
+  return consumedVisitCount(result) >= result.selectedVisitCount;
 }
 
 export async function createStoreVisitRerunJob(input: {
@@ -351,11 +372,23 @@ export async function runStoreVisitRerunJob(input: {
   if (job.mode === "match_only") {
     const gateway = createStoreVisitMatchingRerunGateway(supabase);
     const result = await rerunStoreVisitMatching(serializeSelector(selectorForRun(job)), gateway, {
+      startOffset: job.processed_visits,
+      maxVisits: maxMatchOnlyVisitsPerRun,
+      initialProgress: progressFromJob(job),
       async onVisitProgress(progress) {
         await updateJobFromMatchingProgress(supabase, job.id, progress);
       },
     });
-    return { job: await completeJobFromMatchingResult(supabase, job.id, result), processed: result.processedVisitCount };
+    if (isMatchingResultComplete(result)) {
+      return { job: await completeJobFromMatchingResult(supabase, job.id, result), processed: result.processedVisitCount };
+    }
+    const refreshedJob = await loadStoreVisitRerunJob({ jobId: job.id, supabase });
+    await triggerStoreVisitRerunJobRunner({
+      requestUrl: input.requestUrl,
+      jobId: job.id,
+      detached: true,
+    });
+    return { job: refreshedJob, processed: result.processedVisitCount };
   }
 
   return { job, processed: 0 };
@@ -397,15 +430,28 @@ export async function failStoreVisitRerunJob(input: {
 export async function triggerStoreVisitRerunJobRunner(input: {
   requestUrl: string;
   jobId: string;
+  detached?: boolean;
 }) {
   const secret = clean(process.env.CRON_SECRET);
   if (!secret) {
+    const run = () => {
+      void runStoreVisitRerunJob({ jobId: input.jobId, requestUrl: input.requestUrl }).catch(async (error) => {
+        await failStoreVisitRerunJob({
+          jobId: input.jobId,
+          message: error instanceof Error ? error.message : String(error),
+        }).catch(() => undefined);
+      });
+    };
+    if (input.detached) {
+      setTimeout(run, 0);
+      return;
+    }
     await runStoreVisitRerunJob({ jobId: input.jobId, requestUrl: input.requestUrl });
     return;
   }
 
   const url = new URL("/api/internal/store-visit-monitor/rerun-jobs/run", input.requestUrl);
-  await fetch(url, {
+  const request = fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -418,4 +464,5 @@ export async function triggerStoreVisitRerunJobRunner(input: {
       error: error instanceof Error ? error.message : String(error),
     });
   });
+  if (!input.detached) await request;
 }
