@@ -51,8 +51,8 @@ export function normalizeStoreVisitAiConfigInput(value: unknown): StoreVisitAiCo
   if (!Number.isFinite(temperature) || temperature < 0 || temperature > 2) {
     throw new Error("Temperature must be between 0 and 2.");
   }
-  if (!Number.isFinite(maxTokens) || maxTokens < 500 || maxTokens > 6000) {
-    throw new Error("Max tokens must be between 500 and 6000.");
+  if (!Number.isFinite(maxTokens) || maxTokens < 500 || maxTokens > 10000) {
+    throw new Error("Max tokens must be between 500 and 10000.");
   }
 
   return {

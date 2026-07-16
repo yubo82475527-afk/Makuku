@@ -74,7 +74,7 @@ export const STORE_VISIT_AI_PROMPT = [
   '{"raw_extraction":{"detected_items":[{"brand":"string","product":"string","price":"string","type":"SKU|PROMO|SHELF_SIGNAL","confidence":0.8}]},"validation":{"is_valid":true,"warnings":[{"type":"MISSING_DATA|LOW_CONFIDENCE|PARSE_RISK","message":"string"}]},"shelf_understanding":{"brands_present":[{"brand":"string","shelf_share_estimate":0}],"category_coverage":"FULL|PARTIAL|FRAGMENTED","shelf_condition":"WELL_ORGANISED|NORMAL|MESSY","facings_estimate":[{"brand":"string","facing_count_estimate":0}]},"price_insights":{"brand_price_range":[{"brand":"string","min_price":"string","max_price":"string"}],"key_sku_prices":[{"brand":"string","product":"string","price":"string","list_price":"string","package_price":"string","net_price":"string","promo_type":"string","piece_count":44,"tag":"HERO|PROMO|ANOMALY","confidence":0.8}]},"stock_risk":{"level":"Normal|Low Stock|Out of Stock Risk","affected_brands":[{"brand":"string","risk_signal":"EMPTY_FACING|LOW_FACING|BLOCKED_SHELF"}],"reason":"string"},"promotion_insights":{"competitor_promotions":[{"brand":"string","type":"Discount|Buy 1 Get 1|Buy 2 Get 1|Promo Tag|Special Offer","visibility":"LOW|MEDIUM|HIGH","description":"string"}],"promo_pressure_level":"LOW|MEDIUM|HIGH"},"store_summary":"string"}',
 ].join("\n");
 
-export const PRICE_IMAGE_PROMPT_VERSION = "price-evidence-v1.5-table-cell-verification";
+export const PRICE_IMAGE_PROMPT_VERSION = "price-evidence-v1.8-section-discovery-completeness";
 
 function simpleHash(value: string) {
   let hash = 0;
@@ -98,7 +98,7 @@ const STORE_VISIT_PRICE_IMAGE_PROMPT = [
   "Judge the actual effect on digit readability and same-row binding, not visual appearance alone. Angle, handwriting, crossed-out prices, and mild glare are not retake reasons by themselves.",
   "Use retake_required only when no primary visual section meets all pass conditions. Use price_unclear only when price digits are unreadable for the clear majority of visible rows. Use angled_affects_reading only when perspective actually prevents reading or reliable same-row binding for the clear majority of visible rows. Use price_obstructed only when cropping, glare, products, shelf structure, or other obstruction actually blocks the clear majority of visible rows or price cells. Do not treat handwriting or strike-throughs as price_obstructed. photo_quality.reasons may contain only: price_unclear, angled_affects_reading, price_obstructed. If status is pass, reasons=[].",
   "BLANK PRINCIPLE: An empty or unclear cell is meaningful evidence. Keep it empty or add PARSE_RISK. Empty does not mean same as the row above or same as the normal column.",
-  "Evidence Completeness is NOT required. Evidence Correctness is required. Returning null is always preferred over returning an inferred value.",
+  "SECTION DISCOVERY AND CHECKLIST: Before extracting any rows, visually inspect the entire primary board from its top edge to its bottom edge. Discover every independently titled product section, promotion block, or board subsection, including those below previously noticed sections. Internally build a complete section checklist before extracting rows. Do not begin row extraction until no additional visible section title can be found. Do not invent any cell, price tag, or product binding.",
   "VISUAL EVIDENCE GROUP: each output row represents ONE visual price evidence group.",
   "source_type may be PRICE_BOARD_ROW for one readable row inside a shelf price board or promotion table, or PRICE_TAG for one individual price tag, shelf label, promo card, or single-product price label.",
   "For every output row, all fields must come from the same visual evidence group.",
@@ -106,11 +106,14 @@ const STORE_VISIT_PRICE_IMAGE_PROMPT = [
   "group_id should uniquely distinguish different visual evidence groups within the image. The exact naming format is not important as long as it is consistent inside the same response.",
   "row_anchor should be constructed only from visible row identity such as SKU, Size, Pcs, or Variant. row_anchor must not use prices.",
   "BOARD / SECTION RULE: if the image contains multiple price boards, tables, cards, or product sections, treat each one independently. For PRICE_BOARD_ROW, identify the board or card, its section, and the same horizontal row; anchor the row by SKU / size / Pcs cells and read only cells that visually intersect that same row.",
+  "SECTION ROW COVERAGE: Process every checklist section from top to bottom. Inspect every visible horizontal row exactly once. For every directly confirmable row, output one PRICE_BOARD_ROW. A row may keep unclear auxiliary evidence cells empty and add PARSE_RISK. Never skip a readable row merely because nearby rows were already extracted.",
+  "SECTION COMPLETENESS CHECK: Before returning JSON, verify every discovered section has been processed. Each discovered section must either produce at least one output row or truly contain no readable rows. If a discovered section produced zero rows, re-inspect that section before finishing. Continue searching below the last extracted row for additional section titles until reaching the bottom of the board.",
   "TABLE CELL VERIFICATION: For PRICE_BOARD_ROW, use the visible SIZE + PCS cells together as the row key. When both are visible, row_anchor must include both values, for example S|38. Do not output an alternate Pcs value for the same size.",
-  "Before final response, visually re-read every output cell in its original table cell: product-family title, section title, Size, Pcs, normal price, promo package price, and promo per-piece price. Preserve the exact visible product-family title; do not replace it with a generic product label. If a cell cannot be visually confirmed, leave it empty or add PARSE_RISK. Do not substitute a plausible-looking digit or price.",
-  "If a cell is unclear, keep that cell empty or add PARSE_RISK; never replace it with a value from another row, a computed value, or a repeated pattern.",
+  "Before final response, visually re-read every output cell in its original table cell. Preserve the exact visible product-family title. If a cell cannot be visually confirmed, leave it empty or add PARSE_RISK; never substitute a value from another row, a computed value, a repeated pattern, or a plausible-looking digit.",
   "Rows under one section must not inherit prices from another section. Example: rows under SLIM REGULAR (TAPE) must not use prices from SLIM LUXURY SILKY, SLIM JUMBO, or another board.",
   "For PRICE_TAG, extract only text visible on the same individual tag, card, or label. Do not combine product name from one tag with price from another tag.",
+  "PRICE_TAG COVERAGE SCAN: Scan independent shelf price tags from left to right, then top to bottom. Output one PRICE_TAG row for every readable individual price tag with a direct product-price binding. The title printed on the tag itself is the primary product identity. If the tag title is incomplete, bind it to a product only when there is a clear one-to-one shelf-position relationship. If several products or tags could match, it is not a direct binding: must not guess or borrow a neighboring product.",
+  "PROMO PRICE TAG: A crossed-out price on the same tag is normal_package_text. A prominent promotion price on that same tag is promo_package_text. Read both only from that one tag; do not use the nearby package or another tag to complete either price.",
   "TITLE AND PRODUCT CONTEXT: A visible brand, product, or product-family title at the top of a promotion card or board section applies to all following rows inside that same visual card or section, until the next title, card boundary, or board boundary. Capture that title as product_family_text. Do not apply it to a neighboring card, board, or section.",
   "sku may include only the same-row size/variant text, but do not drop a visible product family header; put the header in product_family_text so the system can build a complete product name.",
   "If one size cell contains multiple readable pcs-price combinations, output one row for EACH pcs-price combination. Do not collapse multiple pack sizes under S/M/L/XL into a single row.",
@@ -125,6 +128,7 @@ const STORE_VISIT_PRICE_IMAGE_PROMPT = [
   "row_binding_confidence means confidence that cells are from the same visual row/tag. section_binding_confidence means confidence that the row belongs to the captured board or section. product_identity_confidence means confidence that brand/product family/SKU identity is correctly associated.",
   "WARNINGS: row warnings may contain only PARSE_RISK.",
   "PROMOTION AND HANDWRITING: A visibly crossed-out handwritten price in the same row is the original/list price, and the following visible price in that same row is the promotion price. Transcribe both only when visibly present in that same row. Do not require retake because a price is handwritten or crossed out. Handwritten prices and strike-throughs are normal promotion evidence, not blur or obstruction. Indonesian handwritten digit 7 may contain a horizontal middle stroke. Do not confuse handwritten 7 with digit 2. Example: visible HARGA/PCS \"2.678\" means 2678.",
+  "COMPACT OUTPUT: Keep the existing photo_quality and rows JSON structure and the existing evidence field names. When an optional evidence field is not visible, omit it instead of emitting a null placeholder. Never omit a directly confirmable PRICE_BOARD_ROW or PRICE_TAG merely to make the response shorter.",
   "Return ONLY valid compact JSON. No markdown. No explanation. No extra text.",
   '{"photo_quality":{"status":"pass|retake_required","reasons":["price_unclear|angled_affects_reading|price_obstructed"],"message":"string"},"rows":[{"source_type":"PRICE_BOARD_ROW|PRICE_TAG","group_id":"string","section_title":"string","row_anchor":"M|32","brand":"string","product_family_text":"string","sku":"string","piece_count_text":"44","normal_package_text":"129.900","normal_piece_text":"2.952","promo_package_text":"119.900","promo_piece_text":"2.725","promo_label":"Discount","piece_count":44,"normal_package_price_confidence":0.9,"promo_package_price_confidence":0.9,"normal_per_piece_price_confidence":0.9,"promo_per_piece_price_confidence":0.9,"piece_count_confidence":0.9,"row_binding_confidence":0.9,"section_binding_confidence":0.9,"product_identity_confidence":0.9,"warnings":[]}]}',
 ].join("\n");
@@ -144,7 +148,7 @@ export const DEFAULT_STORE_VISIT_AI_CONFIG: StoreVisitAiConfig = {
   version_name: "Default code config",
   system_prompt: STORE_VISIT_AI_PROMPT,
   temperature: 0,
-  max_tokens: 6000,
+  max_tokens: 10000,
   status: "active",
 };
 
@@ -157,7 +161,7 @@ export function normalizeAiConfig(value: Partial<StoreVisitAiConfig> | null | un
     version_name: asString(value?.version_name, DEFAULT_STORE_VISIT_AI_CONFIG.version_name),
     system_prompt: withRequiredPromptSections(asString(value?.system_prompt, DEFAULT_STORE_VISIT_AI_CONFIG.system_prompt)),
     temperature: Number.isFinite(temperature) ? Math.min(Math.max(temperature, 0), 2) : DEFAULT_STORE_VISIT_AI_CONFIG.temperature,
-    max_tokens: Number.isFinite(maxTokens) ? Math.min(Math.max(Math.floor(maxTokens), DEFAULT_STORE_VISIT_AI_CONFIG.max_tokens), 6000) : DEFAULT_STORE_VISIT_AI_CONFIG.max_tokens,
+    max_tokens: Number.isFinite(maxTokens) ? Math.min(Math.max(Math.floor(maxTokens), DEFAULT_STORE_VISIT_AI_CONFIG.max_tokens), 10000) : DEFAULT_STORE_VISIT_AI_CONFIG.max_tokens,
   };
 }
 
@@ -864,7 +868,7 @@ export async function analyzeStoreVisitPriceImage(input: {
       },
     ],
     temperature: config.temperature,
-    maxTokens: Math.min(config.max_tokens, 6000),
+    maxTokens: Math.min(config.max_tokens, 10000),
   });
 
   console.info("[store-visit-ai] price image analyzed", {

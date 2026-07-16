@@ -218,7 +218,7 @@ test("store visit price image normalization does not let piece-scale net values 
   assert.match(normalized.warnings.at(-1)?.message ?? "", /piece price evidence/i);
 });
 
-test("store visit price image prompt is frozen as evidence-only with confidence fields", () => {
+test("store visit price image prompt requires complete scanning without inventing evidence", () => {
   const storeVisitAiSource = readFileSync("src/lib/store-visit-ai.ts", "utf8");
   const promptMatch = storeVisitAiSource.match(/const STORE_VISIT_PRICE_IMAGE_PROMPT = \[([\s\S]*?)\]\.join\("\\n"\);/);
   assert.ok(promptMatch, "price image prompt should be defined as a literal array");
@@ -226,7 +226,12 @@ test("store visit price image prompt is frozen as evidence-only with confidence 
 
   assert.match(promptSource, /PRIMARY PRINCIPLE/);
   assert.match(promptSource, /BLANK PRINCIPLE/);
-  assert.match(promptSource, /Evidence Completeness is NOT required/);
+  assert.match(storeVisitAiSource, /price-evidence-v1\.8-section-discovery-completeness/);
+  assert.match(promptSource, /SECTION DISCOVERY AND CHECKLIST/);
+  assert.match(promptSource, /Do not begin row extraction until no additional visible section title can be found/i);
+  assert.match(promptSource, /SECTION COMPLETENESS CHECK/);
+  assert.match(promptSource, /If a discovered section produced zero rows, re-inspect that section before finishing/i);
+  assert.match(promptSource, /Do not invent any cell, price tag, or product binding/i);
   assert.match(promptSource, /row_anchor[^"]+must not use prices/i);
   assert.match(promptSource, /group_id[^"]+consistent inside the same response/i);
   assert.match(promptSource, /normal_package_price_confidence/);
@@ -245,6 +250,103 @@ test("store visit price image prompt is frozen as evidence-only with confidence 
   assert.doesNotMatch(promptSource, /list_price_idr|package_price_idr|net_price_idr|visible_price_per_piece_idr/);
   assert.doesNotMatch(promptSource, /promo_type/);
   assert.doesNotMatch(promptSource, /MISSING_DATA|LOW_CONFIDENCE/);
+});
+
+test("store visit price image normalization retains all 17 directly-confirmed board rows", () => {
+  const boardRows = [
+    ["COMFORT FIT (TAPE)", "S", "30", "48.500"],
+    ["COMFORT FIT (TAPE)", "NB", "40", "50.500"],
+    ["COMFORT FIT REGULAR (PANTS)", "S", "38", "51.500"],
+    ["COMFORT FIT REGULAR (PANTS)", "M", "30", "48.500"],
+    ["COMFORT FIT REGULAR (PANTS)", "L", "26", "48.500"],
+    ["COMFORT FIT REGULAR (PANTS)", "XL", "24", "58.000"],
+    ["COMFORT FIT REGULAR (PANTS)", "XXL", "22", "58.900"],
+    ["COMFORT FIT JUMBO (PANTS)", "M", "46", "74.500"],
+    ["COMFORT FIT JUMBO (PANTS)", "L", "44", "79.500"],
+    ["COMFORT FIT JUMBO (PANTS)", "XL", "42", "83.000"],
+    ["COMFORT FIT SUPER JUMBO (PANTS)", "M", "66", "96.000"],
+    ["COMFORT FIT SUPER JUMBO (PANTS)", "L", "58", "96.000"],
+    ["COMFORT FIT SUPER JUMBO (PANTS)", "XL", "48", "99.000"],
+    ["COMFORT FIT SUPER JUMBO (PANTS)", "XXL", "42", "104.500"],
+    ["COMFORT FIT MEGA (PANTS)", "M", "90", "143.500"],
+    ["COMFORT FIT MEGA (PANTS)", "L", "84", "143.500"],
+    ["COMFORT FIT MEGA (PANTS)", "XL", "66", "143.500"],
+  ];
+  const normalized = storeVisitAi.normalizeStoreVisitPriceImageAnalysis({
+    photo_quality: { status: "pass", reasons: [], message: "Board is readable." },
+    rows: boardRows.map(([section, size, pcs, promoPackage], index) => ({
+      source_type: "PRICE_BOARD_ROW",
+      group_id: `board-row-${index + 1}`,
+      section_title: section,
+      row_anchor: `${size}|${pcs}`,
+      brand: "MAKUKU",
+      product_family_text: section,
+      sku: size,
+      piece_count_text: pcs,
+      promo_package_text: promoPackage,
+      promo_package_price_confidence: 0.95,
+      piece_count_confidence: 0.95,
+      row_binding_confidence: 0.95,
+      section_binding_confidence: 0.95,
+      product_identity_confidence: 0.95,
+      warnings: [],
+    })),
+  }, "makuku_shelf");
+
+  assert.equal(normalized.rows.length, 17);
+  assert.equal(normalized.rows[2].row_anchor, "S|38");
+  assert.equal(normalized.rows[16].row_anchor, "XL|66");
+  assert.equal(normalized.rows[16].net_price_idr, 143500);
+});
+
+test("store visit price image normalization preserves original and promotion prices from independent shelf tags", () => {
+  const normalized = storeVisitAi.normalizeStoreVisitPriceImageAnalysis({
+    photo_quality: { status: "pass", reasons: [], message: "Tags are readable." },
+    rows: [
+      {
+        source_type: "PRICE_TAG",
+        group_id: "tag-left",
+        section_title: "MP ROYAL SOFT PANTS XXL 24 BOY",
+        row_anchor: "XXL|24",
+        brand: "MamyPoko",
+        product_family_text: "MP ROYAL SOFT PANTS",
+        sku: "XXL 24 BOY",
+        piece_count_text: "24",
+        normal_package_text: "116.000",
+        promo_package_text: "101.000",
+        normal_package_price_confidence: 0.98,
+        promo_package_price_confidence: 0.98,
+        piece_count_confidence: 0.98,
+        row_binding_confidence: 0.98,
+        section_binding_confidence: 0.98,
+        product_identity_confidence: 0.98,
+        warnings: [],
+      },
+      {
+        source_type: "PRICE_TAG",
+        group_id: "tag-right",
+        section_title: "MP ROYAL SOFT PANTS XL30 BOY",
+        row_anchor: "XL|30",
+        brand: "MamyPoko",
+        product_family_text: "MP ROYAL SOFT PANTS",
+        sku: "XL 30 BOY",
+        piece_count_text: "30",
+        normal_package_text: "87.500",
+        promo_package_text: "78.000",
+        normal_package_price_confidence: 0.98,
+        promo_package_price_confidence: 0.98,
+        piece_count_confidence: 0.98,
+        row_binding_confidence: 0.98,
+        section_binding_confidence: 0.98,
+        product_identity_confidence: 0.98,
+        warnings: [],
+      },
+    ],
+  }, "competitor_shelf");
+
+  assert.equal(normalized.rows.length, 2);
+  assert.deepEqual(normalized.rows.map((row) => row.list_price_idr), [116000, 87500]);
+  assert.deepEqual(normalized.rows.map((row) => row.net_price_idr), [101000, 78000]);
 });
 
 test("store visit price image normalization keeps clear package price ahead of visible per-piece evidence", () => {

@@ -84,7 +84,7 @@ export function StoreVisitAiDebugClient({
     parsedTemperature <= 2 &&
     Number.isFinite(parsedMaxTokens) &&
     parsedMaxTokens >= 500 &&
-    parsedMaxTokens <= 6000,
+    parsedMaxTokens <= 10000,
   );
   const formChangedAfterTest = Boolean(result && testedFingerprint && testedFingerprint !== fingerprint);
   const counts = resultCounts(result?.normalized ?? null);
@@ -274,7 +274,7 @@ export function StoreVisitAiDebugClient({
           {error ? <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
           {message ? <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{message}</div> : null}
           {formChangedAfterTest ? <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">The form changed after the last test. You can still save directly, or run test again to preview the latest output.</div> : null}
-          {!canSave ? <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">Save requires a prompt with at least 200 characters, temperature 0-2, and max tokens 500-6000.</div> : null}
+          {!canSave ? <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">Save requires a prompt with at least 200 characters, temperature 0-2, and max tokens 500-10000.</div> : null}
 
           <div className="mt-4 grid gap-3 md:grid-cols-4">
             <label className="block text-sm md:col-span-2">
@@ -307,7 +307,7 @@ export function StoreVisitAiDebugClient({
               <input
                 type="number"
                 min="500"
-                max="6000"
+                max="10000"
                 step="100"
                 value={maxTokens}
                 onChange={(event) => {

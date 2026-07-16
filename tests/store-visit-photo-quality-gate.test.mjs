@@ -3,6 +3,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 const storeVisitAi = readFileSync("src/lib/store-visit-ai.ts", "utf8");
+const storeVisitAiConfig = readFileSync("src/lib/store-visit-ai-config.ts", "utf8");
+const storeVisitAiDebugClient = readFileSync("src/components/store-visit-ai-debug-client.tsx", "utf8");
 const storeVisitAiDebug = readFileSync("src/lib/store-visit-ai-debug.ts", "utf8");
 const storeVisitH5 = readFileSync("src/components/store-visit-h5.tsx", "utf8");
 const storeVisitDetailH5 = readFileSync("src/components/store-visit-detail-h5.tsx", "utf8");
@@ -23,7 +25,7 @@ test("price image prompt uses a majority-readable photo quality gate without add
   assert.doesNotMatch(storeVisitAi, /at least one product-price relationship is visually reliable/);
   assert.doesNotMatch(storeVisitAi, /long side-angle shelf shot/i);
   assert.doesNotMatch(storeVisitAi, /OCR|optical character recognition|precheck/i);
-  assert.doesNotMatch(storeVisitAi, /\/api\/.*precheck|photo-quality|quality-gate/i);
+  assert.doesNotMatch(storeVisitAi, /\/api\/.*precheck|quality-gate/i);
 });
 
 test("price image prompt scopes promotion-card titles and handwritten evidence to the same visual section", () => {
@@ -42,16 +44,18 @@ test("price image prompt requires exact title and Size-Pcs cell verification for
   assert.match(storeVisitAi, /row_anchor must include both values/i);
   assert.match(storeVisitAi, /S\|38/i);
   assert.match(storeVisitAi, /preserve the exact visible product-family title/i);
-  assert.match(storeVisitAi, /do not replace it with a generic product label/i);
+  assert.match(storeVisitAi, /never substitute a value from another row, a computed value, a repeated pattern, or a plausible-looking digit/i);
   assert.match(storeVisitAi, /visually re-read every output cell/i);
-  assert.match(storeVisitAi, /Do not substitute a plausible-looking digit or price/i);
 });
 
 test("price image prompt is evidence-only and does not ask vision to output business price fields", () => {
   assert.match(storeVisitAi, /PRIMARY PRINCIPLE/i);
   assert.match(storeVisitAi, /evidence extractor, not a pricing engine/i);
   assert.match(storeVisitAi, /must never perform business reasoning, promotion selection, price reconciliation, value propagation, or price calculation/i);
-  assert.match(storeVisitAi, /Evidence Completeness is NOT required/i);
+  assert.match(storeVisitAi, /SECTION DISCOVERY AND CHECKLIST/i);
+  assert.match(storeVisitAi, /Do not begin row extraction until no additional visible section title can be found/i);
+  assert.match(storeVisitAi, /SECTION COMPLETENESS CHECK/i);
+  assert.match(storeVisitAi, /If a discovered section produced zero rows, re-inspect that section before finishing/i);
   assert.doesNotMatch(storeVisitAi, /BUSINESS FIELD COMPATIBILITY/i);
   assert.doesNotMatch(storeVisitAi, /"list_price_text":"129\.900"/);
   assert.doesNotMatch(storeVisitAi, /"package_price_text":"119\.900"/);
@@ -63,11 +67,32 @@ test("price image prompt is evidence-only and does not ask vision to output busi
   assert.doesNotMatch(storeVisitAi, /"visible_price_per_piece_idr":2725/);
 });
 
+test("price image prompt scans independent shelf tags and preserves same-tag promotion evidence", () => {
+  assert.match(storeVisitAi, /PRICE_TAG COVERAGE SCAN/i);
+  assert.match(storeVisitAi, /left to right, then top to bottom/i);
+  assert.match(storeVisitAi, /every readable individual price tag/i);
+  assert.match(storeVisitAi, /title printed on the tag itself is the primary product identity/i);
+  assert.match(storeVisitAi, /clear one-to-one shelf-position relationship/i);
+  assert.match(storeVisitAi, /must not guess or borrow a neighboring product/i);
+  assert.match(storeVisitAi, /crossed-out price on the same tag is normal_package_text/i);
+  assert.match(storeVisitAi, /prominent promotion price on that same tag is promo_package_text/i);
+});
+
+test("price image prompt discovers sections before exhaustive row extraction", () => {
+  assert.match(storeVisitAi, /SECTION DISCOVERY AND CHECKLIST/i);
+  assert.match(storeVisitAi, /visually inspect the entire primary board from its top edge to its bottom edge/i);
+  assert.match(storeVisitAi, /Internally build a complete section checklist before extracting rows/i);
+  assert.match(storeVisitAi, /SECTION ROW COVERAGE/i);
+  assert.match(storeVisitAi, /inspect every visible horizontal row exactly once/i);
+  assert.match(storeVisitAi, /Never skip a readable row merely because nearby rows were already extracted/i);
+  assert.match(storeVisitAi, /Continue searching below the last extracted row for additional section titles until reaching the bottom of the board/i);
+});
+
 test("price image prompt forbids calculated or pattern-filled board prices", () => {
   assert.match(storeVisitAi, /CELL TRANSCRIPTION RULE/i);
   assert.match(storeVisitAi, /copy each visible cell exactly as printed or handwritten in that same row/i);
   assert.match(storeVisitAi, /Do not calculate, infer, complete, average, normalize, or propagate prices across rows/i);
-  assert.match(storeVisitAi, /never replace it with a value from another row, a computed value, or a repeated pattern/i);
+  assert.match(storeVisitAi, /never substitute a value from another row, a computed value, a repeated pattern, or a plausible-looking digit/i);
   assert.match(storeVisitAi, /Never derive HARGA\/PCS by dividing HARGA\/PACK by PCS/i);
 });
 
@@ -118,8 +143,13 @@ test("price image prompt keeps promo package and promo per-piece evidence togeth
   assert.match(storeVisitAi, /If the evidence field is empty, its confidence must be null/i);
 });
 
-test("price image analysis has enough token budget for row-level evidence fields", () => {
-  assert.match(storeVisitAi, /maxTokens: Math\.min\(config\.max_tokens, 6000\)/);
+test("price image analysis supports 10000 output tokens for exhaustive price evidence", () => {
+  assert.match(storeVisitAi, /max_tokens: 10000/);
+  assert.match(storeVisitAi, /max_tokens: Number\.isFinite\(maxTokens\)[\s\S]*?, 10000\)/);
+  assert.match(storeVisitAi, /maxTokens: Math\.min\(config\.max_tokens, 10000\)/);
+  assert.match(storeVisitAiConfig, /Max tokens must be between 500 and 10000/);
+  assert.match(storeVisitAiDebugClient, /parsedMaxTokens <= 10000/);
+  assert.match(storeVisitAiDebugClient, /max="10000"/);
   assert.doesNotMatch(storeVisitAi, /maxTokens: Math\.min\(config\.max_tokens, 2500\)/);
 });
 
