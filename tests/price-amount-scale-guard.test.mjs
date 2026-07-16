@@ -226,7 +226,7 @@ test("store visit price image prompt requires complete scanning without inventin
 
   assert.match(promptSource, /PRIMARY PRINCIPLE/);
   assert.match(promptSource, /BLANK PRINCIPLE/);
-  assert.match(storeVisitAiSource, /price-evidence-v1\.8-section-discovery-completeness/);
+  assert.match(storeVisitAiSource, /price-evidence-v1\.9-capture-quality-field-risk/);
   assert.match(promptSource, /SECTION DISCOVERY AND CHECKLIST/);
   assert.match(promptSource, /Do not begin row extraction until no additional visible section title can be found/i);
   assert.match(promptSource, /SECTION COMPLETENESS CHECK/);

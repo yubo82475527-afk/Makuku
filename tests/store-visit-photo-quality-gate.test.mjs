@@ -11,17 +11,21 @@ const storeVisitDetailH5 = readFileSync("src/components/store-visit-detail-h5.ts
 const storeVisitsListH5 = readFileSync("src/components/store-visits-list-h5.tsx", "utf8");
 const typesFile = readFileSync("src/lib/types.ts", "utf8");
 
-test("price image prompt uses a majority-readable photo quality gate without adding OCR precheck calls", () => {
+test("price image prompt separates strict capture quality from handwritten field certainty without adding OCR precheck calls", () => {
   assert.match(storeVisitAi, /photo_quality/);
   assert.match(storeVisitAi, /pass\|retake_required/);
   assert.match(storeVisitAi, /rows must be \[\]/i);
   assert.match(storeVisitAi, /PHOTO QUALITY:/);
   assert.match(storeVisitAi, /primary price board, price tag, or promotion card/i);
-  assert.match(storeVisitAi, /clear majority of visible rows are readable/i);
+  assert.match(storeVisitAi, /strict capture suitability, not individual field certainty/i);
+  assert.match(storeVisitAi, /physical capture failure[\s\S]*prevents inspection of the clear majority of visible rows/i);
   assert.match(storeVisitAi, /One or two isolated readable rows are not enough/i);
   assert.match(storeVisitAi, /other distant, cropped, or unrelated boards/i);
   assert.match(storeVisitAi, /actual effect on digit readability and same-row binding/i);
   assert.match(storeVisitAi, /Do not treat handwriting or strike-throughs as price_obstructed/i);
+  assert.match(storeVisitAi, /Uncertain handwritten digits in individual cells must not trigger retake_required or price_unclear/i);
+  assert.match(storeVisitAi, /leave the field empty and add a top-level PARSE_RISK warning/i);
+  assert.match(storeVisitAi, /does not by itself make the photo retake_required/i);
   assert.doesNotMatch(storeVisitAi, /at least one product-price relationship is visually reliable/);
   assert.doesNotMatch(storeVisitAi, /long side-angle shelf shot/i);
   assert.doesNotMatch(storeVisitAi, /OCR|optical character recognition|precheck/i);
@@ -36,6 +40,19 @@ test("price image prompt scopes promotion-card titles and handwritten evidence t
   assert.match(storeVisitAi, /crossed-out handwritten price in the same row is the original\/list price/i);
   assert.match(storeVisitAi, /following visible price in that same row is the promotion price/i);
   assert.match(storeVisitAi, /Do not require retake because a price is handwritten or crossed out/i);
+});
+
+test("price image prompt retains retake for majority physical capture failures", () => {
+  assert.match(storeVisitAi, /genuine physical capture failure such as blur, insufficient scale, cropping, glare, obstruction, or perspective/i);
+  assert.match(storeVisitAi, /prevents inspection of the clear majority of visible rows/i);
+  assert.match(storeVisitAi, /must be retake_required/i);
+  assert.match(storeVisitAi, /price_unclear only when a physical capture failure makes the price cells uninspectable for the clear majority/i);
+});
+
+test("price image prompt preserves field uncertainty through supported top-level warnings", () => {
+  assert.match(storeVisitAi, /If no same-row price field can be directly transcribed, do not invent a price row/i);
+  assert.match(storeVisitAi, /top-level warnings may contain only PARSE_RISK/i);
+  assert.match(storeVisitAi, /"warnings":\[\{"type":"PARSE_RISK","message":"string"}\]/);
 });
 
 test("price image prompt requires exact title and Size-Pcs cell verification for handwritten boards", () => {
@@ -100,7 +117,7 @@ test("price image prompt forces same-row Pcs bonus extraction instead of truncat
   assert.match(storeVisitAi, /read the original Pcs cell from the SAME row/i);
   assert.match(storeVisitAi, /60\+6 -> 66/i);
   assert.match(storeVisitAi, /80\+10 -> 90/i);
-  assert.match(storeVisitAi, /bonus digits are unreadable, piece_count=null and add PARSE_RISK/i);
+  assert.match(storeVisitAi, /bonus digits are unreadable, piece_count=null and add a top-level PARSE_RISK warning/i);
 });
 
 test("price image prompt requires row-level evidence and Indonesian handwritten 7 handling", () => {
@@ -131,7 +148,7 @@ test("price image prompt retains the complete compact JSON output contract", () 
   assert.match(storeVisitAi, /"source_type":"PRICE_BOARD_ROW\|PRICE_TAG"/);
   assert.match(storeVisitAi, /"normal_package_price_confidence":0\.9/);
   assert.match(storeVisitAi, /"product_identity_confidence":0\.9/);
-  assert.match(storeVisitAi, /"warnings":\[\]/);
+  assert.match(storeVisitAi, /"warnings":\[\{"type":"PARSE_RISK","message":"string"}\]/);
 });
 
 test("price image prompt keeps promo package and promo per-piece evidence together", () => {
