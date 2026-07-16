@@ -1073,6 +1073,7 @@ export type StoreVisitAiJobItem = {
   worker_id: string | null;
   last_heartbeat_at: string | null;
   lease_expires_at: string | null;
+  next_attempt_at: string | null;
   error_message: string | null;
   result_summary: Record<string, unknown>;
   created_at: string;

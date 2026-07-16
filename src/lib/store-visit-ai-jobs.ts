@@ -1,14 +1,18 @@
 import { revalidatePath } from "next/cache";
-import { runStoreVisitAnalysis } from "@/lib/store-visit-analysis";
-import { refreshStoreVisitStoredPriceState } from "@/lib/store-visit-image-maintenance";
+import { analyzeStoreVisitPriceImage } from "@/lib/store-visit-ai";
+import {
+  invalidateStoreVisitImagePriceImpact,
+  refreshStoreVisitStoredPriceState,
+} from "@/lib/store-visit-image-maintenance";
 import { syncStoreVisitPriceCandidatesFromImages } from "@/lib/store-visit-price-candidate-sync";
-import { triggerPriceQualityGateRunner } from "@/lib/price-quality-gate-jobs";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import type {
+  OfflineImageType,
   StoreVisitAiJob,
   StoreVisitAiJobItem,
   StoreVisitAiJobSummary,
   StoreVisitAiJobType,
+  StoreVisitImageCategory,
 } from "@/lib/types";
 
 type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceClient>;
@@ -18,10 +22,11 @@ type StoreVisitAiFinalizeResult = "applied" | "already_finalized" | "ownership_l
 const activeJobStatuses = ["queued", "running"] as const;
 const terminalItemStatuses = ["succeeded", "retake_required", "failed"] as const;
 const priceImageTypes = ["own_shelf", "competitor_shelf"] as const;
-const defaultMaxConcurrency = 8;
-const defaultMaxItemsPerRun = 4;
-const defaultMaxRunDurationMs = 240_000;
-const defaultPendingEnqueueLimit = 100;
+const defaultMaxConcurrency = 20;
+const defaultWorkersPerRun = 5;
+const defaultMaxAttempts = 3;
+const defaultMaxRunDurationMs = 60_000;
+const defaultPendingEnqueueLimit = 20;
 const minimumInitialAnalysisImageAgeMs = 60_000;
 
 function nowIso() {
@@ -33,17 +38,22 @@ function cleanIds(values: string[]) {
 }
 
 function maxConcurrency() {
-  const value = Number.parseInt(String(process.env.MAX_STORE_VISIT_AI_CONCURRENCY ?? ""), 10);
+  const value = Number.parseInt(String(process.env.STORE_VISIT_AI_GLOBAL_CONCURRENCY ?? process.env.MAX_STORE_VISIT_AI_CONCURRENCY ?? ""), 10);
   return Number.isFinite(value) && value > 0 ? value : defaultMaxConcurrency;
 }
 
-function maxItemsPerRun() {
-  const value = Number.parseInt(String(process.env.MAX_STORE_VISIT_AI_ITEMS_PER_RUN ?? ""), 10);
-  return Number.isFinite(value) && value > 0 ? value : defaultMaxItemsPerRun;
+function workersPerRun() {
+  const value = Number.parseInt(String(process.env.STORE_VISIT_AI_WORKERS_PER_RUN ?? process.env.MAX_STORE_VISIT_AI_ITEMS_PER_RUN ?? ""), 10);
+  return Number.isFinite(value) && value > 0 ? value : defaultWorkersPerRun;
+}
+
+function maxAttempts() {
+  const value = Number.parseInt(String(process.env.STORE_VISIT_AI_MAX_ATTEMPTS ?? ""), 10);
+  return Number.isFinite(value) && value > 0 ? value : defaultMaxAttempts;
 }
 
 function maxRunDurationMs() {
-  const value = Number.parseInt(String(process.env.MAX_STORE_VISIT_AI_RUN_BUDGET_MS ?? ""), 10);
+  const value = Number.parseInt(String(process.env.STORE_VISIT_AI_RUN_BUDGET_MS ?? process.env.MAX_STORE_VISIT_AI_RUN_BUDGET_MS ?? ""), 10);
   return Number.isFinite(value) && value > 0 ? value : defaultMaxRunDurationMs;
 }
 
@@ -64,6 +74,65 @@ function revalidateVisitPaths(visitId: string) {
   revalidatePath(`/zh/mobile/offline-capture/${visitId}`);
   revalidatePath("/en/mobile/offline-capture");
   revalidatePath(`/en/mobile/offline-capture/${visitId}`);
+}
+
+function fromOfflineImageType(imageType: OfflineImageType | string | null | undefined): StoreVisitImageCategory {
+  if (imageType === "own_shelf") return "makuku_shelf";
+  if (imageType === "competitor_shelf") return "competitor_shelf";
+  return "storefront";
+}
+
+function retryDelaySeconds(attemptCount: number) {
+  return Math.min(60 * 2 ** Math.max(0, attemptCount - 1), 600);
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Unknown AI analysis error";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function retryableAnalysisError(error: unknown) {
+  const record = isRecord(error) ? error : {};
+  const httpStatus = typeof record.httpStatus === "number"
+    ? record.httpStatus
+    : typeof record.status === "number"
+      ? record.status
+      : null;
+  if (httpStatus === 429 || httpStatus === 408 || (httpStatus != null && httpStatus >= 500)) return true;
+  const message = errorMessage(error).toLowerCase();
+  return message.includes("timeout")
+    || message.includes("timed out")
+    || message.includes("rate limit")
+    || message.includes("too many requests")
+    || message.includes("temporarily unavailable");
+}
+
+function metadataResponseId(metadata: Record<string, unknown> | null | undefined) {
+  return typeof metadata?.response_id === "string"
+    ? metadata.response_id
+    : typeof metadata?.provider_request_id === "string"
+      ? metadata.provider_request_id
+      : null;
+}
+
+function metadataHasUsage(metadata: Record<string, unknown> | null | undefined) {
+  return metadata?.usage != null;
+}
+
+function analysisMetadata(metadata: Record<string, unknown>) {
+  return {
+    model: metadata.model ?? null,
+    api_family: metadata.api_family ?? null,
+    request_url: metadata.request_url ?? null,
+    response_id: metadata.response_id ?? null,
+    provider_request_id: metadata.provider_request_id ?? null,
+    attempt_count: metadata.attempt_count ?? null,
+    fallback_used: metadata.fallback_used ?? null,
+    usage: metadata.usage ?? null,
+  };
 }
 
 export function summarizeStoreVisitAiJob(
@@ -339,12 +408,6 @@ async function refreshJobCounts(supabase: SupabaseServiceClient, jobId: string) 
     .select("*")
     .single();
   if (updateError || !job) throw new Error(updateError?.message ?? "Failed to refresh store visit AI job counts");
-  if (completed) {
-    await syncStoreVisitPriceCandidatesFromImages({
-      visitId: String((job as StoreVisitAiJob).visit_id),
-      supabase,
-    });
-  }
   return { job: job as StoreVisitAiJob, items: (items ?? []) as StoreVisitAiJobItem[] };
 }
 
@@ -428,39 +491,165 @@ async function processItem(input: {
     resultSummary: Record<string, unknown>;
   } | null = null;
   let analysisFailure: string | null = null;
+  let failureValue: unknown = null;
 
   try {
-    const isRerun = job.job_type === "single_image_reanalysis" || job.job_type === "full_visit_reanalysis";
-    const result = await runStoreVisitAnalysis({
+    const { data: image, error: imageError } = await supabase
+      .from("offline_visit_images")
+      .select("id,visit_id,image_path,image_type,file_name")
+      .eq("visit_id", job.visit_id)
+      .eq("id", item.source_image_id)
+      .single();
+    if (imageError || !image) throw new Error(imageError?.message ?? "Image not found for AI job item.");
+
+    const { data: visit, error: visitError } = await supabase
+      .from("offline_store_visits")
+      .select("id,store_name,region,province,city,city_name,district,channel,channel_type,promoter,uploader_name,visit_date")
+      .eq("id", job.visit_id)
+      .single();
+    if (visitError || !visit) throw new Error(visitError?.message ?? "Visit not found for AI job item.");
+
+    const imagePath = String((image as { image_path?: unknown }).image_path ?? "").trim();
+    if (!imagePath) throw new Error("Image path is missing for AI analysis.");
+
+    const { data: signed, error: signedError } = await supabase.storage
+      .from("offline-visit-images")
+      .createSignedUrl(imagePath, 60 * 10);
+    if (signedError || !signed?.signedUrl) throw new Error(signedError?.message ?? "Unable to create signed image URL.");
+
+    const typedVisit = visit as {
+      store_name?: string | null;
+      region?: string | null;
+      province?: string | null;
+      city?: string | null;
+      city_name?: string | null;
+      district?: string | null;
+      channel?: string | null;
+      channel_type?: string | null;
+      promoter?: string | null;
+      uploader_name?: string | null;
+      visit_date?: string | null;
+    };
+    const structuredRegion = [typedVisit.province, typedVisit.city_name, typedVisit.district].filter(Boolean).join(" / ");
+    const result = await analyzeStoreVisitPriceImage({
       visitId: job.visit_id,
-      affectedImageIds: [item.source_image_id],
-      invalidateAffectedImageSnapshots: isRerun,
-      forceAnalyzeImageIds: [item.source_image_id],
-    });
-    const syncResult = await syncStoreVisitPriceCandidatesFromImages({
-      visitId: job.visit_id,
-      imageIds: [item.source_image_id],
-      supabase,
+      imageId: item.source_image_id,
+      imageUrl: signed.signedUrl,
+      imageCategory: fromOfflineImageType((image as { image_type?: OfflineImageType | string | null }).image_type),
+      storeName: typedVisit.store_name ?? "",
+      region: typedVisit.region ?? (structuredRegion || (typedVisit.city ?? "")),
+      channel: typedVisit.channel ?? typedVisit.channel_type ?? "",
+      promoter: typedVisit.promoter ?? typedVisit.uploader_name ?? "",
+      visitDate: typedVisit.visit_date ?? "",
     });
 
-    const retake = result.aiAnalysis.price_image_retake_required.find((entry) => entry.imageId === item.source_image_id);
-    const forcedResult = result.forcedImageResults.find((entry) => entry.imageId === item.source_image_id);
+    const resultMetadata = isRecord(result.metadata) ? result.metadata : {};
+    const visionResult = {
+      ...result.normalized,
+      analysis_metadata: {
+        ...(isRecord(result.normalized.analysis_metadata) ? result.normalized.analysis_metadata : {}),
+        ...analysisMetadata(resultMetadata),
+      },
+    };
+
+    const { error: imageUpdateError } = await supabase
+      .from("offline_visit_images")
+      .update({
+        analysis_status: "analyzed",
+        vision_result: visionResult,
+        analysis_error: null,
+        error_message: null,
+      })
+      .eq("visit_id", job.visit_id)
+      .eq("id", item.source_image_id);
+    if (imageUpdateError) throw new Error(imageUpdateError.message);
+
+    const retakeRequired = isRetakeRequiredVisionResult(visionResult);
+    let replacedCandidateCount = 0;
+    let deletedSnapshotCount = 0;
+    let syncedCandidateCount = 0;
+    let eligibleCandidateRowCount = 0;
+
+    if (!retakeRequired) {
+      const invalidation = await invalidateStoreVisitImagePriceImpact({
+        visitId: job.visit_id,
+        imageIds: [item.source_image_id],
+        lifecycleStatus: "reanalyzed",
+        rejectionReason: "AI image analysis replaced the previous price result.",
+        supabase,
+      });
+      replacedCandidateCount = invalidation.rejectedCandidateCount;
+      deletedSnapshotCount = invalidation.deletedSnapshotCount;
+
+      const syncResult = await syncStoreVisitPriceCandidatesFromImages({
+        visitId: job.visit_id,
+        imageIds: [item.source_image_id],
+        supabase,
+      });
+      syncedCandidateCount = syncResult.inserted_count;
+      eligibleCandidateRowCount = syncResult.eligible_row_count;
+    }
+
     completed = {
-      outcome: retake ? "retake_required" : "succeeded",
+      outcome: retakeRequired ? "retake_required" : "succeeded",
       resultSummary: {
-        response_id: forcedResult?.responseId ?? null,
-        usage_present: Boolean(forcedResult?.usagePresent),
-        row_count: forcedResult?.rowCount ?? 0,
-        replaced_candidate_count: result.replacedCandidateCount,
-        deleted_snapshot_count: result.deletedSnapshotCount,
-        synced_candidate_count: syncResult.inserted_count,
-        eligible_candidate_row_count: syncResult.eligible_row_count,
-        retake_reasons: retake?.reasons ?? null,
-        retake_message: retake?.message ?? null,
+        response_id: metadataResponseId(resultMetadata),
+        usage_present: metadataHasUsage(resultMetadata),
+        row_count: Array.isArray(visionResult.rows) ? visionResult.rows.length : 0,
+        replaced_candidate_count: replacedCandidateCount,
+        deleted_snapshot_count: deletedSnapshotCount,
+        synced_candidate_count: syncedCandidateCount,
+        eligible_candidate_row_count: eligibleCandidateRowCount,
+        retake_reasons: isRecord(visionResult.photo_quality) ? visionResult.photo_quality.reasons ?? null : null,
+        retake_message: isRecord(visionResult.photo_quality) ? visionResult.photo_quality.message ?? null : null,
       },
     };
   } catch (error) {
-    analysisFailure = error instanceof Error ? error.message : "Unknown error";
+    failureValue = error;
+    analysisFailure = errorMessage(error);
+  }
+
+  if (analysisFailure && retryableAnalysisError(failureValue) && item.attempt_count < maxAttempts()) {
+    const nextAttemptAt = new Date(Date.now() + retryDelaySeconds(item.attempt_count) * 1000).toISOString();
+    const { error: retryError } = await supabase
+      .from("store_visit_ai_job_items")
+      .update({
+        status: "queued",
+        worker_id: null,
+        lease_expires_at: null,
+        next_attempt_at: nextAttemptAt,
+        error_message: analysisFailure,
+        last_heartbeat_at: nowIso(),
+        updated_at: nowIso(),
+      })
+      .eq("id", item.id)
+      .eq("worker_id", item.worker_id);
+    if (retryError) throw new Error(retryError.message);
+
+    await supabase
+      .from("offline_visit_images")
+      .update({
+        analysis_status: "pending",
+        analysis_error: analysisFailure,
+        error_message: analysisFailure,
+      })
+      .eq("visit_id", job.visit_id)
+      .eq("id", item.source_image_id);
+
+    await refreshStoreVisitStoredPriceState({
+      visitId: job.visit_id,
+      supabase,
+    });
+    console.warn("[store-visit-ai-jobs] item analysis queued for retry", {
+      job_id: job.id,
+      job_type: job.job_type,
+      visit_id: job.visit_id,
+      image_id: item.source_image_id,
+      attempt_count: item.attempt_count,
+      next_attempt_at: nextAttemptAt,
+      error: analysisFailure,
+    });
+    return;
   }
 
   const outcome: StoreVisitAiFinalizeOutcome = analysisFailure ? "failed" : completed!.outcome;
@@ -522,6 +711,11 @@ async function processItem(input: {
     });
     return;
   }
+
+  await refreshStoreVisitStoredPriceState({
+    visitId: job.visit_id,
+    supabase,
+  });
 
   console.info("[store-visit-ai-jobs] item completed", {
     job_id: job.id,
@@ -592,36 +786,42 @@ export async function runStoreVisitAiJob(input: {
   let processed = 0;
   let lastJob: StoreVisitAiJob | null = null;
   let lastItems: StoreVisitAiJobItem[] = [];
+  const workerCount = workersPerRun();
 
-  while (processed < maxItemsPerRun() && (Date.now() - startedAt) < maxRunDurationMs()) {
-    const claimed = await claimNextItem({ supabase, jobId: input.jobId });
-    if (!claimed) break;
+  const worker = async () => {
+    while (Date.now() - startedAt < maxRunDurationMs()) {
+      const claimed = await claimNextItem({ supabase, jobId: input.jobId });
+      if (!claimed) break;
 
-    await processItem({ supabase, job: claimed.job, item: claimed.item });
-    const refreshed = await refreshJobCounts(supabase, claimed.job.id);
-    revalidateVisitPaths(claimed.job.visit_id);
+      await processItem({ supabase, job: claimed.job, item: claimed.item });
+      const refreshed = await refreshJobCounts(supabase, claimed.job.id);
+      revalidateVisitPaths(claimed.job.visit_id);
 
-    processed += 1;
-    lastJob = refreshed.job;
-    lastItems = refreshed.items;
+      processed += 1;
+      lastJob = refreshed.job;
+      lastItems = refreshed.items;
 
-    if (input.jobId && refreshed.job.remaining_count === 0) break;
-  }
+      if (input.jobId && refreshed.job.remaining_count === 0) break;
+    }
+  };
+
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  const finishedJob = lastJob as StoreVisitAiJob | null;
 
   console.info("[store-visit-ai-jobs] runner completed", {
     requested_job_id: input.jobId ?? null,
     processed,
     enqueued_count: enqueueResult.enqueued_count,
     skipped_count: enqueueResult.skipped_count,
-    last_job_id: lastJob?.id ?? null,
-    last_job_remaining_count: lastJob?.remaining_count ?? 0,
+    last_job_id: finishedJob?.id ?? null,
+    last_job_remaining_count: finishedJob?.remaining_count ?? 0,
   });
 
   return {
     processed,
-    job: lastJob,
+    job: finishedJob,
     items: lastItems,
-    remaining_count: lastJob?.remaining_count ?? 0,
+    remaining_count: finishedJob?.remaining_count ?? 0,
     enqueued_count: enqueueResult.enqueued_count,
     skipped_count: enqueueResult.skipped_count,
   };
@@ -633,10 +833,9 @@ export async function triggerStoreVisitAiJobRunner(input: {
 }) {
   const secret = String(process.env.CRON_SECRET ?? "").trim();
   if (!secret) {
-    const result = await runStoreVisitAiJob({ jobId: input.jobId });
-    if (result.processed > 0) {
-      await triggerPriceQualityGateRunner({ requestUrl: input.requestUrl });
-    }
+    console.error("[store-visit-ai-jobs] missing CRON_SECRET; queued AI job was not triggered inline", {
+      job_id: input.jobId ?? null,
+    });
     return;
   }
 

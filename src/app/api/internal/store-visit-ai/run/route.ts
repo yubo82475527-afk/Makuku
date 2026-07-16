@@ -33,8 +33,9 @@ async function requireCronSecretOrAdmin(request: Request) {
 
 async function runAndRespond(request: Request, jobId?: string | null) {
   const result = await runStoreVisitAiJob({ jobId });
-  if (result.job && result.remaining_count > 0) {
-    after(() => triggerStoreVisitAiJobRunner({ requestUrl: request.url, jobId: result.job?.id }));
+  const unfinishedJob = result.job as { id: string } | null;
+  if (unfinishedJob && result.remaining_count > 0) {
+    after(() => triggerStoreVisitAiJobRunner({ requestUrl: request.url, jobId: unfinishedJob.id }));
   } else if (!jobId && result.processed > 0) {
     after(() => triggerStoreVisitAiJobRunner({ requestUrl: request.url }));
   }

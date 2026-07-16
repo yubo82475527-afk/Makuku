@@ -70,6 +70,29 @@ test("store visit AI jobs reconcile persisted price rows into candidates after i
   assert.match(storeVisitAiJobs, /eligible_candidate_row_count/);
 });
 
+test("store visit AI runner processes one claimed image through the full candidate pipeline", () => {
+  assert.match(storeVisitAiJobs, /analyzeStoreVisitPriceImage/);
+  assert.match(storeVisitAiJobs, /invalidateStoreVisitImagePriceImpact/);
+  assert.match(storeVisitAiJobs, /syncStoreVisitPriceCandidatesFromImages\(\{[\s\S]*imageIds: \[item\.source_image_id\]/);
+  assert.match(storeVisitAiJobs, /refreshStoreVisitStoredPriceState/);
+  assert.doesNotMatch(storeVisitAiJobs, /runStoreVisitAnalysis/);
+});
+
+test("store visit AI runner uses a worker pool that refills slots after each image", () => {
+  assert.match(storeVisitAiJobs, /function workersPerRun/);
+  assert.match(storeVisitAiJobs, /const worker = async \(\) => \{[\s\S]*while \(Date\.now\(\) - startedAt < maxRunDurationMs\(\)\)/);
+  assert.match(storeVisitAiJobs, /await Promise\.all\(Array\.from\(\{ length: workerCount \}, \(\) => worker\(\)\)\)/);
+  assert.doesNotMatch(storeVisitAiJobs, /while \(processed < maxItemsPerRun\(\)/);
+});
+
+test("store visit AI claim RPC is FIFO and does not block same-visit image concurrency", () => {
+  const queueMigration = readMaybe("supabase/migrations/202607160001_store_visit_ai_image_item_queue.sql");
+  assert.match(queueMigration, /next_attempt_at timestamptz/i);
+  assert.match(queueMigration, /job\.created_at asc,\s*item\.position asc,\s*item\.created_at asc/i);
+  assert.match(queueMigration, /item\.next_attempt_at is null or item\.next_attempt_at <= now\(\)/i);
+  assert.doesNotMatch(queueMigration, /processing_job\.visit_id = job\.visit_id/);
+});
+
 test("store visit AI watchdog waits for stable uploads before creating initial jobs", () => {
   assert.match(storeVisitAiJobs, /minimumInitialAnalysisImageAgeMs/);
   assert.match(storeVisitAiJobs, /latestImageCreatedAt/);
@@ -113,7 +136,7 @@ test("image upload API does not block non-replacement uploads because new visit 
 });
 
 test("store visit analysis auto-approves AI price candidates that match the active rule", () => {
-  assert.match(storeVisitAiJobs, /runStoreVisitAnalysis/);
+  assert.match(storeVisitAiRunnerRoute, /triggerPriceQualityGateRunner/);
   assert.match(storeVisitAnalysis, /generateAiPriceCandidates/);
   assert.match(storeVisitAnalysis, /autoApproveAiPriceCandidatesForVisit/);
   assert.match(storeVisitAnalysis, /autoReview/);
@@ -312,7 +335,7 @@ test("store visit price image analysis uses fixed parallelism of 5 inside a visi
 });
 
 test("store visit analysis persists visit-level timing metrics into summary_result", () => {
-  assert.match(storeVisitAiJobs, /runStoreVisitAnalysis/);
+  assert.match(storeVisitAiJobs, /refreshStoreVisitStoredPriceState/);
   assert.match(storeVisitAnalysis, /visitAnalysisStartedAt/);
   assert.match(storeVisitAnalysis, /visit_analysis_duration_ms/);
   assert.match(storeVisitAnalysis, /price_image_parallelism:\s*5/);
@@ -339,25 +362,24 @@ test("single-photo refresh preserves the first whole-visit analysis timing metri
   assert.match(storeVisitAnalysis, /visit_analysis_duration_ms: firstVisitAnalysisDurationMs/);
 });
 
-test("store visit refresh forces target price images to bypass cached vision results", () => {
-  assert.match(storeVisitAiJobs, /forceAnalyzeImageIds:\s*\[item\.source_image_id\]/);
-  assert.match(storeVisitAnalysis, /forceAnalyzeImageIds\?: string\[\]/);
-  assert.match(storeVisitAnalysis, /forceAnalyzeImageIds:\s*input\.forceAnalyzeImageIds/);
-  assert.match(storeVisitAiDebug, /forceAnalyzeImageIds\?: string\[\]/);
-  assert.match(storeVisitAiDebug, /const forceAnalyzeImageIdSet = new Set/);
-  assert.match(storeVisitAiDebug, /const forceAnalyze = forceAnalyzeImageIdSet\.has\(tableImage\.id\)/);
-  assert.match(storeVisitAiDebug, /!forceAnalyze && tableImage\.analysis_status === "analyzed"/);
+test("store visit refresh reruns target images through the image-level AI pipeline", () => {
+  assert.match(storeVisitAiJobs, /analyzeStoreVisitPriceImage\(\{/);
+  assert.match(storeVisitAiJobs, /imageId: item\.source_image_id/);
+  assert.match(storeVisitAiJobs, /vision_result: visionResult/);
+  assert.match(storeVisitAiJobs, /syncStoreVisitPriceCandidatesFromImages\(\{[\s\S]*imageIds: \[item\.source_image_id\]/);
+  assert.doesNotMatch(storeVisitAiJobs, /runStoreVisitAnalysis/);
+  assert.doesNotMatch(storeVisitRefreshRoute, /candidate_sync/);
 });
 
-test("store visit refresh replaces old price impact only after forced AI success", () => {
-  const invalidateIndex = storeVisitAnalysis.indexOf("await invalidateStoreVisitImagePriceImpact");
-  const runAiIndex = storeVisitAnalysis.indexOf("await runStoreVisitAiAnalysisForVisit");
-  const successIdsIndex = storeVisitAnalysis.indexOf("successfulForcedImageIds");
-  assert.ok(runAiIndex >= 0, "analysis should invoke the AI layer");
-  assert.ok(successIdsIndex > runAiIndex, "successful forced image ids should be derived after AI returns");
-  assert.ok(invalidateIndex > successIdsIndex, "old candidates and snapshots should be invalidated after AI succeeds");
+test("store visit refresh replaces old price impact only after image AI success", () => {
+  const invalidateIndex = storeVisitAiJobs.indexOf("await invalidateStoreVisitImagePriceImpact");
+  const runAiIndex = storeVisitAiJobs.indexOf("await analyzeStoreVisitPriceImage");
+  const imageUpdateIndex = storeVisitAiJobs.indexOf("vision_result: visionResult");
+  assert.ok(runAiIndex >= 0, "runner should invoke the image-level AI layer");
+  assert.ok(imageUpdateIndex > runAiIndex, "vision result should be persisted after AI returns");
+  assert.ok(invalidateIndex > imageUpdateIndex, "old candidates and snapshots should be invalidated after AI succeeds");
   assert.equal(
-    storeVisitAnalysis.slice(0, runAiIndex).includes("await invalidateStoreVisitImagePriceImpact"),
+    storeVisitAiJobs.slice(0, runAiIndex).includes("await invalidateStoreVisitImagePriceImpact"),
     false,
     "old candidates and snapshots must not be invalidated before AI returns",
   );
@@ -379,16 +401,19 @@ test("store visit Ai persists AI usage metadata into job item summaries", () => 
 
 test("store visit AI adds durable job routes, atomic RPC claim, and cron sweep", () => {
   const migration = readMaybe("supabase/migrations/202607060001_store_visit_ai_jobs.sql");
+  const queueMigration = readMaybe("supabase/migrations/202607160001_store_visit_ai_image_item_queue.sql");
   assert.match(storeVisitAiJobs, /store_visit_ai_jobs/);
   assert.match(storeVisitAiJobs, /store_visit_ai_job_items/);
   assert.match(storeVisitAiJobs, /claim_store_visit_ai_job_item/);
   assert.match(storeVisitAiJobs, /enqueuePendingStoreVisitInitialAnalysisJobs/);
-  assert.match(storeVisitAiJobs, /defaultMaxItemsPerRun = 4/);
+  assert.match(storeVisitAiJobs, /defaultWorkersPerRun = 5/);
+  assert.match(storeVisitAiJobs, /defaultMaxConcurrency = 20/);
+  assert.match(storeVisitAiJobs, /defaultPendingEnqueueLimit = 20/);
   assert.match(storeVisitAiJobs, /pendingEnqueueLimit/);
   assert.match(storeVisitAiJobs, /runner completed/);
-  assert.match(migration, /for update skip locked/i);
+  assert.match(queueMigration || migration, /for update(?: of item)? skip locked/i);
   assert.match(migration, /create_store_visit_ai_job/);
-  assert.match(migration, /claim_store_visit_ai_job_item/);
+  assert.match(queueMigration || migration, /claim_store_visit_ai_job_item/);
   assert.match(storeVisitAiJobRoute, /loadStoreVisitAiJob/);
   assert.match(storeVisitAiJobRoute, /summarizeStoreVisitAiJob/);
   assert.match(storeVisitAiRunnerRoute, /runStoreVisitAiJob/);
@@ -451,11 +476,16 @@ test("reanalysis jobs never reconcile from pre-existing image status", () => {
   );
 });
 
-test("local store visit runner triggers price quality without a cron secret", () => {
-  assert.match(storeVisitAiJobs, /import \{ triggerPriceQualityGateRunner \} from "@\/lib\/price-quality-gate-jobs"/);
-  assert.match(
+test("store visit AI trigger never runs the long runner inline without a cron secret", () => {
+  assert.match(storeVisitAiJobs, /CRON_SECRET/);
+  assert.match(storeVisitAiJobs, /missing CRON_SECRET/);
+  assert.doesNotMatch(
     storeVisitAiJobs,
-    /if \(!secret\) \{\s*const result = await runStoreVisitAiJob\(\{ jobId: input\.jobId \}\);\s*if \(result\.processed > 0\) \{\s*await triggerPriceQualityGateRunner\(\{ requestUrl: input\.requestUrl \}\);\s*\}/,
+    /if \(!secret\) \{\s*const result = await runStoreVisitAiJob\(\{ jobId: input\.jobId \}\)/,
+  );
+  assert.doesNotMatch(
+    storeVisitAiJobs,
+    /triggerPriceQualityGateRunner\(\{ requestUrl: input\.requestUrl \}\)/,
   );
 });
 

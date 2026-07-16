@@ -20,6 +20,7 @@ const storeVisitCandidateRoute = readFileSync("src/app/api/store-visit/price-can
 const aiPriceReview = readFileSync("src/lib/ai-price-review.ts", "utf8");
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const typesFile = readFileSync("src/lib/types.ts", "utf8");
+const storeVisitAiJobs = readMaybe("src/lib/store-visit-ai-jobs.ts");
 const materialMasterRoute = readFileSync("src/app/api/material-master/route.ts", "utf8");
 const competitorsRoute = readFileSync("src/app/api/competitors/route.ts", "utf8");
 const storeVisitMatchOptionsRoute = readFileSync("src/app/api/store-visit/match-options/route.ts", "utf8");
@@ -55,9 +56,11 @@ test("mobile store visit detail repairs missing price candidates before returnin
   assert.match(storeVisitRoute, /loadVisitWithFallback/);
 });
 
-test("store visit refresh reconciles candidates for affected images", () => {
-  assert.match(storeVisitRefreshRoute, /syncStoreVisitPriceCandidatesFromImages/);
+test("store visit refresh queues affected images and the runner reconciles candidates after AI success", () => {
+  assert.match(storeVisitRefreshRoute, /createStoreVisitAiJob/);
   assert.match(storeVisitRefreshRoute, /imageIds: refreshImageIds/);
+  assert.doesNotMatch(storeVisitRefreshRoute, /syncStoreVisitPriceCandidatesFromImages/);
+  assert.match(storeVisitAiJobs, /syncStoreVisitPriceCandidatesFromImages\(\{[\s\S]*imageIds: \[item\.source_image_id\]/);
 });
 
 test("ai price candidates enforce active H5 row identity", () => {

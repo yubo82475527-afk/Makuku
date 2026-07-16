@@ -30,6 +30,8 @@ const typesFile = readFileSync("src/lib/types.ts", "utf8");
 const demoData = readFileSync("src/lib/demo-data.ts", "utf8");
 const competitorExcelMigration = readFileSync("supabase/migrations/202606130001_competitor_master_excel_import.sql", "utf8");
 const visitChannelMigration = readFileSync("supabase/migrations/202606170003_relax_store_visit_channel_type.sql", "utf8");
+const visitListIndexMigrationPath = "supabase/migrations/202607160002_store_visit_h5_list_indexes.sql";
+const visitListIndexMigration = existsSync(visitListIndexMigrationPath) ? readFileSync(visitListIndexMigrationPath, "utf8") : "";
 
 test("new H5 store visit requires selecting store master data before capture", () => {
   assert.match(storeVisitH5, /selectedStore/);
@@ -481,6 +483,18 @@ test("store visits list API counts photo rows even when legacy image_urls is emp
 
 test("store visits list API hides draft visits so users only see submitted visits", () => {
   assert.match(storeVisitsApi, /\.neq\("visit_status", "draft"\)/);
+});
+
+test("store visits list API uses index-friendly pagination and separate photo counts", () => {
+  assert.match(storeVisitsApi, /loadVisitPageRows/);
+  assert.match(storeVisitsApi, /loadPhotoCountsByVisitId/);
+  assert.match(storeVisitsApi, /pageFetchLimit/);
+  assert.match(storeVisitsApi, /rows\.slice\(from, from \+ pageSize\)/);
+  assert.match(storeVisitsApi, /hasNext = rows\.length > fetchTo/);
+  assert.doesNotMatch(storeVisitsApi, /\.select\("[^"]*offline_visit_images\(id\)[^"]*", \{ count: "exact" \}\)/);
+  assert.doesNotMatch(storeVisitsApi, /\.or\(`user_id\.eq\.\$\{userId\},uploader_user_id\.eq\.\$\{userId\}`\)/);
+  assert.match(visitListIndexMigration, /idx_offline_store_visits_h5_uploader_created/i);
+  assert.match(visitListIndexMigration, /idx_offline_visit_images_visit_id/i);
 });
 
 test("mobile visit list summarizes parsed brands by sku count", () => {

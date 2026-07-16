@@ -5,6 +5,7 @@ import type { OfflineStoreVisit, StoreVisitAiResult, StoreVisitAiJobSummary } fr
 
 const defaultPageSize = 20;
 const maxPageSize = 50;
+const visitListSelect = "id,store_id,store_name,region,channel,city,province,city_name,district,channel_type,visit_date,visit_status,analysis_status,analysis_error,ai_result,created_at,image_urls";
 
 function readPositiveInt(value: string | null, fallback: number) {
   const parsed = Number(value);
@@ -118,9 +119,9 @@ async function loadLegacyTodayRowsWithoutVisitDate(params: {
   };
 }
 
-function photoCount(visit: OfflineStoreVisit) {
+function photoCount(visit: OfflineStoreVisit, photoCountsByVisitId?: Map<string, number>) {
   const legacyCount = Array.isArray(visit.image_urls) ? visit.image_urls.length : 0;
-  const rowCount = visit.offline_visit_images?.length ?? 0;
+  const rowCount = photoCountsByVisitId?.get(visit.id) ?? visit.offline_visit_images?.length ?? 0;
   return Math.max(legacyCount, rowCount);
 }
 
@@ -129,7 +130,11 @@ function formatVisitRegion(visit: OfflineStoreVisit) {
   return visit.region ?? structured ?? visit.city ?? null;
 }
 
-function serializeVisit(visit: OfflineStoreVisit, activeAiJob?: StoreVisitAiJobSummary | null) {
+function serializeVisit(
+  visit: OfflineStoreVisit,
+  activeAiJob?: StoreVisitAiJobSummary | null,
+  photoCountsByVisitId?: Map<string, number>,
+) {
   const storeSummary = typeof visit.ai_result?.store_summary === "string" ? visit.ai_result.store_summary : null;
   const keySkuPrices = Array.isArray(visit.ai_result?.price_insights?.key_sku_prices)
     ? visit.ai_result.price_insights.key_sku_prices.map((row) => ({
@@ -163,7 +168,7 @@ function serializeVisit(visit: OfflineStoreVisit, activeAiJob?: StoreVisitAiJobS
     analysis_error: visit.analysis_error ?? null,
     ai_result: aiResult,
     image_urls: visit.image_urls ?? [],
-    photo_count: photoCount(visit),
+    photo_count: photoCount(visit, photoCountsByVisitId),
     created_at: visit.created_at,
     active_ai_job: activeAiJob ?? null,
   };
@@ -176,6 +181,69 @@ function filterDemoVisits(userId: string) {
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 }
 
+function dedupeAndSortVisits(rows: OfflineStoreVisit[]) {
+  const byId = new Map<string, OfflineStoreVisit>();
+  for (const row of rows) {
+    if (!byId.has(row.id)) byId.set(row.id, row);
+  }
+  return [...byId.values()].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+}
+
+async function loadVisitPageRows(params: {
+  supabase: ReturnType<typeof createSupabaseServiceClient>;
+  userId: string;
+  from: number;
+  pageSize: number;
+}) {
+  const pageFetchLimit = params.from + params.pageSize + 1;
+  const fetchTo = pageFetchLimit - 1;
+  const uploaderResult = await params.supabase
+    .from("offline_store_visits")
+    .select(visitListSelect)
+    .eq("uploader_user_id", params.userId)
+    .neq("visit_status", "draft")
+    .order("created_at", { ascending: false })
+    .range(0, fetchTo);
+
+  if (uploaderResult.error) return { error: uploaderResult.error, rows: [] as OfflineStoreVisit[] };
+
+  const legacyUserResult = await params.supabase
+    .from("offline_store_visits")
+    .select(visitListSelect)
+    .eq("user_id", params.userId)
+    .is("uploader_user_id", null)
+    .neq("visit_status", "draft")
+    .order("created_at", { ascending: false })
+    .range(0, fetchTo);
+
+  const rows = dedupeAndSortVisits([
+    ...((uploaderResult.data ?? []) as OfflineStoreVisit[]),
+    ...(legacyUserResult.error ? [] : ((legacyUserResult.data ?? []) as OfflineStoreVisit[])),
+  ]);
+
+  return { error: null, rows };
+}
+
+async function loadPhotoCountsByVisitId(params: {
+  supabase: ReturnType<typeof createSupabaseServiceClient>;
+  visitIds: string[];
+}) {
+  if (params.visitIds.length === 0) return new Map<string, number>();
+  const { data, error } = await params.supabase
+    .from("offline_visit_images")
+    .select("visit_id")
+    .in("visit_id", params.visitIds);
+  if (error) return new Map<string, number>();
+
+  const counts = new Map<string, number>();
+  for (const row of data ?? []) {
+    const visitId = String((row as { visit_id?: unknown }).visit_id ?? "");
+    if (!visitId) continue;
+    counts.set(visitId, (counts.get(visitId) ?? 0) + 1);
+  }
+  return counts;
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -183,7 +251,6 @@ export async function GET(request: Request) {
     const page = readPositiveInt(searchParams.get("page"), 1);
     const pageSize = Math.min(readPositiveInt(searchParams.get("page_size"), defaultPageSize), maxPageSize);
     const from = (page - 1) * pageSize;
-    const fetchTo = from + pageSize;
 
     if (!userId) {
       return Response.json({ error: "user_id is required" }, { status: 400 });
@@ -209,23 +276,12 @@ export async function GET(request: Request) {
     }
 
     const supabase = createSupabaseServiceClient();
-    let visitsResult = await supabase
-      .from("offline_store_visits")
-      .select("id,store_id,store_name,region,channel,city,province,city_name,district,channel_type,visit_date,visit_status,analysis_status,analysis_error,ai_result,created_at,image_urls,offline_visit_images(id)", { count: "exact" })
-      .or(`user_id.eq.${userId},uploader_user_id.eq.${userId}`)
-      .neq("visit_status", "draft")
-      .order("created_at", { ascending: false })
-      .range(from, fetchTo);
-
-    if (visitsResult.error?.message.includes("user_id")) {
-      visitsResult = await supabase
-        .from("offline_store_visits")
-        .select("id,store_id,store_name,region,channel,city,province,city_name,district,channel_type,visit_date,visit_status,analysis_status,analysis_error,ai_result,created_at,image_urls,offline_visit_images(id)", { count: "exact" })
-        .eq("uploader_user_id", userId)
-        .neq("visit_status", "draft")
-        .order("created_at", { ascending: false })
-        .range(from, fetchTo);
-    }
+    const visitsResult = await loadVisitPageRows({
+      supabase,
+      userId,
+      from,
+      pageSize,
+    });
 
     if (visitsResult.error) {
       return Response.json({ error: visitsResult.error.message }, { status: 400 });
@@ -246,20 +302,28 @@ export async function GET(request: Request) {
     });
     const todayRows = [...visitDateRowsResult.rows, ...legacyRowsResult.rows];
 
-    const rows = (visitsResult.data ?? []) as OfflineStoreVisit[];
-    const hasNext = rows.length > pageSize;
-    const pagedRows = hasNext ? rows.slice(0, pageSize) : rows;
-    const activeJobsByVisitId = await loadActiveAiJobsForVisits({
-      supabase,
-      visitIds: pagedRows.map((visit) => visit.id),
-    });
+    const rows = visitsResult.rows;
+    const fetchTo = from + pageSize;
+    const hasNext = rows.length > fetchTo;
+    const pagedRows = rows.slice(from, from + pageSize);
+    const visitIds = pagedRows.map((visit) => visit.id);
+    const [activeJobsByVisitId, photoCountsByVisitId] = await Promise.all([
+      loadActiveAiJobsForVisits({
+        supabase,
+        visitIds,
+      }),
+      loadPhotoCountsByVisitId({
+        supabase,
+        visitIds,
+      }),
+    ]);
 
     return Response.json({
-      visits: pagedRows.map((visit) => serializeVisit(visit, activeJobsByVisitId.get(visit.id) ?? null)),
+      visits: pagedRows.map((visit) => serializeVisit(visit, activeJobsByVisitId.get(visit.id) ?? null, photoCountsByVisitId)),
       pagination: {
         page,
         page_size: pageSize,
-        total: visitsResult.count ?? from + pagedRows.length,
+        total: from + pagedRows.length + (hasNext ? 1 : 0),
         has_next: hasNext,
       },
       today_count: new Set(todayRows.map(storeDedupKey)).size,

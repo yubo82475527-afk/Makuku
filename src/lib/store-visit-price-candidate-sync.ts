@@ -75,6 +75,8 @@ function rowKey(imageId: string | null | undefined, rowIndex: number | null | un
   return `${imageId ?? ""}:${rowIndex ?? ""}`;
 }
 
+const inactiveLifecycleStatuses = new Set(["deleted", "replaced", "reanalyzed"]);
+
 export async function syncStoreVisitPriceCandidatesFromImages(input: {
   visitId: string;
   imageIds?: string[];
@@ -111,7 +113,7 @@ export async function syncStoreVisitPriceCandidatesFromImages(input: {
   if (existingError) throw new Error(existingError.message);
 
   const existingRowKeys = new Set((existingRows ?? [])
-    .filter((row) => row.h5_lifecycle_status !== "deleted")
+    .filter((row) => !inactiveLifecycleStatuses.has(String(row.h5_lifecycle_status ?? "")))
     .map((row) => rowKey(
       (row as { source_image_id?: string | null }).source_image_id,
       (row as { source_row_index?: number | null }).source_row_index,

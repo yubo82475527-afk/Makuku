@@ -204,7 +204,8 @@ function isRecoverableAiRouteError(error: unknown) {
     providerErrorCode === "bad_response_status_code" ||
     providerErrorType === "bad_response_status_code" ||
     isJsonResponseFormatCompatibilityError(message) ||
-    normalized.includes("method not allowed")
+    normalized.includes("method not allowed") ||
+    normalized.includes("empty responses payload")
   );
 }
 
