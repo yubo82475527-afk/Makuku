@@ -37,7 +37,7 @@ export function parseIdrPrice(value: string | number | null | undefined) {
 }
 
 const PRICE_EVIDENCE_CONFIDENCE_THRESHOLD = 0.75;
-const MIN_IDR_PRICE_EVIDENCE = 1000;
+const MIN_IDR_PRICE_EVIDENCE = 100;
 
 function isNearPackageAmount(perPieceNetPrice: number, pieceCount: number, packagePrice: number) {
   const reconstructedPackagePrice = perPieceNetPrice * pieceCount;

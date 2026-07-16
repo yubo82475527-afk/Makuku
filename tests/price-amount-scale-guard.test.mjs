@@ -136,6 +136,26 @@ test("price resolver ignores tiny visible per-piece values and derives Indonesia
   assert.equal(result.visiblePricePerPieceIdr, null);
 });
 
+test("price resolver keeps three-digit Indonesian IDR per-piece evidence", () => {
+  const result = priceUtils.reconcilePackagePriceMetrics({
+    listPriceIdr: 10000,
+    packagePriceIdr: 10000,
+    netPriceIdr: 10000,
+    pieceCount: 20,
+    visiblePricePerPieceIdr: 500,
+    packagePriceText: "10.000",
+    netPriceText: "10.000",
+    visiblePricePerPieceText: "500",
+    skuText: "TEST PANTS M20",
+    pieceCountText: "20",
+  });
+
+  assert.equal(result.netPriceIdr, 10000);
+  assert.equal(result.packagePriceIdr, 10000);
+  assert.equal(result.pricePerPieceIdr, 500);
+  assert.equal(result.visiblePricePerPieceIdr, 500);
+});
+
 test("price resolver keeps clear package evidence instead of reconstructing a discounted package from piece values", () => {
   const result = priceUtils.reconcilePackagePriceMetrics({
     listPriceIdr: 197500,
