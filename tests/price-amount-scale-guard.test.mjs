@@ -117,6 +117,25 @@ test("price amount-scale guard leaves legitimate discount prices unchanged", () 
   assert.equal(result.warningMessage, null);
 });
 
+test("price resolver ignores tiny visible per-piece values and derives Indonesian IDR piece price from package price", () => {
+  const result = priceUtils.reconcilePackagePriceMetrics({
+    listPriceIdr: 101700,
+    packagePriceIdr: 101700,
+    netPriceIdr: 101700,
+    pieceCount: 34,
+    visiblePricePerPieceIdr: 3,
+    packagePriceText: "101.700",
+    netPriceText: "101.700",
+    skuText: "MAKUKU SLIM LUXURY SILKY REGULAR (PANTS) L",
+    pieceCountText: "34",
+  });
+
+  assert.equal(result.netPriceIdr, 101700);
+  assert.equal(result.packagePriceIdr, 101700);
+  assert.equal(result.pricePerPieceIdr, 2991.18);
+  assert.equal(result.visiblePricePerPieceIdr, null);
+});
+
 test("price resolver keeps clear package evidence instead of reconstructing a discounted package from piece values", () => {
   const result = priceUtils.reconcilePackagePriceMetrics({
     listPriceIdr: 197500,

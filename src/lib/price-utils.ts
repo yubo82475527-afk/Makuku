@@ -37,6 +37,7 @@ export function parseIdrPrice(value: string | number | null | undefined) {
 }
 
 const PRICE_EVIDENCE_CONFIDENCE_THRESHOLD = 0.75;
+const MIN_IDR_PRICE_EVIDENCE = 1000;
 
 function isNearPackageAmount(perPieceNetPrice: number, pieceCount: number, packagePrice: number) {
   const reconstructedPackagePrice = perPieceNetPrice * pieceCount;
@@ -152,7 +153,13 @@ function createPriceEvidence(
   numericValue: number | null | undefined,
   confidence?: number | null,
 ): PriceEvidence | null {
-  const value = parseIdrPrice(textValue) ?? numericValue ?? null;
+  const parsedTextValue = parseIdrPrice(textValue);
+  const parsedNumericValue = typeof numericValue === "number" && Number.isFinite(numericValue) ? numericValue : null;
+  const value = parsedTextValue && parsedTextValue >= MIN_IDR_PRICE_EVIDENCE
+    ? parsedTextValue
+    : parsedNumericValue && parsedNumericValue >= MIN_IDR_PRICE_EVIDENCE
+      ? parsedNumericValue
+      : null;
   if (!value || !Number.isFinite(value) || value <= 0) return null;
   return {
     source,
