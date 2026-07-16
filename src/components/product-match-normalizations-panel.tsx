@@ -1,0 +1,89 @@
+import type { ProductMatchNormalization, ProductMatchNormalizationField } from "@/lib/types";
+
+type ProductMatchNormalizationsPanelProps = {
+  locale: string;
+  rules: ProductMatchNormalization[];
+  brandOptions: string[];
+  canonicalOptions: Record<ProductMatchNormalizationField, string[]>;
+};
+
+const fields: Array<{ value: ProductMatchNormalizationField; zh: string; en: string }> = [
+  { value: "brand", zh: "品牌", en: "Brand" },
+  { value: "series", zh: "系列", en: "Series" },
+  { value: "size", zh: "尺码", en: "Size" },
+  { value: "piece_count", zh: "片数", en: "Pieces" },
+];
+
+export function ProductMatchNormalizationsPanel({ locale, rules, brandOptions, canonicalOptions }: ProductMatchNormalizationsPanelProps) {
+  const isZh = locale === "zh";
+  const label = (field: ProductMatchNormalizationField) => fields.find((item) => item.value === field)?.[isZh ? "zh" : "en"] ?? field;
+  return (
+    <div className="space-y-4">
+      <form action="/api/product-match-normalizations" method="post" className="grid gap-3 rounded-md border border-slate-200 bg-white p-4 md:grid-cols-4">
+        <input type="hidden" name="return_to" value={`/${locale}/product-match-normalizations`} />
+        <label className="text-sm font-medium text-slate-700">
+          {isZh ? "字段" : "Field"}
+          <select name="field" required defaultValue="series" className="mt-1 h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm">
+            {fields.map((field) => <option key={field.value} value={field.value}>{field[isZh ? "zh" : "en"]}</option>)}
+          </select>
+        </label>
+        <label className="text-sm font-medium text-slate-700">
+          {isZh ? "品牌范围" : "Brand scope"}
+          <input name="brand_scope" list="match-normalization-brands" placeholder={isZh ? "留空表示全品牌" : "Empty for all brands"} className="mt-1 h-9 w-full rounded-md border border-slate-300 px-2 text-sm" />
+        </label>
+        <datalist id="match-normalization-brands">
+          {brandOptions.map((brand) => <option key={brand} value={brand} />)}
+        </datalist>
+        <label className="text-sm font-medium text-slate-700">
+          {isZh ? "原始写法" : "Source value"}
+          <input name="source_value" required placeholder="SLIMCARE" className="mt-1 h-9 w-full rounded-md border border-slate-300 px-2 text-sm" />
+        </label>
+        <label className="text-sm font-medium text-slate-700">
+          {isZh ? "规范值" : "Canonical value"}
+          <input name="canonical_value" list="match-normalization-values" required placeholder={isZh ? "选择当前主档值" : "Select a current master value"} className="mt-1 h-9 w-full rounded-md border border-slate-300 px-2 text-sm" />
+        </label>
+        <datalist id="match-normalization-values">
+          {fields.flatMap((field) => canonicalOptions[field.value].map((value) => <option key={`${field.value}:${value}`} value={value}>{label(field.value)}</option>))}
+        </datalist>
+        <div className="md:col-span-4 flex justify-end">
+          <button type="submit" className="h-9 rounded-md bg-slate-950 px-4 text-sm font-medium text-white hover:bg-slate-800">
+            {isZh ? "保存规则" : "Save rule"}
+          </button>
+        </div>
+      </form>
+
+      <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
+        <table className="w-full min-w-[760px] text-left text-sm">
+          <thead className="border-b border-slate-200 text-xs text-slate-500">
+            <tr>
+              <th className="px-3 py-2">{isZh ? "字段" : "Field"}</th>
+              <th className="px-3 py-2">{isZh ? "品牌范围" : "Brand scope"}</th>
+              <th className="px-3 py-2">{isZh ? "原始写法" : "Source value"}</th>
+              <th className="px-3 py-2">{isZh ? "规范值" : "Canonical value"}</th>
+              <th className="px-3 py-2">{isZh ? "操作" : "Action"}</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-200">
+            {rules.map((rule) => (
+              <tr key={rule.id}>
+                <td className="px-3 py-2">{label(rule.field)}</td>
+                <td className="px-3 py-2">{rule.brand_scope ?? (isZh ? "全品牌" : "All brands")}</td>
+                <td className="px-3 py-2 font-medium">{rule.source_value}</td>
+                <td className="px-3 py-2">{rule.canonical_value}</td>
+                <td className="px-3 py-2">
+                  <form action="/api/product-match-normalizations" method="post">
+                    <input type="hidden" name="intent" value="deactivate" />
+                    <input type="hidden" name="id" value={rule.id} />
+                    <input type="hidden" name="return_to" value={`/${locale}/product-match-normalizations`} />
+                    <button type="submit" className="text-sm font-medium text-red-700 hover:underline">{isZh ? "停用" : "Deactivate"}</button>
+                  </form>
+                </td>
+              </tr>
+            ))}
+            {rules.length === 0 ? <tr><td colSpan={5} className="px-3 py-6 text-slate-500">{isZh ? "暂无标准化规则" : "No normalization rules"}</td></tr> : null}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}

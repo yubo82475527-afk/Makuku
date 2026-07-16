@@ -1,8 +1,9 @@
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
 import { derivePriceEvidenceReasonCode, parseIdrPrice, reconcilePackagePriceMetrics } from "@/lib/price-utils";
 import { normalizePieceCount, normalizePieceCountFromCandidates, normalizePieceCountFromEvidence, parsePieceCountText } from "@/lib/piece-count";
-import { compileProductMatchIndex, matchProduct, type CompiledProductMatchIndex, type ProductMatchMaster } from "@/lib/product-match-engine";
-import { productMatchRulesV2 } from "@/lib/product-match-rules-v2";
+import { compileProductMatchIndex, matchProduct, type CompiledProductMatchIndex, type MatchRuleSet, type ProductMatchMaster } from "@/lib/product-match-engine";
+import { createProductMatchRulesV2 } from "@/lib/product-match-rules-v2";
+import { compileProductMatchNormalizations, type ProductMatchNormalizationRule } from "@/lib/product-match-normalizations";
 import type { AiPriceCandidate, CompetitorProduct, MaterialMaster, PriceEvidenceStatus, PriceReviewDecision, StoreVisitAiResult } from "@/lib/types";
 
 type Warning = { type?: string; message: string };
@@ -186,7 +187,7 @@ function competitorLabel(item: CompetitorProduct) {
 
 export type ProductMatchContext = {
   index: CompiledProductMatchIndex;
-  rules: typeof productMatchRulesV2;
+  rules: MatchRuleSet;
 };
 
 function materialMatchMaster(item: MaterialMaster): ProductMatchMaster {
@@ -243,17 +244,29 @@ function competitorMatchMaster(item: CompetitorProduct): ProductMatchMaster {
 }
 
 export async function loadProductMatchContext(supabase: SupabaseServiceClient = createSupabaseServiceClient()): Promise<ProductMatchContext> {
-  const [{ data: materials, error: materialError }, { data: products, error: productError }] = await Promise.all([
+  const [{ data: materials, error: materialError }, { data: products, error: productError }, { data: normalizationRows, error: normalizationError }] = await Promise.all([
     supabase.from("material_master").select("*").limit(5000),
     supabase.from("competitor_products").select("*, brands(id,name)").eq("status", "active").limit(5000),
+    supabase.from("product_match_normalizations").select("id,field,brand_scope,source_value,canonical_value,active").eq("active", true).limit(5000),
   ]);
   if (materialError) throw new Error(materialError.message);
   if (productError) throw new Error(productError.message);
+  if (normalizationError && !normalizationError.message.includes("product_match_normalizations")) throw new Error(normalizationError.message);
   const masters = [
     ...(materials ?? []).map((item) => materialMatchMaster(item as MaterialMaster)),
     ...(products ?? []).map((item) => competitorMatchMaster(item as CompetitorProduct)),
   ];
-  return { index: compileProductMatchIndex(masters, productMatchRulesV2), rules: productMatchRulesV2 };
+  const normalizations = compileProductMatchNormalizations(
+    (normalizationRows ?? []) as ProductMatchNormalizationRule[],
+    {
+      brand: masters.map((master) => master.signature?.brand ?? ""),
+      series: masters.map((master) => master.signature?.series ?? ""),
+      size: masters.map((master) => master.signature?.size ?? ""),
+      piece_count: masters.map((master) => master.signature?.pieceCount ?? ""),
+    },
+  );
+  const rules = createProductMatchRulesV2(normalizations);
+  return { index: compileProductMatchIndex(masters, rules), rules };
 }
 
 function productMatchEvidence(item: AiPriceCandidateSourceItem, pieceCount: number | null) {

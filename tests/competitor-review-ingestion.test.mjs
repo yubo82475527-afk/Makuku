@@ -71,7 +71,8 @@ test("store link repair migration backfills offline store ids for offline AI sna
 test("AI candidate matching refuses to reuse competitor products from a different brand", () => {
   assert.match(candidateService, /compileProductMatchIndex/);
   assert.match(candidateService, /matchProduct\(productMatchEvidence/);
-  assert.match(candidateService, /productMatchRulesV2/);
+  assert.match(candidateService, /createProductMatchRulesV2/);
+  assert.match(candidateService, /product_match_normalizations/);
   assert.match(candidateService, /matched_entity_type: matchedEntityType/);
   assert.doesNotMatch(candidateService, /const candidateProducts = .*products/);
 });

@@ -42,6 +42,7 @@ import type {
   OpportunityActionStatus,
   OpportunityActionType,
   PriceSnapshot,
+  ProductMatchNormalization,
   ProductSegmentBattle,
   ProductSegmentBattleSummary,
   PromoEvent,
@@ -949,6 +950,21 @@ export async function getCompetitorSeriesMappings(): Promise<QueryResult<Competi
       .eq("active", true)
       .order("created_at", { ascending: false }),
     demoCompetitorSeriesMappings,
+  );
+}
+
+export async function getProductMatchNormalizations(): Promise<QueryResult<ProductMatchNormalization[]>> {
+  if (!hasSupabaseConfig()) return { data: [], error: null, isDemo: true };
+  const supabase = createSupabaseServiceClient();
+  return fromSupabase<ProductMatchNormalization[]>(
+    supabase
+      .from("product_match_normalizations")
+      .select("*")
+      .eq("active", true)
+      .order("field")
+      .order("brand_scope")
+      .order("source_value"),
+    [],
   );
 }
 
