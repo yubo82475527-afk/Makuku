@@ -10,7 +10,7 @@ const normalizations = compileProductMatchNormalizations([
   { id: "swety", field: "brand", brand_scope: null, source_value: "SWETY", canonical_value: "SWEETY", active: true },
 ], {
   brand: ["MAKUKU", "SWEETY"],
-  series: ["Slim", "Slim Care", "GOLD", "PANTS"],
+  series: ["Slim", "Slim Care", "Dry Care", "GOLD", "PANTS"],
   size: ["L", "M", "NB"],
   piece_count: [30, 48, 52],
 });
@@ -76,6 +76,34 @@ test("configured brand and series aliases match Sweety Gold Series NB52", () => 
   }, index, rules);
 
   assert.equal(result.product?.id, "sweety-gold-nb52");
+});
+
+test("a uniquely owned series retains its inferred brand when the source brand is unknown", () => {
+  const index = compileProductMatchIndex([{
+    id: "dry-care-m58",
+    entityType: "material_master",
+    code: "dry-care-m58",
+    active: true,
+    signature: { brand: "MAKUKU", series: "Dry Care", packageLevel: "JUMBO", shape: "PANTS", size: "M", pieceCount: 58, version: null },
+    raw: { title: "MAKUKU Diapers Dry Care Pants M48+10" },
+  }], rules);
+
+  const result = matchProduct({
+    code: null,
+    entityType: null,
+    signature: { brand: null, series: "Dry Care", packageLevel: "JUMBO", shape: "PANTS", size: "M", pieceCount: 58, version: null },
+    sources: ["product_family_text", "row_anchor", "piece_count"],
+    raw: {
+      brand: "Unknown",
+      productFamilyText: "DRY CARE JUMBO (PANTS)",
+      sku: "DRY CARE JUMBO (PANTS) M 6-11 KG",
+      rowAnchor: "M 6-11 KG",
+      pieceCount: 58,
+    },
+  }, index, rules);
+
+  assert.equal(result.product?.id, "dry-care-m58");
+  assert.equal(result.method, "UNIQUE_SIGNATURE");
 });
 
 test("Makuku title matching keeps Slim out of generic PANTS and selects the named SKU only when named", () => {
