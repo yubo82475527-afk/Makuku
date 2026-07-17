@@ -551,6 +551,20 @@ export async function refreshStoreVisitStoredPriceState(input: {
   const nextAnalysisError = input.analysisErrorOverride === undefined ? derived.analysisError : input.analysisErrorOverride;
 
   const retakeRequiredImages = derived.analyzedResults.filter((entry) => isRetakeRequiredResult(entry.result));
+  const now = new Date().toISOString();
+  const priorStartedAt = typeof analysisMetrics?.visit_analysis_started_at === "string"
+    ? analysisMetrics.visit_analysis_started_at
+    : null;
+  const priorDurationMs = typeof analysisMetrics?.visit_analysis_duration_ms === "number"
+    ? analysisMetrics.visit_analysis_duration_ms
+    : null;
+  const isFirstAnalysis = !priorStartedAt;
+  const visitAnalysisStartedAt = priorStartedAt ?? now;
+  const visitAnalysisCompletedAt = now;
+  const visitAnalysisDurationMs = isFirstAnalysis
+    ? Math.max(0, new Date(visitAnalysisCompletedAt).getTime() - new Date(visitAnalysisStartedAt).getTime())
+    : (priorDurationMs ?? 0);
+
   const summaryResult = {
     ...summaryBase,
     ai_result_card: derived.aiResult,
@@ -561,6 +575,9 @@ export async function refreshStoreVisitStoredPriceState(input: {
     signed_image_count: activeImages.length,
     analysis_metrics: {
       ...(analysisMetrics ?? {}),
+      visit_analysis_started_at: visitAnalysisStartedAt,
+      visit_analysis_completed_at: visitAnalysisCompletedAt,
+      visit_analysis_duration_ms: visitAnalysisDurationMs,
       price_image_count: derived.priceImages.length,
       price_image_success_count: derived.analyzedResults.length - retakeRequiredImages.length,
       price_image_failure_count: derived.failedImages.length,
