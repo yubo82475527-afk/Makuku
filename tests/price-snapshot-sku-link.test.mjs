@@ -71,7 +71,7 @@ test("prices page and export show actual owner and filter by derived Makuku SKU 
   assert.match(priceExportRoute, /priceSnapshotMakukuMaterialCode/);
 });
 
-test("real market price page supports created_at date range filters in page and export", () => {
+test("real market price page supports captured_at date range filters in page and export", () => {
   assert.match(pricesPage, /name="createdFrom"/);
   assert.match(pricesPage, /name="createdTo"/);
   assert.match(pricesPage, /currentParams\.set\(key, params\[key\] as string\)/);
@@ -81,8 +81,9 @@ test("real market price page supports created_at date range filters in page and 
   assert.match(pricesPage, /capturedTo: capturedToExclusive \?\? undefined/);
   assert.match(priceExportRoute, /const createdFrom = searchParams\.get\("createdFrom"\)/);
   assert.match(priceExportRoute, /const createdTo = searchParams\.get\("createdTo"\)/);
-  assert.match(priceExportRoute, /matchesCreatedFrom\(snapshot\.created_at, createdFrom\)/);
-  assert.match(priceExportRoute, /matchesCreatedTo\(snapshot\.created_at, createdTo\)/);
+  assert.match(priceExportRoute, /matchesCreatedFrom\(snapshot\.captured_at, createdFrom\)/);
+  assert.match(priceExportRoute, /matchesCreatedTo\(snapshot\.captured_at, createdTo\)/);
+  assert.doesNotMatch(priceExportRoute, /matchesCreated(?:From|To)\(snapshot\.created_at/);
 });
 
 test("real market price visit and image ids link to filtered photo price review", () => {

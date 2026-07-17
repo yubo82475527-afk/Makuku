@@ -111,8 +111,8 @@ export async function GET(request: Request) {
       if (district && !matchesText(region.district, district)) return false;
       if (store && !matchesText(storeNameForSnapshot(snapshot), store)) return false;
       if (visitCode && !matchesText(visitCodeForSnapshot(snapshot), visitCode)) return false;
-      if (createdFrom && !matchesCreatedFrom(snapshot.created_at, createdFrom)) return false;
-      if (createdTo && !matchesCreatedTo(snapshot.created_at, createdTo)) return false;
+      if (createdFrom && !matchesCreatedFrom(snapshot.captured_at, createdFrom)) return false;
+      if (createdTo && !matchesCreatedTo(snapshot.captured_at, createdTo)) return false;
       return true;
     });
 
