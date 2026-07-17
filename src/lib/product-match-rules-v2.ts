@@ -138,6 +138,7 @@ function extractVersion(text: string) {
   const rawNumericVersion = String(text ?? "").match(/\b(\d+\.\d+)\b/);
   if (rawNumericVersion) return rawNumericVersion[1];
   const cleaned = cleanTokens(text);
+  if (/\bSKIN\b/.test(cleaned) && /\bJOY\b/.test(cleaned)) return "SKIN JOY";
   if (/\bLUXURY\b/.test(cleaned) && /\bSILKY\b/.test(cleaned)) return "LUXURY SILKY";
   if (/\bSLIM\b/.test(cleaned) && !/\bSILKY\b/.test(cleaned)) return "REGULAR";
   if (/\b(?:BOY|BOYS)\b/.test(cleaned)) return "BOY";
@@ -297,6 +298,10 @@ function normalizedPieceCount(normalizations: ProductMatchNormalizations, value:
   return Number.isInteger(number) && number > 0 ? number : null;
 }
 
+function usableSeries(value: string | null, fallback: string | null) {
+  return value && !brandCategoryTokens.has(cleanTokens(value)) ? value : fallback;
+}
+
 export function createProductMatchRulesV2(normalizations: ProductMatchNormalizations): MatchRuleSet {
   function normalizeProductWithContext(product: ProductMatchMaster): NormalizedMatchMaster {
     const legacy = normalizedSignature(product.signature, product.raw);
@@ -322,7 +327,11 @@ export function createProductMatchRulesV2(normalizations: ProductMatchNormalizat
     const raw = evidence.raw;
     const texts = [raw.productFamilyText, raw.sectionTitle, raw.sku, raw.rowAnchor];
     const brand = firstNormalizedValue(normalizations, "brand", [evidence.signature?.brand, raw.brand, ...texts]);
-    const series = firstNormalizedValue(normalizations, "series", [evidence.signature?.series, ...texts], brand);
+    const fallbackSeries = firstNormalizedValue(normalizations, "series", [fallback.signature.series], brand) ?? fallback.signature.series;
+    const series = usableSeries(
+      firstNormalizedValue(normalizations, "series", [evidence.signature?.series, ...texts], brand),
+      fallbackSeries,
+    );
     const size = firstNormalizedValue(normalizations, "size", [evidence.signature?.size, raw.rowAnchor, ...texts], brand);
     const pieceCount = normalizedPieceCount(normalizations, evidence.signature?.pieceCount ?? raw.pieceCount, brand);
     const entityType = resolveEvidenceEntityType(brand, evidence.entityType, context);

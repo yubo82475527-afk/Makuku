@@ -506,20 +506,17 @@ export async function insertAiPriceCandidateRows(input: {
   if (input.rows.length === 0) return [];
 
   if (!input.preserveExistingCandidates) {
-    if (input.affectedImageIds && input.affectedImageIds.length > 0) {
-      await supabase
+    const { error: deleteError } = await (input.affectedImageIds && input.affectedImageIds.length > 0
+      ? supabase
         .from("ai_price_candidates")
         .delete()
         .eq("visit_id", input.visitId)
         .in("source_image_id", input.affectedImageIds)
-        .neq("status", "approved");
-    } else {
-      await supabase
+      : supabase
         .from("ai_price_candidates")
         .delete()
-        .eq("visit_id", input.visitId)
-        .neq("status", "approved");
-    }
+        .eq("visit_id", input.visitId));
+    if (deleteError) throw new Error(deleteError.message);
   }
 
   const { data: activeCandidateRows, error: activeCandidateError } = await supabase

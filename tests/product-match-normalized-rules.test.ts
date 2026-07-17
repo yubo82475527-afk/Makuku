@@ -5,13 +5,13 @@ import { compileProductMatchNormalizations } from "../src/lib/product-match-norm
 import { createProductMatchRulesV2 } from "../src/lib/product-match-rules-v2.ts";
 
 const normalizations = compileProductMatchNormalizations([
-  { id: "slim-care", field: "series", brand_scope: null, source_value: "SLIMCARE", canonical_value: "SLIM CARE", active: true },
+  { id: "slim-care", field: "series", brand_scope: null, source_value: "SLIMCARE", canonical_value: "Slim Care", active: true },
   { id: "gold-series", field: "series", brand_scope: "SWEETY", source_value: "GOLD SERIES", canonical_value: "GOLD", active: true },
   { id: "swety", field: "brand", brand_scope: null, source_value: "SWETY", canonical_value: "SWEETY", active: true },
 ], {
   brand: ["MAKUKU", "SWEETY"],
-  series: ["SLIM", "SLIM CARE", "GOLD"],
-  size: ["L", "NB"],
+  series: ["Slim", "Slim Care", "GOLD", "PANTS"],
+  size: ["L", "M", "NB"],
   piece_count: [30, 48, 52],
 });
 
@@ -76,6 +76,69 @@ test("configured brand and series aliases match Sweety Gold Series NB52", () => 
   }, index, rules);
 
   assert.equal(result.product?.id, "sweety-gold-nb52");
+});
+
+test("Makuku title matching keeps Slim out of generic PANTS and selects the named SKU only when named", () => {
+  const index = compileProductMatchIndex([
+    {
+      id: "slim-m52",
+      entityType: "material_master" as const,
+      code: "slim-m52",
+      active: true,
+      signature: { brand: "MAKUKU", series: "Slim", packageLevel: null, shape: null, size: "M", pieceCount: 52, version: null },
+      raw: { title: "MAKUKU Air Diapers Slim Pants M52" },
+    },
+    {
+      id: "slim-luxury-m52",
+      entityType: "material_master" as const,
+      code: "slim-luxury-m52",
+      active: true,
+      signature: { brand: "MAKUKU", series: "Slim", packageLevel: null, shape: null, size: "M", pieceCount: 52, version: null },
+      raw: { title: "MAKUKU Slim Luxury Silky Pants M52" },
+    },
+    {
+      id: "slim-care-m32",
+      entityType: "material_master" as const,
+      code: "slim-care-m32",
+      active: true,
+      signature: { brand: "MAKUKU", series: "Slim Care", packageLevel: null, shape: null, size: "M", pieceCount: 32, version: null },
+      raw: { title: "MAKUKU SAP Diapers Slim Care Pants M32" },
+    },
+    {
+      id: "slim-care-skin-joy-m32",
+      entityType: "material_master" as const,
+      code: "slim-care-skin-joy-m32",
+      active: true,
+      signature: { brand: "MAKUKU", series: "Slim Care", packageLevel: null, shape: null, size: "M", pieceCount: 32, version: null },
+      raw: { title: "MAKUKU Slim Care Skin Joy Pants M32" },
+    },
+  ], rules);
+
+  const slimJumbo = matchProduct({
+    code: null,
+    entityType: null,
+    signature: { brand: "MAKUKU", series: "Slim Jumbo (PANTS)", packageLevel: null, shape: null, size: null, pieceCount: 52, version: null },
+    sources: ["product_family_text", "piece_count"],
+    raw: { brand: "MAKUKU", productFamilyText: "Slim Jumbo (PANTS)", sku: "MAKUKU Slim Jumbo (PANTS) M", rowAnchor: "M 52", pieceCount: 52 },
+  }, index, rules);
+  const slimCare = matchProduct({
+    code: null,
+    entityType: null,
+    signature: { brand: "MAKUKU", series: "Slim Care Big Pack 30 Pack (PANTS)", packageLevel: null, shape: null, size: null, pieceCount: 32, version: null },
+    sources: ["product_family_text", "piece_count"],
+    raw: { brand: "MAKUKU", productFamilyText: "Slim Care Big Pack 30 Pack (PANTS)", sku: "MAKUKU Slim Care Big Pack M", rowAnchor: "M 32", pieceCount: 32 },
+  }, index, rules);
+  const skinJoy = matchProduct({
+    code: null,
+    entityType: null,
+    signature: { brand: "MAKUKU", series: "Slim Care Skin Joy (PANTS)", packageLevel: null, shape: null, size: null, pieceCount: 32, version: null },
+    sources: ["product_family_text", "piece_count"],
+    raw: { brand: "MAKUKU", productFamilyText: "Slim Care Skin Joy (PANTS)", sku: "MAKUKU Slim Care Skin Joy M", rowAnchor: "M 32", pieceCount: 32 },
+  }, index, rules);
+
+  assert.equal(slimJumbo.product?.id, "slim-m52");
+  assert.equal(slimCare.product?.id, "slim-care-m32");
+  assert.equal(skinJoy.product?.id, "slim-care-skin-joy-m32");
 });
 
 test("a unique core signature is not rejected by shape or package wording", () => {

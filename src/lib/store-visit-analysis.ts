@@ -108,6 +108,7 @@ export async function runStoreVisitAnalysis(input: {
       imageIds: [...successfulForcedImageIds, ...retakeRequiredForcedImageIds],
       lifecycleStatus: "reanalyzed",
       rejectionReason: "H5 re-analyze replaced or cleared the previous price result.",
+      candidateDisposition: "delete",
       supabase,
     });
     replacedCandidateCount = invalidation.rejectedCandidateCount;

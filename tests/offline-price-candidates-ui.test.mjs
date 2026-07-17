@@ -48,6 +48,8 @@ test("store visit price candidate generation exposes reusable H5 row helpers", (
   assert.match(aiPriceCandidatesLib, /export function isH5VisiblePriceCandidate/);
   assert.match(aiPriceCandidatesLib, /export async function buildAiPriceCandidateRows/);
   assert.match(aiPriceCandidatesLib, /export async function insertAiPriceCandidateRows/);
+  assert.match(aiPriceCandidatesLib, /const \{ error: deleteError \} = await/);
+  assert.match(aiPriceCandidatesLib, /if \(deleteError\) throw new Error\(deleteError\.message\)/);
 });
 
 test("mobile store visit detail repairs missing price candidates before returning rows", () => {

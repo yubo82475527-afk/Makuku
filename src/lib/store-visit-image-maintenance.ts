@@ -12,6 +12,7 @@ import type {
 type SupabaseServiceClient = ReturnType<typeof import("@/lib/supabase").createSupabaseServiceClient>;
 
 type ImageLifecycleStatus = "deleted" | "replaced" | "reanalyzed";
+type CandidateDisposition = "delete" | "reject";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -300,6 +301,7 @@ export async function invalidateStoreVisitImagePriceImpact(input: {
   imageIds: string[];
   lifecycleStatus: ImageLifecycleStatus;
   rejectionReason: string;
+  candidateDisposition?: CandidateDisposition;
   reviewedBy?: string | null;
   supabase?: SupabaseServiceClient;
 }) {
@@ -325,6 +327,29 @@ export async function invalidateStoreVisitImagePriceImpact(input: {
     .is("source_image_id", null)
     .select("id");
   if (deleteLegacyError) throw new Error(deleteLegacyError.message);
+
+  if (input.candidateDisposition === "delete") {
+    const [imageResult, legacyResult] = await Promise.all([
+      supabase
+        .from("ai_price_candidates")
+        .delete()
+        .eq("visit_id", input.visitId)
+        .in("source_image_id", imageIds)
+        .select("id"),
+      supabase
+        .from("ai_price_candidates")
+        .delete()
+        .eq("visit_id", input.visitId)
+        .is("source_image_id", null)
+        .select("id"),
+    ]);
+    const error = imageResult.error ?? legacyResult.error;
+    if (error) throw new Error(error.message);
+    return {
+      deletedSnapshotCount: (deletedSnapshots?.length ?? 0) + (deletedLegacySnapshots?.length ?? 0),
+      rejectedCandidateCount: (imageResult.data?.length ?? 0) + (legacyResult.data?.length ?? 0),
+    };
+  }
 
   const payload = {
     status: "rejected" as const,

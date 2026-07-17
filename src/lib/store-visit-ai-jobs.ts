@@ -576,6 +576,7 @@ async function processItem(input: {
         imageIds: [item.source_image_id],
         lifecycleStatus: "reanalyzed",
         rejectionReason: "AI image analysis replaced the previous price result.",
+        candidateDisposition: "delete",
         supabase,
       });
       replacedCandidateCount = invalidation.rejectedCandidateCount;

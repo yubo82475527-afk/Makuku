@@ -16,7 +16,6 @@ import {
   refreshStoreVisitStoredPriceState,
 } from "@/lib/store-visit-image-maintenance";
 import { sourceItemsFromStoredPriceImages } from "@/lib/store-visit-price-candidate-sync";
-import { mergeStoredCandidateEvidence } from "@/lib/stored-match-evidence";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 
 type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceClient>;
@@ -46,35 +45,27 @@ export function createStoreVisitMatchingRerunGateway(supabase: SupabaseServiceCl
     },
     async replaceVisitOutput({ visit, rows, matchContext }) {
       const images = rows as StoredPriceImage[];
-      const { data: priorCandidates, error: priorCandidateError } = await supabase
-        .from("ai_price_candidates")
-        .select("source_image_id,source_row_index,raw_brand,raw_product,raw_piece_count_text,piece_count,created_at")
-        .eq("visit_id", visit.id)
-        .order("created_at", { ascending: false });
-      if (priorCandidateError) throw new Error(priorCandidateError.message);
-      const sourceItems = mergeStoredCandidateEvidence(
-        sourceItemsFromStoredPriceImages(images),
-        priorCandidates ?? [],
-      );
+      const sourceItems = sourceItemsFromStoredPriceImages(images);
       const imageIds = images.map((image) => image.id);
-      const invalidation = await invalidateStoreVisitImagePriceImpact({
-        visitId: visit.id,
-        imageIds,
-        lifecycleStatus: "reanalyzed",
-        rejectionReason: "Manual match-only rerun replaced the previous candidate and price snapshot.",
-        reviewedBy: "matching_rerun",
-        supabase,
-      });
       const candidateRows = await buildAiPriceCandidateRows({
         visitId: visit.id,
         sourceItems,
         matchContext: matchContext as ProductMatchContext,
         supabase,
       });
+      const invalidation = await invalidateStoreVisitImagePriceImpact({
+        visitId: visit.id,
+        imageIds,
+        lifecycleStatus: "reanalyzed",
+        rejectionReason: "Manual match-only rerun replaced the previous candidate and price snapshot.",
+        candidateDisposition: "delete",
+        reviewedBy: "matching_rerun",
+        supabase,
+      });
       const inserted = await insertAiPriceCandidateRows({
         visitId: visit.id,
         rows: candidateRows,
-        preserveExistingCandidates: true,
+        affectedImageIds: imageIds,
         supabase,
       });
       insertedCandidatesByVisit.set(visit.id, inserted.length);
