@@ -19,6 +19,8 @@ type ReviewCandidateRow = AiPriceCandidate & {
     id: string;
     visit_code?: string | null;
     visit_date?: string | null;
+    created_at?: string | null;
+    uploader_name?: string | null;
   } | null;
 };
 
@@ -49,6 +51,22 @@ export type OperatorPriceReviewPage = {
   perPage: number;
   error: string | null;
   isDemo: boolean;
+};
+
+export type OperatorPriceReviewExportRow = {
+  candidate_id: string;
+  visit_id: string | null;
+  visit_code: string | null;
+  image_id: string | null;
+  created_at: string | null;
+  created_by: string | null;
+  product_name: string;
+  sku_label: string | null;
+  ai_package_price: number | null;
+  ai_piece_count: number | null;
+  ai_price_per_piece: number | null;
+  operator_reason: string;
+  status: string;
 };
 
 export const MAX_QUALITY_GATE_ATTEMPTS = 3;
@@ -230,13 +248,69 @@ export async function getOperatorPriceReviewsPage(filters: OperatorPriceReviewFi
   }
 
   const supabase = createSupabaseServiceClient();
-  const visitSelect = filters.dateFrom || filters.dateTo || filters.visitCode
-    ? "offline_store_visits!inner(id,visit_code,visit_date)"
-    : "offline_store_visits(id,visit_code,visit_date)";
+  const query = buildOperatorPriceReviewQuery(supabase, filters, state, true);
   const from = (page - 1) * perPage;
+  const { data, error, count } = await query.range(from, from + perPage - 1);
+  if (error) return { data: [], total: 0, page, perPage, error: error.message, isDemo: false };
+  const rows = (data ?? []) as unknown as ReviewCandidateRow[];
+  const [imageMap, matchedLabelMap] = await Promise.all([
+    loadSourceImageMap(supabase, rows),
+    loadMatchedLabelMap(supabase, rows),
+  ]);
+  const items = await Promise.all(rows.map((candidate) =>
+    toListItem(supabase, candidate, state, filters.locale ?? "zh", imageMap, matchedLabelMap),
+  ));
+  return { data: items, total: count ?? 0, page, perPage, error: null, isDemo: false };
+}
+
+export async function getOperatorPriceReviewsExport(filters: OperatorPriceReviewFilters = {}): Promise<{
+  data: OperatorPriceReviewExportRow[];
+  error: string | null;
+  isDemo: boolean;
+}> {
+  if (!hasSupabaseServiceConfig()) {
+    return {
+      data: [],
+      error: "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY",
+      isDemo: true,
+    };
+  }
+
+  const state = filters.state === "processed" ? "processed" : "pending";
+  const supabase = createSupabaseServiceClient();
+  const rows: ReviewCandidateRow[] = [];
+  const batchSize = 1000;
+
+  for (let from = 0; ; from += batchSize) {
+    const { data, error } = await buildOperatorPriceReviewQuery(supabase, filters, state, false)
+      .range(from, from + batchSize - 1);
+    if (error) return { data: [], error: error.message, isDemo: false };
+
+    const batch = (data ?? []) as unknown as ReviewCandidateRow[];
+    rows.push(...batch);
+    if (batch.length < batchSize) break;
+  }
+
+  const matchedLabelMap = await loadMatchedLabelMap(supabase, rows);
+  return {
+    data: rows.map((candidate) => toExportRow(candidate, state, filters.locale ?? "zh", matchedLabelMap)),
+    error: null,
+    isDemo: false,
+  };
+}
+
+function buildOperatorPriceReviewQuery(
+  supabase: SupabaseServiceClient,
+  filters: OperatorPriceReviewFilters,
+  state: OperatorPriceReviewState,
+  includeCount: boolean,
+) {
+  const visitSelect = filters.dateFrom || filters.dateTo || filters.visitCode
+    ? "offline_store_visits!inner(id,visit_code,visit_date,created_at,uploader_name)"
+    : "offline_store_visits(id,visit_code,visit_date,created_at,uploader_name)";
   let query = supabase
     .from("ai_price_candidates")
-    .select(`${CANDIDATE_SELECT},${visitSelect}`, { count: "exact" })
+    .select(`${CANDIDATE_SELECT},${visitSelect}`, includeCount ? { count: "exact" } : undefined)
     .eq("candidate_type", "SKU")
     .is("h5_lifecycle_status", null);
 
@@ -299,19 +373,7 @@ export async function getOperatorPriceReviewsPage(filters: OperatorPriceReviewFi
       break;
   }
 
-  query = query.range(from, from + perPage - 1);
-
-  const { data, error, count } = await query;
-  if (error) return { data: [], total: 0, page, perPage, error: error.message, isDemo: false };
-  const rows = (data ?? []) as unknown as ReviewCandidateRow[];
-  const [imageMap, matchedLabelMap] = await Promise.all([
-    loadSourceImageMap(supabase, rows),
-    loadMatchedLabelMap(supabase, rows),
-  ]);
-  const items = await Promise.all(rows.map((candidate) =>
-    toListItem(supabase, candidate, state, filters.locale ?? "zh", imageMap, matchedLabelMap),
-  ));
-  return { data: items, total: count ?? 0, page, perPage, error: null, isDemo: false };
+  return query;
 }
 
 export async function getOperatorPriceReviewDetail(id: string, locale = "zh"): Promise<{
@@ -397,6 +459,45 @@ async function toListItem(
     processed_decision: state === "processed" ? deriveProcessedDecision(candidate) : null,
     processed_at: state === "processed" ? candidate.reviewed_at : null,
   };
+}
+
+function toExportRow(
+  candidate: ReviewCandidateRow,
+  state: OperatorPriceReviewState,
+  locale: string,
+  matchedLabelMap: Map<string, string>,
+): OperatorPriceReviewExportRow {
+  const operatorReasonGroups = buildOperatorPriceReviewReasonGroups(candidate, locale);
+  return {
+    candidate_id: candidate.id,
+    visit_id: candidate.offline_store_visits?.id ?? candidate.visit_id ?? null,
+    visit_code: candidate.offline_store_visits?.visit_code ?? null,
+    image_id: candidate.source_image_id ?? null,
+    created_at: candidate.offline_store_visits?.created_at ?? candidate.created_at ?? null,
+    created_by: candidate.offline_store_visits?.uploader_name ?? null,
+    product_name: [candidate.raw_brand, candidate.raw_product].filter(Boolean).join(" ").trim() || candidate.raw_product || "-",
+    sku_label: resolveMatchedLabel(candidate, matchedLabelMap),
+    ai_package_price: positiveNumber(candidate.ai_package_price_idr ?? candidate.ai_net_price_idr ?? candidate.parsed_price_idr),
+    ai_piece_count: positiveInteger(candidate.ai_piece_count ?? candidate.piece_count),
+    ai_price_per_piece: positiveNumber(candidate.ai_price_per_piece)
+      ?? derivedPerPiece(candidate.ai_package_price_idr ?? candidate.parsed_price_idr, candidate.ai_piece_count ?? candidate.piece_count),
+    operator_reason: operatorReasonGroups.flatMap((group) => group.messages).join(" "),
+    status: exportStatus(candidate, state, locale),
+  };
+}
+
+function exportStatus(candidate: ReviewCandidateRow, state: OperatorPriceReviewState, locale: string) {
+  if (state === "pending") return locale === "zh" ? "需确认" : "Needs confirmation";
+
+  const decision = deriveProcessedDecision(candidate);
+  if (locale === "zh") {
+    if (decision === "confirmed") return "已确认";
+    if (decision === "corrected") return "已修正";
+    return "已拒绝";
+  }
+  if (decision === "confirmed") return "Confirmed";
+  if (decision === "corrected") return "Corrected";
+  return "Rejected";
 }
 
 async function loadMatchedLabelMap(supabase: SupabaseServiceClient, candidates: ReviewCandidateRow[]) {

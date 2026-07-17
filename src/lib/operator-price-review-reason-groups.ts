@@ -12,6 +12,11 @@ type ReasonGroupCandidate = Pick<AiPriceCandidate,
   | "reviewed_price_per_piece"
   | "price_per_piece"
   | "ai_price_per_piece"
+  | "ai_package_price_idr"
+  | "ai_net_price_idr"
+  | "ai_piece_count"
+  | "piece_count"
+  | "visible_price_per_piece_idr"
   | "price_evidence_reason_code"
   | "price_evidence_status"
   | "matched_entity_type"
@@ -128,9 +133,11 @@ function buildConfirmationMessages(
     add(isZh ? "AI 无法确认这个价格属于哪款商品。" : "AI could not confirm which product this price belongs to.");
   }
   if (evidenceReason) {
-    add(isZh ? EVIDENCE_MESSAGES[evidenceReason].zh : EVIDENCE_MESSAGES[evidenceReason].en);
+    add(evidenceReason === "PRICE_MATH_CONFLICT"
+      ? buildPackageMathConflictMessage(candidate, isZh)
+      : isZh ? EVIDENCE_MESSAGES[evidenceReason].zh : EVIDENCE_MESSAGES[evidenceReason].en);
   } else if (hasPackageMathConflict(candidate)) {
-    add(isZh ? EVIDENCE_MESSAGES.PRICE_MATH_CONFLICT.zh : EVIDENCE_MESSAGES.PRICE_MATH_CONFLICT.en);
+    add(buildPackageMathConflictMessage(candidate, isZh));
   } else if (reasonCodes.has("EVIDENCE_REVIEW_REQUIRED") || candidate.price_evidence_status === "LOW_CONFIDENCE" || candidate.price_evidence_status === "REVIEW_REQUIRED") {
     add(isZh
       ? "本次识别已有图片依据，但商品、价格或包装信息仍存在不确定之处，需要人工确认。"
@@ -155,6 +162,23 @@ function buildConfirmationMessages(
     add(isZh ? "这个价格需要人工确认。" : "This price needs manual confirmation.");
   }
   return messages;
+}
+
+function buildPackageMathConflictMessage(candidate: ReasonGroupCandidate, isZh: boolean) {
+  const packagePrice = positiveNumber(candidate.ai_net_price_idr)
+    ?? positiveNumber(candidate.ai_package_price_idr);
+  const pieceCount = positiveNumber(candidate.ai_piece_count)
+    ?? positiveNumber(candidate.piece_count);
+  const visiblePiecePrice = positiveNumber(candidate.visible_price_per_piece_idr)
+    ?? positiveNumber(candidate.ai_price_per_piece);
+  if (!packagePrice || !pieceCount || !visiblePiecePrice) {
+    return isZh ? EVIDENCE_MESSAGES.PRICE_MATH_CONFLICT.zh : EVIDENCE_MESSAGES.PRICE_MATH_CONFLICT.en;
+  }
+
+  const packageDerivedPiecePrice = packagePrice / pieceCount;
+  return isZh
+    ? `图片显示包价 ${formatRupiah(packagePrice)}、${Math.floor(pieceCount)}片、${formatRupiah(visiblePiecePrice)}/片；包价倒算为 ${formatRupiah(packageDerivedPiecePrice)}/片，二者不一致。`
+    : `The image shows package price ${formatRupiah(packagePrice)}, ${Math.floor(pieceCount)} pieces, and ${formatRupiah(visiblePiecePrice)}/piece; package price implies ${formatRupiah(packageDerivedPiecePrice)}/piece, so the values do not reconcile.`;
 }
 
 function hasPackageMathConflict(candidate: ReasonGroupCandidate) {

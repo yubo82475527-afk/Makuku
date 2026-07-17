@@ -17,6 +17,7 @@ const storeVisitRefreshRoute = readFileSync("src/app/api/store-visit/[id]/refres
 const storeVisitDetailH5 = readFileSync("src/components/store-visit-detail-h5.tsx", "utf8");
 const candidateRoute = readFileSync("src/app/api/ai-price-candidates/[id]/route.ts", "utf8");
 const storeVisitCandidateRoute = readFileSync("src/app/api/store-visit/price-candidates/[id]/route.ts", "utf8");
+const storeVisitCandidateSync = readFileSync("src/lib/store-visit-price-candidate-sync.ts", "utf8");
 const aiPriceReview = readFileSync("src/lib/ai-price-review.ts", "utf8");
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const typesFile = readFileSync("src/lib/types.ts", "utf8");
@@ -384,7 +385,9 @@ test("photo price review uses row click drawer with compact risk indicators and 
 test("store visit detail route returns signed photos from new image table and legacy arrays", () => {
   assert.match(storeVisitRoute, /const aiPriceCandidateSelect = /);
   assert.match(storeVisitRoute, /attachAiPriceCandidateMatchLabels/);
-  assert.match(storeVisitRoute, /ai_price_candidates: await attachAiPriceCandidateMatchLabels\(supabase, signedVisit\.ai_price_candidates \?\? \[\]\)/);
+  assert.match(storeVisitRoute, /const currentCandidates = \(signedVisit\.ai_price_candidates \?\? \[\]\)\.filter/);
+  assert.match(storeVisitRoute, /ai_price_candidates: await attachAiPriceCandidateMatchLabels\(supabase, currentCandidates\)/);
+  assert.match(storeVisitRoute, /candidate\.status !== "rejected"/);
   assert.match(storeVisitRoute, /const visitColumns = "id,visit_code,[^"]+image_categories"/);
   assert.match(storeVisitRoute, /const currentImageSelect = "offline_visit_images\(id,visit_id,replaces_image_id,replaced_by_image_id,deleted_at,deletion_reason,image_type,image_path,thumbnail_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at\)"/);
   assert.match(storeVisitRoute, /const legacyImageSelect = "offline_visit_images\(id,visit_id,image_type,image_path,thumbnail_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at\)"/);
@@ -445,10 +448,10 @@ test("mobile store visit detail displays list price separately from net price", 
 
 test("mobile store visit detail shows need-confirm as a row tag without hiding parsed prices", () => {
   assert.match(storeVisitDetailH5, /needsConfirmationText: "Needs confirmation"/);
-  assert.match(storeVisitDetailH5, /row\.review_decision === "NEED_REVIEW"/);
-  assert.match(storeVisitDetailH5, /price_evidence_status/);
+  assert.match(storeVisitDetailH5, /function candidateReviewState/);
   assert.match(storeVisitDetailH5, /candidate\?\.status === "approved"/);
-  assert.match(storeVisitDetailH5, /needsConfirmation \? \(/);
+  assert.match(storeVisitDetailH5, /candidate\.quality_gate_status === "REVIEW_REQUIRED"/);
+  assert.match(storeVisitDetailH5, /reviewState === "needs_confirmation"/);
   assert.match(storeVisitDetailH5, /\{text\.needsConfirmationText\}/);
   assert.doesNotMatch(storeVisitDetailH5, /formatReviewableMoney\(listPrice, needsConfirmation/);
   assert.doesNotMatch(storeVisitDetailH5, /formatReviewablePieceCount\(displayPieceCount, needsConfirmation/);
@@ -456,6 +459,15 @@ test("mobile store visit detail shows need-confirm as a row tag without hiding p
   assert.doesNotMatch(storeVisitDetailH5, />CONFLICT</);
   assert.doesNotMatch(storeVisitDetailH5, />DERIVED</);
   assert.doesNotMatch(storeVisitDetailH5, />Legacy</);
+});
+
+test("mobile store visit detail filters price rows by current review state", () => {
+  assert.match(storeVisitDetailH5, /type PriceRowFilter = "all" \| "needs_confirmation"/);
+  assert.match(storeVisitDetailH5, /const \[priceRowFilter, setPriceRowFilter\] = useState<PriceRowFilter>\("all"\)/);
+  assert.match(storeVisitDetailH5, /priceRowFilter === "all" \|\| candidateReviewState\(displayRow\.candidate\) === "needs_confirmation"/);
+  assert.match(storeVisitDetailH5, /allPriceRows: "All"/);
+  assert.match(storeVisitDetailH5, /onClick=\{\(\) => setPriceRowFilter\("needs_confirmation"\)\}/);
+  assert.match(storeVisitDetailH5, /priceRowFilter=\{priceRowFilter\}/);
 });
 
 test("mobile store visit detail hides price rows while analysis is still running", () => {
@@ -474,23 +486,24 @@ test("mobile store visit detail uses Edit entry instead of activity type and pcs
   assert.match(storeVisitDetailH5, /text-blue-600/);
   assert.match(storeVisitDetailH5, /<button/);
   assert.match(storeVisitDetailH5, /\{text\.editRow\}/);
-  assert.match(storeVisitDetailH5, /onOpenRowActions\(section, row, rowIndex, candidate\)/);
+  assert.match(storeVisitDetailH5, /onEditRow\(section, row, rowIndex, candidate\)/);
+  assert.doesNotMatch(storeVisitDetailH5, /rowActionSheet|RowActionSheetState/);
   assert.match(storeVisitDetailH5, /pieceCount: "Pcs"/);
   assert.match(storeVisitDetailH5, /<PriceMetricRow label=\{text\.pieceCount\} value=\{displayPieceCount \? String\(displayPieceCount\) : "-"\}/);
   assert.doesNotMatch(storeVisitDetailH5, /<PriceMetricRow label=\{text\.promoType\}/);
 });
 
-test("mobile store visit detail supports one-tap confirmation for complete matched rows", () => {
-  assert.match(storeVisitDetailH5, /confirmRow: "Confirm"/);
-  assert.match(storeVisitDetailH5, /confirmRow: "Confirm"/);
-  assert.match(storeVisitDetailH5, /function canQuickConfirmRow/);
-  assert.match(storeVisitDetailH5, /onConfirmRow/);
-  assert.match(storeVisitDetailH5, /action: "confirm_h5_row"/);
-  assert.match(storeVisitDetailH5, /candidate\.status === "pending"/);
-  assert.match(storeVisitDetailH5, /candidate\.matched_entity_type !== "unmatched"/);
-  assert.match(storeVisitDetailH5, /\{text\.confirmRow\}/);
+test("mobile store visit detail confirms only from the unified edit sheet", () => {
+  assert.doesNotMatch(storeVisitDetailH5, /confirmRow: "Confirm"/);
+  assert.doesNotMatch(storeVisitDetailH5, /function canQuickConfirmRow|onConfirmRow|confirmingRowCandidateIds/);
+  assert.doesNotMatch(storeVisitDetailH5, /action: "confirm_h5_row"/);
+  assert.match(storeVisitDetailH5, /action: "confirm_h5_row_edit"/);
+  assert.match(storeVisitDetailH5, /confirmAndSave: "Confirm and save"/);
   assert.match(storeVisitCandidateRoute, /approveAiPriceCandidate/);
-  assert.match(storeVisitCandidateRoute, /action === "confirm_h5_row"/);
+  assert.match(storeVisitCandidateRoute, /action === "confirm_h5_row_edit"/);
+  assert.doesNotMatch(storeVisitCandidateRoute, /action === "confirm_h5_row"/);
+  assert.match(storeVisitCandidateRoute, /CANDIDATE_STALE/);
+  assert.match(storeVisitCandidateRoute, /status:\s*409/);
 });
 
 test("mobile store visit detail loads candidate review data and H5 match options", () => {
@@ -509,7 +522,7 @@ test("mobile store visit detail loads candidate review data and H5 match options
   assert.match(storeVisitMatchOptionsRoute, /\.from\("competitor_products"\)/);
 });
 
-test("mobile store visit detail displays matched SKU status in each parsed price row", () => {
+test("mobile store visit detail displays business SKU without technical match methods", () => {
   assert.match(storeVisitDetailH5, /function candidateMatchDisplay/);
   assert.match(storeVisitDetailH5, /candidate\?\.matched_sku_label \?\? candidate\?\.matched_label \?\? candidate\?\.matched_entity_id/);
   assert.match(storeVisitDetailH5, /candidate\.matched_entity_type !== "unmatched"/);
@@ -518,7 +531,8 @@ test("mobile store visit detail displays matched SKU status in each parsed price
   assert.match(storeVisitDetailH5, /text-\[10px\]/);
   assert.match(storeVisitDetailH5, /break-words text-\[10px\] leading-4/);
   assert.match(storeVisitDetailH5, /matchInfo\.matched \? "text-slate-500" : "font-semibold text-red-600"/);
-  assert.match(storeVisitDetailH5, /\{matchInfo\.matched \? `\$\{matchInfo\.label\}\$\{matchInfo\.method \? ` · \$\{matchInfo\.method\}` : ""\}` : text\.rowUnmatched\}/);
+  assert.match(storeVisitDetailH5, /\{matchInfo\.matched \? matchInfo\.label : text\.rowUnmatched\}/);
+  assert.doesNotMatch(storeVisitDetailH5, /matchInfo\.method|UNIQUE_SIGNATURE|FULL_SIGNATURE/);
   assert.doesNotMatch(storeVisitDetailH5, /matchSkuPrefix/);
   assert.doesNotMatch(storeVisitDetailH5, /truncate text-\[11px\] font-semibold \$\{matchInfo\.matched/);
 });
@@ -530,38 +544,48 @@ test("mobile store visit detail hides competitor product UUIDs from SKU match la
   assert.doesNotMatch(storeVisitDetailH5, /return \[item\?\.brands\?\.name, item\?\.normalized_name, value\]\.filter\(Boolean\)\.join\(" \/ "\);/);
 });
 
-test("mobile store visit detail loads SKU options only when the user changes SKU match", () => {
-  assert.match(storeVisitDetailH5, /originalMatchedEntityType: candidate\.matched_entity_type \?\? "unmatched"/);
-  assert.match(storeVisitDetailH5, /originalMatchedEntityId: candidate\.matched_entity_id \?\? ""/);
+test("mobile store visit detail loads SKU options only when product correction is required", () => {
+  assert.match(storeVisitDetailH5, /function candidateRequiresProductCorrection/);
+  assert.match(storeVisitDetailH5, /requiresProductCorrection: candidateRequiresProductCorrection\(candidate\)/);
+  assert.match(storeVisitDetailH5, /rowEdit\.requiresProductCorrection \? \(/);
   assert.match(storeVisitDetailH5, /const loadMatchOptions = useCallback/);
   assert.match(storeVisitDetailH5, /onRequestMatchOptions=\{\(\) => void loadMatchOptions\(\)\}/);
+  assert.match(storeVisitDetailH5, /onRequestMatchOptions\(\);\s*setMatchPickerOpen\(true\)/);
   assert.doesNotMatch(storeVisitDetailH5, /useEffect\(\(\) => \{\s*if \(!rowEdit \|\| matchOptions\.materials\.length/);
 });
 
 test("mobile store visit detail no longer sends a second match update from H5 save", () => {
-  assert.match(storeVisitDetailH5, /action: "save_h5_row"/);
+  assert.match(storeVisitDetailH5, /action: "confirm_h5_row_edit"/);
   assert.doesNotMatch(storeVisitDetailH5, /const matchChanged = rowEdit\.matchedEntityType !== rowEdit\.originalMatchedEntityType/);
   assert.doesNotMatch(storeVisitDetailH5, /if \(matchChanged\) \{/);
   assert.doesNotMatch(storeVisitDetailH5, /action: "update_match"/);
 });
 
-test("mobile store visit detail saves H5 row edits through one request", () => {
-  assert.match(storeVisitDetailH5, /action: "save_h5_row"/);
+test("mobile store visit detail confirms H5 row edits through one request", () => {
+  assert.match(storeVisitDetailH5, /action: "confirm_h5_row_edit"/);
   assert.match(storeVisitDetailH5, /matched_entity_type: rowEdit\.matchedEntityType/);
   assert.match(storeVisitDetailH5, /matched_entity_id: rowEdit\.matchedEntityType === "unmatched" \? null : rowEdit\.matchedEntityId/);
   assert.match(storeVisitDetailH5, /matched_label: resolveMatchLabel\(rowEdit, matchOptions\)/);
+  assert.match(storeVisitDetailH5, /review_token: rowEdit\.reviewToken/);
+  assert.doesNotMatch(storeVisitDetailH5, /action: "save_h5_row"/);
   assert.doesNotMatch(storeVisitDetailH5, /action: "save_review_input"/);
   assert.doesNotMatch(storeVisitDetailH5, /const matchChanged = rowEdit\.matchedEntityType !== rowEdit\.originalMatchedEntityType/);
   assert.doesNotMatch(storeVisitDetailH5, /action: "update_match"/);
 });
 
-test("mobile store visit row editor shows a compact sku header and auto-calculated per-piece preview", () => {
+test("mobile store visit row editor combines shared reasons, image evidence, and confirmation fields", () => {
+  assert.match(storeVisitDetailH5, /buildOperatorPriceReviewReasonGroups/);
+  assert.match(storeVisitDetailH5, /whyConfirmation: "Why this needs confirmation"/);
+  assert.match(storeVisitDetailH5, /visiblePricePerPiece/);
+  assert.match(storeVisitDetailH5, /reasonMessages\.slice\(0, 3\)/);
   assert.match(storeVisitDetailH5, /pricePerPieceAuto:/);
   assert.match(storeVisitDetailH5, /autoCalculated:/);
   assert.match(storeVisitDetailH5, /const computedRowPricePerPiece = Number\.isFinite\(previewNetPrice\) && previewNetPrice > 0 && Number\.isFinite\(previewPieceCount\) && previewPieceCount > 0/);
   assert.match(storeVisitDetailH5, /line-clamp-2 text-\[13px\] leading-5 text-slate-500/);
   assert.match(storeVisitDetailH5, /value=\{computedRowPricePerPiece === null \? "-" : formatMoney\(computedRowPricePerPiece\)\}/);
   assert.match(storeVisitDetailH5, /readOnly/);
+  assert.match(storeVisitDetailH5, /confirmAndSave/);
+  assert.doesNotMatch(storeVisitDetailH5, /ai_match_method|UNIQUE_SIGNATURE|FULL_SIGNATURE/);
 });
 
 test("mobile store visit detail closes row editor before refreshing full visit data", () => {
@@ -643,7 +667,7 @@ test("mobile store visit detail keeps selected SKU separate from clearable searc
   assert.match(storeVisitDetailH5, /matchSearchQuery: ""/);
   assert.match(storeVisitDetailH5, /selectedMatchLabel: candidate\.matched_sku_label \?\? candidate\.matched_label \?\? ""/);
   assert.match(storeVisitDetailH5, /const matchQueryValue = rowEdit\.matchSearchQuery;/);
-  assert.match(storeVisitDetailH5, /Current SKU/);
+  assert.match(storeVisitDetailH5, /selectedMatchOptionLabel \?\? text\.unmatched/);
   assert.match(storeVisitDetailH5, /selectedMatchLabel: item\.label/);
   assert.match(storeVisitDetailH5, /matchSearchQuery: ""/);
   assert.doesNotMatch(storeVisitDetailH5, /const matchQueryValue = rowEdit\.matchQuery \|\| selectedMatchOptionLabel \|\| ""/);
@@ -674,32 +698,28 @@ test("mobile store visit detail keeps SKU search usable above mobile keyboard", 
   assert.doesNotMatch(storeVisitDetailH5, /max-h-\[32dvh\]/);
 });
 
-test("mobile store visit detail matches approved candidate rows before falling back to unmatched", () => {
+test("mobile store visit detail binds each parsed row only to its current exact candidate", () => {
   assert.match(storeVisitDetailH5, /candidate\.source_image_id === imageId/);
   assert.match(storeVisitDetailH5, /candidate\.source_row_index === rowIndex/);
-  assert.match(storeVisitDetailH5, /legacyDisplayCandidateForRow/);
-  assert.match(storeVisitDetailH5, /source_row_index == null/);
-  assert.match(storeVisitDetailH5, /normalizeMatchText\(candidate\.raw_product\) === normalizedSku/);
-  assert.match(storeVisitDetailH5, /const aPieceMatch = candidateDisplayPieceCount\(a, row\.piece_count\) === rowPieceCount \? 1 : 0;/);
-  assert.match(storeVisitDetailH5, /const rowNetPrice = row\.net_price_idr \?\? null;/);
-  assert.match(storeVisitDetailH5, /const aPriceMatch = \(a\.net_price_idr \?\? a\.parsed_price_idr \?\? null\) === rowNetPrice \? 1 : 0;/);
-  assert.match(storeVisitDetailH5, /sort\(\(a, b\) =>/);
+  assert.match(storeVisitDetailH5, /function exactCandidateForRow/);
+  assert.doesNotMatch(storeVisitDetailH5, /legacyDisplayCandidateForRow|source_row_index == null|normalizeMatchText/);
 });
 
-test("mobile store visit detail exposes row-level delete and hides H5-deleted rows", () => {
+test("mobile store visit detail exposes row deletion inside Edit and physically deletes the current candidate", () => {
   assert.match(storeVisitDetailH5, /deleteRow: "鍒犻櫎鍗曚釜SKU"|deleteRow: "Delete SKU"/);
   assert.match(storeVisitDetailH5, /action: "delete_h5_row"/);
-  assert.match(storeVisitDetailH5, /h5_lifecycle_status !== "deleted"/);
   assert.match(storeVisitDetailH5, /buildPriceDisplayRows/);
-  assert.match(storeVisitDetailH5, /rowActionSheet/);
+  assert.doesNotMatch(storeVisitDetailH5, /rowActionSheet/);
   assert.match(storeVisitDetailH5, /setRowDeleteConfirm/);
-  assert.match(storeVisitDetailH5, /openRowEditor\(current\.section, current\.row, current\.rowIndex\)/);
-  assert.match(storeVisitDetailH5, /candidate\.status !== "pending"/);
+  assert.match(storeVisitDetailH5, /onDelete=\{\(\) =>/);
   assert.match(storeVisitCandidateRoute, /action === "delete_h5_row"/);
-  assert.match(storeVisitCandidateRoute, /h5LifecycleStatus: "deleted"/);
-  assert.match(storeVisitCandidateRoute, /rejectAiPriceCandidate/);
+  assert.match(storeVisitCandidateRoute, /h5_hidden_price_row_indexes/);
+  assert.match(storeVisitCandidateSync, /h5_hidden_price_row_indexes/);
+  assert.match(storeVisitDetailH5, /hiddenPriceRowIndexes/);
   const deleteBranch = storeVisitCandidateRoute.slice(storeVisitCandidateRoute.indexOf('if (action === "delete_h5_row")'));
-  assert.doesNotMatch(deleteBranch, /\.from\("ai_price_candidates"\)[\s\S]*\.update\(/);
+  assert.match(deleteBranch, /\.from\("ai_price_candidates"\)[\s\S]*\.delete\(\)/);
+  assert.match(deleteBranch, /\.from\("offline_visit_images"\)[\s\S]*\.update\(/);
+  assert.doesNotMatch(storeVisitCandidateRoute, /h5LifecycleStatus: "deleted"|rejectAiPriceCandidate/);
   assert.doesNotMatch(storeVisitCandidateRoute, /\.from\("price_snapshots"\)[\s\S]*\.delete\(\)/);
 });
 
@@ -728,12 +748,15 @@ test("H5 price candidate API keeps approved facts immutable", () => {
   assert.match(aiPriceReview, /material_sku_code: null/);
 });
 
-test("H5 price candidate API combines H5 row price and match save into one action", () => {
-  assert.match(storeVisitCandidateRoute, /action === "save_h5_row"/);
-  assert.match(storeVisitCandidateRoute, /const h5RowPatch = buildReviewInputPatch/);
+test("H5 price candidate API atomically confirms edited price and match", () => {
+  assert.match(storeVisitCandidateRoute, /action === "confirm_h5_row_edit"/);
+  assert.doesNotMatch(storeVisitCandidateRoute, /action === "save_h5_row"/);
+  assert.match(storeVisitCandidateRoute, /const reviewInput = buildReviewInputPatch/);
   assert.match(storeVisitCandidateRoute, /buildMatchPatch/);
-  assert.match(storeVisitCandidateRoute, /\.eq\("status", "pending"\)/);
+  assert.match(storeVisitCandidateRoute, /approveAiPriceCandidate/);
+  assert.match(storeVisitCandidateRoute, /reviewMethod: "manual"/);
   assert.doesNotMatch(storeVisitCandidateRoute, /syncCandidateReviewInputToPriceSnapshot/);
   assert.doesNotMatch(storeVisitCandidateRoute, /syncCandidateMatchToPriceSnapshot/);
-  assert.match(storeVisitCandidateRoute, /return Response\.json\(\{ candidate \}\)/);
+  assert.match(storeVisitCandidateRoute, /return Response\.json\(result\)/);
+  assert.match(storeVisitCandidateRoute, /candidateMutationErrorResponse/);
 });

@@ -14,6 +14,8 @@ const recentPriorityMigrationPath = "supabase/migrations/202607140004_price_qual
 const recentPriorityMigration = existsSync(recentPriorityMigrationPath) ? readFileSync(recentPriorityMigrationPath, "utf8") : "";
 const independentReasonRequeueMigrationPath = "supabase/migrations/202607140005_requeue_ready_price_quality_reason_codes.sql";
 const independentReasonRequeueMigration = existsSync(independentReasonRequeueMigrationPath) ? readFileSync(independentReasonRequeueMigrationPath, "utf8") : "";
+const promotionEvidenceRequeueMigrationPath = "supabase/migrations/202607170001_requeue_promotion_evidence_candidates.sql";
+const promotionEvidenceRequeueMigration = existsSync(promotionEvidenceRequeueMigrationPath) ? readFileSync(promotionEvidenceRequeueMigrationPath, "utf8") : "";
 const types = readFileSync("src/lib/types.ts", "utf8");
 const benchmarkServicePath = "src/lib/price-quality-benchmarks.ts";
 const benchmarkService = existsSync(benchmarkServicePath) ? readFileSync(benchmarkServicePath, "utf8") : "";
@@ -187,7 +189,7 @@ test("quality evaluator keeps historical price deviation alongside evidence and 
     evidenceReviewDecision: "NEED_REVIEW",
     matchedEntityType: "material_master",
     matchedEntityId: "SKU-1",
-    promoType: null,
+    promoType: "Promo",
     benchmark: {
       benchmarkDate: "2026-07-14",
       medianPricePerPiece: 2000,
@@ -200,6 +202,7 @@ test("quality evaluator keeps historical price deviation alongside evidence and 
   assert.equal(result.status, "REVIEW_REQUIRED");
   assert.ok(result.reasonCodes.includes("EVIDENCE_REVIEW_REQUIRED"));
   assert.ok(result.reasonCodes.includes("PRICE_DEVIATION_HIGH"));
+  assert.ok(!result.reasonCodes.includes("PROMOTION_EVIDENCE"));
   assert.equal(result.benchmarkDeviationPct, 34);
 });
 
@@ -301,7 +304,7 @@ test("quality evaluator passes clear cold-start prices and records why the bench
   }
 });
 
-test("quality evaluator keeps evidence, matching, and cold-start promotion risks in review", () => {
+test("quality evaluator keeps evidence and matching risks in review but does not block promotion metadata", () => {
   const evaluator = loadQualityEvaluator();
   assert.ok(evaluator);
 
@@ -328,9 +331,19 @@ test("quality evaluator keeps evidence, matching, and cold-start promotion risks
     promoType: "Discount",
     benchmark: null,
   });
-  assert.equal(coldStartPromotion.status, "REVIEW_REQUIRED");
+  assert.equal(coldStartPromotion.status, "PASSED");
   assert.equal(coldStartPromotion.benchmarkAssessment, "BUILDING");
-  assert.ok(coldStartPromotion.reasonCodes.includes("PROMOTION_EVIDENCE"));
+  assert.deepEqual(Array.from(coldStartPromotion.reasonCodes), []);
+});
+
+test("promotion-only policy changes requeue current pending candidates for fresh quality evaluation", () => {
+  assert.equal(existsSync(promotionEvidenceRequeueMigrationPath), true);
+  assert.match(promotionEvidenceRequeueMigration, /update public\.ai_price_candidates candidate/i);
+  assert.match(promotionEvidenceRequeueMigration, /candidate\.status = 'pending'/i);
+  assert.match(promotionEvidenceRequeueMigration, /candidate\.quality_gate_reason_codes @> '\["PROMOTION_EVIDENCE"\]'::jsonb/i);
+  assert.match(promotionEvidenceRequeueMigration, /quality_gate_status = 'PENDING'/i);
+  assert.match(promotionEvidenceRequeueMigration, /quality_gate_reason_codes = '\[\]'::jsonb/i);
+  assert.doesNotMatch(promotionEvidenceRequeueMigration, /candidate\.status = 'approved'/i);
 });
 
 test("quality evaluator rejects incomplete candidate hard facts before auto approval", () => {

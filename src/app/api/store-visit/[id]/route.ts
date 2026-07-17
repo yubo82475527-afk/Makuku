@@ -32,7 +32,7 @@ class RouteError extends Error {
   }
 }
 
-const aiPriceCandidateSelect = "id,visit_id,candidate_key,source_image_id,source_image_path,source_row_index,raw_brand,raw_product,raw_price,parsed_price_idr,ai_list_price_idr,ai_package_price_idr,ai_net_price_idr,list_price_idr,package_price_idr,net_price_idr,raw_piece_count_text,raw_package_price_text,raw_net_price_text,raw_price_per_piece_text,visible_price_per_piece_idr,price_basis,ai_promo_type,promo_type,ai_piece_count,ai_price_per_piece,piece_count,price_per_piece,candidate_type,ai_confidence,legacy_confidence_fallback,price_evidence_status,price_evidence_confidence,price_evidence_detail,conflicts,review_decision,ai_matched_entity_type,ai_matched_entity_id,ai_matched_label,ai_match_rule_version,ai_match_method,ai_match_evidence,matched_entity_type,matched_entity_id,matched_label,match_score,warnings,status,price_snapshot_id,reviewed_piece_count,reviewed_price_per_piece,created_at,reviewed_at,reviewed_by,rejection_reason,review_method,h5_lifecycle_status,h5_lifecycle_at";
+const aiPriceCandidateSelect = "id,visit_id,candidate_key,source_image_id,source_image_path,source_row_index,raw_brand,raw_product,raw_price,parsed_price_idr,ai_list_price_idr,ai_package_price_idr,ai_net_price_idr,list_price_idr,package_price_idr,net_price_idr,raw_piece_count_text,raw_package_price_text,raw_net_price_text,raw_price_per_piece_text,visible_price_per_piece_idr,price_basis,ai_promo_type,promo_type,ai_piece_count,ai_price_per_piece,piece_count,price_per_piece,candidate_type,ai_confidence,legacy_confidence_fallback,price_evidence_status,price_evidence_confidence,price_evidence_detail,price_evidence_reason_code,conflicts,evidence_review_decision,review_decision,quality_gate_status,quality_gate_reason_codes,benchmark_price_per_piece,benchmark_deviation_pct,quality_gate_attempt_count,quality_gate_input_fingerprint,approval_input_fingerprint,ai_matched_entity_type,ai_matched_entity_id,ai_matched_label,ai_match_rule_version,ai_match_method,ai_match_evidence,matched_entity_type,matched_entity_id,matched_label,match_score,warnings,status,price_snapshot_id,reviewed_piece_count,reviewed_price_per_piece,created_at,reviewed_at,reviewed_by,rejection_reason,review_method,h5_lifecycle_status,h5_lifecycle_at";
 const aiPriceCandidatePreV2Select = aiPriceCandidateSelect.replace("ai_match_rule_version,ai_match_method,ai_match_evidence,", "");
 const aiPriceCandidateLegacySelect = aiPriceCandidatePreV2Select.replace("source_row_index,", "");
 const visitColumns = "id,visit_code,store_name,region,channel,promoter,visit_date,visit_status,analysis_status,analysis_error,summary_result,image_urls,image_thumbnail_paths,image_categories";
@@ -228,10 +228,17 @@ export async function GET(request: Request, ctx: RouteContext) {
     };
     const activeAi = await reconcileActiveStoreVisitAiJob({ visitId: id, supabase });
 
+    const currentCandidates = (signedVisit.ai_price_candidates ?? []).filter((candidate) => (
+      candidate.status !== "rejected"
+      && candidate.h5_lifecycle_status !== "deleted"
+      && candidate.h5_lifecycle_status !== "replaced"
+      && candidate.h5_lifecycle_status !== "reanalyzed"
+    ));
+
     return Response.json({
       visit: {
         ...signedVisit,
-        ai_price_candidates: await attachAiPriceCandidateMatchLabels(supabase, signedVisit.ai_price_candidates ?? []),
+        ai_price_candidates: await attachAiPriceCandidateMatchLabels(supabase, currentCandidates),
         replaced_offline_visit_images: inactiveImages,
         active_signed_images: signedVisitWithActiveImages.active_signed_images,
         replaced_signed_images: replacedSignedImages,

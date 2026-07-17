@@ -8,6 +8,7 @@ const read = (path) => existsSync(path) ? readFileSync(path, "utf8") : "";
 
 const domain = read("src/lib/operator-price-review.ts");
 const listRoute = read("src/app/api/operator-price-reviews/route.ts");
+const exportRoute = read("src/app/api/operator-price-reviews/export/route.ts");
 const detailRoute = read("src/app/api/operator-price-reviews/[id]/route.ts");
 const page = read("src/app/[locale]/offline-price-candidates/page.tsx");
 const appShell = read("src/components/app-shell.tsx");
@@ -75,7 +76,7 @@ test("operator reason filtering happens in the database before pagination", () =
   assert.match(domain, /PRICE_DEVIATION_CRITICAL[\s\S]*filter\("quality_gate_reason_codes", "cs"/);
   assert.match(domain, /PRICE_TAG_UNCLEAR[\s\S]*eq\("price_evidence_reason_code"/);
   assert.match(domain, /QUALITY_CHECK_FAILED[\s\S]*eq\("quality_gate_status", "FAILED"\)/);
-  assert.ok(domain.indexOf("switch (filters.reason)") < domain.indexOf("query = query.range"));
+  assert.ok(domain.indexOf("switch (filters.reason)") < domain.indexOf("return query;"));
 });
 
 test("operator JSONB reason filters send valid JSON instead of Postgres array syntax", () => {
@@ -88,6 +89,41 @@ test("operator JSONB reason filters send valid JSON instead of Postgres array sy
 test("operator review API normalizes and forwards the reason filter", () => {
   assert.match(listRoute, /normalizeOperatorPriceReviewReason/);
   assert.match(listRoute, /reason:\s*normalizeOperatorPriceReviewReason/);
+});
+
+test("operator review exports the current anomaly list with visit image and creator audit fields", () => {
+  assert.doesNotMatch(page, /导出审核数据/);
+  assert.match(workbench, /exportHref/);
+  assert.match(workbench, /<Download/);
+  assert.match(workbench, /导出审核数据/);
+  assert.match(workbench, /\$\{from\}-\$\{to\} \/ \$\{total\}/);
+  assert.match(page, /date_from/);
+  assert.match(page, /date_to/);
+  assert.match(page, /visit_code/);
+  assert.match(page, /reason/);
+  assert.match(page, /state/);
+  assert.match(exportRoute, /import \* as XLSX from "xlsx"/);
+  assert.match(exportRoute, /requireAdminSession/);
+  assert.match(exportRoute, /getOperatorPriceReviewsExport/);
+  for (const header of [
+    "Visit ID",
+    "Visit Code",
+    "Image ID",
+    "Created Time",
+    "Created By",
+    "Product",
+    "SKU",
+    "AI Package Price",
+    "Pieces",
+    "Per-piece Price",
+    "Reason",
+    "Status",
+  ]) assert.match(exportRoute, new RegExp(header));
+  assert.match(exportRoute, /aoa_to_sheet/);
+  assert.match(exportRoute, /Content-Disposition/);
+  assert.match(exportRoute, /operator-price-reviews/);
+  assert.match(domain, /export async function getOperatorPriceReviewsExport/);
+  assert.match(domain, /uploader_name/);
 });
 
 test("operator review page renders the shared anomaly reason filter", () => {
@@ -139,6 +175,38 @@ test("operator reason groups put stored price deviation before confirmation evid
   assert.match(groups?.[0]?.messages.join(" ") ?? "", /Rp 2,142\/片.*AI 识别 Rp 3,854\/片.*\+80%/);
   assert.equal(groups?.[1]?.kind, "CONFIRMATION");
   assert.match(groups?.[1]?.messages.join(" ") ?? "", /价格牌或金额不清晰/);
+});
+
+test("operator and H5 share a concrete package-piece conflict explanation", () => {
+  const build = loadReasonGroups()?.buildOperatorPriceReviewReasonGroups;
+  const groups = build?.({
+    quality_gate_reason_codes: ["EVIDENCE_REVIEW_REQUIRED"],
+    price_evidence_reason_code: "PRICE_MATH_CONFLICT",
+    price_evidence_status: "CONFLICT",
+    ai_net_price_idr: 46000,
+    ai_piece_count: 30,
+    visible_price_per_piece_idr: 1616,
+    matched_entity_type: "material_master",
+    matched_entity_id: "14013012502",
+    match_score: 1,
+    conflicts: [{ type: "PACKAGE_PIECE_MISMATCH", message: "Mismatch" }],
+  }, "en");
+  const message = groups?.flatMap((group) => group.messages).join(" ") ?? "";
+  assert.match(message, /Rp 46,000/);
+  assert.match(message, /30 pieces/);
+  assert.match(message, /Rp 1,616\/piece/);
+  assert.match(message, /Rp 1,533\/piece/);
+
+  const fallback = build?.({
+    quality_gate_reason_codes: ["EVIDENCE_REVIEW_REQUIRED"],
+    price_evidence_reason_code: "PRICE_MATH_CONFLICT",
+    price_evidence_status: "CONFLICT",
+    matched_entity_type: "material_master",
+    matched_entity_id: "14013012502",
+    match_score: 1,
+    conflicts: [],
+  }, "en");
+  assert.match(fallback?.flatMap((group) => group.messages).join(" ") ?? "", /do not reconcile/i);
 });
 
 test("operator reason reserves legacy evidence copy for candidates without current evidence", () => {
@@ -218,16 +286,16 @@ test("manual decisions require an active SKU candidate and a terminal result for
   assert.match(migration, /p_require_terminal_quality boolean/i);
   assert.match(migration, /if p_require_terminal_quality[\s\S]*REVIEW_REQUIRED[\s\S]*INSUFFICIENT_BENCHMARK[\s\S]*FAILED/i);
   assert.match(detailRoute, /requireTerminalQuality:\s*true/);
-  assert.match(h5CandidateRoute, /requireTerminalQuality:\s*false/);
+  assert.match(h5CandidateRoute, /reviewMethod:\s*"manual"/);
+  assert.match(h5CandidateRoute, /candidateMutationErrorResponse/);
+  assert.match(h5CandidateRoute, /candidate is not ready for operator review/i);
 });
 
-test("H5 row deletion commits rejection and lifecycle state in one locked mutation", () => {
-  assert.match(migration, /p_h5_lifecycle_status text/i);
-  assert.match(migration, /h5_lifecycle_status = p_h5_lifecycle_status/i);
-  assert.match(migration, /h5_lifecycle_at = case[\s\S]*now\(\)/i);
-  assert.match(h5CandidateRoute, /h5LifecycleStatus:\s*"deleted"/);
-  const deleteBranch = h5CandidateRoute.slice(h5CandidateRoute.indexOf('if \(action === "delete_h5_row"\)'), h5CandidateRoute.indexOf('return Response.json\(\{ error: "Unsupported action"'));
-  assert.doesNotMatch(deleteBranch, /\.from\("ai_price_candidates"\)[\s\S]*\.update\(/);
+test("H5 row deletion physically removes the current pending candidate", () => {
+  const deleteBranch = h5CandidateRoute.slice(h5CandidateRoute.indexOf('if (action === "delete_h5_row")'), h5CandidateRoute.indexOf('return Response.json({ error: "Unsupported action"'));
+  assert.match(deleteBranch, /\.from\("ai_price_candidates"\)[\s\S]*\.delete\(\)/);
+  assert.match(deleteBranch, /\.eq\("id", id\)[\s\S]*\.eq\("status", "pending"\)/);
+  assert.doesNotMatch(deleteBranch, /rejectAiPriceCandidate|h5LifecycleStatus|reanalyzed/);
 });
 
 test("confident product ownership cannot be changed by a crafted review request", () => {
@@ -267,8 +335,7 @@ test("rejection is protected by the same review token", () => {
 
 test("legacy and H5 manual review callers carry the candidate fingerprint", () => {
   assert.match(legacyCandidateRoute, /reviewToken:\s*cleanOptionalText\(body\.review_token\)/);
-  assert.match(h5CandidateRoute, /reviewToken:\s*candidateRow\.approval_input_fingerprint/);
-  assert.match(h5CandidateRoute, /reviewToken:\s*sourceCandidate\.approval_input_fingerprint/);
+  assert.match(h5CandidateRoute, /reviewToken:\s*cleanOptionalText\(body\.review_token\)/);
 });
 
 test("operator APIs require admin auth and return minimal review actions", () => {

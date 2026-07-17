@@ -152,9 +152,6 @@ export function evaluatePriceQualityGate(input: PriceQualityGateInput): PriceQua
   }
 
   if (!assessment.usable) {
-    if (String(input.promoType ?? "").trim()) {
-      addReason(reasonCodes, "PROMOTION_EVIDENCE");
-    }
     const passed = reasonCodes.length === 0;
     return {
       status: passed ? "PASSED" : "REVIEW_REQUIRED",
@@ -180,9 +177,6 @@ export function evaluatePriceQualityGate(input: PriceQualityGateInput): PriceQua
       addReason(reasonCodes, "PRICE_DEVIATION_CRITICAL");
     } else if (absoluteDeviation > HIGH_DEVIATION_PCT) {
       addReason(reasonCodes, "PRICE_DEVIATION_HIGH");
-    }
-    if (absoluteDeviation > HIGH_DEVIATION_PCT && String(input.promoType ?? "").trim()) {
-      addReason(reasonCodes, "PROMOTION_EVIDENCE");
     }
   }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { Download } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -22,6 +23,7 @@ export function OperatorPriceReviewWorkbench({
   page,
   perPage,
   locale,
+  exportHref,
   filters,
 }: {
   items: OperatorPriceReviewListItem[];
@@ -29,6 +31,7 @@ export function OperatorPriceReviewWorkbench({
   page: number;
   perPage: number;
   locale: string;
+  exportHref: string;
   filters: ReviewFilters;
 }) {
   const router = useRouter();
@@ -58,9 +61,13 @@ export function OperatorPriceReviewWorkbench({
           <StateTab locale={locale} filters={filters} state="pending" label={isZh ? "待处理" : "Pending"} active={filters.state === "pending"} />
           <StateTab locale={locale} filters={filters} state="processed" label={isZh ? "已处理" : "Processed"} active={filters.state === "processed"} />
         </div>
-        <div className="text-xs text-slate-500">
-          {isZh ? `共 ${total} 条` : `${total} total`}
-        </div>
+        <a
+          href={exportHref}
+          className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          <Download className="h-4 w-4" />
+          {isZh ? "导出审核数据" : "Export review data"}
+        </a>
       </div>
 
       {visibleItems.length === 0 ? (

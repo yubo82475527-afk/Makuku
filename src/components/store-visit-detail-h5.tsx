@@ -1,12 +1,13 @@
 ﻿"use client";
 
-import { ArrowLeft, Camera, Check, ChevronDown, ChevronRight, Copy, Ellipsis, Image as ImageIcon, Loader2, Pencil, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
+import { ArrowLeft, Camera, Check, ChevronDown, ChevronRight, Copy, Ellipsis, Image as ImageIcon, Loader2, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { withMinimumDelay } from "@/lib/async-ui";
 import { formatIdr, formatShortImageId } from "@/lib/format";
 import type { Locale } from "@/lib/i18n/config";
+import { buildOperatorPriceReviewReasonGroups } from "@/lib/operator-price-review-reason-groups";
 import { isSupportedStoreVisitImageFile, summarizeStoreVisitImageError, unsupportedStoreVisitImageFormatMessage } from "@/lib/store-visit-image-errors";
 import { getMobileCopy, mobileAnalysisStatusLabel, mobileImageCategoryLabel } from "@/lib/mobile-i18n";
 import type {
@@ -75,27 +76,24 @@ type RowEditState = {
   rowIndex: number;
   sku: string;
   candidateId: string | null;
+  reviewToken: string;
   netPrice: string;
   pieceCount: string;
+  visiblePackagePrice: number | null;
+  visiblePricePerPiece: number | null;
+  reasonMessages: string[];
+  requiresProductCorrection: boolean;
+  imagePath: string;
+  thumbnailUrl: string | null;
   matchedEntityType: AiPriceCandidateMatchType;
   matchedEntityId: string;
   selectedMatchLabel: string;
   matchSearchQuery: string;
-  originalMatchedEntityType: AiPriceCandidateMatchType;
-  originalMatchedEntityId: string;
 };
 
 type ImageActionSheetState = {
   imageId: string;
   category: "makuku_shelf" | "competitor_shelf";
-  label: string;
-};
-
-type RowActionSheetState = {
-  section: PriceParseSection;
-  row: StoreVisitPriceImageAnalysis["rows"][number];
-  rowIndex: number;
-  candidate: AiPriceCandidate;
   label: string;
 };
 
@@ -105,7 +103,6 @@ type PriceDisplayRow = {
   rowKey: string;
   candidate: AiPriceCandidate | null;
   displayCandidate: AiPriceCandidate | null;
-  legacyDisplayOnly: boolean;
 };
 
 type DeleteConfirmState = {
@@ -181,27 +178,32 @@ function formatMoney(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? formatIdr(value) : "-";
 }
 
-function rowNeedsConfirmation(row: StoreVisitPriceImageAnalysis["rows"][number], candidate: AiPriceCandidate | null) {
-  if (candidate?.status === "approved") return false;
-  return row.review_decision === "NEED_REVIEW"
-    || candidate?.review_decision === "NEED_REVIEW"
-    || row.price_evidence_status !== "CLEAR"
-    || candidate?.price_evidence_status !== "CLEAR";
+type H5RowReviewState = "checking" | "needs_confirmation" | "confirmed";
+type PriceRowFilter = "all" | "needs_confirmation";
+
+function candidateReviewState(candidate: AiPriceCandidate | null): H5RowReviewState {
+  if (candidate?.status === "approved") return "confirmed";
+  if (!candidate || candidate.status !== "pending") return "checking";
+  if (candidate.quality_gate_status === "REVIEW_REQUIRED" || candidate.quality_gate_status === "INSUFFICIENT_BENCHMARK") {
+    return "needs_confirmation";
+  }
+  if (candidate.quality_gate_status === "FAILED" && Number(candidate.quality_gate_attempt_count ?? 0) >= 3) {
+    return "needs_confirmation";
+  }
+  return "checking";
 }
 
-function canQuickConfirmRow(candidate: AiPriceCandidate | null) {
-  const price = Number(candidate?.net_price_idr ?? candidate?.parsed_price_idr);
-  const pieceCount = Number(candidate?.reviewed_piece_count ?? candidate?.piece_count);
-  return Boolean(
-    candidate
-    && candidate.status === "pending"
-    && candidate.matched_entity_type !== "unmatched"
-    && candidate.matched_entity_id
-    && Number.isFinite(price)
-    && price > 0
-    && Number.isFinite(pieceCount)
-    && pieceCount > 0,
-  );
+function candidateRequiresProductCorrection(candidate: AiPriceCandidate) {
+  return candidate.matched_entity_type === "unmatched"
+    || !candidate.matched_entity_id
+    || Number(candidate.match_score ?? 0) < 0.9
+    || (candidate.quality_gate_reason_codes ?? []).includes("SKU_MATCH_UNCERTAIN");
+}
+
+function candidateReasonMessages(candidate: AiPriceCandidate, locale: Locale) {
+  return Array.from(new Set(buildOperatorPriceReviewReasonGroups(candidate, locale)
+    .flatMap((group) => group.messages)
+    .filter(Boolean)));
 }
 
 function formatImageShortCode(value: string | null | undefined) {
@@ -299,10 +301,6 @@ function retakeRequiredMessage(image: OfflineVisitImage, fallback: string) {
   return message || fallback;
 }
 
-function normalizeMatchText(value: string | null | undefined) {
-  return String(value ?? "").trim().toLowerCase();
-}
-
 function candidateDisplayPieceCount(candidate: AiPriceCandidate | null, fallback: number | null | undefined) {
   return candidate?.reviewed_piece_count ?? candidate?.piece_count ?? fallback ?? null;
 }
@@ -330,8 +328,7 @@ function candidateDisplayPricePerPiece(candidate: AiPriceCandidate | null, fallb
 function candidateMatchDisplay(candidate: AiPriceCandidate | null) {
   const label = String(candidate?.matched_sku_label ?? candidate?.matched_label ?? candidate?.matched_entity_id ?? "").trim();
   const matched = Boolean(candidate && candidate.matched_entity_type !== "unmatched" && candidate.matched_entity_id && label);
-  const method = candidate?.ai_match_rule_version ? candidate.ai_match_method ?? "UNMATCHED" : null;
-  return { matched, label, method };
+  return { matched, label };
 }
 
 function exactCandidateForRow(
@@ -345,60 +342,28 @@ function exactCandidateForRow(
   )) ?? null;
 }
 
-function legacyDisplayCandidateForRow(
-  candidates: AiPriceCandidate[],
-  imageId: string,
-  row: StoreVisitPriceImageAnalysis["rows"][number],
-) {
-  const normalizedSku = normalizeMatchText(row.sku);
-  const rowPieceCount = row.piece_count ?? null;
-  const rowNetPrice = row.net_price_idr ?? null;
-  const sameRowCandidates = candidates.filter((candidate) => (
-    candidate.source_image_id === imageId
-    && candidate.source_row_index == null
-    && candidate.h5_lifecycle_status !== "deleted"
-    && normalizeMatchText(candidate.raw_product) === normalizedSku
-  ));
-  if (sameRowCandidates.length === 0) return null;
-
-  return sameRowCandidates
-    .sort((a, b) => {
-      const aPieceMatch = candidateDisplayPieceCount(a, row.piece_count) === rowPieceCount ? 1 : 0;
-      const bPieceMatch = candidateDisplayPieceCount(b, row.piece_count) === rowPieceCount ? 1 : 0;
-      if (aPieceMatch !== bPieceMatch) return bPieceMatch - aPieceMatch;
-
-      const aPriceMatch = (a.net_price_idr ?? a.parsed_price_idr ?? null) === rowNetPrice ? 1 : 0;
-      const bPriceMatch = (b.net_price_idr ?? b.parsed_price_idr ?? null) === rowNetPrice ? 1 : 0;
-      if (aPriceMatch !== bPriceMatch) return bPriceMatch - aPriceMatch;
-
-      const aHasMatch = a.matched_entity_type !== "unmatched" && Boolean(a.matched_entity_id) ? 1 : 0;
-      const bHasMatch = b.matched_entity_type !== "unmatched" && Boolean(b.matched_entity_id) ? 1 : 0;
-      if (aHasMatch !== bHasMatch) return bHasMatch - aHasMatch;
-
-      const aApproved = a.status === "approved" ? 1 : 0;
-      const bApproved = b.status === "approved" ? 1 : 0;
-      if (aApproved !== bApproved) return bApproved - aApproved;
-
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    })[0] ?? null;
+function hiddenPriceRowIndexes(value: unknown) {
+  if (!isRecord(value) || !Array.isArray(value.h5_hidden_price_row_indexes)) return new Set<number>();
+  return new Set(value.h5_hidden_price_row_indexes
+    .map(Number)
+    .filter((rowIndex) => Number.isInteger(rowIndex) && rowIndex >= 0));
 }
 
 function buildPriceDisplayRows(
   candidates: AiPriceCandidate[],
   imageId: string,
   rows: StoreVisitPriceImageAnalysis["rows"],
+  hiddenRowIndexes: Set<number>,
 ): PriceDisplayRow[] {
   return rows.flatMap((row, rowIndex) => {
+    if (hiddenRowIndexes.has(rowIndex)) return [];
     const candidate = exactCandidateForRow(candidates, imageId, rowIndex);
-    if (candidate?.h5_lifecycle_status === "deleted") return [];
-    const legacyCandidate = candidate ? null : legacyDisplayCandidateForRow(candidates, imageId, row);
     return [{
       row,
       rowIndex,
       rowKey: `${imageId}:${rowIndex}`,
       candidate,
-      displayCandidate: candidate ?? legacyCandidate,
-      legacyDisplayOnly: !candidate && Boolean(legacyCandidate),
+      displayCandidate: candidate,
     }];
   });
 }
@@ -482,6 +447,7 @@ function detailText(locale: Locale) {
     ? {
         batchCode: "Batch code",
         priceParsing: "Price Parsing",
+        allPriceRows: "All",
         displayAnalysis: "Store Display",
         listPrice: "List Price",
         promoType: "Activity Type",
@@ -489,11 +455,16 @@ function detailText(locale: Locale) {
         pricePerPiece: "Per Piece",
         pieceCount: "Pcs",
         needsConfirmationText: "Needs confirmation",
+        checkingText: "Checking",
+        confirmedText: "Confirmed",
         editRow: "Edit",
         deleteRow: "Delete SKU",
-        confirmRow: "Confirm",
         rowUnmatched: "Unmatched",
         rowEditorTitle: "Edit Price",
+        whyConfirmation: "Why this needs confirmation",
+        confirmAndSave: "Confirm and save",
+        viewPhoto: "View photo",
+        staleCandidate: "The price data has been updated. Please review the latest result.",
         skuMatch: "SKU Match",
         save: "Save",
         cancel: "Cancel",
@@ -561,6 +532,7 @@ function detailText(locale: Locale) {
     : {
         batchCode: "Batch code",
         priceParsing: "Price Parsing",
+        allPriceRows: "All",
         displayAnalysis: "Store Display",
         listPrice: "List Price",
         promoType: "Activity Type",
@@ -568,11 +540,16 @@ function detailText(locale: Locale) {
         pricePerPiece: "Per Piece",
         pieceCount: "Pcs",
         needsConfirmationText: "Needs confirmation",
+        checkingText: "Checking",
+        confirmedText: "Confirmed",
         editRow: "Edit",
         deleteRow: "Delete SKU",
-        confirmRow: "Confirm",
         rowUnmatched: "Unmatched",
         rowEditorTitle: "Edit Price",
+        whyConfirmation: "Why this needs confirmation",
+        confirmAndSave: "Confirm and save",
+        viewPhoto: "View photo",
+        staleCandidate: "The price data has been updated. Please review the latest result.",
         skuMatch: "SKU Match",
         save: "Save",
         cancel: "Cancel",
@@ -687,18 +664,17 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
     makuku_shelf: false,
     competitor_shelf: false,
   });
+  const [priceRowFilter, setPriceRowFilter] = useState<PriceRowFilter>("all");
   const [localUploads, setLocalUploads] = useState<Record<string, LocalUploadState>>({});
   const [updatedImageIds, setUpdatedImageIds] = useState<string[]>([]);
   const [retryingImageIds, setRetryingImageIds] = useState<string[]>([]);
   const [deletingImageIds, setDeletingImageIds] = useState<string[]>([]);
   const [actionSheet, setActionSheet] = useState<ImageActionSheetState | null>(null);
-  const [rowActionSheet, setRowActionSheet] = useState<RowActionSheetState | null>(null);
   const [reanalyzeConfirm, setReanalyzeConfirm] = useState<ReanalyzeConfirmState | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmState | null>(null);
   const [rowDeleteConfirm, setRowDeleteConfirm] = useState<RowDeleteConfirmState | null>(null);
   const [rowEdit, setRowEdit] = useState<RowEditState | null>(null);
   const [rowEditSaving, setRowEditSaving] = useState(false);
-  const [confirmingRowCandidateIds, setConfirmingRowCandidateIds] = useState<string[]>([]);
   const [deletingRowCandidateIds, setDeletingRowCandidateIds] = useState<string[]>([]);
   const [matchOptions, setMatchOptions] = useState<MatchOptionState>({ materials: [], products: [] });
   const [matchOptionsLoading, setMatchOptionsLoading] = useState(false);
@@ -946,9 +922,13 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
     }
   }
 
-  function openRowEditor(section: PriceParseSection, row: StoreVisitPriceImageAnalysis["rows"][number], rowIndex: number) {
-    const candidate = exactCandidateForRow(visit?.ai_price_candidates ?? [], section.image.id, rowIndex);
-    if (!candidate || candidate.status !== "pending" || candidate.h5_lifecycle_status === "deleted") {
+  function openRowEditor(
+    section: PriceParseSection,
+    row: StoreVisitPriceImageAnalysis["rows"][number],
+    rowIndex: number,
+    candidate: AiPriceCandidate,
+  ) {
+    if (candidateReviewState(candidate) !== "needs_confirmation") {
       setError(text.saveRowFailed);
       return;
     }
@@ -957,14 +937,19 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
       rowIndex,
       sku: row.sku,
       candidateId: candidate.id,
+      reviewToken: candidate.approval_input_fingerprint ?? "",
       netPrice: String(candidate.net_price_idr ?? row.net_price_idr ?? ""),
       pieceCount: String(candidateDisplayPieceCount(candidate, row.piece_count) ?? ""),
+      visiblePackagePrice: candidate.ai_net_price_idr ?? candidate.ai_package_price_idr ?? candidate.net_price_idr ?? null,
+      visiblePricePerPiece: candidate.visible_price_per_piece_idr ?? candidate.ai_price_per_piece ?? null,
+      reasonMessages: candidateReasonMessages(candidate, locale),
+      requiresProductCorrection: candidateRequiresProductCorrection(candidate),
+      imagePath: section.signedImage?.path ?? section.image.image_path,
+      thumbnailUrl: section.signedImage?.url ?? null,
       matchedEntityType: candidate.matched_entity_type ?? "unmatched",
       matchedEntityId: candidate.matched_entity_id ?? "",
       selectedMatchLabel: candidate.matched_sku_label ?? candidate.matched_label ?? "",
       matchSearchQuery: "",
-      originalMatchedEntityType: candidate.matched_entity_type ?? "unmatched",
-      originalMatchedEntityId: candidate.matched_entity_id ?? "",
     });
   }
 
@@ -980,7 +965,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
     });
   }
 
-  async function saveRowEdit() {
+  async function confirmRowEdit() {
     if (!rowEdit?.candidateId) {
       setError(text.saveRowFailed);
       return;
@@ -1003,15 +988,22 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "save_h5_row",
+          action: "confirm_h5_row_edit",
           net_price_idr: Math.round(price),
           piece_count: Math.floor(pieces),
+          review_token: rowEdit.reviewToken,
           matched_entity_type: rowEdit.matchedEntityType,
           matched_entity_id: rowEdit.matchedEntityType === "unmatched" ? null : rowEdit.matchedEntityId,
           matched_label: resolveMatchLabel(rowEdit, matchOptions),
         }),
       });
       const savePayload = await saveRes.json().catch(() => ({}));
+      if (saveRes.status === 409 && savePayload.code === "CANDIDATE_STALE") {
+        setRowEdit(null);
+        await loadVisit({ preserveLoading: true });
+        setNotice(text.staleCandidate);
+        return;
+      }
       if (!saveRes.ok) throw new Error(savePayload.error ?? text.saveRowFailed);
       const candidate = savePayload.candidate;
       if (candidate) applySavedRowCandidate(candidate as AiPriceCandidate);
@@ -1021,28 +1013,6 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
       setError(caught instanceof Error ? caught.message : text.saveRowFailed);
     } finally {
       setRowEditSaving(false);
-    }
-  }
-
-  async function confirmRow(candidateId: string) {
-    if (confirmingRowCandidateIds.includes(candidateId)) return;
-    setConfirmingRowCandidateIds((current) => [...current, candidateId]);
-    setError(null);
-    try {
-      const response = await fetch(`/api/store-visit/price-candidates/${candidateId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "confirm_h5_row" }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error ?? text.saveRowFailed);
-      const candidate = payload.candidate;
-      if (candidate) applySavedRowCandidate(candidate as AiPriceCandidate);
-      await loadVisit({ preserveLoading: true });
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : text.saveRowFailed);
-    } finally {
-      setConfirmingRowCandidateIds((current) => current.filter((id) => id !== candidateId));
     }
   }
 
@@ -1058,9 +1028,13 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
         body: JSON.stringify({ action: "delete_h5_row" }),
       });
       const payload = await response.json().catch(() => ({}));
+      if (response.status === 409 && payload.code === "CANDIDATE_STALE") {
+        setRowEdit(null);
+        await loadVisit({ preserveLoading: true });
+        setNotice(text.staleCandidate);
+        return false;
+      }
       if (!response.ok) throw new Error(payload.error ?? text.saveRowFailed);
-      const candidate = payload.candidate;
-      if (candidate) applySavedRowCandidate(candidate as AiPriceCandidate);
       await loadVisit({ preserveLoading: true });
       return true;
     } catch (caught) {
@@ -1485,6 +1459,22 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
             <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <h2 className="font-semibold">{text.priceParsing}</h2>
+                <div className="inline-flex shrink-0 rounded-lg bg-slate-100 p-0.5 text-[11px] font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => setPriceRowFilter("all")}
+                    className={`rounded-md px-2 py-1.5 ${priceRowFilter === "all" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}
+                  >
+                    {text.allPriceRows}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPriceRowFilter("needs_confirmation")}
+                    className={`rounded-md px-2 py-1.5 ${priceRowFilter === "needs_confirmation" ? "bg-white text-amber-800 shadow-sm" : "text-slate-500"}`}
+                  >
+                    {text.needsConfirmationText}
+                  </button>
+                </div>
               </div>
               {priceParseSections.length === 0 ? <EmptyLine text={text.noPriceResult} /> : null}
 
@@ -1514,13 +1504,8 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   retryingImageIds={retryingImageIds}
                   aiJobImageIds={activeAiJob?.target_image_ids ?? []}
                   onOpenActions={(imageId, imageCategory, label) => setActionSheet({ imageId, category: imageCategory, label })}
-                  onOpenRowActions={(section, row, rowIndex, candidate) => {
-                    if (candidate.status !== "pending") return;
-                    setRowActionSheet({ section, row, rowIndex, candidate, label: row.sku });
-                  }}
-                  onConfirmRow={(candidateId) => void confirmRow(candidateId)}
-                  confirmingRowCandidateIds={confirmingRowCandidateIds}
-                  deletingRowCandidateIds={deletingRowCandidateIds}
+                  onEditRow={(section, row, rowIndex, candidate) => openRowEditor(section, row, rowIndex, candidate)}
+                  priceRowFilter={priceRowFilter}
                   onRetakeFile={(imageId, file) => void uploadPricePhoto({ file, category: "makuku_shelf", targetImageId: imageId })}
                   cameraRetakeInputRefs={cameraRetakeInputRefs}
                   albumRetakeInputRefs={albumRetakeInputRefs}
@@ -1551,13 +1536,8 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   retryingImageIds={retryingImageIds}
                   aiJobImageIds={activeAiJob?.target_image_ids ?? []}
                   onOpenActions={(imageId, imageCategory, label) => setActionSheet({ imageId, category: imageCategory, label })}
-                  onOpenRowActions={(section, row, rowIndex, candidate) => {
-                    if (candidate.status !== "pending") return;
-                    setRowActionSheet({ section, row, rowIndex, candidate, label: row.sku });
-                  }}
-                  onConfirmRow={(candidateId) => void confirmRow(candidateId)}
-                  confirmingRowCandidateIds={confirmingRowCandidateIds}
-                  deletingRowCandidateIds={deletingRowCandidateIds}
+                  onEditRow={(section, row, rowIndex, candidate) => openRowEditor(section, row, rowIndex, candidate)}
+                  priceRowFilter={priceRowFilter}
                   onRetakeFile={(imageId, file) => void uploadPricePhoto({ file, category: "competitor_shelf", targetImageId: imageId })}
                   cameraRetakeInputRefs={cameraRetakeInputRefs}
                   albumRetakeInputRefs={albumRetakeInputRefs}
@@ -1634,7 +1614,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
 
         {activeImage ? (
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 p-4"
+            className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/85 p-4"
             role="dialog"
             aria-modal="true"
             onClick={() => setActiveImage(null)}
@@ -1678,52 +1658,14 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
             onClose={() => setRowEdit(null)}
             onChange={setRowEdit}
             onRequestMatchOptions={() => void loadMatchOptions()}
-            onSave={() => void saveRowEdit()}
+            onViewPhoto={() => void openStoredImagePreview({ imageId: rowEdit.imageId, path: rowEdit.imagePath, label: rowEdit.sku })}
+            onDelete={() => {
+              if (!rowEdit.candidateId) return;
+              setRowDeleteConfirm({ candidateId: rowEdit.candidateId, label: rowEdit.sku });
+              setRowEdit(null);
+            }}
+            onSave={() => void confirmRowEdit()}
           />
-        ) : null}
-
-        {rowActionSheet ? (
-          <div className="fixed inset-0 z-[60] flex items-end bg-slate-950/45" role="dialog" aria-modal="true" onClick={() => setRowActionSheet(null)}>
-            <div className="w-full rounded-t-3xl bg-white px-4 pb-6 pt-4 shadow-2xl" onClick={(event) => event.stopPropagation()}>
-              <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-200" />
-              <div className="line-clamp-2 text-sm font-semibold text-slate-900">{rowActionSheet.label}</div>
-              <div className="mt-4 space-y-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const current = rowActionSheet;
-                    setRowActionSheet(null);
-                    openRowEditor(current.section, current.row, current.rowIndex);
-                  }}
-                  className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-medium text-slate-800"
-                >
-                  <span>{text.editRow}</span>
-                  <Pencil className="h-4 w-4 text-slate-400" />
-                </button>
-                <button
-                  type="button"
-                  disabled={deletingRowCandidateIds.includes(rowActionSheet.candidate.id)}
-                  onClick={() => {
-                    setRowDeleteConfirm({ candidateId: rowActionSheet.candidate.id, label: rowActionSheet.label });
-                    setRowActionSheet(null);
-                  }}
-                  className="flex w-full items-center justify-between rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-left text-sm font-medium text-red-700 disabled:opacity-50"
-                >
-                  <span>{deleteRowLabel}</span>
-                  {deletingRowCandidateIds.includes(rowActionSheet.candidate.id)
-                    ? <Loader2 className="h-4 w-4 animate-spin text-red-400" />
-                    : <Trash2 className="h-4 w-4 text-red-400" />}
-                </button>
-              </div>
-              <button
-                type="button"
-                onClick={() => setRowActionSheet(null)}
-                className="mt-3 flex w-full items-center justify-center rounded-2xl bg-slate-100 px-4 py-3 text-sm font-medium text-slate-700"
-              >
-                {text.close}
-              </button>
-            </div>
-          </div>
         ) : null}
 
         {actionSheet ? (
@@ -1991,10 +1933,8 @@ function PriceSectionGroup({
   onThumbnailError,
   onThumbnailLoad,
   onRetryThumbnail,
-  onOpenRowActions,
-  onConfirmRow,
-  confirmingRowCandidateIds,
-  deletingRowCandidateIds,
+  onEditRow,
+  priceRowFilter,
   onRetakeFile,
   cameraRetakeInputRefs,
   albumRetakeInputRefs,
@@ -2023,15 +1963,21 @@ function PriceSectionGroup({
   onThumbnailLoad: (imageId: string, sourceUrl?: string) => void;
   onRetryThumbnail: (imageId: string) => void;
   onOpenActions: (imageId: string, category: "makuku_shelf" | "competitor_shelf", label: string) => void;
-  onOpenRowActions: (section: PriceParseSection, row: StoreVisitPriceImageAnalysis["rows"][number], rowIndex: number, candidate: AiPriceCandidate) => void;
-  onConfirmRow: (candidateId: string) => void;
-  confirmingRowCandidateIds: string[];
-  deletingRowCandidateIds: string[];
+  onEditRow: (section: PriceParseSection, row: StoreVisitPriceImageAnalysis["rows"][number], rowIndex: number, candidate: AiPriceCandidate) => void;
+  priceRowFilter: PriceRowFilter;
   onRetakeFile: (imageId: string, file: File) => void;
   cameraRetakeInputRefs: MutableRefObject<Record<string, HTMLInputElement | null>>;
   albumRetakeInputRefs: MutableRefObject<Record<string, HTMLInputElement | null>>;
 }) {
   const photoActionsLabel = textOrFallback(text.photoActions, locale === "zh" ? "鐓х墖鎿嶄綔" : "Photo actions");
+  const filteredSections = priceRowFilter === "all" ? sections : sections.filter((section) => (
+    buildPriceDisplayRows(
+      candidates,
+      section.image.id,
+      section.result?.rows ?? [],
+      hiddenPriceRowIndexes(section.image.vision_result),
+    ).some((displayRow) => candidateReviewState(displayRow.candidate) === "needs_confirmation")
+  ));
 
   return (
     <div className="space-y-3">
@@ -2039,13 +1985,13 @@ function PriceSectionGroup({
         <button type="button" onClick={onToggleCollapsed} className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
           {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           {title}
-          <span className="text-xs font-medium text-slate-400">{sections.length}</span>
+          <span className="text-xs font-medium text-slate-400">{filteredSections.length}</span>
         </button>
       </div>
       {collapsed ? null : (
         <>
-      {sections.length === 0 ? <EmptyLine text={text.noPriceResult} /> : null}
-      {sections.map((section, index) => (
+      {filteredSections.length === 0 ? <EmptyLine text={sections.length === 0 ? text.noPriceResult : text.noPriceRows} /> : null}
+      {filteredSections.map((section, index) => (
         <div key={section.image.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
           {(() => {
             const sectionLocalUpload = localUploadsByImageId[section.image.id];
@@ -2058,7 +2004,12 @@ function PriceSectionGroup({
             const isAnalyzingImage = section.image.analysis_status === "analyzing";
             const isReanalyzingImage = aiJobImageIds.includes(section.image.id);
             const priceRowsPending = visitAnalysisInProgress || retryingImageIds.includes(section.image.id) || isAnalyzingImage || isReanalyzingImage || (isProcessingRetake && sectionLocalUpload?.status === "analyzing");
-            const displayRows = buildPriceDisplayRows(candidates, section.image.id, section.result?.rows ?? []);
+            const displayRows = buildPriceDisplayRows(
+              candidates,
+              section.image.id,
+              section.result?.rows ?? [],
+              hiddenPriceRowIndexes(section.image.vision_result),
+            ).filter((displayRow) => priceRowFilter === "all" || candidateReviewState(displayRow.candidate) === "needs_confirmation");
             const needsRetake = isRetakeRequiredPriceImage(section.image);
             const isActionDisabled = updateLocked || isReanalyzingImage || retryingImageIds.includes(section.image.id) || deletingImageIds.includes(section.image.id);
 
@@ -2215,48 +2166,48 @@ function PriceSectionGroup({
               const matchInfo = candidateMatchDisplay(displayCandidate);
               const listPrice = candidateDisplayListPrice(displayCandidate, row.list_price_idr ?? row.package_price_idr ?? null);
               const netPrice = candidateDisplayNetPrice(displayCandidate, row.net_price_idr ?? null);
-              const needsConfirmation = rowNeedsConfirmation(row, displayCandidate);
-              const quickConfirmAvailable = needsConfirmation && canQuickConfirmRow(candidate);
-              const isConfirmingRow = Boolean(candidate?.id && confirmingRowCandidateIds.includes(candidate.id));
-              const isDeletingRow = Boolean(candidate?.id && deletingRowCandidateIds.includes(candidate.id));
+              const reviewState = candidateReviewState(candidate);
+              const reasonMessages = candidate ? candidateReasonMessages(candidate, locale) : [];
+              const primaryReason = reasonMessages[0] ?? null;
               return (
                 <div key={rowKey} className="rounded-lg bg-white px-3 py-2 text-xs shadow-sm">
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
                     <div className="line-clamp-1 min-w-0 text-sm font-semibold leading-5 text-slate-900">{row.sku}</div>
                     <div className="flex shrink-0 items-center gap-2">
-                      {quickConfirmAvailable && candidate?.id ? (
+                      {reviewState === "needs_confirmation" && candidate ? (
                         <button
                           type="button"
-                          disabled={isConfirmingRow}
-                          onClick={() => onConfirmRow(candidate.id)}
-                          className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-emerald-600 px-2 py-0.5 text-[11px] font-semibold leading-5 text-white disabled:opacity-60"
+                          onClick={() => onEditRow(section, row, rowIndex, candidate)}
+                          className="shrink-0 whitespace-nowrap text-[11px] font-semibold leading-5 text-blue-600"
                         >
-                          {isConfirmingRow ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-                          {text.confirmRow}
+                          {text.editRow}
                         </button>
                       ) : null}
-                      <button
-                        type="button"
-                        disabled={!candidate || isDeletingRow}
-                        onClick={() => {
-                          if (candidate) onOpenRowActions(section, row, rowIndex, candidate);
-                        }}
-                        className="shrink-0 whitespace-nowrap text-[11px] font-semibold leading-5 text-blue-600 disabled:text-slate-300"
-                      >
-                        {text.editRow}
-                      </button>
                     </div>
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                    {needsConfirmation ? (
+                    {reviewState === "needs_confirmation" ? (
                       <span className="rounded-full bg-amber-100 px-2 py-[1px] text-[10px] font-semibold leading-4 text-amber-700">
                         {text.needsConfirmationText}
                       </span>
                     ) : null}
+                    {reviewState === "checking" ? (
+                      <span className="rounded-full bg-slate-100 px-2 py-[1px] text-[10px] font-semibold leading-4 text-slate-600">
+                        {text.checkingText}
+                      </span>
+                    ) : null}
+                    {reviewState === "confirmed" ? (
+                      <span className="rounded-full bg-emerald-100 px-2 py-[1px] text-[10px] font-semibold leading-4 text-emerald-700">
+                        {text.confirmedText}
+                      </span>
+                    ) : null}
                     <span className={`break-words text-[10px] leading-4 ${matchInfo.matched ? "text-slate-500" : "font-semibold text-red-600"}`}>
-                      {matchInfo.matched ? `${matchInfo.label}${matchInfo.method ? ` · ${matchInfo.method}` : ""}` : text.rowUnmatched}
+                      {matchInfo.matched ? matchInfo.label : text.rowUnmatched}
                     </span>
                   </div>
+                  {reviewState === "needs_confirmation" && primaryReason ? (
+                    <div className="mt-1 line-clamp-2 text-[10px] leading-4 text-amber-800">{primaryReason}</div>
+                  ) : null}
                   <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1">
                     <PriceMetricRow label={text.listPrice} value={formatMoney(listPrice)} />
                     <PriceMetricRow label={text.pieceCount} value={displayPieceCount ? String(displayPieceCount) : "-"} />
@@ -2395,6 +2346,8 @@ function RowEditSheet({
   onClose,
   onChange,
   onRequestMatchOptions,
+  onViewPhoto,
+  onDelete,
   onSave,
 }: {
   rowEdit: RowEditState;
@@ -2406,6 +2359,8 @@ function RowEditSheet({
   onClose: () => void;
   onChange: Dispatch<SetStateAction<RowEditState | null>>;
   onRequestMatchOptions: () => void;
+  onViewPhoto: () => void;
+  onDelete: () => void;
   onSave: () => void;
 }) {
   const [matchPickerOpen, setMatchPickerOpen] = useState(false);
@@ -2441,6 +2396,12 @@ function RowEditSheet({
   const visibleMatchOptions = searchableMatchOptions
     .filter((item) => fuzzyMatchSkuOption(`${item.value} ${item.label}`, matchQueryValue))
     .slice(0, 50);
+  const reasonMessages = rowEdit.reasonMessages.slice(0, 3);
+  const evidenceValues = [
+    `${text.netPrice} ${formatMoney(rowEdit.visiblePackagePrice)}`,
+    `${text.pieceCount} ${rowEdit.pieceCount || "-"}`,
+    `${text.pricePerPiece} ${formatMoney(rowEdit.visiblePricePerPiece)}`,
+  ];
 
   return (
     <div className="fixed inset-0 z-[58] flex items-end bg-slate-950/45" role="dialog" aria-modal="true" onClick={() => !rowEditSaving && onClose()}>
@@ -2448,6 +2409,41 @@ function RowEditSheet({
         <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-200" />
         <div className="text-sm font-semibold text-slate-900">{text.rowEditorTitle}</div>
         <div className="mt-1 line-clamp-2 text-[13px] leading-5 text-slate-500">{rowEdit.sku}</div>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <span className="max-w-full truncate rounded-md bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600">
+            {selectedMatchOptionLabel ?? text.unmatched}
+          </span>
+          <span className="rounded-md bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-700">
+            {text.needsConfirmationText}
+          </span>
+        </div>
+
+        <section className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <div className="text-xs font-semibold text-amber-950">{text.whyConfirmation}</div>
+          <div className="mt-2 flex items-start gap-3">
+            {rowEdit.thumbnailUrl ? (
+              <button
+                type="button"
+                onClick={onViewPhoto}
+                className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-slate-200"
+                aria-label={text.viewPhoto}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={rowEdit.thumbnailUrl} alt={rowEdit.sku} className="h-full w-full object-cover" />
+              </button>
+            ) : null}
+            <div className="min-w-0 flex-1">
+              <div className="text-[11px] leading-4 text-slate-700">{evidenceValues.join(" / ")}</div>
+              {reasonMessages.map((message) => (
+                <div key={message} className="mt-1 text-[11px] leading-4 text-amber-900">{message}</div>
+              ))}
+              <button type="button" onClick={onViewPhoto} className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700">
+                <ImageIcon className="h-3.5 w-3.5" />
+                {text.viewPhoto}
+              </button>
+            </div>
+          </div>
+        </section>
 
         <div className="mt-4 space-y-3">
           <label className="block">
@@ -2457,20 +2453,6 @@ function RowEditSheet({
               onChange={(event) => onChange((current) => current ? { ...current, netPrice: event.target.value } : current)}
               className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-blue-500"
               inputMode="numeric"
-            />
-          </label>
-
-          <label className="block">
-            <div className="mb-1 flex items-center justify-between gap-2 text-xs font-medium text-slate-500">
-              <span>{previewText.pricePerPieceAuto}</span>
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                {previewText.autoCalculated}
-              </span>
-            </div>
-            <input
-              value={computedRowPricePerPiece === null ? "-" : formatMoney(computedRowPricePerPiece)}
-              readOnly
-              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-700 outline-none"
             />
           </label>
 
@@ -2485,90 +2467,114 @@ function RowEditSheet({
           </label>
 
           <label className="block">
-            <div className="mb-1 text-xs font-medium text-slate-500">{text.skuMatch}</div>
-            <select
-              value={rowEdit.matchedEntityType}
-              onChange={(event) => {
-                const nextType = event.target.value as AiPriceCandidateMatchType;
-                if (nextType !== "unmatched") onRequestMatchOptions();
-                onChange((current) => current ? {
-                  ...current,
-                  matchedEntityType: nextType,
-                  matchedEntityId: "",
-                  selectedMatchLabel: "",
-                  matchSearchQuery: "",
-                } : current);
-              }}
-              className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-blue-500"
-            >
-              <option value="material_master">{text.matchTypeOwn}</option>
-              <option value="competitor_product">{text.matchTypeCompetitor}</option>
-              <option value="unmatched">{text.matchTypeNone}</option>
-            </select>
+            <div className="mb-1 flex items-center justify-between gap-2 text-xs font-medium text-slate-500">
+              <span>{previewText.pricePerPieceAuto}</span>
+              <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                {previewText.autoCalculated}
+              </span>
+            </div>
+            <input
+              value={computedRowPricePerPiece === null ? "-" : formatMoney(computedRowPricePerPiece)}
+              readOnly
+              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-700 outline-none"
+            />
           </label>
 
-          {rowEdit.matchedEntityType !== "unmatched" ? (
-            <div>
-              <div className="mb-2 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2">
-                <div className="text-[11px] font-medium uppercase tracking-wide text-blue-500">Current SKU</div>
-                <div className="mt-0.5 truncate text-sm font-semibold text-blue-900">
-                  {selectedMatchOptionLabel ?? text.unmatched}
+          {rowEdit.requiresProductCorrection ? (
+            <div className="space-y-3">
+              <label className="block">
+                <div className="mb-1 text-xs font-medium text-slate-500">{text.skuMatch}</div>
+                <select
+                  value={rowEdit.matchedEntityType}
+                  onChange={(event) => {
+                    const nextType = event.target.value as AiPriceCandidateMatchType;
+                    if (nextType !== "unmatched") onRequestMatchOptions();
+                    onChange((current) => current ? {
+                      ...current,
+                      matchedEntityType: nextType,
+                      matchedEntityId: "",
+                      selectedMatchLabel: "",
+                      matchSearchQuery: "",
+                    } : current);
+                  }}
+                  className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-blue-500"
+                >
+                  <option value="material_master">{text.matchTypeOwn}</option>
+                  <option value="competitor_product">{text.matchTypeCompetitor}</option>
+                  <option value="unmatched">{text.matchTypeNone}</option>
+                </select>
+              </label>
+              {rowEdit.matchedEntityType !== "unmatched" ? (
+                <div>
+                  <div className="mb-1 text-xs font-medium text-slate-500">{text.searchMatch}</div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onRequestMatchOptions();
+                      setMatchPickerOpen(true);
+                    }}
+                    className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-slate-300 bg-white px-3 py-2 text-left text-sm"
+                  >
+                    <span className={`min-w-0 flex-1 truncate ${selectedMatchOptionLabel ? "font-medium text-slate-800" : "text-slate-400"}`}>
+                      {selectedMatchOptionLabel ?? matchOptionsError ?? (matchOptionsLoading ? text.loadingMatchOptions : text.searchMatch)}
+                    </span>
+                    <Search className="h-4 w-4 shrink-0 text-slate-400" />
+                  </button>
+                  <H5SkuMatchSearchSheet
+                    open={matchPickerOpen}
+                    query={matchQueryValue}
+                    placeholder={matchOptionsError ?? (matchOptionsLoading ? text.loadingMatchOptions : text.searchMatch)}
+                    loading={matchOptionsLoading}
+                    error={matchOptionsError}
+                    emptyText={text.searchMatch}
+                    selectedValue={rowEdit.matchedEntityId}
+                    options={visibleMatchOptions}
+                    onQueryChange={(value) => onChange((current) => current ? { ...current, matchSearchQuery: value } : current)}
+                    onClose={() => setMatchPickerOpen(false)}
+                    onSelect={(item) => {
+                      onChange((current) => current ? {
+                        ...current,
+                        matchedEntityId: item.value,
+                        selectedMatchLabel: item.label,
+                        matchSearchQuery: "",
+                      } : current);
+                      setMatchPickerOpen(false);
+                    }}
+                  />
                 </div>
-              </div>
-              <div className="mb-1 text-xs font-medium text-slate-500">{text.searchMatch}</div>
-              <button
-                type="button"
-                onClick={() => {
-                  onRequestMatchOptions();
-                  setMatchPickerOpen(true);
-                }}
-                className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-slate-300 bg-white px-3 py-2 text-left text-sm"
-              >
-                <span className="min-w-0 flex-1 truncate text-slate-400">{matchOptionsError ?? (matchOptionsLoading ? text.loadingMatchOptions : text.searchMatch)}</span>
-                <Search className="h-4 w-4 shrink-0 text-slate-400" />
-              </button>
-              <H5SkuMatchSearchSheet
-                open={matchPickerOpen}
-                query={matchQueryValue}
-                placeholder={matchOptionsError ?? (matchOptionsLoading ? text.loadingMatchOptions : text.searchMatch)}
-                loading={matchOptionsLoading}
-                error={matchOptionsError}
-                emptyText={text.searchMatch}
-                selectedValue={rowEdit.matchedEntityId}
-                options={visibleMatchOptions}
-                onQueryChange={(value) => onChange((current) => current ? { ...current, matchSearchQuery: value } : current)}
-                onClose={() => setMatchPickerOpen(false)}
-                onSelect={(item) => {
-                  onChange((current) => current ? {
-                    ...current,
-                    matchedEntityId: item.value,
-                    selectedMatchLabel: item.label,
-                    matchSearchQuery: "",
-                  } : current);
-                  setMatchPickerOpen(false);
-                }}
-              />
+              ) : null}
             </div>
-          ) : null}
+          ) : (
+            <div>
+              <div className="mb-1 text-xs font-medium text-slate-500">{text.skuMatch}</div>
+              <div className="mb-2 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2">
+                <div className="truncate text-sm font-semibold text-blue-900">{selectedMatchOptionLabel ?? text.unmatched}</div>
+              </div>
+            </div>
+          )}
+
+          <button type="button" disabled={rowEditSaving} onClick={onDelete} className="text-xs font-medium text-red-600 disabled:opacity-60">
+            {text.deleteRow}
+          </button>
         </div>
 
         <div className="sticky bottom-0 -mx-4 mt-4 flex gap-2 bg-white px-4 pb-6 pt-3">
           <button
             type="button"
             disabled={rowEditSaving}
-            onClick={onSave}
-            className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
+            onClick={onClose}
+            className="flex flex-1 items-center justify-center rounded-xl bg-slate-100 px-4 py-3 text-sm font-medium text-slate-700 disabled:opacity-60"
           >
-            {rowEditSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            {text.save}
+            {text.cancel}
           </button>
           <button
             type="button"
             disabled={rowEditSaving}
-            onClick={onClose}
-            className="flex flex-1 items-center justify-center rounded-2xl bg-slate-100 px-4 py-3 text-sm font-medium text-slate-700 disabled:opacity-60"
+            onClick={onSave}
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
           >
-            {text.cancel}
+            {rowEditSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {text.confirmAndSave}
           </button>
         </div>
       </div>

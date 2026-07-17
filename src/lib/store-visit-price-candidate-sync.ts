@@ -29,11 +29,19 @@ function asPriceImageAnalysis(value: unknown): StoreVisitPriceImageAnalysis | nu
   return value as unknown as StoreVisitPriceImageAnalysis;
 }
 
+function hiddenPriceRowIndexes(value: unknown) {
+  if (!isRecord(value) || !Array.isArray(value.h5_hidden_price_row_indexes)) return new Set<number>();
+  return new Set(value.h5_hidden_price_row_indexes
+    .map(Number)
+    .filter((rowIndex) => Number.isInteger(rowIndex) && rowIndex >= 0));
+}
+
 function sourceItemsFromImage(image: PriceImageRow): AiPriceCandidateSourceItem[] {
   const result = asPriceImageAnalysis(image.vision_result);
   if (!result) return [];
+  const hiddenRowIndexes = hiddenPriceRowIndexes(image.vision_result);
 
-  return result.rows.map((row, rowIndex) => ({
+  return result.rows.flatMap((row, rowIndex) => hiddenRowIndexes.has(rowIndex) ? [] : [{
     brand: row.brand ?? "Unknown",
     product: row.sku,
     productFamilyText: row.product_family_text,
@@ -64,7 +72,7 @@ function sourceItemsFromImage(image: PriceImageRow): AiPriceCandidateSourceItem[
     sourceImageId: image.id,
     sourceImagePath: image.image_path,
     sourceRowIndex: rowIndex,
-  }));
+  }]);
 }
 
 export function sourceItemsFromStoredPriceImages(images: PriceImageRow[]) {
