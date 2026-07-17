@@ -1444,12 +1444,14 @@ function productMatchMethodLabel(candidate: AiPriceCandidate, locale: string) {
         EXACT_CODE: "编码精确匹配",
         FULL_SIGNATURE: "完整规格匹配",
         UNIQUE_SIGNATURE: "唯一规格匹配",
+        MASTER_DATA_DUPLICATE: "主数据 SKU 重复",
         UNMATCHED: "未匹配",
       }
     : {
         EXACT_CODE: "Exact code",
         FULL_SIGNATURE: "Full signature",
         UNIQUE_SIGNATURE: "Unique signature",
+        MASTER_DATA_DUPLICATE: "Duplicate master SKU",
         UNMATCHED: "Unmatched",
       };
   return labels[candidate.ai_match_method];
