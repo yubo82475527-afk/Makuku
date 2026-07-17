@@ -5,13 +5,12 @@ import { normalizeMatchingRerunRequest } from "@/lib/store-visit-matching-rerun"
 import {
   createStoreVisitRerunJob,
   listStoreVisitRerunJobs,
+  STORE_VISIT_RERUN_STALE_MS,
   triggerStoreVisitRerunJobRunner,
 } from "@/lib/store-visit-rerun-jobs";
 import type { StoreVisitRerunJob } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
-
-const staleJobMs = 2 * 60 * 1000;
 
 function isActiveRerunJob(job: StoreVisitRerunJob) {
   return job.status === "queued" || job.status === "running";
@@ -21,7 +20,7 @@ function shouldWakeRerunJob(job: StoreVisitRerunJob) {
   if (!isActiveRerunJob(job)) return false;
   if (job.status === "queued") return true;
   const updatedAt = new Date(job.updated_at).getTime();
-  return Number.isNaN(updatedAt) || Date.now() - updatedAt > staleJobMs;
+  return Number.isNaN(updatedAt) || Date.now() - updatedAt > STORE_VISIT_RERUN_STALE_MS;
 }
 
 export async function GET(request: Request) {

@@ -11,7 +11,7 @@ import type {
 
 type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceClient>;
 
-const activeJobStatuses = ["queued", "running"] as const;
+export const STORE_VISIT_RERUN_STALE_MS = 2 * 60 * 1000;
 const maxFailureRecords = 200;
 const maxMatchOnlyVisitsPerRun = 25;
 const historyLimit = 10;
@@ -159,7 +159,8 @@ export async function listStoreVisitRerunJobs(input: {
 }
 
 async function markJobRunning(supabase: SupabaseServiceClient, job: StoreVisitRerunJob) {
-  const { data, error } = await supabase
+  const staleBefore = new Date(Date.now() - STORE_VISIT_RERUN_STALE_MS).toISOString();
+  let query = supabase
     .from("store_visit_rerun_jobs")
     .update({
       status: "running",
@@ -167,11 +168,30 @@ async function markJobRunning(supabase: SupabaseServiceClient, job: StoreVisitRe
       updated_at: nowIso(),
       error_message: null,
     })
-    .eq("id", job.id)
-    .in("status", activeJobStatuses)
-    .select("*");
+    .eq("id", job.id);
+  if (job.status === "queued") {
+    query = query.eq("status", "queued");
+  } else if (job.status === "running") {
+    query = query.eq("status", "running").lt("updated_at", staleBefore);
+  } else {
+    return false;
+  }
+
+  const { data, error } = await query.select("*");
   if (error) throw new Error(error.message);
   return (data ?? []).length > 0;
+}
+
+async function requeueStoreVisitRerunJob(supabase: SupabaseServiceClient, jobId: string) {
+  const { data, error } = await supabase
+    .from("store_visit_rerun_jobs")
+    .update({ status: "queued", updated_at: nowIso() })
+    .eq("id", jobId)
+    .eq("status", "running")
+    .select("*")
+    .maybeSingle();
+  if (error || !data) throw new Error(error?.message ?? "Failed to requeue rerun job");
+  return normalizeJob(data as StoreVisitRerunJob);
 }
 
 async function updateJobFromMatchingProgress(supabase: SupabaseServiceClient, jobId: string, progress: StoreVisitMatchingRerunResult) {
@@ -360,7 +380,7 @@ export async function runStoreVisitRerunJob(input: {
     : await loadNextRunnableJob(supabase);
   if (!job) return { job: null, processed: 0 };
   const claimed = await markJobRunning(supabase, job);
-  if (!claimed && job.status !== "running") return { job: await refreshStoreVisitRerunJobProgress({ jobId: job.id, supabase }), processed: 0 };
+  if (!claimed) return { job: await refreshStoreVisitRerunJobProgress({ jobId: job.id, supabase }), processed: 0 };
 
   if (job.mode === "ai_reanalysis") {
     if (job.child_ai_jobs.length > 0) {
@@ -382,7 +402,7 @@ export async function runStoreVisitRerunJob(input: {
     if (isMatchingResultComplete(result)) {
       return { job: await completeJobFromMatchingResult(supabase, job.id, result), processed: result.processedVisitCount };
     }
-    const refreshedJob = await loadStoreVisitRerunJob({ jobId: job.id, supabase });
+    const refreshedJob = await requeueStoreVisitRerunJob(supabase, job.id);
     await triggerStoreVisitRerunJobRunner({
       requestUrl: input.requestUrl,
       jobId: job.id,
@@ -398,7 +418,7 @@ async function loadNextRunnableJob(supabase: SupabaseServiceClient) {
   const { data, error } = await supabase
     .from("store_visit_rerun_jobs")
     .select("*")
-    .in("status", activeJobStatuses)
+    .eq("status", "queued")
     .order("created_at", { ascending: true })
     .limit(1);
   if (error) throw new Error(error.message);

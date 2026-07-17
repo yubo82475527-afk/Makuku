@@ -56,6 +56,14 @@ test("match-only rerun jobs run in resumable batches and reschedule unfinished w
   assert.match(serviceFile, /triggerStoreVisitRerunJobRunner\(\{[\s\S]*detached:\s*true/);
 });
 
+test("match-only runner has one atomic owner and only reclaims stale work", () => {
+  assert.match(serviceFile, /export const STORE_VISIT_RERUN_STALE_MS/);
+  assert.match(serviceFile, /\.eq\("status", "queued"\)/);
+  assert.match(serviceFile, /\.eq\("status", "running"\)[\s\S]*?\.lt\("updated_at", staleBefore\)/);
+  assert.match(serviceFile, /if \(!claimed\) return \{ job: await refreshStoreVisitRerunJobProgress/);
+  assert.match(serviceFile, /requeueStoreVisitRerunJob/);
+});
+
 test("AI reanalysis rerun jobs refresh existing child jobs instead of creating duplicates", () => {
   assert.match(serviceFile, /job\.mode === "ai_reanalysis"/);
   assert.match(serviceFile, /job\.child_ai_jobs\.length > 0/);

@@ -20,7 +20,7 @@ test("store visit rerun job APIs create list load and run jobs", () => {
   assert.match(jobsRoute, /mode/);
   assert.match(jobsRoute, /createStoreVisitRerunJob/);
   assert.match(jobsRoute, /shouldWakeRerunJob/);
-  assert.match(jobsRoute, /staleJobMs/);
+  assert.match(jobsRoute, /STORE_VISIT_RERUN_STALE_MS/);
   assert.match(jobsRoute, /detached:\s*true/);
   assert.match(jobRoute, /refreshStoreVisitRerunJobProgress/);
   assert.match(runRoute, /CRON_SECRET/);
