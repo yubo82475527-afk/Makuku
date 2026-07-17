@@ -550,6 +550,7 @@ export async function refreshStoreVisitStoredPriceState(input: {
   const nextAnalysisStatus = input.analysisStatusOverride ?? derived.analysisStatus;
   const nextAnalysisError = input.analysisErrorOverride === undefined ? derived.analysisError : input.analysisErrorOverride;
 
+  const retakeRequiredImages = derived.analyzedResults.filter((entry) => isRetakeRequiredResult(entry.result));
   const summaryResult = {
     ...summaryBase,
     ai_result_card: derived.aiResult,
@@ -558,6 +559,13 @@ export async function refreshStoreVisitStoredPriceState(input: {
     image_paths: activeImages.map((image) => image.image_path),
     image_categories: activeImages.map((image) => toImageCategory(image)),
     signed_image_count: activeImages.length,
+    analysis_metrics: {
+      ...(analysisMetrics ?? {}),
+      price_image_count: derived.priceImages.length,
+      price_image_success_count: derived.analyzedResults.length - retakeRequiredImages.length,
+      price_image_failure_count: derived.failedImages.length,
+      price_image_retake_required_count: retakeRequiredImages.length,
+    },
   };
 
   const updatePayload: Record<string, unknown> = {

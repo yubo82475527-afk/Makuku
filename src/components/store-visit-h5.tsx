@@ -966,6 +966,11 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
   useEffect(() => () => clearPhotoPickerTimeout(), []);
 
   async function submit() {
+    // Prevent duplicate submission
+    if (submitting || redirectingToList) {
+      return;
+    }
+
     if (!user?.id) {
       setError(copy.signInFirst);
       return;
