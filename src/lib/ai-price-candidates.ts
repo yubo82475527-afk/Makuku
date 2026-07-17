@@ -517,6 +517,15 @@ export async function insertAiPriceCandidateRows(input: {
         .delete()
         .eq("visit_id", input.visitId));
     if (deleteError) throw new Error(deleteError.message);
+  } else if (input.affectedImageIds && input.affectedImageIds.length > 0) {
+    // When preserving existing candidates but reanalyzing specific images,
+    // delete old candidates from those specific images to avoid duplicate key conflicts
+    const { error: deleteError } = await supabase
+      .from("ai_price_candidates")
+      .delete()
+      .eq("visit_id", input.visitId)
+      .in("source_image_id", input.affectedImageIds);
+    if (deleteError) throw new Error(deleteError.message);
   }
 
   const { data: activeCandidateRows, error: activeCandidateError } = await supabase
