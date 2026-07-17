@@ -326,12 +326,19 @@ export function createProductMatchRulesV2(normalizations: ProductMatchNormalizat
     const fallback = normalizeEvidence(evidence, context);
     const raw = evidence.raw;
     const texts = [raw.productFamilyText, raw.sectionTitle, raw.sku, raw.rowAnchor];
-    const brand = firstNormalizedValue(normalizations, "brand", [evidence.signature?.brand, raw.brand, ...texts]);
-    const fallbackSeries = firstNormalizedValue(normalizations, "series", [fallback.signature.series], brand) ?? fallback.signature.series;
+    const configuredBrand = firstNormalizedValue(normalizations, "brand", [evidence.signature?.brand, raw.brand, ...texts]);
+    const knownConfiguredBrand = configuredBrand && context.brandEntityTypes.has(configuredBrand)
+      ? configuredBrand
+      : null;
+    const fallbackSeries = firstNormalizedValue(normalizations, "series", [fallback.signature.series], knownConfiguredBrand) ?? fallback.signature.series;
     const series = usableSeries(
-      firstNormalizedValue(normalizations, "series", [evidence.signature?.series, ...texts], brand),
+      firstNormalizedValue(normalizations, "series", [evidence.signature?.series, ...texts], knownConfiguredBrand),
       fallbackSeries,
     );
+    const inferredBrand = series && context.seriesOwners.get(series)?.size === 1
+      ? Array.from(context.seriesOwners.get(series)!)[0]
+      : null;
+    const brand = knownConfiguredBrand ?? inferredBrand ?? fallback.signature.brand ?? configuredBrand;
     const size = firstNormalizedValue(normalizations, "size", [evidence.signature?.size, raw.rowAnchor, ...texts], brand);
     const pieceCount = normalizedPieceCount(normalizations, evidence.signature?.pieceCount ?? raw.pieceCount, brand);
     const entityType = resolveEvidenceEntityType(brand, evidence.entityType, context);
