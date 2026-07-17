@@ -1,5 +1,6 @@
 export const OPERATOR_PRICE_REVIEW_REASON_FILTERS = [
   { value: "SKU_MATCH_UNCERTAIN", zh: "商品归属不明确", en: "Product association unclear" },
+  { value: "DUPLICATE_MASTER_SKU", zh: "主数据 SKU 重复", en: "Duplicate master SKU" },
   { value: "PRODUCT_PRICE_BINDING_UNCLEAR", zh: "商品与价格对应不明确", en: "Product-price binding unclear" },
   { value: "PRICE_TAG_UNCLEAR", zh: "价格牌或金额不清晰", en: "Price label or amount unclear" },
   { value: "PIECE_COUNT_UNCLEAR", zh: "包装片数不清晰", en: "Package piece count unclear" },

@@ -834,7 +834,7 @@ export type OfflineStoreVisit = {
 
 export type AiPriceCandidateStatus = "pending" | "approved" | "rejected";
 export type AiPriceCandidateMatchType = "material_master" | "competitor_product" | "unmatched";
-export type AiProductMatchMethod = "EXACT_CODE" | "FULL_SIGNATURE" | "UNIQUE_SIGNATURE" | "UNMATCHED";
+export type AiProductMatchMethod = "EXACT_CODE" | "FULL_SIGNATURE" | "UNIQUE_SIGNATURE" | "MASTER_DATA_DUPLICATE" | "UNMATCHED";
 export type AiPriceCandidateReviewMethod = "auto_rule" | "manual" | "bulk_manual";
 export type BenchmarkAssessment = "READY" | "BUILDING" | "NOT_EVALUATED";
 export type BenchmarkAssessmentReason =

@@ -35,6 +35,7 @@ test("operator reason filters use one complete shared catalog", () => {
   assert.match(reasonFilters, /OPERATOR_PRICE_REVIEW_REASON_FILTERS/);
   for (const key of [
     "SKU_MATCH_UNCERTAIN",
+    "DUPLICATE_MASTER_SKU",
     "PRODUCT_PRICE_BINDING_UNCLEAR",
     "PRICE_TAG_UNCLEAR",
     "PIECE_COUNT_UNCLEAR",
@@ -75,6 +76,7 @@ test("operator reason filtering happens in the database before pagination", () =
   assert.match(domain, /PRICE_DEVIATION_HIGH[\s\S]*filter\("quality_gate_reason_codes", "cs"/);
   assert.match(domain, /PRICE_DEVIATION_CRITICAL[\s\S]*filter\("quality_gate_reason_codes", "cs"/);
   assert.match(domain, /PRICE_TAG_UNCLEAR[\s\S]*eq\("price_evidence_reason_code"/);
+  assert.match(domain, /DUPLICATE_MASTER_SKU[\s\S]*eq\("ai_match_method", "MASTER_DATA_DUPLICATE"\)/);
   assert.match(domain, /QUALITY_CHECK_FAILED[\s\S]*eq\("quality_gate_status", "FAILED"\)/);
   assert.ok(domain.indexOf("switch (filters.reason)") < domain.indexOf("return query;"));
 });

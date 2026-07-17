@@ -104,6 +104,7 @@ const CANDIDATE_SELECT = [
   "ai_matched_entity_type",
   "ai_matched_entity_id",
   "ai_matched_label",
+  "ai_match_method",
   "matched_entity_type",
   "matched_entity_id",
   "matched_label",
@@ -155,6 +156,11 @@ export function buildOperatorReason(candidate: AiPriceCandidate, locale = "zh") 
   const hasCurrentEvidence = Boolean(candidate.price_evidence_reason_code)
     || Boolean(candidate.price_evidence_status);
 
+  if (candidate.ai_match_method === "MASTER_DATA_DUPLICATE") {
+    return isZh
+      ? "主数据中存在多个同规格有效 SKU，系统不会自动选择。"
+      : "Multiple active master SKUs share this specification, so the system will not choose one automatically.";
+  }
   if (primaryReason === "SKU_MATCH_UNCERTAIN" || candidate.matched_entity_type === "unmatched" || !candidate.matched_entity_id) {
     return isZh ? "AI 无法确认这个价格属于哪款商品。" : "AI could not confirm which product this price belongs to.";
   }
@@ -330,6 +336,9 @@ function buildOperatorPriceReviewQuery(
   if (filters.visitCode) query = query.ilike("offline_store_visits.visit_code", `%${escapeIlike(filters.visitCode)}%`);
 
   switch (filters.reason) {
+    case "DUPLICATE_MASTER_SKU":
+      query = query.eq("ai_match_method", "MASTER_DATA_DUPLICATE");
+      break;
     case "PRICE_DEVIATION_HIGH":
     case "PRICE_DEVIATION_CRITICAL":
     case "AMOUNT_SCALE_SUSPECTED":
@@ -347,7 +356,9 @@ function buildOperatorPriceReviewQuery(
       query = query.or("price_evidence_reason_code.eq.PRICE_MATH_CONFLICT,price_evidence_status.eq.CONFLICT");
       break;
     case "SKU_MATCH_UNCERTAIN":
-      query = query.or(`quality_gate_reason_codes.cs.${JSON.stringify(["SKU_MATCH_UNCERTAIN"])},matched_entity_type.eq.unmatched,matched_entity_id.is.null`);
+      query = query
+        .or(`quality_gate_reason_codes.cs.${JSON.stringify(["SKU_MATCH_UNCERTAIN"])},matched_entity_type.eq.unmatched,matched_entity_id.is.null`)
+        .or("ai_match_method.is.null,ai_match_method.neq.MASTER_DATA_DUPLICATE");
       break;
     case "OTHER_EVIDENCE_REVIEW_REQUIRED":
       query = query

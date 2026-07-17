@@ -19,6 +19,7 @@ type ReasonGroupCandidate = Pick<AiPriceCandidate,
   | "visible_price_per_piece_idr"
   | "price_evidence_reason_code"
   | "price_evidence_status"
+  | "ai_match_method"
   | "matched_entity_type"
   | "matched_entity_id"
   | "match_score"
@@ -128,8 +129,13 @@ function buildConfirmationMessages(
     if (!messages.includes(message)) messages.push(message);
   };
   const evidenceReason = candidate.price_evidence_reason_code;
+  const duplicateMasterSku = candidate.ai_match_method === "MASTER_DATA_DUPLICATE";
 
-  if (reasonCodes.has("SKU_MATCH_UNCERTAIN") || candidate.matched_entity_type === "unmatched" || !candidate.matched_entity_id || Number(candidate.match_score ?? 0) < 0.9) {
+  if (duplicateMasterSku) {
+    add(isZh
+      ? "主数据中存在多个同规格有效 SKU，系统不会自动选择。"
+      : "Multiple active master SKUs share this specification, so the system will not choose one automatically.");
+  } else if (reasonCodes.has("SKU_MATCH_UNCERTAIN") || candidate.matched_entity_type === "unmatched" || !candidate.matched_entity_id || Number(candidate.match_score ?? 0) < 0.9) {
     add(isZh ? "AI 无法确认这个价格属于哪款商品。" : "AI could not confirm which product this price belongs to.");
   }
   if (evidenceReason) {

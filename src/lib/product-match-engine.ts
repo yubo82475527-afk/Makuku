@@ -1,4 +1,4 @@
-export type ProductMatchMethod = "EXACT_CODE" | "FULL_SIGNATURE" | "UNIQUE_SIGNATURE" | "UNMATCHED";
+export type ProductMatchMethod = "EXACT_CODE" | "FULL_SIGNATURE" | "UNIQUE_SIGNATURE" | "MASTER_DATA_DUPLICATE" | "UNMATCHED";
 export type ProductMatchEntityType = "material_master" | "competitor_product";
 export type ProductShape = "PANTS" | "TAPE" | null;
 
@@ -138,7 +138,9 @@ function unmatched(
   filteredCandidateCount: number,
 ): ProductMatchResult {
   return {
-    method: "UNMATCHED",
+    method: reason === "EXACT_CODE_NOT_UNIQUE" || reason === "AMBIGUOUS_CANDIDATES"
+      ? "MASTER_DATA_DUPLICATE"
+      : "UNMATCHED",
     product: null,
     reason,
     ruleVersion: rules.version,
@@ -155,7 +157,7 @@ function unmatched(
   };
 }
 
-function matched(input: NormalizedMatchInput, rules: MatchRuleSet, product: NormalizedMatchMaster, method: Exclude<ProductMatchMethod, "UNMATCHED">, candidateCount: number): ProductMatchResult {
+function matched(input: NormalizedMatchInput, rules: MatchRuleSet, product: NormalizedMatchMaster, method: Exclude<ProductMatchMethod, "UNMATCHED" | "MASTER_DATA_DUPLICATE">, candidateCount: number): ProductMatchResult {
   return {
     method,
     product,

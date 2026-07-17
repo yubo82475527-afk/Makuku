@@ -80,10 +80,10 @@ test("one compatible candidate with optional evidence missing returns UNIQUE_SIG
   assert.equal(result.method, "UNIQUE_SIGNATURE");
 });
 
-test("duplicate compatible candidates remain unmatched", () => {
+test("duplicate compatible candidates are classified as duplicate master data", () => {
   const index = compileProductMatchIndex([master(), master({ id: "p2" })], rules);
   const result = matchProduct(evidence(), index, rules);
-  assert.equal(result.method, "UNMATCHED");
+  assert.equal(result.method, "MASTER_DATA_DUPLICATE");
   assert.equal(result.reason, "AMBIGUOUS_CANDIDATES");
 });
 
