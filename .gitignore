@@ -47,3 +47,4 @@ tmp-report-template-preview.png
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+supabase/.temp/
