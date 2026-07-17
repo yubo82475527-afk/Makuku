@@ -559,11 +559,27 @@ export async function refreshStoreVisitStoredPriceState(input: {
     ? analysisMetrics.visit_analysis_duration_ms
     : null;
   const isFirstAnalysis = !priorStartedAt;
-  const visitAnalysisStartedAt = priorStartedAt ?? now;
+
+  let visitAnalysisStartedAt = priorStartedAt ?? now;
+  let visitAnalysisDurationMs = priorDurationMs ?? 0;
+
+  if (isFirstAnalysis) {
+    const { data: aiJob } = await supabase
+      .from("store_visit_ai_jobs")
+      .select("created_at")
+      .eq("visit_id", input.visitId)
+      .eq("job_type", "initial_analysis")
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .single();
+
+    if (aiJob && typeof (aiJob as { created_at?: string }).created_at === "string") {
+      visitAnalysisStartedAt = (aiJob as { created_at: string }).created_at;
+      visitAnalysisDurationMs = Math.max(0, new Date(now).getTime() - new Date(visitAnalysisStartedAt).getTime());
+    }
+  }
+
   const visitAnalysisCompletedAt = now;
-  const visitAnalysisDurationMs = isFirstAnalysis
-    ? Math.max(0, new Date(visitAnalysisCompletedAt).getTime() - new Date(visitAnalysisStartedAt).getTime())
-    : (priorDurationMs ?? 0);
 
   const summaryResult = {
     ...summaryBase,
