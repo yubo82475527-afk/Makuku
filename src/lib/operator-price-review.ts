@@ -62,6 +62,7 @@ export type OperatorPriceReviewExportRow = {
   created_by: string | null;
   product_name: string;
   sku_label: string | null;
+  size: string | null;
   ai_package_price: number | null;
   ai_piece_count: number | null;
   ai_price_per_piece: number | null;
@@ -105,6 +106,7 @@ const CANDIDATE_SELECT = [
   "ai_matched_entity_id",
   "ai_matched_label",
   "ai_match_method",
+  "ai_match_evidence",
   "matched_entity_type",
   "matched_entity_id",
   "matched_label",
@@ -453,6 +455,7 @@ async function toListItem(
   const thumbnailPath = sourceImage?.thumbnail_path ?? sourceImage?.image_path ?? null;
   const sourceImageUrl = thumbnailPath ? await signImage(supabase, thumbnailPath) : null;
   const operatorReasonGroups = buildOperatorPriceReviewReasonGroups(candidate, locale);
+  const matchEvidence = candidate.ai_match_evidence as { signature?: { size?: string } } | null | undefined;
   return {
     id: candidate.id,
     state,
@@ -460,6 +463,7 @@ async function toListItem(
     source_image_available: Boolean(sourceImageUrl),
     product_name: [candidate.raw_brand, candidate.raw_product].filter(Boolean).join(" ").trim() || candidate.raw_product || "-",
     sku_label: resolveMatchedLabel(candidate, matchedLabelMap),
+    size: matchEvidence?.signature?.size || null,
     ai_package_price: positiveNumber(candidate.ai_package_price_idr ?? candidate.ai_net_price_idr ?? candidate.parsed_price_idr),
     ai_piece_count: positiveInteger(candidate.ai_piece_count ?? candidate.piece_count),
     ai_price_per_piece: positiveNumber(candidate.ai_price_per_piece)
@@ -479,6 +483,7 @@ function toExportRow(
   matchedLabelMap: Map<string, string>,
 ): OperatorPriceReviewExportRow {
   const operatorReasonGroups = buildOperatorPriceReviewReasonGroups(candidate, locale);
+  const matchEvidence = candidate.ai_match_evidence as { signature?: { size?: string } } | null | undefined;
   return {
     candidate_id: candidate.id,
     visit_id: candidate.offline_store_visits?.id ?? candidate.visit_id ?? null,
@@ -488,6 +493,7 @@ function toExportRow(
     created_by: candidate.offline_store_visits?.uploader_name ?? null,
     product_name: [candidate.raw_brand, candidate.raw_product].filter(Boolean).join(" ").trim() || candidate.raw_product || "-",
     sku_label: resolveMatchedLabel(candidate, matchedLabelMap),
+    size: matchEvidence?.signature?.size || null,
     ai_package_price: positiveNumber(candidate.ai_package_price_idr ?? candidate.ai_net_price_idr ?? candidate.parsed_price_idr),
     ai_piece_count: positiveInteger(candidate.ai_piece_count ?? candidate.piece_count),
     ai_price_per_piece: positiveNumber(candidate.ai_price_per_piece)

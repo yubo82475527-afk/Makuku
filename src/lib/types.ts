@@ -963,6 +963,7 @@ export type OperatorPriceReviewListItem = {
   source_image_available: boolean;
   product_name: string;
   sku_label: string | null;
+  size: string | null;
   ai_package_price: number | null;
   ai_piece_count: number | null;
   ai_price_per_piece: number | null;

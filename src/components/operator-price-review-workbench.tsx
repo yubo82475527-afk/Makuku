@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { OperatorPriceReviewDrawer } from "@/components/operator-price-review-drawer";
+import { UnmatchedImportDialog } from "@/components/unmatched-import-dialog";
 import { formatIdr, formatJakartaTime } from "@/lib/format";
 import type { OperatorPriceReviewReasonFilter } from "@/lib/operator-price-review-reasons";
 import type { OperatorPriceReviewListItem, OperatorPriceReviewReasonGroup, OperatorPriceReviewState } from "@/lib/types";
@@ -37,6 +38,7 @@ export function OperatorPriceReviewWorkbench({
   const router = useRouter();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [removedPendingIds, setRemovedPendingIds] = useState<Set<string>>(() => new Set());
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const visibleItems = useMemo(
     () => filters.state === "pending" ? items.filter((item) => !removedPendingIds.has(item.id)) : items,
     [filters.state, items, removedPendingIds],
@@ -61,13 +63,29 @@ export function OperatorPriceReviewWorkbench({
           <StateTab locale={locale} filters={filters} state="pending" label={isZh ? "待处理" : "Pending"} active={filters.state === "pending"} />
           <StateTab locale={locale} filters={filters} state="processed" label={isZh ? "已处理" : "Processed"} active={filters.state === "processed"} />
         </div>
-        <a
-          href={exportHref}
-          className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
-        >
-          <Download className="h-4 w-4" />
-          {isZh ? "导出审核数据" : "Export review data"}
-        </a>
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            href={`/api/ai-price-candidates/export-unmatched?date_from=${filters.date_from || ''}&date_to=${filters.date_to || ''}`}
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            <Download className="h-4 w-4" />
+            {isZh ? "导出未匹配" : "Export Unmatched"}
+          </a>
+          <button
+            type="button"
+            onClick={() => setShowImportDialog(true)}
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            {isZh ? "导入匹配" : "Import Matches"}
+          </button>
+          <a
+            href={exportHref}
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            <Download className="h-4 w-4" />
+            {isZh ? "导出审核数据" : "Export review data"}
+          </a>
+        </div>
       </div>
 
       {visibleItems.length === 0 ? (
@@ -83,10 +101,11 @@ export function OperatorPriceReviewWorkbench({
               <thead className="bg-slate-50 text-xs text-slate-500">
                 <tr>
                   <th className="w-24 px-4 py-3">{isZh ? "来源" : "Source"}</th>
-                  <th className="w-[32%] px-4 py-3">{isZh ? "商品" : "Product"}</th>
-                  <th className="w-36 px-4 py-3">{isZh ? "AI 识别价格" : "AI price"}</th>
-                  <th className="w-24 px-4 py-3">{isZh ? "片数量" : "Pieces"}</th>
-                  <th className="w-32 px-4 py-3">{isZh ? "片单价" : "Per-piece"}</th>
+                  <th className="w-[28%] px-4 py-3">{isZh ? "商品" : "Product"}</th>
+                  <th className="w-16 px-4 py-3">{isZh ? "尺码" : "Size"}</th>
+                  <th className="w-20 px-4 py-3">{isZh ? "片数量" : "Pieces"}</th>
+                  <th className="w-32 px-4 py-3">{isZh ? "AI 识别价格" : "AI price"}</th>
+                  <th className="w-28 px-4 py-3">{isZh ? "片单价" : "Per-piece"}</th>
                   <th className="px-4 py-3">{isZh ? "异常原因" : "Reason"}</th>
                   <th className="w-36 px-4 py-3" />
                 </tr>
@@ -99,8 +118,9 @@ export function OperatorPriceReviewWorkbench({
                       <div className="font-medium text-slate-950">{item.product_name}</div>
                       <div className="mt-1 whitespace-normal break-words text-xs text-slate-500">{productAssociationLabel(item, isZh)}</div>
                     </td>
+                    <td className="px-4 py-3 text-center font-semibold text-slate-950">{item.size || "-"}</td>
+                    <td className="px-4 py-3 text-center font-semibold text-slate-950">{item.ai_piece_count ?? "-"}</td>
                     <td className="px-4 py-3 font-semibold text-slate-950">{formatIdr(item.ai_package_price)}</td>
-                    <td className="px-4 py-3 font-semibold text-slate-950">{item.ai_piece_count ?? "-"}</td>
                     <td className="px-4 py-3 font-semibold text-slate-950">{formatIdr(item.ai_price_per_piece)}</td>
                     <td className="px-4 py-3"><ReasonSummary groups={item.operator_reason_groups} fallback={item.operator_reason} /></td>
                     <td className="px-4 py-3 text-right">
@@ -122,9 +142,12 @@ export function OperatorPriceReviewWorkbench({
                   <div className="min-w-0 flex-1">
                     <div className="font-medium text-slate-950">{item.product_name}</div>
                     <div className="mt-1 whitespace-normal break-words text-xs text-slate-500">{productAssociationLabel(item, isZh)}</div>
-                    <div className="mt-2 text-base font-semibold text-slate-950">{formatIdr(item.ai_package_price)}</div>
-                    <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
+                    <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
+                      {item.size ? <span>{isZh ? "尺码" : "Size"}: <span className="font-semibold text-slate-950">{item.size}</span></span> : null}
                       <span>{isZh ? "片数量" : "Pieces"}: <span className="font-semibold text-slate-950">{item.ai_piece_count ?? "-"}</span></span>
+                    </div>
+                    <div className="mt-2 text-base font-semibold text-slate-950">{formatIdr(item.ai_package_price)}</div>
+                    <div className="mt-1 text-xs text-slate-500">
                       <span>{isZh ? "片单价" : "Per-piece"}: <span className="font-semibold text-slate-950">{formatIdr(item.ai_price_per_piece)}</span></span>
                     </div>
                   </div>
@@ -156,6 +179,15 @@ export function OperatorPriceReviewWorkbench({
           locale={locale}
           onClose={() => setActiveId(null)}
           onProcessed={onProcessed}
+        />
+      ) : null}
+      {showImportDialog ? (
+        <UnmatchedImportDialog
+          onClose={() => setShowImportDialog(false)}
+          onSuccess={() => {
+            setShowImportDialog(false);
+            router.refresh();
+          }}
         />
       ) : null}
     </div>
