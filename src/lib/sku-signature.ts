@@ -72,6 +72,7 @@ function parseBrand(text: string) {
   if (/\bLIFREE\b/.test(text)) return "LIFREE";
   if (/\bCONFIDENCE\b/.test(text)) return "CONFIDENCE";
   if (/\bPARENTY\b/.test(text)) return "PARENTY";
+  if (/\bLADIS\b/.test(text)) return "Ladis";
   if (/\bBABY\s*HAPPY\b/.test(text)) return "BABY HAPPY";
   return null;
 }
@@ -88,8 +89,17 @@ function parseSeries(text: string) {
   if (compact.includes("COMFORTFIT") || /\bCOMFIT\b/.test(text) || /\bCF\b/.test(text)) return "COMFORT FIT";
   if (compact.includes("DRYCARE")) return "DRY CARE";
   if (compact.includes("ROYALSOFT")) return "ROYAL SOFT";
+  if (compact.includes("HEAVYFLOW")) return "Heavy Flow";
+  if (compact.includes("MEDIUMFLOW")) return "Medium Flow";
+  // Ladis 系列 - Dream 系列需要区分 Panties 和 Pads
+  if (compact.includes("DREAMPADS")) return "Dream Pads";
+  if (compact.includes("DREAMPANTIES") || (compact.includes("DREAM") && (compact.includes("PANTS") || compact.includes("CELANA") || compact.includes("MENSTRUATION")))) return "Dream Panties";
+  if (compact.includes("PRINCESSLINER")) return "Princess Liner";
+  if (compact.includes("PRINCESS")) return "Princess pads";
+  if (compact.includes("MATERNITY")) return "Maternity";
   if (compact.includes("SLIM")) return "SLIM";
   if (compact.includes("SKINHEALTH") || /\bSH\b/.test(text)) return "SKIN HEALTH";
+  if (compact.includes("SOFT")) return "Soft";
   return null;
 }
 

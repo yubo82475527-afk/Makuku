@@ -331,6 +331,16 @@ export function reconcilePackagePriceMetrics({
       ? finalPiecePriceConfidence
       : priceEvidenceConfidence;
   const lowConfidence = !finalActualPriceClear && priceEvidenceConfidence !== null && priceEvidenceConfidence < PRICE_EVIDENCE_CONFIDENCE_THRESHOLD;
+
+  // 放宽判断：当包价和片数都清晰且置信度高时，推算应该被信任
+  const highConfidenceDerivation = derivedFromPackage
+    && visiblePieceCountClear
+    && selectedPackageEvidence
+    && finalPackagePriceConfidence !== null
+    && finalPackagePriceConfidence >= PRICE_EVIDENCE_CONFIDENCE_THRESHOLD
+    && pieceCountConfidence !== null
+    && pieceCountConfidence >= 0.8; // 片数置信度要求略低一些
+
   const packageToPieceDerivationIsClear = derivedFromPackage
     && !derivedFromPiece
     && !dividedPackageRestoration
@@ -339,7 +349,8 @@ export function reconcilePackagePriceMetrics({
     && !listFieldPiecePrice
     && visiblePieceEvidence?.role !== "PACKAGE"
     && !legacyConfidenceFallback
-    && !lowConfidence;
+    && (!lowConfidence || highConfidenceDerivation); // ← 关键修改：高置信度推算时即使 lowConfidence 也认为清晰
+
   const reviewableDerivedFromPackage = derivedFromPackage && !packageToPieceDerivationIsClear;
   const priceEvidenceStatus: PriceEvidenceStatus = conflict
     ? "CONFLICT"
