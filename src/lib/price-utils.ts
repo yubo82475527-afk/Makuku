@@ -339,6 +339,7 @@ export function reconcilePackagePriceMetrics({
     && finalPackagePriceConfidence !== null
     && finalPackagePriceConfidence >= PRICE_EVIDENCE_CONFIDENCE_THRESHOLD
     && pieceCountConfidence !== null
+    && pieceCountConfidence !== undefined
     && pieceCountConfidence >= 0.8; // 片数置信度要求略低一些
 
   const packageToPieceDerivationIsClear = derivedFromPackage
