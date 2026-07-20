@@ -217,7 +217,7 @@ test("operator price review list shows piece count and per-piece price", () => {
   assert.match(operatorWorkbench, /片数量/);
   assert.match(operatorWorkbench, /片单价/);
   assert.match(operatorWorkbench, /item\.ai_piece_count/);
-  assert.match(operatorWorkbench, /<td className="px-4 py-3 font-semibold text-slate-950">\{item\.ai_piece_count \?\? "-"\}<\/td>/);
+  assert.match(operatorWorkbench, /<td className="px-4 py-3 text-center font-semibold text-slate-950">\{item\.ai_piece_count \?\? "-"\}<\/td>/);
   assert.match(operatorWorkbench, /<span className="font-semibold text-slate-950">\{item\.ai_piece_count \?\? "-"\}<\/span>/);
   assert.match(operatorWorkbench, /item\.ai_price_per_piece/);
   assert.match(operatorWorkbench, /formatIdr\(item\.ai_price_per_piece\)/);
