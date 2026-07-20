@@ -392,6 +392,13 @@ test("store visit refresh clears old candidates when a forced photo now requires
   assert.match(storeVisitAnalysis, /H5 re-analyze replaced or cleared the previous price result\./);
 });
 
+test("store visit AI job clears old price impact when a reanalyzed photo now requires retake", () => {
+  assert.match(storeVisitAiJobs, /if \(retakeRequired\) \{[\s\S]*invalidateStoreVisitImagePriceImpact\(/);
+  assert.match(storeVisitAiJobs, /rejectionReason: "AI image analysis cleared the previous price result because the photo now requires retake\."/);
+  assert.match(storeVisitAiJobs, /candidateDisposition: "delete"/);
+  assert.match(storeVisitAiJobs, /if \(!retakeRequired\) \{[\s\S]*syncStoreVisitPriceCandidatesFromImages\(/);
+});
+
 test("store visit reanalysis can clear snapshot links without scanning every price candidate", () => {
   assert.match(
     candidateSnapshotFkIndexMigration,

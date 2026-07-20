@@ -570,6 +570,19 @@ async function processItem(input: {
     let syncedCandidateCount = 0;
     let eligibleCandidateRowCount = 0;
 
+    if (retakeRequired) {
+      const invalidation = await invalidateStoreVisitImagePriceImpact({
+        visitId: job.visit_id,
+        imageIds: [item.source_image_id],
+        lifecycleStatus: "reanalyzed",
+        rejectionReason: "AI image analysis cleared the previous price result because the photo now requires retake.",
+        candidateDisposition: "delete",
+        supabase,
+      });
+      replacedCandidateCount = invalidation.rejectedCandidateCount;
+      deletedSnapshotCount = invalidation.deletedSnapshotCount;
+    }
+
     if (!retakeRequired) {
       const invalidation = await invalidateStoreVisitImagePriceImpact({
         visitId: job.visit_id,
