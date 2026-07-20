@@ -18,7 +18,7 @@ import type {
 } from "@/lib/types";
 import { createJsonChatCompletion, imageUrlPart, textPart } from "@/lib/ai-client";
 import { parseIdrPrice, reconcilePackagePriceMetrics } from "@/lib/price-utils";
-import { normalizePieceCountFromCandidates, resolveTrustedPieceCount } from "@/lib/piece-count";
+import { normalizePieceCountFromCandidates, normalizePieceCountFromEvidence, resolveTrustedPieceCount } from "@/lib/piece-count";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
 
 const stockRiskLevels: StockRiskLevel[] = ["Normal", "Low Stock", "Out of Stock Risk"];
