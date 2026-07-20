@@ -103,12 +103,12 @@ export function OperatorPriceReviewWorkbench({
                   <th className="w-24 px-4 py-3">{isZh ? "来源" : "Source"}</th>
                   <th className="min-w-[280px] px-4 py-3">{isZh ? "商品" : "Product"}</th>
                   <th className="w-16 px-4 py-3">{isZh ? "尺码" : "Size"}</th>
-                  <th className="w-20 px-4 py-3">{isZh ? "片数量" : "Pieces"}</th>
+                  <th className="w-24 px-4 py-3">{isZh ? "片数量" : "Pieces"}</th>
                   <th className="w-32 px-4 py-3">{isZh ? "AI 识别价格" : "AI price"}</th>
                   <th className="w-28 px-4 py-3">{isZh ? "片单价" : "Per-piece"}</th>
                   <th className="min-w-[320px] px-4 py-3">{isZh ? "异常原因" : "Reason"}</th>
-                  <th className="w-40 px-4 py-3">{isZh ? "创建时间" : "Created"}</th>
-                  <th className="w-36 px-4 py-3" />
+                  <th className="w-36 px-4 py-3">{isZh ? "创建时间" : "Created"}</th>
+                  <th className="w-28 px-4 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -126,8 +126,8 @@ export function OperatorPriceReviewWorkbench({
                     <td className="px-4 py-3"><ReasonSummary groups={item.operator_reason_groups} fallback={item.operator_reason} /></td>
                     <td className="px-4 py-3 text-xs text-slate-500">{formatJakartaTime(item.created_at)}</td>
                     <td className="px-4 py-3 text-right">
-                      <button type="button" onClick={() => setActiveId(item.id)} className="inline-flex h-9 items-center rounded-md bg-slate-900 px-3 text-sm font-medium text-white hover:bg-slate-800">
-                        {filters.state === "pending" ? (isZh ? "查看并处理" : "View and handle") : (isZh ? "查看详情" : "View details")}
+                      <button type="button" onClick={() => setActiveId(item.id)} className="inline-flex h-9 items-center whitespace-nowrap rounded-md bg-slate-900 px-3 text-sm font-medium text-white hover:bg-slate-800">
+                        {filters.state === "pending" ? (isZh ? "处理" : "Handle") : (isZh ? "查看" : "View")}
                       </button>
                     </td>
                   </tr>
@@ -160,7 +160,7 @@ export function OperatorPriceReviewWorkbench({
                   {item.processed_at ? <span className="ml-3">{isZh ? "处理时间" : "Processed"}: {formatJakartaTime(item.processed_at)}</span> : null}
                 </div>
                 <button type="button" onClick={() => setActiveId(item.id)} className="mt-3 inline-flex h-9 w-full items-center justify-center rounded-md bg-slate-900 px-3 text-sm font-medium text-white">
-                  {filters.state === "pending" ? (isZh ? "查看并处理" : "View and handle") : (isZh ? "查看详情" : "View details")}
+                  {filters.state === "pending" ? (isZh ? "处理" : "Handle") : (isZh ? "查看" : "View")}
                 </button>
               </article>
             ))}

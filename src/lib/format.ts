@@ -21,13 +21,15 @@ export function formatPercent(value: number | null | undefined, digits = 1) {
 
 export function formatJakartaTime(value: string | null | undefined) {
   if (!value) return "-";
-  return new Intl.DateTimeFormat("id-ID", {
+  return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jakarta",
-    month: "short",
+    year: "numeric",
+    month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-  }).format(new Date(value));
+    hour12: false,
+  }).format(new Date(value)).replace(",", "");
 }
 
 export function formatJakartaDateTimeSeconds(value: string | null | undefined) {
