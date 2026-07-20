@@ -29,6 +29,14 @@ export type AiPriceCandidateSourceItem = {
   raw_net_price_text?: string | null;
   raw_price_per_piece_text?: string | null;
   visible_price_per_piece_idr?: number | null;
+  normal_package_price_confidence?: number | null;
+  promo_package_price_confidence?: number | null;
+  normal_per_piece_price_confidence?: number | null;
+  promo_per_piece_price_confidence?: number | null;
+  piece_count_confidence?: number | null;
+  row_binding_confidence?: number | null;
+  section_binding_confidence?: number | null;
+  product_identity_confidence?: number | null;
   price_basis?: string | null;
   legacy_confidence_fallback?: boolean | null;
   price_evidence_status?: PriceEvidenceStatus | null;
@@ -375,6 +383,14 @@ function buildAiPriceCandidateRow(input: {
     visiblePricePerPieceText: item.raw_price_per_piece_text,
     pieceCountText: item.raw_piece_count_text,
     skuText: item.product,
+    listPriceConfidence: item.normal_package_price_confidence ?? null,
+    packagePriceConfidence: item.promo_package_price_confidence ?? item.normal_package_price_confidence ?? null,
+    netPriceConfidence: item.promo_package_price_confidence ?? item.normal_package_price_confidence ?? null,
+    visiblePricePerPieceConfidence: item.promo_per_piece_price_confidence ?? item.normal_per_piece_price_confidence ?? null,
+    pieceCountConfidence: item.piece_count_confidence ?? null,
+    rowBindingConfidence: item.row_binding_confidence ?? null,
+    sectionBindingConfidence: item.section_binding_confidence ?? null,
+    productIdentityConfidence: item.product_identity_confidence ?? null,
   });
   const listPrice = reconciledPrices.listPriceIdr ?? parsedPrice;
   const packagePrice = reconciledPrices.packagePriceIdr ?? parsedPrice;
@@ -454,7 +470,7 @@ function buildAiPriceCandidateRow(input: {
     price_evidence_reason_code: priceEvidenceReasonCode,
     conflicts: item.conflicts ?? reconciledPrices.conflicts,
     evidence_review_decision: evidenceReviewDecision,
-    review_decision: "NEED_REVIEW",
+    review_decision: evidenceReviewDecision,
     quality_gate_status: item.type === "SKU" ? "PENDING" : "NOT_REQUIRED",
     quality_gate_reason_codes: [],
     quality_gate_version: null,

@@ -478,6 +478,10 @@ test("store visit price image normalization derives package price from piece pri
         sku: "Derived package sample",
         piece_count_text: "40",
         visible_price_per_piece_text: "2.500",
+        visible_piece_price_confidence: 0.97,
+        piece_count_confidence: 0.98,
+        row_binding_confidence: 0.95,
+        product_identity_confidence: 0.96,
       },
     ],
     warnings: [],
@@ -489,7 +493,9 @@ test("store visit price image normalization derives package price from piece pri
   assert.equal(normalized.rows[0].visible_price_per_piece_idr, 2500);
   assert.equal(normalized.rows[0].price_per_piece_idr, 2500);
   assert.equal(normalized.rows[0].price_basis, "VISIBLE_PRICE_PER_PIECE");
-  assert.match(normalized.warnings.at(-1)?.message ?? "", /DERIVED_FROM_PIECE_PRICE/i);
+  assert.equal(normalized.rows[0].price_evidence_status, "CLEAR");
+  assert.equal(normalized.rows[0].review_decision, "AUTO_APPROVE");
+  assert.doesNotMatch(normalized.warnings.map((warning) => warning.message).join(" "), /DERIVED_FROM_PIECE_PRICE/i);
 });
 
 test("store visit price image normalization ignores package-scale values in the piece price field", () => {
@@ -1080,6 +1086,19 @@ test("candidate generation source integrates the amount-scale guard before per-p
   assert.match(candidateService, /legacy_confidence_fallback/);
   assert.match(candidateService, /price_evidence_detail/);
   assert.match(candidateService, /conflicts/);
+  assert.match(candidateService, /packagePriceConfidence:/);
+  assert.match(candidateService, /visiblePricePerPieceConfidence:/);
+  assert.match(candidateService, /pieceCountConfidence:/);
+  assert.match(candidateService, /rowBindingConfidence:/);
+  assert.match(candidateService, /sectionBindingConfidence:/);
+  assert.match(candidateService, /productIdentityConfidence:/);
+});
+
+test("candidate generation preserves automatic review decisions from clear derived evidence", () => {
+  const candidateService = readFileSync("src/lib/ai-price-candidates.ts", "utf8");
+  assert.match(candidateService, /const evidenceReviewDecision = item\.review_decision \?\? reconciledPrices\.reviewDecision/);
+  assert.match(candidateService, /review_decision: evidenceReviewDecision/);
+  assert.doesNotMatch(candidateService, /review_decision:\s*"NEED_REVIEW"/);
 });
 
 test("store visit analysis passes row-level review evidence into candidate generation", () => {

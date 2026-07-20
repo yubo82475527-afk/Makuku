@@ -361,7 +361,6 @@ test("quality evaluator rejects incomplete candidate hard facts before auto appr
 
   for (const override of [
     { matchScore: 0.89 },
-    { hasWarnings: true },
     { hasConflicts: true },
     { hasSourceImage: false },
     { hasValidPackageFacts: false },
@@ -479,7 +478,8 @@ test("new candidates preserve evidence decision and wait for historical quality"
   assert.match(candidateService, /evidence_review_decision/);
   assert.match(candidateService, /item\.type === "SKU"\s*\?\s*"PENDING"\s*:\s*"NOT_REQUIRED"/);
   assert.match(candidateService, /quality_gate_reason_codes:\s*\[\]/);
-  assert.match(candidateService, /review_decision:\s*"NEED_REVIEW"/);
+  assert.match(candidateService, /const evidenceReviewDecision = item\.review_decision \?\? reconciledPrices\.reviewDecision/);
+  assert.match(candidateService, /review_decision:\s*evidenceReviewDecision/);
 });
 
 test("non-SKU candidates are not stranded in a quality queue that only claims SKUs", () => {

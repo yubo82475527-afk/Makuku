@@ -352,14 +352,27 @@ export function reconcilePackagePriceMetrics({
     && !legacyConfidenceFallback
     && (!lowConfidence || highConfidenceDerivation); // ← 关键修改：高置信度推算时即使 lowConfidence 也认为清晰
 
+  const pieceToPackageDerivationIsClear = derivedFromPiece
+    && !derivedFromPackage
+    && !dividedPackageRestoration
+    && selectedPieceEvidence
+    && finalPiecePriceConfidence !== null
+    && finalPiecePriceConfidence >= PRICE_EVIDENCE_CONFIDENCE_THRESHOLD
+    && pieceCountConfidence !== null
+    && pieceCountConfidence !== undefined
+    && pieceCountConfidence >= 0.8
+    && !legacyConfidenceFallback
+    && !lowConfidence;
+
   const reviewableDerivedFromPackage = derivedFromPackage && !packageToPieceDerivationIsClear;
+  const reviewableDerivedFromPiece = derivedFromPiece && !pieceToPackageDerivationIsClear;
   const priceEvidenceStatus: PriceEvidenceStatus = conflict
     ? "CONFLICT"
     : finalActualPriceClear
       ? "CLEAR"
       : !visiblePieceCountClear && Boolean(pieceCount)
         ? "REVIEW_REQUIRED"
-        : derivedFromPiece || reviewableDerivedFromPackage
+        : reviewableDerivedFromPiece || reviewableDerivedFromPackage
       ? "DERIVED"
       : lowConfidence
         ? "LOW_CONFIDENCE"
@@ -375,7 +388,7 @@ export function reconcilePackagePriceMetrics({
   const warningMessages = [
     lowConfidence ? "LOW_CONFIDENCE: selected price evidence confidence is below review threshold." : null,
     dividedPackageRestoration ? "AI likely divided a whole-package price by piece count. Restored whole-package IDR amount fields." : null,
-    derivedFromPiece && !finalPiecePriceClear ? "DERIVED_FROM_PIECE_PRICE: no clear package price evidence; package price was derived from piece price and piece count." : null,
+    reviewableDerivedFromPiece && !finalPiecePriceClear ? "DERIVED_FROM_PIECE_PRICE: no clear package price evidence; package price was derived from piece price and piece count." : null,
     reviewableDerivedFromPackage && !finalPackagePriceClear ? "DERIVED_FROM_PACKAGE: no clear piece price evidence; analysis piece price was derived from package price and piece count." : null,
     netPiecePrice ? "net_price field contains piece price evidence; kept it separate from package price." : null,
     packageFieldPiecePrice || listFieldPiecePrice ? "Package/list price field contains piece price evidence; kept it separate from package price." : null,
