@@ -96,17 +96,17 @@ export function OperatorPriceReviewWorkbench({
         </div>
       ) : (
         <>
-          <div className="hidden overflow-hidden rounded-lg border border-slate-200 md:block">
-            <table className="w-full table-fixed text-left text-sm">
+          <div className="hidden overflow-x-auto rounded-lg border border-slate-200 md:block">
+            <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-xs text-slate-500">
                 <tr>
                   <th className="w-24 px-4 py-3">{isZh ? "来源" : "Source"}</th>
-                  <th className="w-[28%] px-4 py-3">{isZh ? "商品" : "Product"}</th>
+                  <th className="min-w-[280px] px-4 py-3">{isZh ? "商品" : "Product"}</th>
                   <th className="w-16 px-4 py-3">{isZh ? "尺码" : "Size"}</th>
                   <th className="w-20 px-4 py-3">{isZh ? "片数量" : "Pieces"}</th>
                   <th className="w-32 px-4 py-3">{isZh ? "AI 识别价格" : "AI price"}</th>
                   <th className="w-28 px-4 py-3">{isZh ? "片单价" : "Per-piece"}</th>
-                  <th className="px-4 py-3">{isZh ? "异常原因" : "Reason"}</th>
+                  <th className="min-w-[320px] px-4 py-3">{isZh ? "异常原因" : "Reason"}</th>
                   <th className="w-40 px-4 py-3">{isZh ? "创建时间" : "Created"}</th>
                   <th className="w-36 px-4 py-3" />
                 </tr>
