@@ -41,3 +41,8 @@ test("store visit price candidate sync accepts a caller-owned match context", ()
   assert.match(syncFile, /matchContext\?: ProductMatchContext/);
   assert.match(syncFile, /matchContext: input\.matchContext/);
 });
+
+test("store visit price candidate sync returns exactly the newly inserted candidate IDs", () => {
+  assert.match(syncFile, /inserted_candidate_ids: \[\]/);
+  assert.match(syncFile, /inserted_candidate_ids: inserted\.map\(\(candidate\) => candidate\.id\)/);
+});

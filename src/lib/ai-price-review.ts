@@ -351,13 +351,23 @@ export async function autoApproveAiPriceCandidatesForVisit({
 export async function autoApprovePassedAiPriceCandidates(input: {
   supabase: SupabaseServiceClient;
   limit?: number;
+  candidateIds?: string[];
+  priority?: boolean;
 }) {
   const limit = Math.max(1, Math.min(input.limit ?? 50, 100));
+  const candidateIds = Array.from(new Set((input.candidateIds ?? []).map((value) => value.trim()).filter(Boolean))).slice(0, 50);
+  if (input.priority && candidateIds.length === 0) {
+    return { claimed: 0, approved: 0, failed: 0 };
+  }
   const workerId = `price-auto-approval-${Date.now()}-${globalThis.crypto.randomUUID()}`;
-  const { data, error } = await input.supabase.rpc("claim_ai_price_candidates_for_auto_approval", {
-    p_worker_id: workerId,
-    p_limit: limit,
-  });
+  const { data, error } = await input.supabase.rpc(
+    input.priority
+      ? "claim_ai_price_candidates_for_priority_auto_approval"
+      : "claim_ai_price_candidates_for_auto_approval",
+    input.priority
+      ? { p_worker_id: workerId, p_candidate_ids: candidateIds }
+      : { p_worker_id: workerId, p_limit: limit },
+  );
   if (error) throw new Error(error.message);
 
   let approved = 0;

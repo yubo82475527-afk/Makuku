@@ -85,6 +85,13 @@ test("store visit AI items persist monotonic pipeline stage timings", () => {
   assert.match(storeVisitAiJobs, /Math\.round\(performance\.now\(\) - processStartedAt\)/);
 });
 
+test("store visit AI runs priority quality only for candidates inserted from the current image", () => {
+  assert.match(storeVisitAiJobs, /syncResult\.inserted_candidate_ids\.length > 0/);
+  assert.match(storeVisitAiJobs, /runPriorityPriceQualityGate\(\{[\s\S]*candidateIds: syncResult\.inserted_candidate_ids/);
+  assert.match(storeVisitAiJobs, /priority_claimed/);
+  assert.match(storeVisitAiJobs, /priority_auto_approved/);
+});
+
 test("store visit AI runner processes one claimed image through the full candidate pipeline", () => {
   assert.match(storeVisitAiJobs, /analyzeStoreVisitPriceImage/);
   assert.match(storeVisitAiJobs, /invalidateStoreVisitImagePriceImpact/);

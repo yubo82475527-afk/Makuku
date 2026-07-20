@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { loadProductMatchContext, type ProductMatchContext } from "@/lib/ai-price-candidates";
+import { runPriorityPriceQualityGate } from "@/lib/price-quality-gate-jobs";
 import { analyzeStoreVisitPriceImage } from "@/lib/store-visit-ai";
 import {
   invalidateStoreVisitImagePriceImpact,
@@ -582,6 +583,11 @@ async function processItem(input: {
     let deletedSnapshotCount = 0;
     let syncedCandidateCount = 0;
     let eligibleCandidateRowCount = 0;
+    let priorityClaimed = 0;
+    let priorityPassed = 0;
+    let priorityReviewRequired = 0;
+    let priorityAutoApproved = 0;
+    let priorityAutoApprovalFailed = 0;
 
     if (retakeRequired) {
       const invalidation = await invalidateStoreVisitImagePriceImpact({
@@ -621,6 +627,30 @@ async function processItem(input: {
       performanceMs.candidate_sync = Math.round(performance.now() - candidateSyncStartedAt);
       syncedCandidateCount = syncResult.inserted_count;
       eligibleCandidateRowCount = syncResult.eligible_row_count;
+
+      if (syncResult.inserted_candidate_ids.length > 0) {
+        try {
+          const priority = await runPriorityPriceQualityGate({
+            supabase,
+            candidateIds: syncResult.inserted_candidate_ids,
+          });
+          performanceMs.priority_quality = priority.quality_elapsed_ms;
+          performanceMs.priority_auto_approval = priority.auto_approval_elapsed_ms;
+          priorityClaimed = priority.priority_claimed;
+          priorityPassed = priority.priority_passed;
+          priorityReviewRequired = priority.priority_review_required;
+          priorityAutoApproved = priority.priority_auto_approved;
+          priorityAutoApprovalFailed = priority.priority_auto_approval_failed;
+        } catch (priorityError) {
+          console.error("[store-visit-ai-jobs] priority price quality failed; general worker remains the fallback", {
+            job_id: job.id,
+            visit_id: job.visit_id,
+            image_id: item.source_image_id,
+            candidate_ids: syncResult.inserted_candidate_ids,
+            error: priorityError instanceof Error ? priorityError.message : String(priorityError),
+          });
+        }
+      }
     }
 
     performanceMs.total = Math.round(performance.now() - processStartedAt);
@@ -635,6 +665,11 @@ async function processItem(input: {
         deleted_snapshot_count: deletedSnapshotCount,
         synced_candidate_count: syncedCandidateCount,
         eligible_candidate_row_count: eligibleCandidateRowCount,
+        priority_claimed: priorityClaimed,
+        priority_passed: priorityPassed,
+        priority_review_required: priorityReviewRequired,
+        priority_auto_approved: priorityAutoApproved,
+        priority_auto_approval_failed: priorityAutoApprovalFailed,
         retake_reasons: isRecord(visionResult.photo_quality) ? visionResult.photo_quality.reasons ?? null : null,
         retake_message: isRecord(visionResult.photo_quality) ? visionResult.photo_quality.message ?? null : null,
         performance_ms: performanceMs,

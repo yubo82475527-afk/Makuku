@@ -119,7 +119,7 @@ export async function syncStoreVisitPriceCandidatesFromImages(input: {
 
   const sourceItems = sourceItemsFromStoredPriceImages((images ?? []) as PriceImageRow[]);
   if (sourceItems.length === 0) {
-    return { inserted_count: 0, skipped_existing_count: 0, eligible_row_count: 0 };
+    return { inserted_count: 0, inserted_candidate_ids: [], skipped_existing_count: 0, eligible_row_count: 0 };
   }
 
   const { data: existingRows, error: existingError } = await supabase
@@ -140,6 +140,7 @@ export async function syncStoreVisitPriceCandidatesFromImages(input: {
   if (missingSourceItems.length === 0) {
     return {
       inserted_count: 0,
+      inserted_candidate_ids: [],
       skipped_existing_count: sourceItems.length,
       eligible_row_count: sourceItems.length,
     };
@@ -161,6 +162,7 @@ export async function syncStoreVisitPriceCandidatesFromImages(input: {
 
   return {
     inserted_count: inserted.length,
+    inserted_candidate_ids: inserted.map((candidate) => candidate.id),
     skipped_existing_count: sourceItems.length - missingSourceItems.length,
     eligible_row_count: sourceItems.length,
   };
