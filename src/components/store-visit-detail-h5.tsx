@@ -184,6 +184,10 @@ type PriceRowFilter = "all" | "needs_confirmation";
 function candidateReviewState(candidate: AiPriceCandidate | null): H5RowReviewState {
   if (candidate?.status === "approved") return "confirmed";
   if (!candidate || candidate.status !== "pending") return "checking";
+  // Quality gate passed: ready for manual confirmation
+  if (candidate.quality_gate_status === "PASSED") {
+    return "needs_confirmation";
+  }
   if (candidate.quality_gate_status === "REVIEW_REQUIRED" || candidate.quality_gate_status === "INSUFFICIENT_BENCHMARK") {
     return "needs_confirmation";
   }
