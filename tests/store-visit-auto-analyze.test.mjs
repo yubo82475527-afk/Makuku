@@ -70,6 +70,21 @@ test("store visit AI jobs reconcile persisted price rows into candidates after i
   assert.match(storeVisitAiJobs, /eligible_candidate_row_count/);
 });
 
+test("store visit AI runner shares one product match context across image workers", () => {
+  assert.match(storeVisitAiJobs, /let matchContextPromise: Promise<ProductMatchContext> \| null = null/);
+  assert.match(storeVisitAiJobs, /const getMatchContext = \(\) => matchContextPromise \?\?= loadProductMatchContext\(supabase\)/);
+  assert.match(storeVisitAiJobs, /getMatchContext: \(\) => Promise<ProductMatchContext>/);
+  assert.match(storeVisitAiJobs, /const matchContext = await input\.getMatchContext\(\)/);
+  assert.match(storeVisitAiJobs, /matchContext,\s*supabase,/);
+});
+
+test("store visit AI items persist monotonic pipeline stage timings", () => {
+  assert.match(storeVisitAiJobs, /const processStartedAt = performance\.now\(\)/);
+  assert.match(storeVisitAiJobs, /const performanceMs = \{[\s\S]*vision:[\s\S]*match_context:[\s\S]*candidate_sync:[\s\S]*priority_quality:[\s\S]*priority_auto_approval:[\s\S]*total:/);
+  assert.match(storeVisitAiJobs, /performance_ms: performanceMs/);
+  assert.match(storeVisitAiJobs, /Math\.round\(performance\.now\(\) - processStartedAt\)/);
+});
+
 test("store visit AI runner processes one claimed image through the full candidate pipeline", () => {
   assert.match(storeVisitAiJobs, /analyzeStoreVisitPriceImage/);
   assert.match(storeVisitAiJobs, /invalidateStoreVisitImagePriceImpact/);

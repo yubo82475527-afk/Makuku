@@ -35,3 +35,9 @@ test("store visit price candidate sync only inserts missing row identities", () 
   assert.match(syncFile, /preserveExistingCandidates: true/);
   assert.match(syncFile, /insertAiPriceCandidateRows/);
 });
+
+test("store visit price candidate sync accepts a caller-owned match context", () => {
+  assert.match(syncFile, /import type \{ ProductMatchContext \} from "@\/lib\/ai-price-candidates"/);
+  assert.match(syncFile, /matchContext\?: ProductMatchContext/);
+  assert.match(syncFile, /matchContext: input\.matchContext/);
+});

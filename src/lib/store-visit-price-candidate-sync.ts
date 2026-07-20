@@ -3,6 +3,7 @@ import {
   insertAiPriceCandidateRows,
   type AiPriceCandidateSourceItem,
 } from "@/lib/ai-price-candidates";
+import type { ProductMatchContext } from "@/lib/ai-price-candidates";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import type { StoreVisitPriceImageAnalysis } from "@/lib/types";
 
@@ -95,6 +96,7 @@ const inactiveLifecycleStatuses = new Set(["deleted", "replaced", "reanalyzed"])
 export async function syncStoreVisitPriceCandidatesFromImages(input: {
   visitId: string;
   imageIds?: string[];
+  matchContext?: ProductMatchContext;
   supabase?: SupabaseServiceClient;
 }) {
   const supabase = input.supabase ?? createSupabaseServiceClient();
@@ -146,6 +148,7 @@ export async function syncStoreVisitPriceCandidatesFromImages(input: {
   const rows = await buildAiPriceCandidateRows({
     visitId: input.visitId,
     sourceItems: missingSourceItems,
+    matchContext: input.matchContext,
     supabase,
   });
   const inserted = await insertAiPriceCandidateRows({

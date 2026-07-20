@@ -1,4 +1,5 @@
 import { revalidatePath } from "next/cache";
+import { loadProductMatchContext, type ProductMatchContext } from "@/lib/ai-price-candidates";
 import { analyzeStoreVisitPriceImage } from "@/lib/store-visit-ai";
 import {
   invalidateStoreVisitImagePriceImpact,
@@ -471,8 +472,18 @@ async function processItem(input: {
   supabase: SupabaseServiceClient;
   job: StoreVisitAiJob;
   item: StoreVisitAiJobItem;
+  getMatchContext: () => Promise<ProductMatchContext>;
 }) {
   const { supabase, job, item } = input;
+  const processStartedAt = performance.now();
+  const performanceMs = {
+    vision: 0,
+    match_context: 0,
+    candidate_sync: 0,
+    priority_quality: 0,
+    priority_auto_approval: 0,
+    total: 0,
+  };
   const { data: markedImages, error: markError } = await supabase
     .from("offline_visit_images")
     .update({
@@ -531,6 +542,7 @@ async function processItem(input: {
       visit_date?: string | null;
     };
     const structuredRegion = [typedVisit.province, typedVisit.city_name, typedVisit.district].filter(Boolean).join(" / ");
+    const visionStartedAt = performance.now();
     const result = await analyzeStoreVisitPriceImage({
       visitId: job.visit_id,
       imageId: item.source_image_id,
@@ -542,6 +554,7 @@ async function processItem(input: {
       promoter: typedVisit.promoter ?? typedVisit.uploader_name ?? "",
       visitDate: typedVisit.visit_date ?? "",
     });
+    performanceMs.vision = Math.round(performance.now() - visionStartedAt);
 
     const resultMetadata = isRecord(result.metadata) ? result.metadata : {};
     const visionResult = {
@@ -595,14 +608,22 @@ async function processItem(input: {
       replacedCandidateCount = invalidation.rejectedCandidateCount;
       deletedSnapshotCount = invalidation.deletedSnapshotCount;
 
+      const matchContextStartedAt = performance.now();
+      const matchContext = await input.getMatchContext();
+      performanceMs.match_context = Math.round(performance.now() - matchContextStartedAt);
+      const candidateSyncStartedAt = performance.now();
       const syncResult = await syncStoreVisitPriceCandidatesFromImages({
         visitId: job.visit_id,
         imageIds: [item.source_image_id],
+        matchContext,
         supabase,
       });
+      performanceMs.candidate_sync = Math.round(performance.now() - candidateSyncStartedAt);
       syncedCandidateCount = syncResult.inserted_count;
       eligibleCandidateRowCount = syncResult.eligible_row_count;
     }
+
+    performanceMs.total = Math.round(performance.now() - processStartedAt);
 
     completed = {
       outcome: retakeRequired ? "retake_required" : "succeeded",
@@ -616,6 +637,7 @@ async function processItem(input: {
         eligible_candidate_row_count: eligibleCandidateRowCount,
         retake_reasons: isRecord(visionResult.photo_quality) ? visionResult.photo_quality.reasons ?? null : null,
         retake_message: isRecord(visionResult.photo_quality) ? visionResult.photo_quality.message ?? null : null,
+        performance_ms: performanceMs,
       },
     };
   } catch (error) {
@@ -666,8 +688,11 @@ async function processItem(input: {
     return;
   }
 
+  performanceMs.total = Math.round(performance.now() - processStartedAt);
   const outcome: StoreVisitAiFinalizeOutcome = analysisFailure ? "failed" : completed!.outcome;
-  const resultSummary = analysisFailure ? { error_message: analysisFailure } : completed!.resultSummary;
+  const resultSummary = analysisFailure
+    ? { error_message: analysisFailure, performance_ms: performanceMs }
+    : completed!.resultSummary;
   const finalizeResult = await finalizeStoreVisitAiJobItem({
     supabase,
     item,
@@ -792,6 +817,8 @@ export async function runStoreVisitAiJob(input: {
   supabase?: SupabaseServiceClient;
 } = {}) {
   const supabase = input.supabase ?? createSupabaseServiceClient();
+  let matchContextPromise: Promise<ProductMatchContext> | null = null;
+  const getMatchContext = () => matchContextPromise ??= loadProductMatchContext(supabase);
   const enqueueResult = await enqueuePendingStoreVisitInitialAnalysisJobs({
     supabase,
     limit: pendingEnqueueLimit(),
@@ -807,7 +834,7 @@ export async function runStoreVisitAiJob(input: {
       const claimed = await claimNextItem({ supabase, jobId: input.jobId });
       if (!claimed) break;
 
-      await processItem({ supabase, job: claimed.job, item: claimed.item });
+      await processItem({ supabase, job: claimed.job, item: claimed.item, getMatchContext });
       const refreshed = await refreshJobCounts(supabase, claimed.job.id);
       revalidateVisitPaths(claimed.job.visit_id);
 
