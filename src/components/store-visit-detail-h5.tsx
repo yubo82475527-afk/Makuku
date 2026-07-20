@@ -1378,32 +1378,9 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
           <div className="space-y-4">
             <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="text-xs font-medium uppercase text-slate-500">{copy.analysisStatus}</div>
-                  <div className="mt-1 flex items-baseline gap-2">
-                    <div className="text-lg font-bold">{mobileAnalysisStatusLabel(locale, status)}</div>
-                    {status === "completed" && visit?.offline_visit_images && visit.offline_visit_images.length > 0 ? (
-                      <div className="text-xs text-slate-500">
-                        {(() => {
-                          const latestImageTime = visit.offline_visit_images
-                            .map(img => img.created_at ? new Date(img.created_at).getTime() : 0)
-                            .reduce((max, time) => Math.max(max, time), 0);
-                          if (latestImageTime > 0) {
-                            const date = new Date(latestImageTime);
-                            return date.toLocaleString(locale === "zh" ? "zh-CN" : "en-US", {
-                              year: "numeric",
-                              month: "2-digit",
-                              day: "2-digit",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                              hour12: false,
-                            });
-                          }
-                          return null;
-                        })()}
-                      </div>
-                    ) : null}
-                  </div>
+                  <div className="mt-1 text-lg font-bold">{mobileAnalysisStatusLabel(locale, status)}</div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   {canRunWholeVisitAnalysis ? (

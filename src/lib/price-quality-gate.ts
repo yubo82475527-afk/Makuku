@@ -132,11 +132,12 @@ export function evaluatePriceQualityGate(input: PriceQualityGateInput): PriceQua
   const reasonCodes: PriceQualityReasonCode[] = [];
   const assessment = assessBenchmark(input);
 
+  // Only block if evidence review decision is not AUTO_APPROVE OR there are actual conflicts.
+  // Price derivation warnings (DERIVED_FROM_PACKAGE) are acceptable when evidence is clear.
   if (
     input.evidenceReviewDecision !== "AUTO_APPROVE"
     || !isPositiveFinite(input.candidatePricePerPiece)
-    || input.hasWarnings
-    || input.hasConflicts
+    || input.hasConflicts  // Only conflicts block, not all warnings
     || !input.hasSourceImage
     || !input.hasValidPackageFacts
   ) {
