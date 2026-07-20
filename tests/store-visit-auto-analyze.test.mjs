@@ -111,7 +111,7 @@ test("H5 list does not expose manual whole-visit Ai after initial analysis", () 
   assert.doesNotMatch(storeVisitsListH5, /function reanalyzeVisit/);
   assert.doesNotMatch(storeVisitsListH5, /reanalyzingVisitId/);
   assert.doesNotMatch(storeVisitsListH5, /onClick=\{\(\) => reanalyzeVisit\(visit\.id\)\}/);
-  assert.match(storeVisitsListH5, /openVisitToHandlePhotos/);
+  assert.match(storeVisitsListH5, /openVisitToHandleWork/);
 });
 
 test("store visit analysis sends signed URLs to AI before falling back to inline images", () => {
@@ -316,7 +316,8 @@ test("derived visit analysis state keeps in-flight image analysis as analyzing",
 test("H5 list derives retake-required from structured status instead of error text", () => {
   assert.doesNotMatch(storeVisitsListH5, /price_photo_retake_required/);
   assert.doesNotMatch(storeVisitsListH5, /function hasPricePhotoRetakeRequired/);
-  assert.match(storeVisitsListH5, /if \(status === "partial" \|\| status === "action_required" \|\| status === "failed" \|\| status === "analyzing"\) return status;/);
+  assert.match(storeVisitsListH5, /visit\.price_handling\?\.action_counts\.retake_required/);
+  assert.match(storeVisitsListH5, /const priceRetakeRequired = \(visit\.price_handling\?\.action_counts\.retake_required \?\? 0\) > 0;/);
 });
 
 test("store visit analysis keeps display failures separate without running display AI in the price-only flow", () => {

@@ -507,8 +507,9 @@ test("mobile visit list summarizes parsed brands by sku count", () => {
 test("mobile visit list completion state is not derived from analysis_status alone", () => {
   assert.match(storeVisitsListH5, /visit_status/);
   assert.match(storeVisitsListH5, /photo_count/);
-  assert.match(storeVisitsListH5, /function visitDisplayStatus/);
-  assert.match(storeVisitsListH5, /const status = visitDisplayStatus\(visit\)/);
+  assert.match(storeVisitsListH5, /function visitHandlingStatus/);
+  assert.match(storeVisitsListH5, /return visit\.price_handling\?\.status \?\? "PROCESSING"/);
+  assert.match(storeVisitsListH5, /const handlingStatus = visitHandlingStatus\(visit\)/);
 });
 
 test("store visits API counts today's unique stores instead of raw visit rows", () => {

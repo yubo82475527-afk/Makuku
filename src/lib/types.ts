@@ -793,6 +793,7 @@ export type OfflineStoreVisit = {
   ai_result?: StoreVisitAiResult | null;
   analysis_status?: StoreVisitAnalysisStatus | null;
   analysis_error?: string | null;
+  price_handling?: VisitPriceHandlingSummary;
   city: string;
   province?: string | null;
   city_name?: string | null;
@@ -958,6 +959,7 @@ export type AiPriceCandidate = {
   match_score: number;
   warnings: { type?: string; message: string }[];
   status: AiPriceCandidateStatus;
+  price_handling?: PriceCandidateHandling;
   price_snapshot_id: string | null;
   reviewed_piece_count: number | null;
   reviewed_price_per_piece: number | null;

@@ -386,7 +386,9 @@ test("store visit detail route returns signed photos from new image table and le
   assert.match(storeVisitRoute, /const aiPriceCandidateSelect = /);
   assert.match(storeVisitRoute, /attachAiPriceCandidateMatchLabels/);
   assert.match(storeVisitRoute, /const currentCandidates = \(signedVisit\.ai_price_candidates \?\? \[\]\)\.filter/);
-  assert.match(storeVisitRoute, /ai_price_candidates: await attachAiPriceCandidateMatchLabels\(supabase, currentCandidates\)/);
+  assert.match(storeVisitRoute, /const candidateResponses = candidatesWithLabels\.map\(\(candidate\) => \(\{[\s\S]+price_handling: resolveCandidatePriceHandling\(candidate\)/);
+  assert.match(storeVisitRoute, /price_handling: summarizeVisitPriceHandling\(\{/);
+  assert.match(storeVisitRoute, /ai_price_candidates: candidateResponses/);
   assert.match(storeVisitRoute, /candidate\.status !== "rejected"/);
   assert.match(storeVisitRoute, /const visitColumns = "id,visit_code,[^"]+image_categories"/);
   assert.match(storeVisitRoute, /const currentImageSelect = "offline_visit_images\(id,visit_id,replaces_image_id,replaced_by_image_id,deleted_at,deletion_reason,image_type,image_path,thumbnail_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at\)"/);
@@ -446,13 +448,12 @@ test("mobile store visit detail displays list price separately from net price", 
   assert.doesNotMatch(storeVisitDetailH5, /<PriceMetricRow label=\{text\.listPrice\} value=\{formatMoney\(packagePrice\)\}/);
 });
 
-test("mobile store visit detail shows need-confirm as a row tag without hiding parsed prices", () => {
-  assert.match(storeVisitDetailH5, /needsConfirmationText: "Needs confirmation"/);
-  assert.match(storeVisitDetailH5, /function candidateReviewState/);
-  assert.match(storeVisitDetailH5, /candidate\?\.status === "approved"/);
-  assert.match(storeVisitDetailH5, /candidate\.quality_gate_status === "REVIEW_REQUIRED"/);
-  assert.match(storeVisitDetailH5, /reviewState === "needs_confirmation"/);
-  assert.match(storeVisitDetailH5, /\{text\.needsConfirmationText\}/);
+test("mobile store visit detail renders backend action-required rows without hiding parsed prices", () => {
+  assert.match(storeVisitDetailH5, /function candidateHandlingStatus/);
+  assert.match(storeVisitDetailH5, /function candidateNeedsManualConfirmation/);
+  assert.match(storeVisitDetailH5, /candidate\?\.price_handling\?\.action_type === "MANUAL_CONFIRMATION_REQUIRED"/);
+  assert.match(storeVisitDetailH5, /handlingStatus === "ACTION_REQUIRED"/);
+  assert.match(storeVisitDetailH5, /\{text\.actionRequiredText\}/);
   assert.doesNotMatch(storeVisitDetailH5, /formatReviewableMoney\(listPrice, needsConfirmation/);
   assert.doesNotMatch(storeVisitDetailH5, /formatReviewablePieceCount\(displayPieceCount, needsConfirmation/);
   assert.doesNotMatch(storeVisitDetailH5, />浣庣疆淇?/);
@@ -461,10 +462,10 @@ test("mobile store visit detail shows need-confirm as a row tag without hiding p
   assert.doesNotMatch(storeVisitDetailH5, />Legacy</);
 });
 
-test("mobile store visit detail filters price rows by current review state", () => {
+test("mobile store visit detail filters price rows by backend action type", () => {
   assert.match(storeVisitDetailH5, /type PriceRowFilter = "all" \| "needs_confirmation"/);
   assert.match(storeVisitDetailH5, /const \[priceRowFilter, setPriceRowFilter\] = useState<PriceRowFilter>\("all"\)/);
-  assert.match(storeVisitDetailH5, /priceRowFilter === "all" \|\| candidateReviewState\(displayRow\.candidate\) === "needs_confirmation"/);
+  assert.match(storeVisitDetailH5, /priceRowFilter === "all" \|\| candidateNeedsManualConfirmation\(displayRow\.candidate\)/);
   assert.match(storeVisitDetailH5, /allPriceRows: "All"/);
   assert.match(storeVisitDetailH5, /onClick=\{\(\) => setPriceRowFilter\("needs_confirmation"\)\}/);
   assert.match(storeVisitDetailH5, /priceRowFilter=\{priceRowFilter\}/);

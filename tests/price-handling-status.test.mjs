@@ -1,9 +1,13 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildOperatorPriceReviewReasonGroups } from "../src/lib/operator-price-review-reason-groups.ts";
 
 const modulePath = new URL("../src/lib/price-handling-status.ts", import.meta.url);
+const storeVisitRoute = readFileSync("src/app/api/store-visit/[id]/route.ts", "utf8");
+const storeVisitDetailH5 = readFileSync("src/components/store-visit-detail-h5.tsx", "utf8");
+const storeVisitsRoute = readFileSync("src/app/api/store-visits/route.ts", "utf8");
+const storeVisitsListH5 = readFileSync("src/components/store-visits-list-h5.tsx", "utf8");
 
 async function loadPriceHandling() {
   assert.equal(existsSync(modulePath), true, "price handling resolver must exist");
@@ -112,4 +116,31 @@ test("clear auto-approved candidates have no invented manual-confirmation reason
   }, "zh").flatMap((group) => group.messages);
 
   assert.deepEqual(messages, []);
+});
+
+test("store visit detail attaches backend-owned candidate and Visit handling conclusions", () => {
+  assert.match(storeVisitRoute, /resolveCandidatePriceHandling/);
+  assert.match(storeVisitRoute, /summarizeVisitPriceHandling/);
+  assert.match(storeVisitRoute, /price_handling:\s*summarizeVisitPriceHandling/);
+  assert.match(storeVisitRoute, /price_handling:\s*resolveCandidatePriceHandling\(candidate\)/);
+});
+
+test("H5 renders backend handling status and never maps passed rows to manual confirmation", () => {
+  assert.match(storeVisitDetailH5, /candidate\?\.price_handling\?\.status/);
+  assert.match(storeVisitDetailH5, /candidate\?\.price_handling\?\.action_type === "MANUAL_CONFIRMATION_REQUIRED"/);
+  assert.doesNotMatch(storeVisitDetailH5, /if \(candidate\.quality_gate_status === "PASSED"\) \{\s*return "needs_confirmation";/s);
+});
+
+test("H5 Visit header renders the backend price handling conclusion", () => {
+  assert.match(storeVisitDetailH5, /visit\?\.price_handling\?\.status \?\? "PROCESSING"/);
+  assert.match(storeVisitDetailH5, /Price handling/);
+  assert.doesNotMatch(storeVisitDetailH5, /mobileAnalysisStatusLabel\(locale, status\)/);
+});
+
+test("mobile Visit list consumes backend price handling instead of deriving analysis display state", () => {
+  assert.match(storeVisitsRoute, /loadPriceHandlingCandidatesForVisits/);
+  assert.match(storeVisitsRoute, /const priceHandlingByVisitId = new Map/);
+  assert.match(storeVisitsRoute, /priceHandlingByVisitId\.get\(visit\.id\)/);
+  assert.match(storeVisitsListH5, /visit\.price_handling\?\.status/);
+  assert.doesNotMatch(storeVisitsListH5, /function visitDisplayStatus/);
 });

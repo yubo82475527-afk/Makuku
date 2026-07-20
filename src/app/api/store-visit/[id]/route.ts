@@ -7,6 +7,7 @@ import { isInactiveVisitImage, refreshStoreVisitStoredPriceState } from "@/lib/s
 import { reconcileActiveStoreVisitAiJob, summarizeStoreVisitAiJob } from "@/lib/store-visit-ai-jobs";
 import { syncStoreVisitPriceCandidatesFromImages } from "@/lib/store-visit-price-candidate-sync";
 import { createStoreVisitThumbnailToken } from "@/lib/store-visit-thumbnail-token";
+import { resolveCandidatePriceHandling, summarizeVisitPriceHandling } from "@/lib/price-handling-status";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -234,16 +235,27 @@ export async function GET(request: Request, ctx: RouteContext) {
       && candidate.h5_lifecycle_status !== "replaced"
       && candidate.h5_lifecycle_status !== "reanalyzed"
     ));
+    const candidatesWithLabels = await attachAiPriceCandidateMatchLabels(supabase, currentCandidates);
+    const candidateResponses = candidatesWithLabels.map((candidate) => ({
+      ...candidate,
+      price_handling: resolveCandidatePriceHandling(candidate),
+    }));
+    const activeAiJob = summarizeStoreVisitAiJob(activeAi.job, activeAi.items);
 
     return Response.json({
       visit: {
         ...signedVisit,
-        ai_price_candidates: await attachAiPriceCandidateMatchLabels(supabase, currentCandidates),
+        ai_price_candidates: candidateResponses,
+        price_handling: summarizeVisitPriceHandling({
+          analysis_status: signedVisit.analysis_status,
+          active_job_status: activeAiJob?.status ?? null,
+          candidates: currentCandidates,
+        }),
         replaced_offline_visit_images: inactiveImages,
         active_signed_images: signedVisitWithActiveImages.active_signed_images,
         replaced_signed_images: replacedSignedImages,
         signed_images: signedVisitWithActiveImages.active_signed_images,
-        active_ai_job: summarizeStoreVisitAiJob(activeAi.job, activeAi.items),
+        active_ai_job: activeAiJob,
       },
     });
   } catch (error) {
