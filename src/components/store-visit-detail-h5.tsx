@@ -810,21 +810,29 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   const activeAiJobForPolling = visit?.active_ai_job ?? null;
   const activeAiJobId = activeAiJobForPolling?.id;
   const activeAiJobStatus = activeAiJobForPolling?.status;
+  const shouldPollPriceHandling = visit?.price_handling?.status === "PROCESSING";
 
   useEffect(() => {
-    if (!activeAiJobId || !isActiveAiJob(activeAiJobForPolling)) return undefined;
+    if ((!activeAiJobId || !isActiveAiJob(activeAiJobForPolling)) && !shouldPollPriceHandling) return undefined;
 
     let cancelled = false;
     async function pollAiJob() {
       try {
-        const response = await fetch(`/api/store-visit/ai-jobs/${activeAiJobId}`);
-        const payload = await response.json().catch(() => ({}));
-        if (cancelled || !response.ok) return;
-        const summary = payload.summary as StoreVisitAiJobSummary | null | undefined;
-        if (summary) {
-          setVisit((current) => current ? { ...current, active_ai_job: summary } : current);
+        if (activeAiJobId && isActiveAiJob(activeAiJobForPolling)) {
+          const response = await fetch(`/api/store-visit/ai-jobs/${activeAiJobId}`);
+          const payload = await response.json().catch(() => ({}));
+          if (cancelled || !response.ok) return;
+          const summary = payload.summary as StoreVisitAiJobSummary | null | undefined;
+          if (summary) {
+            setVisit((current) => current ? { ...current, active_ai_job: summary } : current);
+          }
+          if (!isActiveAiJob(summary)) {
+            await loadVisit({ preserveLoading: true });
+          }
+          return;
         }
-        if (!isActiveAiJob(summary)) {
+
+        if (!cancelled) {
           await loadVisit({ preserveLoading: true });
         }
       } catch {
@@ -838,7 +846,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [activeAiJobForPolling, activeAiJobId, activeAiJobStatus, loadVisit]);
+  }, [activeAiJobForPolling, activeAiJobId, activeAiJobStatus, loadVisit, shouldPollPriceHandling]);
 
   useEffect(() => {
     let cancelled = false;

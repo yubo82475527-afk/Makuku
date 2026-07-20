@@ -637,6 +637,13 @@ test("store visit detail and routes expose active Ai job state for H5 polling", 
   assert.match(storeVisitAiJobRoute, /summary: summarizeStoreVisitAiJob/);
 });
 
+test("H5 detail keeps polling while backend price handling is processing", () => {
+  assert.match(storeVisitDetailH5, /const shouldPollPriceHandling = visit\?\.price_handling\?\.status === "PROCESSING"/);
+  assert.match(storeVisitDetailH5, /\(!activeAiJobId \|\| !isActiveAiJob\(activeAiJobForPolling\)\) && !shouldPollPriceHandling/);
+  assert.match(storeVisitDetailH5, /if \(activeAiJobId && isActiveAiJob\(activeAiJobForPolling\)\)/);
+  assert.match(storeVisitDetailH5, /window\.setInterval\(pollAiJob, 2500\)/);
+});
+
 test("mobile store visit detail does not crash when selected SKU option is missing", () => {
   assert.match(storeVisitDetailH5, /function formatMaterialOptionLabel\(item: MaterialMaster \| null \| undefined\)/);
   assert.match(storeVisitDetailH5, /String\(item\?\.tenant_sku_code \?\? ""\)\.trim\(\)/);
