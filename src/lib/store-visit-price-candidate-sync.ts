@@ -55,6 +55,7 @@ function sourceItemsFromImage(image: PriceImageRow): AiPriceCandidateSourceItem[
     promo_type: row.promo_type,
     piece_count: row.piece_count,
     raw_piece_count_text: row.piece_count_text,
+    piece_count_source_label: row.piece_count_source_label,
     raw_package_price_text: row.package_price_text,
     raw_net_price_text: row.net_price_text,
     raw_price_per_piece_text: row.visible_price_per_piece_text,

@@ -1,6 +1,6 @@
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
 import { derivePriceEvidenceReasonCode, parseIdrPrice, reconcilePackagePriceMetrics } from "@/lib/price-utils";
-import { normalizePieceCount, normalizePieceCountFromCandidates, normalizePieceCountFromEvidence, parsePieceCountText } from "@/lib/piece-count";
+import { normalizePieceCount, normalizePieceCountFromCandidates, parsePieceCountText, resolveTrustedPieceCount } from "@/lib/piece-count";
 import { compileProductMatchIndex, matchProduct, type CompiledProductMatchIndex, type MatchRuleSet, type ProductMatchMaster } from "@/lib/product-match-engine";
 import { createProductMatchRulesV2 } from "@/lib/product-match-rules-v2";
 import { compileProductMatchNormalizations, type ProductMatchNormalizationRule } from "@/lib/product-match-normalizations";
@@ -25,6 +25,7 @@ export type AiPriceCandidateSourceItem = {
   promo_type?: string | null;
   piece_count: number | null;
   raw_piece_count_text?: string | null;
+  piece_count_source_label?: string | null;
   raw_package_price_text?: string | null;
   raw_net_price_text?: string | null;
   raw_price_per_piece_text?: string | null;
@@ -369,7 +370,13 @@ function buildAiPriceCandidateRow(input: {
 }) {
   const { item } = input;
   const parsedPrice = parseCandidatePrice(item.price);
-  const pieceCount = normalizePieceCountFromEvidence(item.piece_count, item.raw_piece_count_text, item.product);
+  const pieceCountResolution = resolveTrustedPieceCount({
+    productTitle: item.product,
+    extractedValue: item.piece_count,
+    extractedText: item.raw_piece_count_text,
+    sourceLabel: item.piece_count_source_label,
+  });
+  const pieceCount = pieceCountResolution.pieceCount;
   const visiblePricePerPiece = parseCandidatePrice(item.raw_price_per_piece_text) ?? item.visible_price_per_piece_idr ?? null;
   const reconciledPrices = reconcilePackagePriceMetrics({
     listPriceIdr: parseCandidatePrice(item.list_price) ?? parsedPrice,
@@ -397,7 +404,11 @@ function buildAiPriceCandidateRow(input: {
   const netPrice = reconciledPrices.netPriceIdr ?? parsedPrice;
   const pricePerPiece = reconciledPrices.pricePerPieceIdr;
   const priceEvidenceStatus = item.price_evidence_status ?? reconciledPrices.priceEvidenceStatus;
-  const priceEvidenceDetail = item.price_evidence_detail ?? reconciledPrices.priceEvidenceDetail;
+  const priceEvidenceDetail = {
+    ...(item.price_evidence_detail ?? reconciledPrices.priceEvidenceDetail),
+    piece_count_source: pieceCountResolution.source,
+    piece_count_source_label: item.piece_count_source_label ?? null,
+  };
   const priceEvidenceReasonCode = derivePriceEvidenceReasonCode({
     status: priceEvidenceStatus,
     detail: priceEvidenceDetail,
@@ -496,7 +507,12 @@ export async function buildAiPriceCandidateRows(input: {
   const items = input.sourceItems
     .map((item) => ({
       ...item,
-      piece_count: normalizePieceCountFromEvidence(item.piece_count, item.raw_piece_count_text, item.product),
+      piece_count: resolveTrustedPieceCount({
+        productTitle: item.product,
+        extractedValue: item.piece_count,
+        extractedText: item.raw_piece_count_text,
+        sourceLabel: item.piece_count_source_label,
+      }).pieceCount,
     }))
     .filter(isH5VisiblePriceCandidate);
   const scopedItems = items.filter((item) => item.sourceImageId);

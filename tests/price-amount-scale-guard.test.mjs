@@ -61,6 +61,26 @@ function loadStoreVisitAi(priceUtils) {
             const match = String(sku ?? "").match(/\b(\d{1,3})\s*(?:pcs?|pieces?)\b/i);
             return match ? Number(match[1]) : null;
           },
+          resolveTrustedPieceCount: ({ productTitle, extractedValue, extractedText }) => {
+            const title = String(productTitle ?? "").replace(/\([^)]*\)/g, " ");
+            const sizePack = title.match(/\b(?:nb-s|nb|s|m|l|xl|xxl|xxxl|xxxxl)-?(\d{1,3})(?:\s*\+\s*(\d{1,3}))?\b/i);
+            if (sizePack) {
+              return {
+                pieceCount: Number(sizePack[1]) + Number(sizePack[2] ?? 0),
+                source: "TITLE_SIZE_PACK",
+              };
+            }
+            const text = String(extractedText ?? "");
+            const bonus = text.match(/\b(\d{1,3})\s*\+\s*(\d{1,3})\b/);
+            if (bonus) return { pieceCount: Number(bonus[1]) + Number(bonus[2]), source: "LABELED_PCS" };
+            const fromText = text.match(/\b(\d{1,3})\b/);
+            if (fromText) return { pieceCount: Number(fromText[1]), source: "LABELED_PCS" };
+            const numeric = Number(extractedValue);
+            return {
+              pieceCount: Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : null,
+              source: "LABELED_PCS",
+            };
+          },
         };
       }
       if (id === "@/lib/supabase") {

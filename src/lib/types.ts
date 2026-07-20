@@ -141,6 +141,7 @@ export type StoreVisitPriceImageRow = {
   product_family_text?: string | null;
   sku: string;
   piece_count_text?: string | null;
+  piece_count_source_label?: string | null;
   normal_package_text?: string | null;
   normal_piece_text?: string | null;
   promo_package_text?: string | null;
