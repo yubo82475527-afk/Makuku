@@ -473,6 +473,7 @@ async function toListItem(
     requires_product_correction: requiresProductCorrection(candidate),
     processed_decision: state === "processed" ? deriveProcessedDecision(candidate) : null,
     processed_at: state === "processed" ? candidate.reviewed_at : null,
+    created_at: candidate.created_at,
   };
 }
 

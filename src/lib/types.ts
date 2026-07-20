@@ -972,6 +972,7 @@ export type OperatorPriceReviewListItem = {
   requires_product_correction: boolean;
   processed_decision: OperatorPriceReviewDecision | null;
   processed_at: string | null;
+  created_at: string;
 };
 
 export type OperatorPriceReviewDetail = OperatorPriceReviewListItem & {
