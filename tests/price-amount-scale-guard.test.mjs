@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
 import ts from "typescript";
+import { resolveTrustedPieceCount } from "../src/lib/piece-count.ts";
 
 function transpileModule(path) {
   return ts.transpileModule(readFileSync(path, "utf8"), {
@@ -61,26 +62,7 @@ function loadStoreVisitAi(priceUtils) {
             const match = String(sku ?? "").match(/\b(\d{1,3})\s*(?:pcs?|pieces?)\b/i);
             return match ? Number(match[1]) : null;
           },
-          resolveTrustedPieceCount: ({ productTitle, extractedValue, extractedText }) => {
-            const title = String(productTitle ?? "").replace(/\([^)]*\)/g, " ");
-            const sizePack = title.match(/\b(?:nb-s|nb|s|m|l|xl|xxl|xxxl|xxxxl)-?(\d{1,3})(?:\s*\+\s*(\d{1,3}))?\b/i);
-            if (sizePack) {
-              return {
-                pieceCount: Number(sizePack[1]) + Number(sizePack[2] ?? 0),
-                source: "TITLE_SIZE_PACK",
-              };
-            }
-            const text = String(extractedText ?? "");
-            const bonus = text.match(/\b(\d{1,3})\s*\+\s*(\d{1,3})\b/);
-            if (bonus) return { pieceCount: Number(bonus[1]) + Number(bonus[2]), source: "LABELED_PCS" };
-            const fromText = text.match(/\b(\d{1,3})\b/);
-            if (fromText) return { pieceCount: Number(fromText[1]), source: "LABELED_PCS" };
-            const numeric = Number(extractedValue);
-            return {
-              pieceCount: Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : null,
-              source: "LABELED_PCS",
-            };
-          },
+          resolveTrustedPieceCount,
         };
       }
       if (id === "@/lib/supabase") {
@@ -203,6 +185,7 @@ test("store visit price image normalization applies the package-amount guard and
         package_price_idr: 56000,
         net_price_idr: 1400,
         piece_count: 40,
+        piece_count_source_label: "Pcs",
       },
     ],
     warnings: [],
@@ -381,6 +364,7 @@ test("store visit price image normalization keeps clear package price ahead of v
         net_price_idr: 62288,
         piece_count: 28,
         piece_count_text: "28",
+        piece_count_source_label: "Pcs",
         list_price_text: "78.000",
         package_price_text: "78.000",
         net_price_text: "75.000",
@@ -439,6 +423,7 @@ test("store visit price image normalization separates package and piece evidence
         net_price_idr: 2586,
         piece_count: 26,
         piece_count_text: "22+4",
+        piece_count_source_label: "Pcs",
         package_price_text: "56.900",
         net_price_text: "2.586",
         visible_price_per_piece_text: "2.586",
@@ -470,6 +455,7 @@ test("store visit price image normalization derives piece price from package whe
         promo_package_text: "45.500",
         piece_count_text: "28",
         piece_count: 28,
+        piece_count_source_label: "Pcs",
         promo_package_price_confidence: 0.97,
         piece_count_confidence: 0.98,
         row_binding_confidence: 0.95,
@@ -497,6 +483,7 @@ test("store visit price image normalization derives package price from piece pri
         brand: "Makuku",
         sku: "Derived package sample",
         piece_count_text: "40",
+        piece_count_source_label: "Pcs",
         visible_price_per_piece_text: "2.500",
         visible_piece_price_confidence: 0.97,
         piece_count_confidence: 0.98,
@@ -529,6 +516,7 @@ test("store visit price image normalization ignores package-scale values in the 
         net_price_text: "56.900",
         visible_price_per_piece_text: "56.900",
         piece_count_text: "28",
+        piece_count_source_label: "Pcs",
       },
     ],
     warnings: [],
@@ -741,6 +729,7 @@ test("store visit price image normalization uses promo piece evidence even when 
         brand: "Makuku",
         sku: "Comfort Fit Big Pack NB (TAPE) <=5 KG",
         piece_count_text: "40",
+        piece_count_source_label: "Pcs",
         normal_package_text: "59.900",
         normal_piece_text: "",
         promo_package_text: "",
@@ -899,7 +888,7 @@ test("store visit price image normalization requires review when piece count is 
 
   const row = normalized.rows[0];
   assert.equal(row.net_price_idr, 96900);
-  assert.equal(row.price_evidence_status, "REVIEW_REQUIRED");
+  assert.equal(row.price_evidence_status, "LOW_CONFIDENCE");
   assert.equal(row.review_decision, "NEED_REVIEW");
 });
 
@@ -913,6 +902,7 @@ test("store visit price image normalization requires review when evidence is der
         brand: "Makuku",
         sku: "Derived package sample",
         piece_count_text: "40",
+        piece_count_source_label: "Pcs",
         normal_piece_text: "2.500",
         piece_count: 40,
       },
@@ -941,6 +931,7 @@ test("store visit price image normalization records conflicts without overriding
         brand: "Makuku",
         sku: "Slim Jumbo NB",
         piece_count_text: "52",
+        piece_count_source_label: "Pcs",
         normal_package_text: "129.900",
         normal_piece_text: "2.133",
         piece_count: 52,
@@ -1079,6 +1070,7 @@ test("store visit price image normalization prefers visible bonus piece count te
         net_price_idr: 112900,
         piece_count: 60,
         piece_count_text: "60+6",
+        piece_count_source_label: "Pcs",
       },
     ],
     warnings: [],
