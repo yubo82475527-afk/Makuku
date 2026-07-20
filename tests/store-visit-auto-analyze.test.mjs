@@ -395,17 +395,14 @@ test("store visit refresh reruns target images through the image-level AI pipeli
 });
 
 test("store visit refresh replaces old price impact only after image AI success", () => {
-  const invalidateIndex = storeVisitAiJobs.indexOf("await invalidateStoreVisitImagePriceImpact");
   const runAiIndex = storeVisitAiJobs.indexOf("await analyzeStoreVisitPriceImage");
   const imageUpdateIndex = storeVisitAiJobs.indexOf("vision_result: visionResult");
+  const noReadableRowsRetryIndex = storeVisitAiJobs.indexOf("await requeueNoReadableRowsItem({");
+  const finalRetakeIndex = storeVisitAiJobs.indexOf("if (retakeRequired) {");
   assert.ok(runAiIndex >= 0, "runner should invoke the image-level AI layer");
   assert.ok(imageUpdateIndex > runAiIndex, "vision result should be persisted after AI returns");
-  assert.ok(invalidateIndex > imageUpdateIndex, "old candidates and snapshots should be invalidated after AI succeeds");
-  assert.equal(
-    storeVisitAiJobs.slice(0, runAiIndex).includes("await invalidateStoreVisitImagePriceImpact"),
-    false,
-    "old candidates and snapshots must not be invalidated before AI returns",
-  );
+  assert.ok(noReadableRowsRetryIndex > imageUpdateIndex, "empty-result retries should clear old impact only after AI returns");
+  assert.ok(finalRetakeIndex > imageUpdateIndex, "terminal retakes should clear old impact only after AI returns");
 });
 
 test("store visit refresh clears old candidates when a forced photo now requires retake", () => {

@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { loadProductMatchContext, type ProductMatchContext } from "@/lib/ai-price-candidates";
 import { runPriorityPriceQualityGate } from "@/lib/price-quality-gate-jobs";
 import { analyzeStoreVisitPriceImage } from "@/lib/store-visit-ai";
+import { priceImageRetakeReason } from "@/lib/store-visit-price-image-state";
 import {
   invalidateStoreVisitImagePriceImpact,
   refreshStoreVisitStoredPriceState,
@@ -167,11 +168,67 @@ async function loadJobItems(supabase: SupabaseServiceClient, jobId: string) {
 
 function isRetakeRequiredVisionResult(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const photoQuality = (value as Record<string, unknown>).photo_quality;
-  return Boolean(photoQuality)
-    && typeof photoQuality === "object"
-    && !Array.isArray(photoQuality)
-    && (photoQuality as Record<string, unknown>).status === "retake_required";
+  return priceImageRetakeReason(value as { photo_quality?: { status?: string | null } | null; rows?: unknown[] | null }) !== null;
+}
+
+function noReadableRowsRetryCount(item: StoreVisitAiJobItem) {
+  const value = Number(item.result_summary.no_readable_rows_retry_count ?? 0);
+  return Number.isInteger(value) && value > 0 ? value : 0;
+}
+
+async function requeueNoReadableRowsItem(input: {
+  supabase: SupabaseServiceClient;
+  job: StoreVisitAiJob;
+  item: StoreVisitAiJobItem;
+  visionResult: Record<string, unknown>;
+}) {
+  const invalidation = await invalidateStoreVisitImagePriceImpact({
+    visitId: input.job.visit_id,
+    imageIds: [input.item.source_image_id],
+    lifecycleStatus: "reanalyzed",
+    rejectionReason: "AI image analysis found no readable price rows and queued one automatic retry.",
+    candidateDisposition: "delete",
+    supabase: input.supabase,
+  });
+  const now = nowIso();
+  const { error: imageError } = await input.supabase
+    .from("offline_visit_images")
+    .update({
+      analysis_status: "pending",
+      vision_result: input.visionResult,
+      analysis_error: null,
+      error_message: null,
+    })
+    .eq("visit_id", input.job.visit_id)
+    .eq("id", input.item.source_image_id);
+  if (imageError) throw new Error(imageError.message);
+
+  const { error: itemError } = await input.supabase
+    .from("store_visit_ai_job_items")
+    .update({
+      status: "queued",
+      worker_id: null,
+      lease_expires_at: null,
+      next_attempt_at: now,
+      error_message: null,
+      result_summary: {
+        ...input.item.result_summary,
+        no_readable_rows_retry_count: 1,
+        no_readable_rows_retried_at: now,
+        replaced_candidate_count: invalidation.rejectedCandidateCount,
+        deleted_snapshot_count: invalidation.deletedSnapshotCount,
+      },
+      last_heartbeat_at: now,
+      updated_at: now,
+    })
+    .eq("id", input.item.id)
+    .eq("worker_id", input.item.worker_id);
+  if (itemError) throw new Error(itemError.message);
+
+  await refreshStoreVisitStoredPriceState({
+    visitId: input.job.visit_id,
+    supabase: input.supabase,
+  });
 }
 
 async function reconcileStoreVisitAiJobFromImages(input: {
@@ -578,7 +635,17 @@ async function processItem(input: {
       .eq("id", item.source_image_id);
     if (imageUpdateError) throw new Error(imageUpdateError.message);
 
-    const retakeRequired = isRetakeRequiredVisionResult(visionResult);
+    const retakeReason = priceImageRetakeReason(visionResult);
+    if (retakeReason === "NO_READABLE_PRICE_ROWS" && noReadableRowsRetryCount(item) === 0) {
+      await requeueNoReadableRowsItem({
+        supabase,
+        job,
+        item,
+        visionResult,
+      });
+      return;
+    }
+    const retakeRequired = retakeReason !== null;
     let replacedCandidateCount = 0;
     let deletedSnapshotCount = 0;
     let syncedCandidateCount = 0;
@@ -670,8 +737,11 @@ async function processItem(input: {
         priority_review_required: priorityReviewRequired,
         priority_auto_approved: priorityAutoApproved,
         priority_auto_approval_failed: priorityAutoApprovalFailed,
+        retake_reason: retakeReason,
         retake_reasons: isRecord(visionResult.photo_quality) ? visionResult.photo_quality.reasons ?? null : null,
-        retake_message: isRecord(visionResult.photo_quality) ? visionResult.photo_quality.message ?? null : null,
+        retake_message: retakeReason === "NO_READABLE_PRICE_ROWS"
+          ? "No readable price rows were extracted after an automatic retry. Please retake this price-board photo."
+          : isRecord(visionResult.photo_quality) ? visionResult.photo_quality.message ?? null : null,
         performance_ms: performanceMs,
       },
     };

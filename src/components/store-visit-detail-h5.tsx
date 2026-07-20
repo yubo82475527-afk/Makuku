@@ -9,6 +9,7 @@ import { formatIdr, formatShortImageId } from "@/lib/format";
 import type { Locale } from "@/lib/i18n/config";
 import { buildOperatorPriceReviewReasonGroups } from "@/lib/operator-price-review-reason-groups";
 import { isSupportedStoreVisitImageFile, summarizeStoreVisitImageError, unsupportedStoreVisitImageFormatMessage } from "@/lib/store-visit-image-errors";
+import { priceImageRetakeReason } from "@/lib/store-visit-price-image-state";
 import { getMobileCopy, mobileImageCategoryLabel } from "@/lib/mobile-i18n";
 import type {
   AiPriceCandidate,
@@ -302,12 +303,12 @@ function isUpdatedImage(image: OfflineVisitImage) {
 
 function isRetakeRequiredPriceImage(image: OfflineVisitImage) {
   if (!isRecord(image.vision_result)) return false;
-  const photoQuality = (image.vision_result as Record<string, unknown>).photo_quality;
-  return isRecord(photoQuality) && photoQuality.status === "retake_required";
+  return priceImageRetakeReason(image.vision_result) !== null;
 }
 
-function retakeRequiredMessage(image: OfflineVisitImage, fallback: string) {
+function retakeRequiredMessage(image: OfflineVisitImage, fallback: string, noReadableRowsMessage: string) {
   if (!isRecord(image.vision_result)) return fallback;
+  if (priceImageRetakeReason(image.vision_result) === "NO_READABLE_PRICE_ROWS") return noReadableRowsMessage;
   const photoQuality = (image.vision_result as Record<string, unknown>).photo_quality;
   if (!isRecord(photoQuality)) return fallback;
   const message = String(photoQuality.message ?? "").trim();
@@ -539,6 +540,7 @@ function detailText(locale: Locale) {
         retakeRequired: "Please re-upload this photo",
         retakeRequiredSummary: "Price-tag photo needs retake. Use photo actions to retake or replace it.",
         retakeRequiredFallback: "Retake directly facing the price tags, closer to the shelf, with clear unobstructed price digits.",
+        retakeNoReadableRows: "No readable price rows were detected after retry. Retake the price board straight on, closer, with product names and price cells visible.",
         refreshVisit: "Refresh",
         reanalyzeFullVisit: "Analyze full visit",
         reanalyzeFullVisitSubmitted: "Full visit AI analysis submitted. Analysis is running in the background.",
@@ -625,6 +627,7 @@ function detailText(locale: Locale) {
         retakeRequired: "Please re-upload this photo",
         retakeRequiredSummary: "Price-tag photo needs retake. Use photo actions to retake or replace it.",
         retakeRequiredFallback: "Retake directly facing the price tags, closer to the shelf, with clear unobstructed price digits.",
+        retakeNoReadableRows: "No readable price rows were detected after retry. Retake the price board straight on, closer, with product names and price cells visible.",
         refreshVisit: "Refresh",
         reanalyzeFullVisit: "Analyze full visit",
         reanalyzeFullVisitSubmitted: "Full visit AI analysis submitted. Analysis is running in the background.",
@@ -2182,7 +2185,7 @@ function PriceSectionGroup({
           {needsRetake && !isProcessingRetake && !isAnalyzingImage ? (
             <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               <div className="font-semibold">{text.retakeRequired}</div>
-              <div className="mt-1 text-xs leading-5">{retakeRequiredMessage(section.image, text.retakeRequiredFallback)}</div>
+              <div className="mt-1 text-xs leading-5">{retakeRequiredMessage(section.image, text.retakeRequiredFallback, text.retakeNoReadableRows)}</div>
             </div>
           ) : null}
 
