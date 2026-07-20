@@ -833,6 +833,31 @@ export type OfflineStoreVisit = {
 };
 
 export type AiPriceCandidateStatus = "pending" | "approved" | "rejected";
+export type PriceHandlingStatus = "PROCESSING" | "ACTION_REQUIRED" | "COMPLETED";
+export type PriceHandlingActionType =
+  | "RETAKE_REQUIRED"
+  | "MANUAL_CONFIRMATION_REQUIRED"
+  | "RETRY_REQUIRED";
+
+export type PriceCandidateHandling = {
+  status: PriceHandlingStatus;
+  action_type: PriceHandlingActionType | null;
+};
+
+export type VisitPriceHandlingSummary = {
+  status: PriceHandlingStatus;
+  action_counts: {
+    retake_required: number;
+    manual_confirmation_required: number;
+    retry_required: number;
+  };
+  candidate_counts: {
+    processing: number;
+    action_required: number;
+    approved: number;
+    rejected: number;
+  };
+};
 export type AiPriceCandidateMatchType = "material_master" | "competitor_product" | "unmatched";
 export type AiProductMatchMethod = "EXACT_CODE" | "FULL_SIGNATURE" | "UNIQUE_SIGNATURE" | "MASTER_DATA_DUPLICATE" | "UNMATCHED";
 export type AiPriceCandidateReviewMethod = "auto_rule" | "manual" | "bulk_manual";
