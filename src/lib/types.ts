@@ -345,12 +345,13 @@ export type AppUser = {
 };
 
 export type OrganizationStatus = "active" | "inactive";
-export type OrganizationAssignmentMethod = "auto_region_rule" | "manual" | "ai_suggested";
+export type OrganizationAssignmentMethod = "auto_region_rule" | "manual" | "ai_suggested" | "external_org_id";
 
 export type Organization = {
   id: string;
   name: string;
   status: OrganizationStatus;
+  external_org_id?: string | null;
   notes?: string | null;
   created_at: string;
   updated_at?: string | null;
@@ -1408,6 +1409,8 @@ export type WeeklyPriceCoefficientCell = {
 export type WeeklyPriceCoefficientCompetitorSeries = {
   key: string;
   label: string;
+  brand: string;
+  series: string | null;
   isBenchmark: boolean;
 };
 
@@ -1419,7 +1422,7 @@ export type WeeklyPriceCoefficientCompetitorCell = {
   benchmarkHref: string;
 };
 
-export type WeeklyPriceCoefficientNodeLevel = "organization" | "province" | "city" | "district" | "sku";
+export type WeeklyPriceCoefficientNodeLevel = "organization" | "province" | "city" | "district" | "size" | "sku";
 
 export type WeeklyPriceCoefficientNode = {
   id: string;
@@ -1428,6 +1431,7 @@ export type WeeklyPriceCoefficientNode = {
   province: string | null;
   cityName: string | null;
   district: string | null;
+  size: string | null;
   skuCode: string | null;
   skuName: string | null;
   cells: WeeklyPriceCoefficientCell[];
@@ -1435,6 +1439,7 @@ export type WeeklyPriceCoefficientNode = {
 };
 
 export type WeeklyPriceCoefficientBoard = {
+  dimensions: WeeklyPriceCoefficientNodeLevel[];
   month: string;
   title: string;
   ownSeriesOptions: string[];

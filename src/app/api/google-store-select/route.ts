@@ -1,13 +1,14 @@
 import { revalidatePath } from "next/cache";
 import { requireAppSession } from "@/lib/auth-session";
+import { resolveOrganizationByExternalOrgId } from "@/lib/organizations";
 import { readRequestBody } from "@/lib/request";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
-const storeSelectFields = "id,name,city,province,city_name,district,google_place_id,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,external_store_id,external_org_id,external_org_name,external_md_id,external_md_name,external_source,external_synced_at,created_at,channels(id,code,name,type)";
-const storeSelectFieldsWithoutGooglePlaceId = "id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,external_store_id,external_org_id,external_org_name,external_md_id,external_md_name,external_source,external_synced_at,created_at,channels(id,code,name,type)";
-const storeSelectFieldsWithoutGooglePlaceIdOrChannels = "id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,external_store_id,external_org_id,external_org_name,external_md_id,external_md_name,external_source,external_synced_at,created_at";
+const storeSelectFields = "id,name,city,province,city_name,district,google_place_id,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,external_store_id,external_org_id,external_org_name,external_md_id,external_md_name,external_source,external_synced_at,organization_id,organization_assignment_method,created_at,channels(id,code,name,type)";
+const storeSelectFieldsWithoutGooglePlaceId = "id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,external_store_id,external_org_id,external_org_name,external_md_id,external_md_name,external_source,external_synced_at,organization_id,organization_assignment_method,created_at,channels(id,code,name,type)";
+const storeSelectFieldsWithoutGooglePlaceIdOrChannels = "id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,external_store_id,external_org_id,external_org_name,external_md_id,external_md_name,external_source,external_synced_at,organization_id,organization_assignment_method,created_at";
 
 function clean(value: unknown) {
   return String(value ?? "").trim();
@@ -67,6 +68,15 @@ export async function POST(request: Request) {
     }
 
     const supabase = createSupabaseServiceClient();
+    const externalOrganizationAssignment = await resolveOrganizationByExternalOrgId(supabase, externalOrgId);
+    const organizationIdFromExternalOrgId = externalOrganizationAssignment?.organization_id ?? null;
+    const organizationAssignedAtFromExternalOrgId = externalOrganizationAssignment?.organization_assigned_at ?? null;
+    const organizationPatchFromExternalOrgId = {
+      organization_id: organizationIdFromExternalOrgId,
+      organization_assignment_method: organizationIdFromExternalOrgId ? "external_org_id" : null,
+      organization_assigned_at: organizationAssignedAtFromExternalOrgId,
+      organization_region_rule_id: null,
+    };
     const existing = await supabase
       .from("offline_stores")
       .select(storeSelectFields)
@@ -151,6 +161,7 @@ export async function POST(request: Request) {
         created_by: auth.session.displayName,
         created_by_user_id: auth.session.id,
         created_by_name: auth.session.displayName,
+        ...organizationPatchFromExternalOrgId,
       })
       .select(storeSelectFields)
       .single();
@@ -184,6 +195,7 @@ export async function POST(request: Request) {
           created_by: auth.session.displayName,
           created_by_user_id: auth.session.id,
           created_by_name: auth.session.displayName,
+          ...organizationPatchFromExternalOrgId,
         })
         .select("id,name,city,province,city_name,district,google_place_id,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,external_store_id,external_org_id,external_org_name,external_md_id,external_md_name,external_source,external_synced_at,created_at")
         .single();
@@ -217,6 +229,7 @@ export async function POST(request: Request) {
           created_by: auth.session.displayName,
           created_by_user_id: auth.session.id,
           created_by_name: auth.session.displayName,
+          ...organizationPatchFromExternalOrgId,
         })
         .select(storeSelectFieldsWithoutGooglePlaceIdOrChannels)
         .single();

@@ -8,10 +8,12 @@ const routePath = "src/app/api/competitor-products/import/route.ts";
 const exportRoutePath = "src/app/api/competitor-products/export/route.ts";
 const parserPath = "src/lib/competitor-product-excel-import.ts";
 const migrationPath = "supabase/migrations/202606170001_competitor_product_code_import.sql";
+const ownBrandGuardMigrationPath = "supabase/migrations/202607200003_own_brand_competitor_guard.sql";
 const route = existsSync(routePath) ? readFileSync(routePath, "utf8") : "";
 const exportRoute = existsSync(exportRoutePath) ? readFileSync(exportRoutePath, "utf8") : "";
 const parser = existsSync(parserPath) ? readFileSync(parserPath, "utf8") : "";
 const migration = existsSync(migrationPath) ? readFileSync(migrationPath, "utf8") : "";
+const ownBrandGuardMigration = existsSync(ownBrandGuardMigrationPath) ? readFileSync(ownBrandGuardMigrationPath, "utf8") : "";
 
 test("competitor product master lists competitor SKU code and uses dedicated import entry", () => {
   assert.match(table, /competitor_sku_code/);
@@ -73,6 +75,14 @@ test("competitor product import API replaces competitor master data without SKU-
   assert.doesNotMatch(route, /skipped_manual_mappings/);
   assert.doesNotMatch(route, /price_snapshots/);
   assert.doesNotMatch(route, /offline_stores/);
+});
+
+test("competitor product import rejects all material-master own brands", () => {
+  assert.match(route, /from\("material_master"\)\s*\.select\("brand"\)/);
+  assert.match(route, /ownMaterialBrandKeys/);
+  assert.match(route, /Own-brand rows cannot be imported as competitors/);
+  assert.match(ownBrandGuardMigration, /update public\.brands[\s\S]*is_own_brand = true/);
+  assert.match(ownBrandGuardMigration, /create trigger reject_own_brand_competitor_product/);
 });
 
 test("competitor SKU code migration enforces uniqueness and generated codes", () => {

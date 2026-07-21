@@ -58,13 +58,13 @@ function productPieceCountCandidates(product: Pick<CompetitorProduct, "size" | "
   return Array.from(candidates);
 }
 
-function productShapeKey(packType: string | null | undefined, ...values: Array<string | null | undefined>) {
+export function productShapeKey(packType: string | null | undefined, ...values: Array<string | null | undefined>) {
   const text = `${packType ?? ""} ${values.join(" ")}`.toLowerCase();
   if (text.includes("tape") || text.includes("粘贴")) return "tape";
   if (text.includes("pants") || text.includes("pant") || text.includes("裤")) return "pants";
   return null;
 }
 
-function materialShapeKey(...values: Array<string | null | undefined>) {
+export function materialShapeKey(...values: Array<string | null | undefined>) {
   return productShapeKey(null, ...values);
 }

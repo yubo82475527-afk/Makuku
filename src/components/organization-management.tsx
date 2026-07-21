@@ -1,6 +1,6 @@
 "use client";
 
-import { Link2, Loader2, Plus, Trash2, UserPlus, X } from "lucide-react";
+import { Link2, Loader2, Plus, Tags, Trash2, UserPlus, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { Badge, Button, SelectInput, TextInput } from "@/components/ui";
@@ -16,6 +16,7 @@ type RegionDraft = {
 const zh = {
   addOrganization: "\u65b0\u589e\u7ec4\u7ec7",
   organizationName: "\u7ec4\u7ec7\u540d\u79f0",
+  externalOrgId: "\u5916\u90e8\u7ec4\u7ec7ID",
   notes: "\u5907\u6ce8",
   owner: "\u7ec4\u7ec7\u8d1f\u8d23\u4eba",
   created: "\u521b\u5efa\u65f6\u95f4",
@@ -23,8 +24,10 @@ const zh = {
   notConfigured: "\u672a\u914d\u7f6e",
   linkRegion: "\u5173\u8054\u533a\u57df",
   linkUser: "\u5173\u8054\u7528\u6237",
+  linkExternalOrg: "\u5173\u8054\u5916\u90e8\u7ec4\u7ec7ID",
   regionTitle: "\u5173\u8054\u533a\u57df",
   userTitle: "\u5173\u8054\u7528\u6237",
+  externalOrgTitle: "\u5173\u8054\u5916\u90e8\u7ec4\u7ec7ID",
   province: "\u7701",
   city: "\u5e02\uff08\u53ef\u9009\uff09",
   district: "\u533a\uff08\u53ef\u9009\uff09",
@@ -48,7 +51,9 @@ export function OrganizationManagement({ organizations, users, locale }: { organ
   const [error, setError] = useState<string | null>(null);
   const [regionOrganization, setRegionOrganization] = useState<Organization | null>(null);
   const [userOrganization, setUserOrganization] = useState<Organization | null>(null);
+  const [externalOrgOrganization, setExternalOrgOrganization] = useState<Organization | null>(null);
   const [regionDrafts, setRegionDrafts] = useState<RegionDraft[]>(() => [newRegionDraft()]);
+  const [externalOrgDraft, setExternalOrgDraft] = useState("");
 
   async function submitJson(url: string, method: string, body: Record<string, unknown>) {
     setBusyKey(`${method}:${url}:${String(body.id ?? body.organization_id ?? body.name ?? "")}`);
@@ -83,6 +88,21 @@ export function OrganizationManagement({ organizations, users, locale }: { organ
       const form = document.getElementById("organization-create-form") as HTMLFormElement | null;
       form?.reset();
     }
+  }
+
+  function openExternalOrgDialog(organization: Organization) {
+    setExternalOrgOrganization(organization);
+    setExternalOrgDraft(organization.external_org_id ?? "");
+    setError(null);
+  }
+
+  async function saveExternalOrgId() {
+    if (!externalOrgOrganization) return;
+    const ok = await submitJson("/api/organizations", "PATCH", {
+      id: externalOrgOrganization.id,
+      external_org_id: externalOrgDraft,
+    });
+    if (ok) setExternalOrgOrganization(null);
   }
 
   function openRegionDialog(organization: Organization) {
@@ -171,6 +191,10 @@ export function OrganizationManagement({ organizations, users, locale }: { organ
                 <td className="whitespace-nowrap py-3 pr-3 text-slate-600">{createdAt(organization.created_at)}</td>
                 <td className="py-3 pr-3">
                   <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => openExternalOrgDialog(organization)} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                      <Tags className="h-3.5 w-3.5" />
+                      {isZh ? zh.linkExternalOrg : "Link external organization ID"}
+                    </button>
                     <button type="button" onClick={() => openRegionDialog(organization)} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">
                       <Link2 className="h-3.5 w-3.5" />
                       {isZh ? zh.linkRegion : "Link regions"}
@@ -186,6 +210,25 @@ export function OrganizationManagement({ organizations, users, locale }: { organ
           </tbody>
         </table>
       </div>
+
+      {externalOrgOrganization ? (
+        <Dialog title={`${isZh ? zh.externalOrgTitle : "Link external organization ID"} - ${externalOrgOrganization.name}`} closeLabel={isZh ? zh.close : "Close"} onClose={() => setExternalOrgOrganization(null)}>
+          <div className="space-y-4">
+            <label className="block text-sm font-medium text-slate-700">
+              <span className="mb-1 block">{isZh ? zh.externalOrgId : "External organization ID"}</span>
+              <TextInput
+                value={externalOrgDraft}
+                onChange={(event) => setExternalOrgDraft(event.target.value)}
+                placeholder={isZh ? zh.externalOrgId : "External organization ID"}
+              />
+            </label>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setExternalOrgOrganization(null)} className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">{isZh ? zh.cancel : "Cancel"}</button>
+              <Button type="button" onClick={saveExternalOrgId} disabled={Boolean(busyKey)}>{isZh ? zh.save : "Save"}</Button>
+            </div>
+          </div>
+        </Dialog>
+      ) : null}
 
       {regionOrganization ? (
         <Dialog title={`${isZh ? zh.regionTitle : "Link regions"} - ${regionOrganization.name}`} closeLabel={isZh ? zh.close : "Close"} onClose={() => setRegionOrganization(null)}>

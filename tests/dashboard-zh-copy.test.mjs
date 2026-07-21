@@ -14,8 +14,10 @@ test("zh dictionary stores readable utf8 copy", () => {
 });
 
 test("dashboard and prices pages keep readable inline zh labels", () => {
-  assert.match(dashboardPage, /仪表盘重构中/);
-  assert.match(dashboardPage, /当前已临时停用首页仪表盘的所有报表查询/);
+  assert.match(dashboardPage, /首页/);
+  assert.match(dashboardPage, /DashboardClient/);
+  assert.doesNotMatch(dashboardPage, /仪表盘重构中/);
+  assert.doesNotMatch(dashboardPage, /当前已临时停用首页仪表盘的所有报表查询/);
   assert.match(pricesPage, /品牌\/系列/);
   assert.match(pricesPage, /全部商品等级/);
   assert.match(pricesPage, /导出 CSV/);

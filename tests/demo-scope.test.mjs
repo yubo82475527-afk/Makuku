@@ -73,9 +73,10 @@ test("visible sample data does not look like throwaway mock data", () => {
   assert.match(demoData, /source: "pilot-sample"/);
 });
 
-test("dashboard states the price 1.0 homepage objective", () => {
-  assert.match(dashboardPage, /Dashboard under refactor/);
-  assert.match(dashboardPage, /All dashboard report queries are temporarily disabled/);
+test("dashboard restores the price 1.0 homepage as a client-loaded price index", () => {
+  assert.match(dashboardPage, /DashboardClient/);
+  assert.doesNotMatch(dashboardPage, /Dashboard under refactor/);
+  assert.doesNotMatch(dashboardPage, /All dashboard report queries are temporarily disabled/);
   assert.doesNotMatch(dashboardPage, /PriceIndexTreeTable/);
 });
 
@@ -88,6 +89,7 @@ test("dashboard keeps the weekly coefficient board but is no longer a single-pan
   assert.match(dataFile, /is_default_benchmark/);
   assert.match(dataFile, /materialMaster\.map\(\(item\) => cleanText\(item\.sub_brand\)\)/);
   assert.match(dataFile, /ownAvgPrice \/ benchmarkAvgPrice/);
+  assert.match(dashboardPage, /DashboardClient/);
   assert.doesNotMatch(dashboardPage, /PriceIndexTreeTable/);
   assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /PRICE\/PCS \{week\.label\}/);
   assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /CombinedMetricCell/);

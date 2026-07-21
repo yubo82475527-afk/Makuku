@@ -1,8 +1,5 @@
 import { isAllowedAdminRole, readSessionFromRequest, requireAdminSession } from "@/lib/auth-session";
 import {
-  getDashboardData,
-  getDashboardExceptionData,
-  getDashboardExecutionData,
   getDashboardPriceData,
   type DashboardSearchParams,
 } from "@/lib/dashboard-data";
@@ -13,17 +10,7 @@ const dashboardSearchKeys = [
   "month",
   "ownSeries",
   "organization",
-  "exceptionProvince",
-  "exceptionCityName",
-  "exceptionDistrict",
-  "exceptionLine",
-  "exceptionPriceBand",
-  "exceptionSize",
-  "exceptionStatus",
-  "executionMonth",
-  "executionWeek",
-  "executionOrg",
-  "executionUser",
+  "dimensions",
 ] as const;
 
 export async function GET(request: Request) {
@@ -44,9 +31,10 @@ export async function GET(request: Request) {
 
     const section = url.searchParams.get("section");
     if (section === "price") return Response.json(await getDashboardPriceData(locale, query));
-    if (section === "exceptions") return Response.json(await getDashboardExceptionData(locale, query));
-    if (section === "execution") return Response.json(await getDashboardExecutionData(query));
-    return Response.json(await getDashboardData(locale, query));
+    return Response.json(
+      { error: "Unsupported dashboard section" },
+      { status: 400 },
+    );
   } catch (error) {
     return Response.json(
       { error: error instanceof Error ? error.message : "Unknown error" },

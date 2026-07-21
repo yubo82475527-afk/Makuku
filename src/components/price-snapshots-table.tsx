@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { priceBrandSeriesLabel } from "@/lib/brand-series";
 import { formatIdr, formatJakartaDateTimeSeconds, formatPricePerPiece, formatShortImageId } from "@/lib/format";
-import { priceSnapshotBenchmarkMaterial, priceSnapshotBusinessSegment } from "@/lib/price-snapshot-business";
+import { priceSnapshotBenchmarkMaterial } from "@/lib/price-snapshot-business";
 import type { PriceSnapshot } from "@/lib/types";
 
 type SnapshotOwnerType = "makuku" | "competitor";
@@ -164,7 +164,6 @@ export function PriceSnapshotsTable({
               <th className="py-2 pr-3">{isZh ? "品牌" : "Brand"}</th>
               <th className="py-2 pr-3">{isZh ? "商品" : "Product"}</th>
               <th className="py-2 pr-3">SKU</th>
-              <th className="py-2 pr-3">{isZh ? "等级" : "Grade"}</th>
               <th className="py-2 pr-3">{isZh ? "包装" : "Package"}</th>
               <th className="py-2 pr-3">{isZh ? "规格" : "Spec"}</th>
               <th className="py-2 pr-3">{isZh ? "片数" : "Pcs"}</th>
@@ -201,7 +200,6 @@ export function PriceSnapshotsTable({
                   <td className="py-3 pr-3 font-medium">{snapshotBrandName(snapshot)}</td>
                   <td className="py-3 pr-3">{snapshotProductName(snapshot)}</td>
                   <td className="py-3 pr-3">{snapshotSkuCode(snapshot)}</td>
-                  <td className="py-3 pr-3">{snapshotBusinessSegment(snapshot)}</td>
                   <td className="py-3 pr-3">{snapshotPackageType(snapshot)}</td>
                   <td className="py-3 pr-3">{snapshotSpec(snapshot)}</td>
                   <td className="py-3 pr-3">{snapshotPieceCount(snapshot)}</td>
@@ -325,10 +323,6 @@ function snapshotSkuCode(snapshot: PriceSnapshot) {
   return cleanDisplayText(snapshot.competitor_products?.competitor_sku_code)
     ?? cleanDisplayText(snapshot.competitor_products?.id)
     ?? "-";
-}
-
-function snapshotBusinessSegment(snapshot: PriceSnapshot) {
-  return priceSnapshotBusinessSegment(snapshot) || "-";
 }
 
 function snapshotPackageType(snapshot: PriceSnapshot) {

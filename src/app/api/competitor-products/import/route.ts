@@ -45,14 +45,28 @@ async function replaceCompetitorMaster(
 ) {
   const rows = preview.rows;
   const brandNames = Array.from(new Set(rows.map((row) => row.brand))).filter(Boolean);
-  const { data: existingBrands, error: brandError } = await supabase
-    .from("brands")
-    .select("id,name,is_own_brand")
-    .limit(10000);
+  const [
+    { data: existingBrands, error: brandError },
+    { data: ownMaterials, error: materialError },
+  ] = await Promise.all([
+    supabase
+      .from("brands")
+      .select("id,name,is_own_brand")
+      .limit(10000),
+    supabase
+      .from("material_master")
+      .select("brand")
+      .limit(10000),
+  ]);
   if (brandError) throw new Error(brandError.message);
+  if (materialError) throw new Error(materialError.message);
 
   const brandMap = new Map((existingBrands ?? []).map((brand) => [normalizeKey(brand.name), brand]));
-  const ownBrandKeys = new Set((existingBrands ?? []).filter((brand) => brand.is_own_brand).map((brand) => normalizeKey(brand.name)));
+  const ownMaterialBrandKeys = new Set((ownMaterials ?? []).map((material) => normalizeKey(material.brand)).filter(Boolean));
+  const ownBrandKeys = new Set([
+    ...(existingBrands ?? []).filter((brand) => brand.is_own_brand).map((brand) => normalizeKey(brand.name)),
+    ...ownMaterialBrandKeys,
+  ]);
   const ownBrandRows = rows.filter((row) => ownBrandKeys.has(normalizeKey(row.brand)));
   if (ownBrandRows.length > 0) {
     throw new Error(`Own-brand rows cannot be imported as competitors: ${ownBrandRows.map((row) => row.brand).join(", ")}`);

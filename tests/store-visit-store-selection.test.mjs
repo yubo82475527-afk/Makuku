@@ -118,6 +118,15 @@ test("offline store writes keep city as a deprecated mirror of city_name", () =>
   assert.match(googleStoreSelectApi, /insert\(\{[\s\S]*city: legacyCity,[\s\S]*city_name: cityName,/);
 });
 
+test("new external-md stores resolve organization from external org id", () => {
+  assert.match(offlineStoresApi, /resolveOrganizationByExternalOrgId/);
+  assert.match(offlineStoresApi, /organizationIdFromExternalOrgId/);
+  assert.match(offlineStoresApi, /organization_id: organizationIdFromExternalOrgId/);
+  assert.match(googleStoreSelectApi, /resolveOrganizationByExternalOrgId/);
+  assert.match(googleStoreSelectApi, /organizationIdFromExternalOrgId/);
+  assert.match(googleStoreSelectApi, /organization_id: organizationIdFromExternalOrgId/);
+});
+
 test("history-first store search loads current user's visited stores before offering google search", () => {
   assert.equal(existsSync(storeVisitHistoryStoresApiPath), true, "history store route should exist");
   assert.match(storeVisitHistoryStoresApi, /user_id is required/);

@@ -1,14 +1,12 @@
 import { priceBrandSeriesLabel } from "@/lib/brand-series";
+import { getPriceSnapshotsPage, type PriceSnapshotOwnerFilter } from "@/lib/data";
 import { formatIdr, formatJakartaDateTimeSeconds, formatPricePerPiece, formatShortImageId } from "@/lib/format";
 import {
   priceSnapshotBenchmarkMaterial,
   priceSnapshotBenchmarkSku,
-  priceSnapshotBusinessLine,
   priceSnapshotBusinessSegment,
-  priceSnapshotBusinessSize,
   priceSnapshotMakukuMaterialCode,
 } from "@/lib/price-snapshot-business";
-import { createSupabaseServiceClient } from "@/lib/supabase";
 import type { PriceSnapshot } from "@/lib/types";
 
 const csvColumns = {
@@ -72,49 +70,33 @@ function downloadName() {
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const owner = normalizeOwner(searchParams.get("owner"));
-    const brand = searchParams.get("brand");
-    const sku = searchParams.get("sku");
-    const line = searchParams.get("line");
-    const priceBand = searchParams.get("priceBand");
-    const size = searchParams.get("size");
-    const province = searchParams.get("province");
-    const cityName = searchParams.get("cityName");
-    const district = searchParams.get("district");
-    const store = searchParams.get("store");
-    const visitCode = searchParams.get("visitCode");
     const createdFrom = searchParams.get("createdFrom");
     const createdTo = searchParams.get("createdTo");
     const locale = searchParams.get("locale") === "zh" ? "zh" : "en";
-    const supabase = createSupabaseServiceClient();
-
-    const { data, error } = await supabase
-      .from("price_snapshots")
-      .select("*, sku_master(*, material_master(*)), material_master(*), offline_store_visits!source_visit_id(id,visit_code,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at), offline_stores(id,name,city,province,city_name,district,channel_type), competitor_products(*, brands(id,name)), ai_price_candidates(id, offline_store_visits(id,visit_code,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))")
-      .order("created_at", { ascending: false })
-      .order("captured_at", { ascending: false })
-      .limit(5000);
-    if (error) return Response.json({ error: error.message }, { status: 500 });
-
-    const snapshots = applyOwnerFilter((data ?? []) as PriceSnapshot[], owner).filter((snapshot) => {
-      const productLine = priceSnapshotBusinessLine(snapshot);
-      const productSize = priceSnapshotBusinessSize(snapshot);
-      const productPriceBand = priceSnapshotBusinessSegment(snapshot);
-      if (brand && priceBrandSeriesLabel(snapshot) !== brand) return false;
-      if (sku && !matchesText(priceSnapshotMakukuMaterialCode(snapshot), sku)) return false;
-      if (line && productLine !== line) return false;
-      if (priceBand && productPriceBand !== priceBand) return false;
-      if (size && productSize !== size) return false;
-      const region = storeRegionForSnapshot(snapshot);
-      if (province && !matchesText(region.province, province)) return false;
-      if (cityName && !matchesText(region.cityName, cityName)) return false;
-      if (district && !matchesText(region.district, district)) return false;
-      if (store && !matchesText(storeNameForSnapshot(snapshot), store)) return false;
-      if (visitCode && !matchesText(visitCodeForSnapshot(snapshot), visitCode)) return false;
-      if (createdFrom && !matchesCreatedFrom(snapshot.captured_at, createdFrom)) return false;
-      if (createdTo && !matchesCreatedTo(snapshot.captured_at, createdTo)) return false;
-      return true;
+    const result = await getPriceSnapshotsPage({
+      owner: normalizeOwner(searchParams.get("owner")),
+      brand: searchParams.get("brand") ?? undefined,
+      series: searchParams.get("series") ?? undefined,
+      ownSeries: searchParams.get("ownSeries") ?? undefined,
+      sku: searchParams.get("sku") ?? undefined,
+      line: searchParams.get("line") ?? undefined,
+      size: searchParams.get("size") ?? undefined,
+      shape: searchParams.get("shape") ?? undefined,
+      organization: searchParams.get("organization") ?? undefined,
+      province: searchParams.get("province") ?? undefined,
+      cityName: searchParams.get("cityName") ?? undefined,
+      district: searchParams.get("district") ?? undefined,
+      store: searchParams.get("store") ?? undefined,
+      visitCode: searchParams.get("visitCode") ?? undefined,
+      priceIndexDrill: searchParams.get("priceIndexDrill") === "1",
+      dashboardDateFrom: createdFrom ?? undefined,
+      dashboardDateTo: createdTo ?? undefined,
+      capturedFrom: toInclusiveCapturedFrom(createdFrom) ?? undefined,
+      capturedTo: toExclusiveCapturedTo(createdTo),
+      perPage: 5000,
     });
+    if (result.error) return Response.json({ error: result.error }, { status: 500 });
+    const snapshots = result.data;
 
     const rows = snapshots.map((snapshot) => {
       const region = storeRegionForSnapshot(snapshot);
@@ -156,15 +138,26 @@ export async function GET(request: Request) {
   }
 }
 
-function normalizeOwner(value: string | null) {
+function normalizeOwner(value: string | null): PriceSnapshotOwnerFilter {
   if (value === "makuku" || value === "competitor") return value;
   return "all";
 }
 
-function applyOwnerFilter(snapshots: PriceSnapshot[], owner: string) {
-  if (owner === "makuku") return snapshots.filter((snapshot) => snapshotOwnerType(snapshot) === "makuku");
-  if (owner === "competitor") return snapshots.filter((snapshot) => snapshotOwnerType(snapshot) === "competitor");
-  return snapshots;
+function toExclusiveCapturedTo(value: string | null) {
+  const text = String(value ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return undefined;
+  const date = new Date(`${text}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return undefined;
+  date.setDate(date.getDate() + 1);
+  return date.toISOString();
+}
+
+function toInclusiveCapturedFrom(value: string | null) {
+  const text = String(value ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return undefined;
+  const date = new Date(`${text}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date.toISOString();
 }
 
 type PriceSnapshotForStoreRegion = {
@@ -328,22 +321,4 @@ function splitLegacyRegion(value: string | null | undefined) {
   if (parts.length === 2) return { province: null, cityName: parts[0], district: parts[1] };
   if (parts.length === 1) return { province: null, cityName: parts[0], district: null };
   return { province: null, cityName: null, district: null };
-}
-
-function matchesText(value: string | null | undefined, query: string) {
-  return String(value ?? "").toLowerCase().includes(query.trim().toLowerCase());
-}
-
-function matchesCreatedFrom(value: string | null | undefined, dateText: string) {
-  const createdAt = Date.parse(String(value ?? ""));
-  const from = Date.parse(`${dateText}T00:00:00.000Z`);
-  if (!Number.isFinite(createdAt) || !Number.isFinite(from)) return true;
-  return createdAt >= from;
-}
-
-function matchesCreatedTo(value: string | null | undefined, dateText: string) {
-  const createdAt = Date.parse(String(value ?? ""));
-  const to = Date.parse(`${dateText}T23:59:59.999Z`);
-  if (!Number.isFinite(createdAt) || !Number.isFinite(to)) return true;
-  return createdAt <= to;
 }

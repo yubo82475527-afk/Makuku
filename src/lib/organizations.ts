@@ -7,6 +7,11 @@ function clean(value: string | null | undefined) {
   return value?.trim() || "";
 }
 
+export function normalizeExternalOrgId(value: string | null | undefined) {
+  const text = clean(value);
+  return text ? text.toLowerCase() : "";
+}
+
 export function normalizeRegionPart(value: string | null | undefined) {
   return clean(value).toLowerCase();
 }
@@ -24,6 +29,35 @@ export type ResolvedOrganizationAssignment = {
   organization_assigned_at: string;
   rule: OrganizationRegionRule;
 };
+
+export type ResolvedExternalOrganizationAssignment = {
+  organization_id: string;
+  organization_assignment_method: "external_org_id";
+  organization_assigned_at: string;
+};
+
+export async function listActiveOrganizationsByExternalOrgId(
+  supabase: Supabase,
+): Promise<Map<string, string>> {
+  const { data, error } = await supabase
+    .from("organizations")
+    .select("id,external_org_id")
+    .eq("status", "active")
+    .not("external_org_id", "is", null);
+
+  if (error) {
+    if (error.message.includes("external_org_id") || error.message.includes("schema cache")) return new Map();
+    throw new Error(error.message);
+  }
+
+  const result = new Map<string, string>();
+  for (const row of (data ?? []) as Array<{ id?: string | null; external_org_id?: string | null }>) {
+    const key = normalizeExternalOrgId(row.external_org_id);
+    if (!key || !row.id || result.has(key)) continue;
+    result.set(key, String(row.id));
+  }
+  return result;
+}
 
 export async function resolveOrganizationForRegion(
   supabase: Supabase,
@@ -66,6 +100,23 @@ export async function resolveOrganizationForRegion(
     organization_assignment_method: "auto_region_rule",
     organization_assigned_at: new Date().toISOString(),
     rule,
+  };
+}
+
+export async function resolveOrganizationByExternalOrgId(
+  supabase: Supabase,
+  externalOrgId: string | null | undefined,
+): Promise<ResolvedExternalOrganizationAssignment | null> {
+  const normalizedExternalOrgId = normalizeExternalOrgId(externalOrgId);
+  if (!normalizedExternalOrgId) return null;
+  const organizationsByExternalOrgId = await listActiveOrganizationsByExternalOrgId(supabase);
+  const organizationId = organizationsByExternalOrgId.get(normalizedExternalOrgId);
+  if (!organizationId) return null;
+
+  return {
+    organization_id: organizationId,
+    organization_assignment_method: "external_org_id",
+    organization_assigned_at: new Date().toISOString(),
   };
 }
 
