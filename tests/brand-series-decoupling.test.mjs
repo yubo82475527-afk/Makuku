@@ -12,7 +12,10 @@ const typesFile = readFileSync("src/lib/types.ts", "utf8");
 const excelRoute = readFileSync("src/app/api/internal/excel-price-import/route.ts", "utf8");
 const pricesPage = readFileSync("src/app/[locale]/prices/page.tsx", "utf8");
 const priceSnapshotsTable = readFileSync("src/components/price-snapshots-table.tsx", "utf8");
-const priceExportRoute = readFileSync("src/app/api/price-snapshots/export/route.ts", "utf8");
+const priceExportRoute = [
+  readFileSync("src/app/api/price-snapshots/export/route.ts", "utf8"),
+  readFileSync("src/lib/price-snapshot-export.ts", "utf8"),
+].join("\n");
 const competitorProductsTable = readFileSync("src/components/competitor-products-table.tsx", "utf8");
 const competitorsRoute = readFileSync("src/app/api/competitors/route.ts", "utf8");
 

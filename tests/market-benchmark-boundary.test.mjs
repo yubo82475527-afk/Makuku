@@ -2,7 +2,10 @@ import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-const pricesPage = readFileSync("src/app/[locale]/prices/page.tsx", "utf8");
+const pricesPage = [
+  readFileSync("src/app/[locale]/prices/page.tsx", "utf8"),
+  readFileSync("src/components/price-snapshot-export-button.tsx", "utf8"),
+].join("\n");
 const priceSnapshotsTable = readFileSync("src/components/price-snapshots-table.tsx", "utf8");
 const competitorMappingsPage = readFileSync("src/app/[locale]/competitor-mappings/page.tsx", "utf8");
 const competitorSeriesRulesPanel = readFileSync("src/components/competitor-series-rules-panel.tsx", "utf8");

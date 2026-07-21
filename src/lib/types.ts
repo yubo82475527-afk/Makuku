@@ -1159,6 +1159,25 @@ export type StoreVisitMonitorExportJob = {
   updated_at: string | null;
 };
 
+export type PriceSnapshotExportJobStatus = "queued" | "running" | "completed" | "failed";
+
+export type PriceSnapshotExportJob = {
+  id: string;
+  status: PriceSnapshotExportJobStatus;
+  filters: Record<string, unknown>;
+  locale: string;
+  requested_by: string | null;
+  total_rows: number;
+  exported_rows: number;
+  file_path: string | null;
+  file_size_bytes: number | null;
+  error_message: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string | null;
+};
+
 export type PromoEvent = {
   id: string;
   competitor_product_id: string;

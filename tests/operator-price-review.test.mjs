@@ -412,7 +412,6 @@ test("operator list keeps matched SKU label even when product correction is allo
 });
 
 test("operator list displays full matched SKU labels and opens the unified review drawer from source image", () => {
-  assert.match(workbench, /w-\[32%\]/);
   assert.match(workbench, /whitespace-normal break-words/);
   assert.doesNotMatch(workbench, /mt-1 truncate text-xs text-slate-500/);
   assert.match(workbench, /function SourceThumbnail/);

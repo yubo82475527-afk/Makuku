@@ -13,7 +13,10 @@ const aiPriceReview = readFileSync("src/lib/ai-price-review.ts", "utf8");
 const operatorReviewMigration = readFileSync("supabase/migrations/202607130002_operator_price_review_phase2.sql", "utf8");
 const pricesPage = readFileSync("src/app/[locale]/prices/page.tsx", "utf8");
 const priceSnapshotsTable = readFileSync("src/components/price-snapshots-table.tsx", "utf8");
-const priceExportRoute = readFileSync("src/app/api/price-snapshots/export/route.ts", "utf8");
+const priceExportRoute = [
+  readFileSync("src/app/api/price-snapshots/export/route.ts", "utf8"),
+  readFileSync("src/lib/price-snapshot-export.ts", "utf8"),
+].join("\n");
 const priceSnapshotBusiness = readFileSync("src/lib/price-snapshot-business.ts", "utf8");
 const skuBridge = existsSync("src/lib/sku-master-bridge.ts") ? readFileSync("src/lib/sku-master-bridge.ts", "utf8") : "";
 
@@ -81,8 +84,8 @@ test("real market price page supports captured_at date range filters in page and
   assert.match(pricesPage, /capturedTo: capturedToExclusive \?\? undefined/);
   assert.match(priceExportRoute, /const createdFrom = searchParams\.get\("createdFrom"\)/);
   assert.match(priceExportRoute, /const createdTo = searchParams\.get\("createdTo"\)/);
-  assert.match(priceExportRoute, /matchesCreatedFrom\(snapshot\.captured_at, createdFrom\)/);
-  assert.match(priceExportRoute, /matchesCreatedTo\(snapshot\.captured_at, createdTo\)/);
+  assert.match(priceExportRoute, /matchesCreatedFrom\(snapshot\.captured_at, (createdFrom|filters\.createdFrom)\)/);
+  assert.match(priceExportRoute, /matchesCreatedTo\(snapshot\.captured_at, (createdTo|filters\.createdTo)\)/);
   assert.doesNotMatch(priceExportRoute, /matchesCreated(?:From|To)\(snapshot\.created_at/);
 });
 
@@ -175,7 +178,8 @@ test("price snapshots query supports owner visibility while market price page sh
   assert.doesNotMatch(pricesPage, /value="makuku"/);
   assert.doesNotMatch(pricesPage, /owner !== "all"/);
 
-  assert.match(priceExportRoute, /const owner = normalizeOwner\(searchParams\.get\("owner"\)\)/);
+  assert.match(priceExportRoute, /const owner = searchParams\.get\("owner"\)/);
+  assert.match(priceExportRoute, /normalizePriceSnapshotOwner\(input\.owner\)/);
   assert.match(priceExportRoute, /applyOwnerFilter/);
   assert.match(priceExportRoute, /owner === "makuku"[\s\S]*snapshotOwnerType\(snapshot\) === "makuku"/);
   assert.match(priceExportRoute, /owner === "competitor"[\s\S]*snapshotOwnerType\(snapshot\) === "competitor"/);

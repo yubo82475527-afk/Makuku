@@ -4,6 +4,7 @@ import { Download, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState, type ToggleEvent } from "react";
 
 type ExportJob = {
+  kind: "store_visit" | "price_snapshot";
   id: string;
   status: "queued" | "running" | "completed" | "failed";
   total_rows: number;
@@ -19,6 +20,11 @@ function formatTime(value: string) {
   return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
 }
 
+function taskLabel(kind: ExportJob["kind"], locale: string) {
+  if (kind === "price_snapshot") return locale === "zh" ? "真实市场价格" : "Real Market Price";
+  return locale === "zh" ? "巡店分析" : "Visit analysis";
+}
+
 export function StoreVisitMonitorExportMenu({ locale }: { locale: string }) {
   const [jobs, setJobs] = useState<ExportJob[]>([]);
   const [open, setOpen] = useState(false);
@@ -28,12 +34,32 @@ export function StoreVisitMonitorExportMenu({ locale }: { locale: string }) {
   const loadJobs = useCallback(async (isDisposed: () => boolean) => {
     setLoading(true);
     try {
-      const response = await fetch("/api/store-visit-monitor/export-jobs", { cache: "no-store" });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error ?? "Failed to load export tasks");
+      const [visitResponse, priceResponse] = await Promise.all([
+        fetch("/api/store-visit-monitor/export-jobs", { cache: "no-store" }),
+        fetch("/api/price-snapshots/export-jobs", { cache: "no-store" }),
+      ]);
+      const [visitPayload, pricePayload] = await Promise.all([
+        visitResponse.json().catch(() => ({})),
+        priceResponse.json().catch(() => ({})),
+      ]);
       if (isDisposed()) return;
-      setJobs(Array.isArray(payload.jobs) ? payload.jobs as ExportJob[] : []);
-      setError(null);
+
+      const visitJobs = visitResponse.ok
+        ? Array.isArray(visitPayload.jobs)
+          ? visitPayload.jobs.map((job: Omit<ExportJob, "kind">) => ({ ...job, kind: "store_visit" as const }))
+          : []
+        : [];
+      const priceJobs = priceResponse.ok
+        ? Array.isArray(pricePayload.jobs)
+          ? pricePayload.jobs.map((job: Omit<ExportJob, "kind">) => ({ ...job, kind: "price_snapshot" as const }))
+          : []
+        : [];
+      const nextError = [
+        visitResponse.ok ? null : (visitPayload.error ?? "Failed to load visit export tasks"),
+        priceResponse.ok ? null : (pricePayload.error ?? "Failed to load price export tasks"),
+      ].filter(Boolean).join("; ");
+      setJobs([...visitJobs, ...priceJobs].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)));
+      setError(nextError || null);
     } catch (nextError) {
       if (!isDisposed()) setError(nextError instanceof Error ? nextError.message : "Failed to load export tasks");
     } finally {
@@ -71,20 +97,19 @@ export function StoreVisitMonitorExportMenu({ locale }: { locale: string }) {
   }
 
   const runningCount = jobs.filter((job) => job.status === "queued" || job.status === "running").length;
-  const title = locale === "zh" ? "Exports" : "Exports";
-  const emptyText = locale === "zh" ? "No export tasks yet" : "No export tasks yet";
+  const emptyText = locale === "zh" ? "暂无导出任务" : "No export tasks yet";
 
   return (
     <details className="relative shrink-0" onToggle={handleToggle}>
       <summary className="inline-flex h-8 cursor-pointer list-none items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
-        <span>{title}</span>
+        <span>Exports</span>
         {runningCount > 0 ? (
           <span className="rounded-full bg-slate-900 px-1.5 py-0.5 text-[11px] text-white">{runningCount}</span>
         ) : null}
       </summary>
       <div className="absolute right-0 top-10 z-30 w-[360px] rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
         <div className="mb-2 flex items-center justify-between">
-          <div className="text-sm font-semibold text-slate-900">{title}</div>
+          <div className="text-sm font-semibold text-slate-900">Exports</div>
           {loading ? <Loader2 className="h-4 w-4 animate-spin text-slate-400" /> : null}
         </div>
 
@@ -102,10 +127,11 @@ export function StoreVisitMonitorExportMenu({ locale }: { locale: string }) {
             const exportedRows = Math.max(job.exported_rows, 0);
 
             return (
-              <div key={job.id} className="rounded-lg border border-slate-200 p-3">
+              <div key={`${job.kind}-${job.id}`} className="rounded-lg border border-slate-200 p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="truncate text-xs font-medium text-slate-900">{job.id}</div>
+                    <div className="mt-1 text-[11px] text-slate-500">{taskLabel(job.kind, locale)}</div>
                     <div className="mt-1 text-[11px] text-slate-500">Created: {formatTime(job.created_at)}</div>
                   </div>
                   <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200">

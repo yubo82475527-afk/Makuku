@@ -1,9 +1,10 @@
 ﻿import { Suspense } from "react";
-import { Download, SlidersHorizontal } from "lucide-react";
+import { SlidersHorizontal } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { PageShellState } from "@/components/page-shell-state";
 import { PriceSnapshotsTable } from "@/components/price-snapshots-table";
+import { PriceSnapshotExportButton } from "@/components/price-snapshot-export-button";
 import { Button, Card, DataNotice, SelectInput } from "@/components/ui";
 import { priceBrandSeriesLabel } from "@/lib/brand-series";
 import { getPriceSnapshotsPage } from "@/lib/data";
@@ -56,7 +57,6 @@ export default async function PricesPage({
   }
 
   currentParams.set("locale", locale);
-  const exportHref = `/api/price-snapshots/export?${currentParams.toString()}`;
   const currentPathParams = new URLSearchParams(currentParams);
   currentPathParams.delete("locale");
   currentPathParams.set("page", String(requestedPage));
@@ -75,7 +75,6 @@ export default async function PricesPage({
           requestedPage={requestedPage}
           perPage={perPage}
           currentParams={currentParams}
-          exportHref={exportHref}
           hasAdvancedFilters={hasAdvancedFilters}
         />
       </Suspense>
@@ -90,7 +89,6 @@ async function PricesContent({
   requestedPage,
   perPage,
   currentParams,
-  exportHref,
   hasAdvancedFilters,
 }: {
   locale: string;
@@ -99,7 +97,6 @@ async function PricesContent({
   requestedPage: number;
   perPage: number;
   currentParams: URLSearchParams;
-  exportHref: string;
   hasAdvancedFilters: boolean;
 }) {
   const capturedToExclusive = toExclusiveCapturedTo(params.createdTo);
@@ -168,13 +165,7 @@ async function PricesContent({
       <Card>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <h2 className="font-semibold">{dict.prices.title}</h2>
-          <a
-            href={exportHref}
-            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            <Download className="h-4 w-4" />
-            {locale === "zh" ? "导出 CSV" : "Export CSV"}
-          </a>
+          <PriceSnapshotExportButton locale={locale} filters={{ brand: params.brand, sku: params.sku, line: params.line, priceBand: params.priceBand, size: params.size, province: params.province, cityName: params.cityName, district: params.district, store: params.store, visitCode: params.visitCode, createdFrom: params.createdFrom, createdTo: params.createdTo }} />
         </div>
         <PriceSnapshotsTable snapshots={pricesResult.data} locale={locale} />
         <PricesPagination

@@ -14,7 +14,10 @@ const priceSnapshotsTable = existsSync("src/components/price-snapshots-table.tsx
   ? readFileSync("src/components/price-snapshots-table.tsx", "utf8")
   : "";
 const priceSnapshotsRoute = readFileSync("src/app/api/price-snapshots/route.ts", "utf8");
-const priceSnapshotsExportRoute = readFileSync("src/app/api/price-snapshots/export/route.ts", "utf8");
+const priceSnapshotsExportRoute = [
+  readFileSync("src/app/api/price-snapshots/export/route.ts", "utf8"),
+  readFileSync("src/lib/price-snapshot-export.ts", "utf8"),
+].join("\n");
 const priceSnapshotBusiness = readFileSync("src/lib/price-snapshot-business.ts", "utf8");
 
 test("board navigation exposes the one-week product workflow", () => {
@@ -161,10 +164,10 @@ test("prices table is store-region focused without manual snapshot entry", () =>
 
 test("price snapshot CSV export follows the current language and table columns", () => {
   assert.match(priceSnapshotsExportRoute, /searchParams\.get\("locale"\) === "zh"/);
-  assert.match(priceSnapshotsExportRoute, /"采集时间"/);
-  assert.match(priceSnapshotsExportRoute, /"门店名称"/);
-  assert.match(priceSnapshotsExportRoute, /"采集人"/);
-  assert.match(priceSnapshotsExportRoute, /"创建时间"/);
+  assert.match(priceSnapshotsExportRoute, /"采集时间"|\\u91c7\\u96c6\\u65f6\\u95f4/);
+  assert.match(priceSnapshotsExportRoute, /"门店名称"|\\u95e8\\u5e97\\u540d\\u79f0/);
+  assert.match(priceSnapshotsExportRoute, /"采集人"|\\u91c7\\u96c6\\u4eba/);
+  assert.match(priceSnapshotsExportRoute, /"创建时间"|\\u521b\\u5efa\\u65f6\\u95f4/);
   assert.match(priceSnapshotsExportRoute, /"Captured"/);
   assert.match(priceSnapshotsExportRoute, /"Collector"/);
   assert.match(priceSnapshotsExportRoute, /"Create Time"/);

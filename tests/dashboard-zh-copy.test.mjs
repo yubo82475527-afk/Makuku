@@ -4,7 +4,10 @@ import assert from "node:assert/strict";
 
 const zhDictionary = readFileSync("src/lib/i18n/dictionaries/zh.ts", "utf8");
 const dashboardPage = readFileSync("src/app/[locale]/dashboard/page.tsx", "utf8");
-const pricesPage = readFileSync("src/app/[locale]/prices/page.tsx", "utf8");
+const pricesPage = [
+  readFileSync("src/app/[locale]/prices/page.tsx", "utf8"),
+  readFileSync("src/components/price-snapshot-export-button.tsx", "utf8"),
+].join("\n");
 
 test("zh dictionary stores readable utf8 copy", () => {
   assert.match(zhDictionary, /Asia\/Jakarta 时区 \/ IDR 价格/);
