@@ -72,6 +72,18 @@ test("piece count uses size-pack text in the product title before table inventor
     extractedText: null,
     sourceLabel: null,
   }), { pieceCount: 18, source: "TITLE_SIZE_PACK" });
+  assert.deepEqual(resolveTrustedPieceCount({
+    productTitle: "Confidence Pants Daily Fresh L8S",
+    extractedValue: null,
+    extractedText: null,
+    sourceLabel: null,
+  }), { pieceCount: 8, source: "TITLE_SIZE_PACK" });
+  assert.deepEqual(resolveTrustedPieceCount({
+    productTitle: "Confidence Pants Daily Fresh M9S",
+    extractedValue: null,
+    extractedText: null,
+    sourceLabel: null,
+  }), { pieceCount: 9, source: "TITLE_SIZE_PACK" });
 });
 
 test("piece count accepts only explicitly labeled Pcs evidence when the title has no size-pack token", () => {
