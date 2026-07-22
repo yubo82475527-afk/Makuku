@@ -42,7 +42,7 @@ export type PriceSnapshotExportFilters = {
 export const PRICE_SNAPSHOT_EXPORT_SELECT =
   "*, sku_master(*, material_master(*)), material_master(*), offline_store_visits!source_visit_id(id,visit_code,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at), offline_stores(id,name,city,province,city_name,district,channel_type), competitor_products(*, brands(id,name)), ai_price_candidates(id, offline_store_visits(id,visit_code,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at))";
 
-const priceSnapshotExportLimit = 5000;
+const priceSnapshotExportBatchSize = 5000;
 
 const csvColumns: Record<PriceSnapshotExportLocale, string[]> = {
   zh: [
@@ -173,34 +173,45 @@ export async function buildPriceSnapshotExport(input: {
   filters?: Record<string, unknown>;
   locale?: string;
   supabase?: SupabaseServiceClient;
+  onProgress?: (progress: { totalRows: number; exportedRows: number }) => Promise<void> | void;
 }) {
   const filters = normalizePriceSnapshotExportFilters(input.filters ?? {});
   const locale = normalizePriceSnapshotExportLocale(input.locale);
-  const result = await getPriceSnapshotsPage({
-    owner: filters.owner ?? "all",
-    brand: filters.brand,
-    series: filters.series,
-    ownSeries: filters.ownSeries,
-    sku: filters.sku,
-    line: filters.line,
-    size: filters.size,
-    shape: filters.shape,
-    organization: filters.organization,
-    priceIndexDrill: filters.priceIndexDrill,
-    dashboardDateFrom: filters.dashboardDateFrom ?? filters.createdFrom,
-    dashboardDateTo: filters.dashboardDateTo ?? filters.createdTo,
-    province: filters.province,
-    cityName: filters.cityName,
-    district: filters.district,
-    store: filters.store,
-    visitCode: filters.visitCode,
-    capturedFrom: toInclusiveCapturedFrom(filters.createdFrom) ?? undefined,
-    capturedTo: toExclusiveCapturedTo(filters.createdTo) ?? undefined,
-    page: 1,
-    perPage: priceSnapshotExportLimit,
-  });
-  if (result.error) throw new Error(result.error);
-  const snapshots = result.data;
+  const snapshots: PriceSnapshot[] = [];
+  let totalRows = 0;
+
+  for (let page = 1; ; page += 1) {
+    const result = await getPriceSnapshotsPage({
+      owner: filters.owner ?? "all",
+      brand: filters.brand,
+      series: filters.series,
+      ownSeries: filters.ownSeries,
+      sku: filters.sku,
+      line: filters.line,
+      size: filters.size,
+      shape: filters.shape,
+      organization: filters.organization,
+      priceIndexDrill: filters.priceIndexDrill,
+      dashboardDateFrom: filters.dashboardDateFrom ?? filters.createdFrom,
+      dashboardDateTo: filters.dashboardDateTo ?? filters.createdTo,
+      province: filters.province,
+      cityName: filters.cityName,
+      district: filters.district,
+      store: filters.store,
+      visitCode: filters.visitCode,
+      capturedFrom: toInclusiveCapturedFrom(filters.createdFrom) ?? undefined,
+      capturedTo: toExclusiveCapturedTo(filters.createdTo) ?? undefined,
+      page,
+      perPage: priceSnapshotExportBatchSize,
+    });
+    if (result.error) throw new Error(result.error);
+
+    snapshots.push(...result.data);
+    totalRows = result.total;
+    await input.onProgress?.({ totalRows, exportedRows: snapshots.length });
+    if (snapshots.length >= totalRows || result.data.length === 0) break;
+  }
+
   const rows = snapshots.map((snapshot) => buildPriceSnapshotCsvRow(snapshot, locale));
   const csv = [csvColumns[locale].map(csvEscape).join(","), ...rows].join("\r\n");
 

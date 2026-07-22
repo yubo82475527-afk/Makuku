@@ -39,13 +39,26 @@ test("price export jobs use a price-domain CSV builder instead of importing an A
   assert.match(exportRoute, /buildPriceSnapshotExport/);
   assert.match(exportDomain, /export async function buildPriceSnapshotExport/);
   assert.match(exportDomain, /getPriceSnapshotsPage/);
-  assert.match(exportDomain, /perPage:\s*priceSnapshotExportLimit/);
+  assert.match(exportDomain, /perPage:\s*priceSnapshotExportBatchSize/);
   assert.match(exportDomain, /dashboardDateFrom:\s*filters\.dashboardDateFrom \?\? filters\.createdFrom/);
   assert.match(exportDomain, /PRICE_SNAPSHOT_EXPORT_SELECT/);
   assert.match(exportDomain, /applyPriceSnapshotExportFilters/);
   assert.match(exportDomain, /rowCount:\s*rows\.length/);
   assert.doesNotMatch(jobDomain, /@\/app\/api\/price-snapshots\/export\/route/);
   assert.match(jobDomain, /buildPriceSnapshotExport/);
+});
+
+test("price export reads every matching page instead of truncating at the 5000-row UI limit", () => {
+  const exportDomain = read("src/lib/price-snapshot-export.ts");
+  const jobDomain = read("src/lib/price-snapshot-export-jobs.ts");
+
+  assert.doesNotMatch(exportDomain, /priceSnapshotExportLimit/);
+  assert.match(exportDomain, /const priceSnapshotExportBatchSize = 5000/);
+  assert.match(exportDomain, /for \(let page = 1; ; page \+= 1\)/);
+  assert.match(exportDomain, /onProgress/);
+  assert.match(jobDomain, /onProgress: async/);
+  assert.match(jobDomain, /total_rows:\s*progress\.totalRows/);
+  assert.match(jobDomain, /exported_rows:\s*progress\.exportedRows/);
 });
 
 test("price export runner writes real progress and falls back to inline execution without cron", () => {

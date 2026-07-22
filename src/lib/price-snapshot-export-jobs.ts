@@ -138,6 +138,17 @@ export async function runPriceSnapshotExportJob(input: {
     filters: job.filters,
     locale: job.locale,
     supabase,
+    onProgress: async (progress) => {
+      const { error } = await supabase
+        .from("price_snapshot_export_jobs")
+        .update({
+          total_rows: progress.totalRows,
+          exported_rows: progress.exportedRows,
+          updated_at: nowIso(),
+        })
+        .eq("id", job.id);
+      if (error) throw new Error(error.message);
+    },
   });
   const filePath = `${priceSnapshotExportPrefix}/${job.id}.csv`;
 

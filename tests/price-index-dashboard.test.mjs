@@ -378,7 +378,7 @@ test("price snapshot export reuses the list scope, including dashboard drill-thr
   assert.match(priceExportRoute, /capturedFrom: toInclusiveCapturedFrom\(filters\.createdFrom\) \?\? undefined/);
   assert.match(priceExportRoute, /function toInclusiveCapturedFrom\(/);
   assert.match(priceExportRoute, /const date = new Date\(`\$\{text\}T00:00:00`\)/);
-  assert.match(priceExportRoute, /perPage: priceSnapshotExportLimit/);
+  assert.match(priceExportRoute, /perPage: priceSnapshotExportBatchSize/);
   assert.doesNotMatch(priceExportRoute, /\.from\("price_snapshots"\)/);
   assert.match(dataFile, /const shouldScan = shouldPostFilter \|\| perPage > 200/);
   assert.match(pricesPage, /<InlineTextFilter name="organization"/);
