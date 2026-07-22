@@ -4,7 +4,7 @@ import { Download, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState, type ToggleEvent } from "react";
 
 type ExportJob = {
-  kind: "store_visit" | "price_snapshot";
+  kind: "store_visit" | "price_snapshot" | "operator_price_review";
   id: string;
   status: "queued" | "running" | "completed" | "failed";
   total_rows: number;
@@ -22,6 +22,7 @@ function formatTime(value: string) {
 
 function taskLabel(kind: ExportJob["kind"], locale: string) {
   if (kind === "price_snapshot") return locale === "zh" ? "真实市场价格" : "Real Market Price";
+  if (kind === "operator_price_review") return locale === "zh" ? "价格异常审核" : "Price anomaly review";
   return locale === "zh" ? "巡店分析" : "Visit analysis";
 }
 
@@ -34,13 +35,15 @@ export function StoreVisitMonitorExportMenu({ locale }: { locale: string }) {
   const loadJobs = useCallback(async (isDisposed: () => boolean) => {
     setLoading(true);
     try {
-      const [visitResponse, priceResponse] = await Promise.all([
+      const [visitResponse, priceResponse, reviewResponse] = await Promise.all([
         fetch("/api/store-visit-monitor/export-jobs", { cache: "no-store" }),
         fetch("/api/price-snapshots/export-jobs", { cache: "no-store" }),
+        fetch("/api/operator-price-reviews/export-jobs", { cache: "no-store" }),
       ]);
-      const [visitPayload, pricePayload] = await Promise.all([
+      const [visitPayload, pricePayload, reviewPayload] = await Promise.all([
         visitResponse.json().catch(() => ({})),
         priceResponse.json().catch(() => ({})),
+        reviewResponse.json().catch(() => ({})),
       ]);
       if (isDisposed()) return;
 
@@ -54,11 +57,17 @@ export function StoreVisitMonitorExportMenu({ locale }: { locale: string }) {
           ? pricePayload.jobs.map((job: Omit<ExportJob, "kind">) => ({ ...job, kind: "price_snapshot" as const }))
           : []
         : [];
+      const reviewJobs = reviewResponse.ok
+        ? Array.isArray(reviewPayload.jobs)
+          ? reviewPayload.jobs.map((job: Omit<ExportJob, "kind">) => ({ ...job, kind: "operator_price_review" as const }))
+          : []
+        : [];
       const nextError = [
         visitResponse.ok ? null : (visitPayload.error ?? "Failed to load visit export tasks"),
         priceResponse.ok ? null : (pricePayload.error ?? "Failed to load price export tasks"),
+        reviewResponse.ok ? null : (reviewPayload.error ?? "Failed to load price review export tasks"),
       ].filter(Boolean).join("; ");
-      setJobs([...visitJobs, ...priceJobs].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)));
+      setJobs([...visitJobs, ...priceJobs, ...reviewJobs].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)));
       setError(nextError || null);
     } catch (nextError) {
       if (!isDisposed()) setError(nextError instanceof Error ? nextError.message : "Failed to load export tasks");

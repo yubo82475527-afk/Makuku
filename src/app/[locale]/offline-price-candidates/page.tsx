@@ -46,8 +46,6 @@ export default async function OfflinePriceCandidatesPage({
     locale,
   });
   const pageTitle = locale === "zh" ? "价格异常审核" : "Price Anomaly Review";
-  const exportHref = buildExportHref(locale, { state, dateFrom, dateTo, visitCode, reason });
-
   return (
     <>
       <PageShellState
@@ -80,7 +78,6 @@ export default async function OfflinePriceCandidatesPage({
           page={reviews.page}
           perPage={reviews.perPage}
           locale={locale}
-          exportHref={exportHref}
           filters={{
             state,
             date_from: dateFrom || undefined,
@@ -92,25 +89,6 @@ export default async function OfflinePriceCandidatesPage({
       </Card>
     </>
   );
-}
-
-function buildExportHref(
-  locale: string,
-  filters: {
-    state: OperatorPriceReviewState;
-    dateFrom: string;
-    dateTo: string;
-    visitCode: string;
-    reason?: OperatorPriceReviewReasonFilter;
-  },
-) {
-  const params = new URLSearchParams();
-  params.set("state", filters.state);
-  if (filters.dateFrom) params.set("date_from", filters.dateFrom);
-  if (filters.dateTo) params.set("date_to", filters.dateTo);
-  if (filters.visitCode) params.set("visit_code", filters.visitCode);
-  if (filters.reason) params.set("reason", filters.reason);
-  return `/api/operator-price-reviews/export?locale=${locale}&${params.toString()}`;
 }
 
 function ReasonFilter({ locale, reason }: { locale: string; reason?: OperatorPriceReviewReasonFilter }) {

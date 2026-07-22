@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { OperatorPriceReviewDrawer } from "@/components/operator-price-review-drawer";
+import { OperatorPriceReviewExportButton } from "@/components/operator-price-review-export-button";
 import { UnmatchedImportDialog } from "@/components/unmatched-import-dialog";
 import { formatIdr, formatJakartaTime } from "@/lib/format";
 import type { OperatorPriceReviewReasonFilter } from "@/lib/operator-price-review-reasons";
@@ -24,7 +25,6 @@ export function OperatorPriceReviewWorkbench({
   page,
   perPage,
   locale,
-  exportHref,
   filters,
 }: {
   items: OperatorPriceReviewListItem[];
@@ -32,7 +32,6 @@ export function OperatorPriceReviewWorkbench({
   page: number;
   perPage: number;
   locale: string;
-  exportHref: string;
   filters: ReviewFilters;
 }) {
   const router = useRouter();
@@ -78,13 +77,7 @@ export function OperatorPriceReviewWorkbench({
           >
             {isZh ? "导入匹配" : "Import Matches"}
           </button>
-          <a
-            href={exportHref}
-            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            <Download className="h-4 w-4" />
-            {isZh ? "导出审核数据" : "Export review data"}
-          </a>
+          <OperatorPriceReviewExportButton locale={locale} filters={filters} />
         </div>
       </div>
 

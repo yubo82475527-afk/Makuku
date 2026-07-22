@@ -93,20 +93,24 @@ test("operator review API normalizes and forwards the reason filter", () => {
   assert.match(listRoute, /reason:\s*normalizeOperatorPriceReviewReason/);
 });
 
-test("operator review exports the current anomaly list with visit image and creator audit fields", () => {
+test("operator review export is queued with its current filters and preserves the XLSX audit columns", () => {
   assert.doesNotMatch(page, /导出审核数据/);
-  assert.match(workbench, /exportHref/);
+  assert.match(workbench, /OperatorPriceReviewExportButton/);
   assert.match(workbench, /<Download/);
-  assert.match(workbench, /导出审核数据/);
+  assert.match(workbench, /Export Unmatched/);
   assert.match(workbench, /\$\{from\}-\$\{to\} \/ \$\{total\}/);
   assert.match(page, /date_from/);
   assert.match(page, /date_to/);
   assert.match(page, /visit_code/);
   assert.match(page, /reason/);
   assert.match(page, /state/);
-  assert.match(exportRoute, /import \* as XLSX from "xlsx"/);
   assert.match(exportRoute, /requireAdminSession/);
-  assert.match(exportRoute, /getOperatorPriceReviewsExport/);
+  assert.match(exportRoute, /createOperatorPriceReviewExportJob/);
+  assert.match(exportRoute, /triggerOperatorPriceReviewExportJobRunner/);
+  assert.match(exportRoute, /status: 202/);
+  const exportDomain = read("src/lib/operator-price-review-export.ts");
+  assert.match(exportDomain, /import \* as XLSX from "xlsx"/);
+  assert.match(exportDomain, /getOperatorPriceReviewsExport/);
   for (const header of [
     "Visit ID",
     "Visit Code",
@@ -120,10 +124,9 @@ test("operator review exports the current anomaly list with visit image and crea
     "Per-piece Price",
     "Reason",
     "Status",
-  ]) assert.match(exportRoute, new RegExp(header));
-  assert.match(exportRoute, /aoa_to_sheet/);
-  assert.match(exportRoute, /Content-Disposition/);
-  assert.match(exportRoute, /operator-price-reviews/);
+  ]) assert.match(exportDomain, new RegExp(header));
+  assert.match(exportDomain, /aoa_to_sheet/);
+  assert.match(exportDomain, /operator-price-reviews/);
   assert.match(domain, /export async function getOperatorPriceReviewsExport/);
   assert.match(domain, /uploader_name/);
 });
