@@ -38,7 +38,7 @@ export type TrustedPieceCountSource = "TITLE_SIZE_PACK" | "LABELED_PCS" | "UNTRU
 
 export function parsePieceCountFromProductTitle(value: string | null | undefined): number | null {
   const title = String(value ?? "").replace(/\([^)]*\)/g, " ");
-  const sizePackMatch = title.match(/\b(?:nb-s|nb|s|m|l|xl|xxl|xxxl|xxxxl)-?(\d{1,3})(?:\s*\+\s*(\d{1,3}))?\b/i);
+  const sizePackMatch = title.match(/\b(?:nb-s|nb|s|m|l|xl|xxl|xxxl|xxxxl)-?\s*(\d{1,3})(?:\s*\+\s*(\d{1,3}))?\b(?!\s*-\s*\d+\s*kg\b)/i);
   if (!sizePackMatch) return null;
   const base = Number(sizePackMatch[1]);
   const bonus = sizePackMatch[2] ? Number(sizePackMatch[2]) : 0;
