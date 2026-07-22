@@ -141,6 +141,7 @@ export type StoreVisitPriceImageRow = {
   product_family_text?: string | null;
   sku: string;
   piece_count_text?: string | null;
+  piece_count_source_label?: string | null;
   normal_package_text?: string | null;
   normal_piece_text?: string | null;
   promo_package_text?: string | null;
@@ -344,12 +345,13 @@ export type AppUser = {
 };
 
 export type OrganizationStatus = "active" | "inactive";
-export type OrganizationAssignmentMethod = "auto_region_rule" | "manual" | "ai_suggested";
+export type OrganizationAssignmentMethod = "auto_region_rule" | "manual" | "ai_suggested" | "external_org_id";
 
 export type Organization = {
   id: string;
   name: string;
   status: OrganizationStatus;
+  external_org_id?: string | null;
   notes?: string | null;
   created_at: string;
   updated_at?: string | null;
@@ -793,6 +795,7 @@ export type OfflineStoreVisit = {
   ai_result?: StoreVisitAiResult | null;
   analysis_status?: StoreVisitAnalysisStatus | null;
   analysis_error?: string | null;
+  price_handling?: VisitPriceHandlingSummary;
   city: string;
   province?: string | null;
   city_name?: string | null;
@@ -833,6 +836,31 @@ export type OfflineStoreVisit = {
 };
 
 export type AiPriceCandidateStatus = "pending" | "approved" | "rejected";
+export type PriceHandlingStatus = "PROCESSING" | "ACTION_REQUIRED" | "COMPLETED";
+export type PriceHandlingActionType =
+  | "RETAKE_REQUIRED"
+  | "MANUAL_CONFIRMATION_REQUIRED"
+  | "RETRY_REQUIRED";
+
+export type PriceCandidateHandling = {
+  status: PriceHandlingStatus;
+  action_type: PriceHandlingActionType | null;
+};
+
+export type VisitPriceHandlingSummary = {
+  status: PriceHandlingStatus;
+  action_counts: {
+    retake_required: number;
+    manual_confirmation_required: number;
+    retry_required: number;
+  };
+  candidate_counts: {
+    processing: number;
+    action_required: number;
+    approved: number;
+    rejected: number;
+  };
+};
 export type AiPriceCandidateMatchType = "material_master" | "competitor_product" | "unmatched";
 export type AiProductMatchMethod = "EXACT_CODE" | "FULL_SIGNATURE" | "UNIQUE_SIGNATURE" | "MASTER_DATA_DUPLICATE" | "UNMATCHED";
 export type AiPriceCandidateReviewMethod = "auto_rule" | "manual" | "bulk_manual";
@@ -933,6 +961,7 @@ export type AiPriceCandidate = {
   match_score: number;
   warnings: { type?: string; message: string }[];
   status: AiPriceCandidateStatus;
+  price_handling?: PriceCandidateHandling;
   price_snapshot_id: string | null;
   reviewed_piece_count: number | null;
   reviewed_price_per_piece: number | null;
@@ -1399,6 +1428,8 @@ export type WeeklyPriceCoefficientCell = {
 export type WeeklyPriceCoefficientCompetitorSeries = {
   key: string;
   label: string;
+  brand: string;
+  series: string | null;
   isBenchmark: boolean;
 };
 
@@ -1410,7 +1441,7 @@ export type WeeklyPriceCoefficientCompetitorCell = {
   benchmarkHref: string;
 };
 
-export type WeeklyPriceCoefficientNodeLevel = "organization" | "province" | "city" | "district" | "sku";
+export type WeeklyPriceCoefficientNodeLevel = "organization" | "province" | "city" | "district" | "size" | "sku";
 
 export type WeeklyPriceCoefficientNode = {
   id: string;
@@ -1419,6 +1450,7 @@ export type WeeklyPriceCoefficientNode = {
   province: string | null;
   cityName: string | null;
   district: string | null;
+  size: string | null;
   skuCode: string | null;
   skuName: string | null;
   cells: WeeklyPriceCoefficientCell[];
@@ -1426,6 +1458,7 @@ export type WeeklyPriceCoefficientNode = {
 };
 
 export type WeeklyPriceCoefficientBoard = {
+  dimensions: WeeklyPriceCoefficientNodeLevel[];
   month: string;
   title: string;
   ownSeriesOptions: string[];

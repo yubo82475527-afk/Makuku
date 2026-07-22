@@ -10,7 +10,6 @@ import type {
   WeeklyPriceCoefficientNodeLevel,
 } from "@/lib/types";
 
-const LEVELS: WeeklyPriceCoefficientNodeLevel[] = ["organization", "province", "city", "district", "sku"];
 const WEEK_COLUMN_CLASS = "w-28 min-w-28";
 
 export function PriceIndexTreeTable({
@@ -21,6 +20,7 @@ export function PriceIndexTreeTable({
   isZh: boolean;
 }) {
   const ownLabel = board.selectedOwnSeries ? `MAKUKU ${board.selectedOwnSeries}` : "MAKUKU";
+  const activeLevels = board.dimensions;
   const [expandedIds, setExpandedIds] = useState<Set<string>>(
     () => new Set(board.rows.map((row) => row.id)),
   );
@@ -37,10 +37,11 @@ export function PriceIndexTreeTable({
   };
 
   const expandToLevel = (targetLevel: WeeklyPriceCoefficientNodeLevel) => {
-    const targetIndex = LEVELS.indexOf(targetLevel);
+    const targetIndex = activeLevels.indexOf(targetLevel);
+    if (targetIndex < 0) return;
     const next = new Set<string>();
-    for (const level of LEVELS) {
-      if (LEVELS.indexOf(level) >= targetIndex) break;
+    for (const [index, level] of activeLevels.entries()) {
+      if (index >= targetIndex) break;
       for (const id of nodesByLevel[level]) {
         next.add(id);
       }
@@ -49,10 +50,12 @@ export function PriceIndexTreeTable({
   };
 
   const collapseToLevel = (targetLevel: WeeklyPriceCoefficientNodeLevel) => {
-    const targetIndex = LEVELS.indexOf(targetLevel);
+    const targetIndex = activeLevels.indexOf(targetLevel);
+    if (targetIndex < 0) return;
     const next = new Set<string>();
-    for (const level of LEVELS) {
-      if (LEVELS.indexOf(level) >= Math.max(targetIndex - 1, 0)) break;
+    const keepBeforeIndex = Math.max(targetIndex - 1, 0);
+    for (const [index, level] of activeLevels.entries()) {
+      if (index >= keepBeforeIndex) break;
       for (const id of nodesByLevel[level]) {
         next.add(id);
       }
@@ -60,48 +63,52 @@ export function PriceIndexTreeTable({
     setExpandedIds(next);
   };
 
-  const headerLabels: Array<{ level: WeeklyPriceCoefficientNodeLevel; label: string; widthClass: string }> = [
-    { level: "organization", label: isZh ? "组织" : "Organization", widthClass: "w-44" },
-    { level: "province", label: isZh ? "省" : "Province", widthClass: "w-40" },
-    { level: "city", label: isZh ? "市" : "City", widthClass: "w-36" },
-    { level: "district", label: isZh ? "区" : "District", widthClass: "w-48" },
-    { level: "sku", label: "SKU", widthClass: "w-[18rem]" },
-  ];
+  const headerLabels: Record<WeeklyPriceCoefficientNodeLevel, { label: string; widthClass: string }> = {
+    organization: { label: isZh ? "组织" : "Organization", widthClass: "w-44" },
+    province: { label: isZh ? "省" : "Province", widthClass: "w-40" },
+    city: { label: isZh ? "市" : "City", widthClass: "w-36" },
+    district: { label: isZh ? "区" : "District", widthClass: "w-48" },
+    size: { label: isZh ? "\u5c3a\u7801" : "Size", widthClass: "w-28" },
+    sku: { label: "SKU", widthClass: "w-[18rem]" },
+  };
 
   return (
     <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
       <table className="w-full min-w-[1700px] text-sm">
         <thead className="bg-slate-50 text-xs uppercase tracking-normal text-slate-500">
           <tr>
-            {headerLabels.map((item) => (
-              <th
-                key={item.level}
-                rowSpan={2}
-                className={`${item.widthClass} px-3 py-3 text-left font-semibold text-slate-500`}
-              >
-                <div className="flex items-center gap-1.5">
-                  <span>{item.label}</span>
-                  <button
-                    type="button"
-                    onClick={() => expandToLevel(item.level)}
-                    className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-[12px] font-semibold normal-case text-slate-500 hover:border-slate-300 hover:text-slate-900"
-                    aria-label={isZh ? `展开到${item.label}` : `Expand to ${item.label}`}
-                    title={isZh ? `展开到${item.label}` : `Expand to ${item.label}`}
-                  >
-                    +
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => collapseToLevel(item.level)}
-                    className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-[12px] font-semibold normal-case text-slate-500 hover:border-slate-300 hover:text-slate-900"
-                    aria-label={isZh ? `收起到${item.label}` : `Collapse to ${item.label}`}
-                    title={isZh ? `收起到${item.label}` : `Collapse to ${item.label}`}
-                  >
-                    -
-                  </button>
-                </div>
-              </th>
-            ))}
+            {board.dimensions.map((level) => {
+              const item = headerLabels[level];
+              return (
+                <th
+                  key={level}
+                  rowSpan={2}
+                  className={`${item.widthClass} px-3 py-3 text-left font-semibold text-slate-500`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>{item.label}</span>
+                    <button
+                      type="button"
+                      onClick={() => expandToLevel(level)}
+                      className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-[12px] font-semibold normal-case text-slate-500 hover:border-slate-300 hover:text-slate-900"
+                      aria-label={isZh ? `展开到${item.label}` : `Expand to ${item.label}`}
+                      title={isZh ? `展开到${item.label}` : `Expand to ${item.label}`}
+                    >
+                      +
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => collapseToLevel(level)}
+                      className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-[12px] font-semibold normal-case text-slate-500 hover:border-slate-300 hover:text-slate-900"
+                      aria-label={isZh ? `收起到${item.label}` : `Collapse to ${item.label}`}
+                      title={isZh ? `收起到${item.label}` : `Collapse to ${item.label}`}
+                    >
+                      -
+                    </button>
+                  </div>
+                </th>
+              );
+            })}
             <th colSpan={board.weeks.length} className="px-3 py-3 text-left font-semibold text-slate-500">
               <div className="flex justify-start text-left">{ownLabel}</div>
             </th>
@@ -129,7 +136,7 @@ export function PriceIndexTreeTable({
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-200">
-          {board.rows.flatMap((node) => renderNodeRows(node, expandedIds, toggle))}
+          {board.rows.flatMap((node) => renderNodeRows(node, expandedIds, toggle, activeLevels))}
         </tbody>
       </table>
       {board.rows.length === 0 ? (
@@ -145,44 +152,22 @@ function renderNodeRows(
   node: WeeklyPriceCoefficientNode,
   expandedIds: Set<string>,
   toggle: (id: string) => void,
+  activeLevels: WeeklyPriceCoefficientNodeLevel[],
 ): ReactElement[] {
   const isExpanded = expandedIds.has(node.id);
+  const hierarchyCells = activeLevels.map((level) => (
+    <HierarchyCell
+      key={`${node.id}-${level}`}
+      label={nodeLabelForLevel(node, level)}
+      show={node.level === level}
+      expandable={node.children.length > 0 && node.level === level}
+      expanded={isExpanded}
+      onToggle={() => toggle(node.id)}
+    />
+  ));
   const rows = [
     <tr key={node.id} className="bg-white text-slate-900 hover:bg-slate-50/70">
-      <HierarchyCell
-        label={node.organization}
-        show={node.level === "organization"}
-        expandable={node.children.length > 0}
-        expanded={isExpanded}
-        onToggle={() => toggle(node.id)}
-      />
-      <HierarchyCell
-        label={node.province}
-        show={node.level === "province"}
-        expandable={node.children.length > 0 && node.level === "province"}
-        expanded={isExpanded}
-        onToggle={() => toggle(node.id)}
-      />
-      <HierarchyCell
-        label={node.cityName}
-        show={node.level === "city"}
-        expandable={node.children.length > 0 && node.level === "city"}
-        expanded={isExpanded}
-        onToggle={() => toggle(node.id)}
-      />
-      <HierarchyCell
-        label={node.district}
-        show={node.level === "district"}
-        expandable={node.children.length > 0 && node.level === "district"}
-        expanded={isExpanded}
-        onToggle={() => toggle(node.id)}
-      />
-      <HierarchyCell
-        label={node.skuCode ? `${node.skuCode} ${node.skuName ?? ""}`.trim() : null}
-        show={node.level === "sku"}
-        expandable={false}
-        expanded={false}
-      />
+      {hierarchyCells}
       {node.cells.map((cell) => (
         <CombinedMetricCell
           key={`own-${node.id}-${cell.week}`}
@@ -198,11 +183,28 @@ function renderNodeRows(
 
   if (isExpanded) {
     for (const child of node.children) {
-      rows.push(...renderNodeRows(child, expandedIds, toggle));
+      rows.push(...renderNodeRows(child, expandedIds, toggle, activeLevels));
     }
   }
 
   return rows;
+}
+
+function nodeLabelForLevel(node: WeeklyPriceCoefficientNode, level: WeeklyPriceCoefficientNodeLevel) {
+  switch (level) {
+    case "organization":
+      return node.organization;
+    case "province":
+      return node.province;
+    case "city":
+      return node.cityName;
+    case "district":
+      return node.district;
+    case "size":
+      return node.size;
+    case "sku":
+      return node.skuCode ? `${node.skuCode} ${node.skuName ?? ""}`.trim() : null;
+  }
 }
 
 function renderCompetitorCells(node: WeeklyPriceCoefficientNode) {
@@ -290,6 +292,7 @@ function collectNodesByLevel(rows: WeeklyPriceCoefficientNode[]) {
     province: [],
     city: [],
     district: [],
+    size: [],
     sku: [],
   };
 

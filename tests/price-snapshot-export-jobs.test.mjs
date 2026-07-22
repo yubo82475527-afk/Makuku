@@ -38,6 +38,9 @@ test("price export jobs use a price-domain CSV builder instead of importing an A
   assert.match(exportRoute, /if \(auth\.response\) return auth\.response/);
   assert.match(exportRoute, /buildPriceSnapshotExport/);
   assert.match(exportDomain, /export async function buildPriceSnapshotExport/);
+  assert.match(exportDomain, /getPriceSnapshotsPage/);
+  assert.match(exportDomain, /perPage:\s*priceSnapshotExportLimit/);
+  assert.match(exportDomain, /dashboardDateFrom:\s*filters\.dashboardDateFrom \?\? filters\.createdFrom/);
   assert.match(exportDomain, /PRICE_SNAPSHOT_EXPORT_SELECT/);
   assert.match(exportDomain, /applyPriceSnapshotExportFilters/);
   assert.match(exportDomain, /rowCount:\s*rows\.length/);
@@ -75,5 +78,9 @@ test("price export types and header menu expose both export domains", () => {
   assert.doesNotMatch(menu, /if \(!visitResponse\.ok \|\| !priceResponse\.ok\)/);
   assert.match(button, /fetch\("\/api\/price-snapshots\/export-jobs"/);
   assert.match(page, /PriceSnapshotExportButton/);
+  assert.match(page, /series:\s*params\.series/);
+  assert.match(page, /ownSeries:\s*params\.ownSeries/);
+  assert.match(page, /organization:\s*params\.organization/);
+  assert.match(page, /priceIndexDrill:\s*params\.priceIndexDrill/);
   assert.doesNotMatch(page, /href=\{exportHref\}/);
 });

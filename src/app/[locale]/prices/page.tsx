@@ -3,11 +3,12 @@ import { SlidersHorizontal } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { PageShellState } from "@/components/page-shell-state";
+import { PriceSnapshotLinkedFilters } from "@/components/price-snapshot-linked-filters";
 import { PriceSnapshotsTable } from "@/components/price-snapshots-table";
 import { PriceSnapshotExportButton } from "@/components/price-snapshot-export-button";
-import { Button, Card, DataNotice, SelectInput } from "@/components/ui";
+import { Button, Card, DataNotice } from "@/components/ui";
 import { priceBrandSeriesLabel } from "@/lib/brand-series";
-import { getPriceSnapshotsPage } from "@/lib/data";
+import { getPriceSnapshotFilterOptions, getPriceSnapshotsPage, type PriceSnapshotOwnerFilter } from "@/lib/data";
 import { getPageI18n } from "@/lib/i18n/server";
 import {
   priceSnapshotBusinessLine,
@@ -18,12 +19,17 @@ import {
 import type { PriceSnapshot } from "@/lib/types";
 
 type PricesSearchParams = {
+  owner?: string;
   brand?: string;
+  series?: string;
   sku?: string;
   visitCode?: string;
   line?: string;
-  priceBand?: string;
   size?: string;
+  shape?: string;
+  ownSeries?: string;
+  organization?: string;
+  priceIndexDrill?: string;
   province?: string;
   cityName?: string;
   district?: string;
@@ -52,7 +58,7 @@ export default async function PricesPage({
   // Legacy reference for regression tests: brand: resolvedBrand ?? params.brand
   const currentParams = new URLSearchParams();
 
-  for (const key of ["brand", "sku", "visitCode", "line", "priceBand", "size", "province", "cityName", "district", "store", "createdFrom", "createdTo"] as const) {
+  for (const key of ["owner", "brand", "series", "sku", "visitCode", "line", "size", "shape", "ownSeries", "organization", "priceIndexDrill", "province", "cityName", "district", "store", "createdFrom", "createdTo"] as const) {
     if (params[key]) currentParams.set(key, params[key] as string);
   }
 
@@ -62,7 +68,7 @@ export default async function PricesPage({
   currentPathParams.set("page", String(requestedPage));
   currentPathParams.set("per_page", String(perPage));
   const currentPath = `/prices?${currentPathParams.toString()}`;
-  const hasAdvancedFilters = Boolean(params.province || params.cityName || params.district || params.store || params.sku || params.visitCode);
+  const hasAdvancedFilters = Boolean(params.organization || params.province || params.cityName || params.district || params.store || params.sku || params.visitCode);
 
   return (
     <>
@@ -99,46 +105,56 @@ async function PricesContent({
   currentParams: URLSearchParams;
   hasAdvancedFilters: boolean;
 }) {
+  const owner = normalizeOwner(params.owner);
   const capturedToExclusive = toExclusiveCapturedTo(params.createdTo);
-  // Legacy reference for regression tests: getPriceSnapshots({ capturedFrom: params.createdFrom || undefined, capturedTo: capturedToExclusive ?? undefined,
-  const pricesResult = await getPriceSnapshotsPage({
-    brand: params.brand || undefined,
-    sku: params.sku || undefined,
-    visitCode: params.visitCode || undefined,
-    line: params.line || undefined,
-    priceBand: params.priceBand || undefined,
-    size: params.size || undefined,
-    province: params.province || undefined,
-    cityName: params.cityName || undefined,
-    district: params.district || undefined,
-    store: params.store || undefined,
-    capturedFrom: params.createdFrom || undefined,
-    capturedTo: capturedToExclusive ?? undefined,
-    page: requestedPage,
-    perPage,
-  });
+  const [pricesResult, filterOptionsResult] = await Promise.all([
+    getPriceSnapshotsPage({
+      owner,
+      brand: params.brand || undefined,
+      series: params.series || undefined,
+      ownSeries: params.ownSeries || undefined,
+      sku: params.sku || undefined,
+      visitCode: params.visitCode || undefined,
+      line: params.line || undefined,
+      size: params.size || undefined,
+      shape: params.shape || undefined,
+      organization: params.organization || undefined,
+      priceIndexDrill: params.priceIndexDrill === "1",
+      dashboardDateFrom: params.createdFrom || undefined,
+      dashboardDateTo: params.createdTo || undefined,
+      province: params.province || undefined,
+      cityName: params.cityName || undefined,
+      district: params.district || undefined,
+      store: params.store || undefined,
+      capturedFrom: toInclusiveCapturedFrom(params.createdFrom) ?? undefined,
+      capturedTo: capturedToExclusive ?? undefined,
+      page: requestedPage,
+      perPage,
+    }),
+    getPriceSnapshotFilterOptions({ owner, brand: params.brand || undefined }),
+  ]);
 
   return (
     <>
-      <DataNotice dict={dict} error={pricesResult.error} />
+      <DataNotice dict={dict} error={pricesResult.error ?? filterOptionsResult.error} />
       <Card className="mb-4">
         <form className="space-y-3">
-          <div className="grid gap-3 md:grid-cols-[minmax(220px,1.1fr)_minmax(150px,0.7fr)_minmax(130px,0.6fr)_minmax(280px,1.1fr)_minmax(120px,0.45fr)]">
-            <LabeledSelect label={locale === "zh" ? "品牌/系列" : "Brand series"}>
-              <SelectInput name="brand" defaultValue={params.brand ?? ""} className="h-auto min-w-0 border-0 bg-transparent px-0 py-2 shadow-none focus:border-0">
-                <option value="">{dict.common.allBrands}</option>
-              </SelectInput>
-            </LabeledSelect>
-            <LabeledSelect label={locale === "zh" ? "等级" : "Grade"}>
-              <SelectInput name="priceBand" defaultValue={params.priceBand ?? ""} className="h-auto min-w-0 border-0 bg-transparent px-0 py-2 shadow-none focus:border-0">
-                <option value="">{locale === "zh" ? "全部商品等级" : "All grades"}</option>
-              </SelectInput>
-            </LabeledSelect>
-            <LabeledSelect label={locale === "zh" ? "尺码" : "Size"}>
-              <SelectInput name="size" defaultValue={params.size ?? ""} className="h-auto min-w-0 border-0 bg-transparent px-0 py-2 shadow-none focus:border-0">
-                <option value="">{locale === "zh" ? "全部尺码" : "All sizes"}</option>
-              </SelectInput>
-            </LabeledSelect>
+          <HiddenFilter name="shape" value={params.shape} />
+          <HiddenFilter name="priceIndexDrill" value={params.priceIndexDrill} />
+          <HiddenFilter name="ownSeries" value={params.ownSeries} />
+          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-[minmax(140px,0.55fr)_minmax(170px,0.8fr)_minmax(190px,0.9fr)_minmax(130px,0.6fr)_minmax(280px,1.1fr)_minmax(120px,0.45fr)]">
+            <PriceSnapshotLinkedFilters
+              key={`price-linked-filters:${owner}:${params.brand ?? ""}:${params.series ?? ""}:${params.size ?? ""}`}
+              locale={locale}
+              owner={owner}
+              brand={params.brand ?? ""}
+              series={params.series ?? ""}
+              size={params.size ?? ""}
+              brandsByOwner={filterOptionsResult.data.brandsByOwner}
+              seriesByBrand={filterOptionsResult.data.seriesByBrand}
+              sizesByOwner={filterOptionsResult.data.sizesByOwner}
+              sizesByBrand={filterOptionsResult.data.sizesByBrand}
+            />
             <PriceDateRangeFilter locale={locale} createdFrom={params.createdFrom ?? ""} createdTo={params.createdTo ?? ""} />
             <Button type="submit" className="h-10">{dict.common.filter}</Button>
           </div>
@@ -157,6 +173,7 @@ async function PricesContent({
               <InlineTextFilter name="store" label={locale === "zh" ? "门店" : "Store"} defaultValue={params.store ?? ""} />
               <InlineTextFilter name="sku" label={dict.prices.skuId} defaultValue={params.sku ?? ""} />
               <InlineTextFilter name="visitCode" label={locale === "zh" ? "巡店编号" : "Visit Code"} defaultValue={params.visitCode ?? ""} />
+              <InlineTextFilter name="organization" label={locale === "zh" ? "组织" : "Organization"} defaultValue={params.organization ?? ""} />
             </div>
           </details>
         </form>
@@ -165,7 +182,28 @@ async function PricesContent({
       <Card>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <h2 className="font-semibold">{dict.prices.title}</h2>
-          <PriceSnapshotExportButton locale={locale} filters={{ brand: params.brand, sku: params.sku, line: params.line, priceBand: params.priceBand, size: params.size, province: params.province, cityName: params.cityName, district: params.district, store: params.store, visitCode: params.visitCode, createdFrom: params.createdFrom, createdTo: params.createdTo }} />
+          <PriceSnapshotExportButton
+            locale={locale}
+            filters={{
+              owner: params.owner,
+              brand: params.brand,
+              series: params.series,
+              ownSeries: params.ownSeries,
+              sku: params.sku,
+              line: params.line,
+              size: params.size,
+              shape: params.shape,
+              organization: params.organization,
+              priceIndexDrill: params.priceIndexDrill,
+              province: params.province,
+              cityName: params.cityName,
+              district: params.district,
+              store: params.store,
+              visitCode: params.visitCode,
+              createdFrom: params.createdFrom,
+              createdTo: params.createdTo,
+            }}
+          />
         </div>
         <PriceSnapshotsTable snapshots={pricesResult.data} locale={locale} />
         <PricesPagination
@@ -177,15 +215,6 @@ async function PricesContent({
         />
       </Card>
     </>
-  );
-}
-
-function LabeledSelect({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="flex min-h-10 items-center rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus-within:border-slate-500 focus-within:ring-2 focus-within:ring-slate-200">
-      <span className="mr-2 shrink-0 text-xs font-medium text-slate-500">{label}</span>
-      <span className="min-w-0 flex-1">{children}</span>
-    </label>
   );
 }
 
@@ -208,6 +237,15 @@ function InlineTextFilter({
       />
     </label>
   );
+}
+
+function HiddenFilter({ name, value }: { name: string; value: string | undefined }) {
+  return value ? <input type="hidden" name={name} value={value} /> : null;
+}
+
+function normalizeOwner(value: string | undefined): PriceSnapshotOwnerFilter {
+  if (value === "makuku" || value === "competitor") return value;
+  return "all";
 }
 
 function PriceDateRangeFilter({ locale, createdFrom, createdTo }: { locale: string; createdFrom: string; createdTo: string }) {
@@ -329,9 +367,17 @@ function PricesPageSkeleton({ locale, title }: { locale: string; title: string }
 function toExclusiveCapturedTo(value: string | null | undefined) {
   const text = String(value ?? "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
-  const date = new Date(`${text}T00:00:00.000Z`);
+  const date = new Date(`${text}T00:00:00`);
   if (Number.isNaN(date.getTime())) return null;
-  date.setUTCDate(date.getUTCDate() + 1);
+  date.setDate(date.getDate() + 1);
+  return date.toISOString();
+}
+
+function toInclusiveCapturedFrom(value: string | null | undefined) {
+  const text = String(value ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+  const date = new Date(`${text}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
   return date.toISOString();
 }
 
@@ -456,14 +502,14 @@ function matchesText(value: string | null | undefined, query: string) {
 
 function matchesCreatedFrom(value: string | null | undefined, dateText: string) {
   const createdAt = Date.parse(String(value ?? ""));
-  const from = Date.parse(`${dateText}T00:00:00.000Z`);
+  const from = Date.parse(`${dateText}T00:00:00`);
   if (!Number.isFinite(createdAt) || !Number.isFinite(from)) return true;
   return createdAt >= from;
 }
 
 function matchesCreatedTo(value: string | null | undefined, dateText: string) {
   const createdAt = Date.parse(String(value ?? ""));
-  const to = Date.parse(`${dateText}T23:59:59.999Z`);
+  const to = Date.parse(`${dateText}T23:59:59.999`);
   if (!Number.isFinite(createdAt) || !Number.isFinite(to)) return true;
   return createdAt <= to;
 }

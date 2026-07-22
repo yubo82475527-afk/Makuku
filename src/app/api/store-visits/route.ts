@@ -1,7 +1,8 @@
 import { demoOfflineStoreVisits } from "@/lib/demo-data";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
 import { loadActiveAiJobsForVisits } from "@/lib/store-visit-ai-jobs";
-import type { OfflineStoreVisit, StoreVisitAiResult, StoreVisitAiJobSummary } from "@/lib/types";
+import { summarizeVisitPriceHandling } from "@/lib/price-handling-status";
+import type { AiPriceCandidate, OfflineStoreVisit, StoreVisitAiResult, StoreVisitAiJobSummary, VisitPriceHandlingSummary } from "@/lib/types";
 
 const defaultPageSize = 20;
 const maxPageSize = 50;
@@ -134,6 +135,7 @@ function serializeVisit(
   visit: OfflineStoreVisit,
   activeAiJob?: StoreVisitAiJobSummary | null,
   photoCountsByVisitId?: Map<string, number>,
+  priceHandling?: VisitPriceHandlingSummary,
 ) {
   const storeSummary = typeof visit.ai_result?.store_summary === "string" ? visit.ai_result.store_summary : null;
   const keySkuPrices = Array.isArray(visit.ai_result?.price_insights?.key_sku_prices)
@@ -166,6 +168,11 @@ function serializeVisit(
     visit_status: visit.visit_status,
     analysis_status: visit.analysis_status ?? "pending",
     analysis_error: visit.analysis_error ?? null,
+    price_handling: priceHandling ?? summarizeVisitPriceHandling({
+      analysis_status: visit.analysis_status,
+      active_job_status: activeAiJob?.status ?? null,
+      candidates: [],
+    }),
     ai_result: aiResult,
     image_urls: visit.image_urls ?? [],
     photo_count: photoCount(visit, photoCountsByVisitId),
@@ -244,6 +251,27 @@ async function loadPhotoCountsByVisitId(params: {
   return counts;
 }
 
+async function loadPriceHandlingCandidatesForVisits(params: {
+  supabase: ReturnType<typeof createSupabaseServiceClient>;
+  visitIds: string[];
+}) {
+  if (params.visitIds.length === 0) return new Map<string, AiPriceCandidate[]>();
+  const { data, error } = await params.supabase
+    .from("ai_price_candidates")
+    .select("visit_id,status,review_decision,quality_gate_status,quality_gate_attempt_count,h5_lifecycle_status")
+    .in("visit_id", params.visitIds);
+  if (error) throw new Error(error.message);
+
+  const byVisitId = new Map<string, AiPriceCandidate[]>();
+  for (const row of (data ?? []) as AiPriceCandidate[]) {
+    if (!row.visit_id || row.h5_lifecycle_status === "deleted" || row.h5_lifecycle_status === "replaced" || row.h5_lifecycle_status === "reanalyzed") continue;
+    const candidates = byVisitId.get(row.visit_id) ?? [];
+    candidates.push(row);
+    byVisitId.set(row.visit_id, candidates);
+  }
+  return byVisitId;
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -307,7 +335,7 @@ export async function GET(request: Request) {
     const hasNext = rows.length > fetchTo;
     const pagedRows = rows.slice(from, from + pageSize);
     const visitIds = pagedRows.map((visit) => visit.id);
-    const [activeJobsByVisitId, photoCountsByVisitId] = await Promise.all([
+    const [activeJobsByVisitId, photoCountsByVisitId, candidatesByVisitId] = await Promise.all([
       loadActiveAiJobsForVisits({
         supabase,
         visitIds,
@@ -316,10 +344,27 @@ export async function GET(request: Request) {
         supabase,
         visitIds,
       }),
+      loadPriceHandlingCandidatesForVisits({
+        supabase,
+        visitIds,
+      }),
     ]);
+    const priceHandlingByVisitId = new Map(pagedRows.map((visit) => {
+      const activeAiJob = activeJobsByVisitId.get(visit.id) ?? null;
+      return [visit.id, summarizeVisitPriceHandling({
+        analysis_status: visit.analysis_status,
+        active_job_status: activeAiJob?.status ?? null,
+        candidates: candidatesByVisitId.get(visit.id) ?? [],
+      })] as const;
+    }));
 
     return Response.json({
-      visits: pagedRows.map((visit) => serializeVisit(visit, activeJobsByVisitId.get(visit.id) ?? null, photoCountsByVisitId)),
+      visits: pagedRows.map((visit) => serializeVisit(
+        visit,
+        activeJobsByVisitId.get(visit.id) ?? null,
+        photoCountsByVisitId,
+        priceHandlingByVisitId.get(visit.id),
+      )),
       pagination: {
         page,
         page_size: pageSize,

@@ -1,15 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { ExceptionSection, ExecutionSection, PriceIndexSection } from "@/components/dashboard-content";
+import { useEffect, useState } from "react";
+import { PriceIndexSection } from "@/components/dashboard-content";
 import { Card, DataNotice } from "@/components/ui";
-import type {
-  DashboardExceptionPayload,
-  DashboardExecutionPayload,
-  DashboardPricePayload,
-  DashboardSearchParams,
-} from "@/lib/dashboard-data";
+import type { DashboardPricePayload } from "@/lib/dashboard-data";
 import type { Dictionary } from "@/lib/i18n/get-dictionary";
+import {
+  DEFAULT_PRICE_INDEX_DIMENSIONS,
+  PRICE_INDEX_DIMENSION_STORAGE_KEY,
+  normalizePriceIndexDimensions,
+  type PriceIndexDimension,
+} from "@/lib/price-index-dimensions";
 
 export function DashboardClient({
   locale,
@@ -21,22 +22,26 @@ export function DashboardClient({
   queryString: string;
 }) {
   const [pricePayload, setPricePayload] = useState<DashboardPricePayload | null>(null);
-  const [exceptionPayload, setExceptionPayload] = useState<DashboardExceptionPayload | null>(null);
-  const [executionPayload, setExecutionPayload] = useState<DashboardExecutionPayload | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const query = useMemo(() => Object.fromEntries(new URLSearchParams(queryString)) as DashboardSearchParams, [queryString]);
+  const [dimensions, setDimensions] = useState<PriceIndexDimension[] | null>(null);
 
   useEffect(() => {
-    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setDimensions(readPriceIndexDimensions(window.localStorage));
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
-    async function loadDashboardSection<T>(
-      section: string,
-      onPayload: (payload: T) => void,
-    ) {
+  useEffect(() => {
+    if (!dimensions) return;
+    const controller = new AbortController();
+    const params = new URLSearchParams(queryString);
+    params.set("locale", locale);
+    params.set("section", "price");
+    params.set("dimensions", dimensions.join(","));
+
+    async function loadPriceIndex() {
       try {
-        const params = new URLSearchParams(queryString);
-        params.set("locale", locale);
-        params.set("section", section);
         const url = `/api/dashboard?${params.toString()}`;
         const response = await fetch(url, {
           cache: "no-store",
@@ -44,7 +49,7 @@ export function DashboardClient({
         });
         const nextPayload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(nextPayload.error ?? "Failed to load dashboard");
-        if (!controller.signal.aborted) onPayload(nextPayload as T);
+        if (!controller.signal.aborted) setPricePayload(nextPayload as DashboardPricePayload);
       } catch (error) {
         if (controller.signal.aborted) return;
         setLoadError(error instanceof Error ? error.message : "Failed to load dashboard");
@@ -53,20 +58,26 @@ export function DashboardClient({
 
     const timer = window.setTimeout(() => {
       setPricePayload(null);
-      setExceptionPayload(null);
-      setExecutionPayload(null);
       setLoadError(null);
-      void loadDashboardSection<DashboardPricePayload>("price", setPricePayload);
-      void loadDashboardSection<DashboardExceptionPayload>("exceptions", setExceptionPayload);
-      void loadDashboardSection<DashboardExecutionPayload>("execution", setExecutionPayload);
+      void loadPriceIndex();
     }, 0);
     return () => {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [locale, queryString]);
+  }, [dimensions, locale, queryString]);
 
-  const dataError = pricePayload?.error ?? exceptionPayload?.error ?? executionPayload?.error ?? loadError;
+  function handleDimensionsChange(nextDimensions: PriceIndexDimension[]) {
+    const normalized = normalizePriceIndexDimensions(nextDimensions);
+    try {
+      window.localStorage.setItem(PRICE_INDEX_DIMENSION_STORAGE_KEY, JSON.stringify(normalized));
+    } catch {
+      // Keep rendering even when storage is unavailable.
+    }
+    setDimensions(normalized);
+  }
+
+  const dataError = pricePayload?.error ?? loadError;
   const isZh = locale === "zh";
 
   return (
@@ -74,30 +85,27 @@ export function DashboardClient({
       <DataNotice dict={dict} error={dataError} />
       <section className="space-y-6">
         {pricePayload ? (
-          <PriceIndexSection locale={locale} board={pricePayload.data.priceBoard} isZh={isZh} />
-        ) : (
-          <DashboardSectionLoadingContent />
-        )}
-        {exceptionPayload ? (
-          <ExceptionSection
+          <PriceIndexSection
             locale={locale}
+            board={pricePayload.data.priceBoard}
             isZh={isZh}
-            summary={exceptionPayload.data.exceptionSummary}
-            battles={exceptionPayload.data.battles}
-            alerts={exceptionPayload.data.alerts}
-            query={query}
+            dimensions={dimensions ?? DEFAULT_PRICE_INDEX_DIMENSIONS}
+            onDimensionsChange={handleDimensionsChange}
           />
-        ) : (
-          <DashboardSectionLoadingContent />
-        )}
-        {executionPayload ? (
-          <ExecutionSection isZh={isZh} board={executionPayload.data.executionBoard} query={query} />
         ) : (
           <DashboardSectionLoadingContent />
         )}
       </section>
     </>
   );
+}
+
+function readPriceIndexDimensions(storage: Pick<Storage, "getItem">) {
+  try {
+    return normalizePriceIndexDimensions(JSON.parse(storage.getItem(PRICE_INDEX_DIMENSION_STORAGE_KEY) ?? "null"));
+  } catch {
+    return DEFAULT_PRICE_INDEX_DIMENSIONS;
+  }
 }
 
 function DashboardSectionLoadingContent() {

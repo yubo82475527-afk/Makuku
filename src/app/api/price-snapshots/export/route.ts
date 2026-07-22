@@ -1,9 +1,34 @@
 import { requireAdminSession } from "@/lib/auth-session";
 import { buildPriceSnapshotExport } from "@/lib/price-snapshot-export";
 
+const priceSnapshotExportFilterKeys = [
+  "owner",
+  "brand",
+  "series",
+  "ownSeries",
+  "sku",
+  "line",
+  "priceBand",
+  "size",
+  "shape",
+  "organization",
+  "priceIndexDrill",
+  "province",
+  "cityName",
+  "district",
+  "store",
+  "visitCode",
+  "createdFrom",
+  "createdTo",
+] as const;
+
 function downloadName() {
   const date = new Date().toISOString().slice(0, 10);
   return `price-snapshots-${date}.csv`;
+}
+
+function readExportFilters(searchParams: URLSearchParams) {
+  return Object.fromEntries(priceSnapshotExportFilterKeys.map((key) => [key, searchParams.get(key)]));
 }
 
 export async function GET(request: Request) {
@@ -12,22 +37,9 @@ export async function GET(request: Request) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const owner = searchParams.get("owner");
-    const brand = searchParams.get("brand");
-    const sku = searchParams.get("sku");
-    const line = searchParams.get("line");
-    const priceBand = searchParams.get("priceBand");
-    const size = searchParams.get("size");
-    const province = searchParams.get("province");
-    const cityName = searchParams.get("cityName");
-    const district = searchParams.get("district");
-    const store = searchParams.get("store");
-    const visitCode = searchParams.get("visitCode");
-    const createdFrom = searchParams.get("createdFrom");
-    const createdTo = searchParams.get("createdTo");
     const locale = searchParams.get("locale") === "zh" ? "zh" : "en";
     const exportResult = await buildPriceSnapshotExport({
-      filters: { owner, brand, sku, line, priceBand, size, province, cityName, district, store, visitCode, createdFrom, createdTo },
+      filters: readExportFilters(searchParams),
       locale,
     });
 

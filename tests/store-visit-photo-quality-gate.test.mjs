@@ -241,6 +241,6 @@ test("H5 detail separates retake-required business failures from system errors",
 test("H5 list guides users into visits that have price-tag photos requiring retake", () => {
   assert.match(storeVisitsListH5, /pricePhotoRetakeRequired:/);
   assert.match(storeVisitsListH5, /Open details to retake or replace it./);
-  assert.match(storeVisitsListH5, /status === "partial" \|\| status === "action_required" \|\| status === "failed"/);
+  assert.match(storeVisitsListH5, /visit\.price_handling\?\.action_counts\.retake_required/);
   assert.doesNotMatch(storeVisitsListH5, /function hasPricePhotoRetakeRequired/);
 });

@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { formReturnRedirect, readRequestBody } from "@/lib/request";
 import { demoOfflineStores } from "@/lib/demo-data";
 import { getOfflineStores } from "@/lib/data";
+import { resolveOrganizationByExternalOrgId } from "@/lib/organizations";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
 import { requireAdminSession, requireAppSession } from "@/lib/auth-session";
 import type { OfflineStore } from "@/lib/types";
@@ -274,6 +275,15 @@ export async function POST(request: Request) {
 
     const supabase = createSupabaseServiceClient();
     const channelType = resolveOfflineStoreChannelType(channelTypeFromBody);
+    const externalOrganizationAssignment = await resolveOrganizationByExternalOrgId(supabase, externalOrgId);
+    const organizationIdFromExternalOrgId = externalOrganizationAssignment?.organization_id ?? null;
+    const organizationAssignedAtFromExternalOrgId = externalOrganizationAssignment?.organization_assigned_at ?? null;
+    const organizationPatchFromExternalOrgId = {
+      organization_id: organizationIdFromExternalOrgId,
+      organization_assignment_method: organizationIdFromExternalOrgId ? "external_org_id" : null,
+      organization_assigned_at: organizationAssignedAtFromExternalOrgId,
+      organization_region_rule_id: null,
+    };
 
     if (externalSource && externalStoreId) {
       const existing = await supabase
@@ -312,6 +322,7 @@ export async function POST(request: Request) {
         external_md_name: externalMdName,
         external_source: externalSource,
         external_synced_at: new Date().toISOString(),
+        ...organizationPatchFromExternalOrgId,
       })
       .select("*, channels(id,code,name,type)")
       .single();
@@ -339,6 +350,7 @@ export async function POST(request: Request) {
           external_md_name: externalMdName,
           external_source: externalSource,
           external_synced_at: new Date().toISOString(),
+          ...organizationPatchFromExternalOrgId,
         })
         .select("*, channels(id,code,name,type)")
         .single();
@@ -368,6 +380,7 @@ export async function POST(request: Request) {
           external_md_name: externalMdName,
           external_source: externalSource,
           external_synced_at: new Date().toISOString(),
+          ...organizationPatchFromExternalOrgId,
         })
         .select("*, channels(id,code,name,type)")
         .single();
@@ -398,6 +411,7 @@ export async function POST(request: Request) {
           external_md_name: externalMdName,
           external_source: externalSource,
           external_synced_at: new Date().toISOString(),
+          ...organizationPatchFromExternalOrgId,
         })
         .select("*, channels(id,code,name,type)")
         .single();
@@ -423,6 +437,7 @@ export async function POST(request: Request) {
           external_md_name: externalMdName,
           external_source: externalSource,
           external_synced_at: new Date().toISOString(),
+          ...organizationPatchFromExternalOrgId,
         })
         .select("*")
         .single();
@@ -449,6 +464,7 @@ export async function POST(request: Request) {
           external_md_name: externalMdName,
           external_source: externalSource,
           external_synced_at: new Date().toISOString(),
+          ...organizationPatchFromExternalOrgId,
         })
         .select("*, channels(id,code,name,type)")
         .single();
@@ -482,6 +498,7 @@ export async function POST(request: Request) {
           external_md_name: externalMdName,
           external_source: externalSource,
           external_synced_at: new Date().toISOString(),
+          ...organizationPatchFromExternalOrgId,
         },
         demo: true,
       });

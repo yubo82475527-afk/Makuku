@@ -1,5 +1,8 @@
 import { revalidatePath } from "next/cache";
+import { loadProductMatchContext, type ProductMatchContext } from "@/lib/ai-price-candidates";
+import { runPriorityPriceQualityGate } from "@/lib/price-quality-gate-jobs";
 import { analyzeStoreVisitPriceImage } from "@/lib/store-visit-ai";
+import { priceImageRetakeReason } from "@/lib/store-visit-price-image-state";
 import {
   invalidateStoreVisitImagePriceImpact,
   refreshStoreVisitStoredPriceState,
@@ -165,11 +168,67 @@ async function loadJobItems(supabase: SupabaseServiceClient, jobId: string) {
 
 function isRetakeRequiredVisionResult(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const photoQuality = (value as Record<string, unknown>).photo_quality;
-  return Boolean(photoQuality)
-    && typeof photoQuality === "object"
-    && !Array.isArray(photoQuality)
-    && (photoQuality as Record<string, unknown>).status === "retake_required";
+  return priceImageRetakeReason(value as { photo_quality?: { status?: string | null } | null; rows?: unknown[] | null }) !== null;
+}
+
+function noReadableRowsRetryCount(item: StoreVisitAiJobItem) {
+  const value = Number(item.result_summary.no_readable_rows_retry_count ?? 0);
+  return Number.isInteger(value) && value > 0 ? value : 0;
+}
+
+async function requeueNoReadableRowsItem(input: {
+  supabase: SupabaseServiceClient;
+  job: StoreVisitAiJob;
+  item: StoreVisitAiJobItem;
+  visionResult: Record<string, unknown>;
+}) {
+  const invalidation = await invalidateStoreVisitImagePriceImpact({
+    visitId: input.job.visit_id,
+    imageIds: [input.item.source_image_id],
+    lifecycleStatus: "reanalyzed",
+    rejectionReason: "AI image analysis found no readable price rows and queued one automatic retry.",
+    candidateDisposition: "delete",
+    supabase: input.supabase,
+  });
+  const now = nowIso();
+  const { error: imageError } = await input.supabase
+    .from("offline_visit_images")
+    .update({
+      analysis_status: "pending",
+      vision_result: input.visionResult,
+      analysis_error: null,
+      error_message: null,
+    })
+    .eq("visit_id", input.job.visit_id)
+    .eq("id", input.item.source_image_id);
+  if (imageError) throw new Error(imageError.message);
+
+  const { error: itemError } = await input.supabase
+    .from("store_visit_ai_job_items")
+    .update({
+      status: "queued",
+      worker_id: null,
+      lease_expires_at: null,
+      next_attempt_at: now,
+      error_message: null,
+      result_summary: {
+        ...input.item.result_summary,
+        no_readable_rows_retry_count: 1,
+        no_readable_rows_retried_at: now,
+        replaced_candidate_count: invalidation.rejectedCandidateCount,
+        deleted_snapshot_count: invalidation.deletedSnapshotCount,
+      },
+      last_heartbeat_at: now,
+      updated_at: now,
+    })
+    .eq("id", input.item.id)
+    .eq("worker_id", input.item.worker_id);
+  if (itemError) throw new Error(itemError.message);
+
+  await refreshStoreVisitStoredPriceState({
+    visitId: input.job.visit_id,
+    supabase: input.supabase,
+  });
 }
 
 async function reconcileStoreVisitAiJobFromImages(input: {
@@ -471,8 +530,18 @@ async function processItem(input: {
   supabase: SupabaseServiceClient;
   job: StoreVisitAiJob;
   item: StoreVisitAiJobItem;
+  getMatchContext: () => Promise<ProductMatchContext>;
 }) {
   const { supabase, job, item } = input;
+  const processStartedAt = performance.now();
+  const performanceMs = {
+    vision: 0,
+    match_context: 0,
+    candidate_sync: 0,
+    priority_quality: 0,
+    priority_auto_approval: 0,
+    total: 0,
+  };
   const { data: markedImages, error: markError } = await supabase
     .from("offline_visit_images")
     .update({
@@ -531,6 +600,7 @@ async function processItem(input: {
       visit_date?: string | null;
     };
     const structuredRegion = [typedVisit.province, typedVisit.city_name, typedVisit.district].filter(Boolean).join(" / ");
+    const visionStartedAt = performance.now();
     const result = await analyzeStoreVisitPriceImage({
       visitId: job.visit_id,
       imageId: item.source_image_id,
@@ -542,6 +612,7 @@ async function processItem(input: {
       promoter: typedVisit.promoter ?? typedVisit.uploader_name ?? "",
       visitDate: typedVisit.visit_date ?? "",
     });
+    performanceMs.vision = Math.round(performance.now() - visionStartedAt);
 
     const resultMetadata = isRecord(result.metadata) ? result.metadata : {};
     const visionResult = {
@@ -564,11 +635,26 @@ async function processItem(input: {
       .eq("id", item.source_image_id);
     if (imageUpdateError) throw new Error(imageUpdateError.message);
 
-    const retakeRequired = isRetakeRequiredVisionResult(visionResult);
+    const retakeReason = priceImageRetakeReason(visionResult);
+    if (retakeReason === "NO_READABLE_PRICE_ROWS" && noReadableRowsRetryCount(item) === 0) {
+      await requeueNoReadableRowsItem({
+        supabase,
+        job,
+        item,
+        visionResult,
+      });
+      return;
+    }
+    const retakeRequired = retakeReason !== null;
     let replacedCandidateCount = 0;
     let deletedSnapshotCount = 0;
     let syncedCandidateCount = 0;
     let eligibleCandidateRowCount = 0;
+    let priorityClaimed = 0;
+    let priorityPassed = 0;
+    let priorityReviewRequired = 0;
+    let priorityAutoApproved = 0;
+    let priorityAutoApprovalFailed = 0;
 
     if (retakeRequired) {
       const invalidation = await invalidateStoreVisitImagePriceImpact({
@@ -595,14 +681,46 @@ async function processItem(input: {
       replacedCandidateCount = invalidation.rejectedCandidateCount;
       deletedSnapshotCount = invalidation.deletedSnapshotCount;
 
+      const matchContextStartedAt = performance.now();
+      const matchContext = await input.getMatchContext();
+      performanceMs.match_context = Math.round(performance.now() - matchContextStartedAt);
+      const candidateSyncStartedAt = performance.now();
       const syncResult = await syncStoreVisitPriceCandidatesFromImages({
         visitId: job.visit_id,
         imageIds: [item.source_image_id],
+        matchContext,
         supabase,
       });
+      performanceMs.candidate_sync = Math.round(performance.now() - candidateSyncStartedAt);
       syncedCandidateCount = syncResult.inserted_count;
       eligibleCandidateRowCount = syncResult.eligible_row_count;
+
+      if (syncResult.inserted_candidate_ids.length > 0) {
+        try {
+          const priority = await runPriorityPriceQualityGate({
+            supabase,
+            candidateIds: syncResult.inserted_candidate_ids,
+          });
+          performanceMs.priority_quality = priority.quality_elapsed_ms;
+          performanceMs.priority_auto_approval = priority.auto_approval_elapsed_ms;
+          priorityClaimed = priority.priority_claimed;
+          priorityPassed = priority.priority_passed;
+          priorityReviewRequired = priority.priority_review_required;
+          priorityAutoApproved = priority.priority_auto_approved;
+          priorityAutoApprovalFailed = priority.priority_auto_approval_failed;
+        } catch (priorityError) {
+          console.error("[store-visit-ai-jobs] priority price quality failed; general worker remains the fallback", {
+            job_id: job.id,
+            visit_id: job.visit_id,
+            image_id: item.source_image_id,
+            candidate_ids: syncResult.inserted_candidate_ids,
+            error: priorityError instanceof Error ? priorityError.message : String(priorityError),
+          });
+        }
+      }
     }
+
+    performanceMs.total = Math.round(performance.now() - processStartedAt);
 
     completed = {
       outcome: retakeRequired ? "retake_required" : "succeeded",
@@ -614,8 +732,17 @@ async function processItem(input: {
         deleted_snapshot_count: deletedSnapshotCount,
         synced_candidate_count: syncedCandidateCount,
         eligible_candidate_row_count: eligibleCandidateRowCount,
+        priority_claimed: priorityClaimed,
+        priority_passed: priorityPassed,
+        priority_review_required: priorityReviewRequired,
+        priority_auto_approved: priorityAutoApproved,
+        priority_auto_approval_failed: priorityAutoApprovalFailed,
+        retake_reason: retakeReason,
         retake_reasons: isRecord(visionResult.photo_quality) ? visionResult.photo_quality.reasons ?? null : null,
-        retake_message: isRecord(visionResult.photo_quality) ? visionResult.photo_quality.message ?? null : null,
+        retake_message: retakeReason === "NO_READABLE_PRICE_ROWS"
+          ? "No readable price rows were extracted after an automatic retry. Please retake this price-board photo."
+          : isRecord(visionResult.photo_quality) ? visionResult.photo_quality.message ?? null : null,
+        performance_ms: performanceMs,
       },
     };
   } catch (error) {
@@ -666,8 +793,11 @@ async function processItem(input: {
     return;
   }
 
+  performanceMs.total = Math.round(performance.now() - processStartedAt);
   const outcome: StoreVisitAiFinalizeOutcome = analysisFailure ? "failed" : completed!.outcome;
-  const resultSummary = analysisFailure ? { error_message: analysisFailure } : completed!.resultSummary;
+  const resultSummary = analysisFailure
+    ? { error_message: analysisFailure, performance_ms: performanceMs }
+    : completed!.resultSummary;
   const finalizeResult = await finalizeStoreVisitAiJobItem({
     supabase,
     item,
@@ -792,6 +922,8 @@ export async function runStoreVisitAiJob(input: {
   supabase?: SupabaseServiceClient;
 } = {}) {
   const supabase = input.supabase ?? createSupabaseServiceClient();
+  let matchContextPromise: Promise<ProductMatchContext> | null = null;
+  const getMatchContext = () => matchContextPromise ??= loadProductMatchContext(supabase);
   const enqueueResult = await enqueuePendingStoreVisitInitialAnalysisJobs({
     supabase,
     limit: pendingEnqueueLimit(),
@@ -807,7 +939,7 @@ export async function runStoreVisitAiJob(input: {
       const claimed = await claimNextItem({ supabase, jobId: input.jobId });
       if (!claimed) break;
 
-      await processItem({ supabase, job: claimed.job, item: claimed.item });
+      await processItem({ supabase, job: claimed.job, item: claimed.item, getMatchContext });
       const refreshed = await refreshJobCounts(supabase, claimed.job.id);
       revalidateVisitPaths(claimed.job.visit_id);
 

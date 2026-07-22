@@ -12,6 +12,7 @@ const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const aiPriceReview = readFileSync("src/lib/ai-price-review.ts", "utf8");
 const operatorReviewMigration = readFileSync("supabase/migrations/202607130002_operator_price_review_phase2.sql", "utf8");
 const pricesPage = readFileSync("src/app/[locale]/prices/page.tsx", "utf8");
+const priceSnapshotLinkedFilters = readFileSync("src/components/price-snapshot-linked-filters.tsx", "utf8");
 const priceSnapshotsTable = readFileSync("src/components/price-snapshots-table.tsx", "utf8");
 const priceExportRoute = [
   readFileSync("src/app/api/price-snapshots/export/route.ts", "utf8"),
@@ -80,10 +81,12 @@ test("real market price page supports captured_at date range filters in page and
   assert.match(pricesPage, /currentParams\.set\(key, params\[key\] as string\)/);
   assert.match(pricesPage, /params\.createdFrom/);
   assert.match(pricesPage, /params\.createdTo/);
-  assert.match(pricesPage, /capturedFrom: params\.createdFrom \|\| undefined/);
+  assert.match(pricesPage, /capturedFrom: toInclusiveCapturedFrom\(params\.createdFrom\) \?\? undefined/);
   assert.match(pricesPage, /capturedTo: capturedToExclusive \?\? undefined/);
-  assert.match(priceExportRoute, /const createdFrom = searchParams\.get\("createdFrom"\)/);
-  assert.match(priceExportRoute, /const createdTo = searchParams\.get\("createdTo"\)/);
+  assert.match(priceExportRoute, /"createdFrom"/);
+  assert.match(priceExportRoute, /"createdTo"/);
+  assert.match(priceExportRoute, /capturedFrom: toInclusiveCapturedFrom\(filters\.createdFrom\) \?\? undefined/);
+  assert.match(priceExportRoute, /capturedTo: toExclusiveCapturedTo\(filters\.createdTo\) \?\? undefined/);
   assert.match(priceExportRoute, /matchesCreatedFrom\(snapshot\.captured_at, (createdFrom|filters\.createdFrom)\)/);
   assert.match(priceExportRoute, /matchesCreatedTo\(snapshot\.captured_at, (createdTo|filters\.createdTo)\)/);
   assert.doesNotMatch(priceExportRoute, /matchesCreated(?:From|To)\(snapshot\.created_at/);
@@ -170,15 +173,14 @@ test("price snapshots query supports owner visibility while market price page sh
   assert.match(pricesPage, /getPriceSnapshotsPage\(\{/);
   assert.match(pricesPage, /page: requestedPage/);
   assert.match(pricesPage, /perPage/);
-  assert.match(pricesPage, /name="brand"/);
-  assert.doesNotMatch(pricesPage, /owner\?: "all" \| "makuku" \| "competitor"/);
-  assert.doesNotMatch(pricesPage, /normalizeOwner\(params\.owner\)/);
+  assert.match(pricesPage, /PriceSnapshotLinkedFilters/);
+  assert.match(pricesPage, /normalizeOwner\(params\.owner\)/);
+  assert.match(priceSnapshotLinkedFilters, /name="owner"/);
+  assert.match(priceSnapshotLinkedFilters, /name="brand"/);
+  assert.match(priceSnapshotLinkedFilters, /value="makuku"/);
   assert.doesNotMatch(pricesPage, /getPriceSnapshots\(\{ owner \}\)/);
-  assert.doesNotMatch(pricesPage, /name="owner"/);
-  assert.doesNotMatch(pricesPage, /value="makuku"/);
-  assert.doesNotMatch(pricesPage, /owner !== "all"/);
 
-  assert.match(priceExportRoute, /const owner = searchParams\.get\("owner"\)/);
+  assert.match(priceExportRoute, /"owner"/);
   assert.match(priceExportRoute, /normalizePriceSnapshotOwner\(input\.owner\)/);
   assert.match(priceExportRoute, /applyOwnerFilter/);
   assert.match(priceExportRoute, /owner === "makuku"[\s\S]*snapshotOwnerType\(snapshot\) === "makuku"/);

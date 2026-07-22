@@ -66,7 +66,8 @@ test("standalone market benchmark management is removed from product routes", ()
   assert.doesNotMatch(appShell, /market-benchmarks/);
   assert.doesNotMatch(appShell, /Market Benchmarks/);
   assert.doesNotMatch(dashboardPage, /Maintain benchmark rules/);
-  assert.match(dashboardPage, /Dashboard under refactor|仪表盘重构中/);
+  assert.match(dashboardPage, /DashboardClient/);
+  assert.doesNotMatch(dashboardPage, /Dashboard under refactor/);
 });
 
 test("dashboard price index derives benchmark selection from competitor mappings", () => {

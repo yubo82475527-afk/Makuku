@@ -34,6 +34,38 @@ export function parsePieceCountText(value: string | null | undefined): number | 
   return null;
 }
 
+export type TrustedPieceCountSource = "TITLE_SIZE_PACK" | "LABELED_PCS" | "UNTRUSTED";
+
+export function parsePieceCountFromProductTitle(value: string | null | undefined): number | null {
+  const title = String(value ?? "").replace(/\([^)]*\)/g, " ");
+  const sizePackMatch = title.match(/\b(?:nb-s|nb|s|m|l|xl|xxl|xxxl|xxxxl)-?(\d{1,3})(?:\s*\+\s*(\d{1,3}))?\b/i);
+  if (!sizePackMatch) return null;
+  const base = Number(sizePackMatch[1]);
+  const bonus = sizePackMatch[2] ? Number(sizePackMatch[2]) : 0;
+  return normalizePieceCount(base + bonus);
+}
+
+export function resolveTrustedPieceCount(input: {
+  productTitle: string | null | undefined;
+  extractedValue: unknown;
+  extractedText?: string | null;
+  sourceLabel?: string | null;
+}): { pieceCount: number | null; source: TrustedPieceCountSource } {
+  const titlePieceCount = parsePieceCountFromProductTitle(input.productTitle);
+  if (titlePieceCount !== null) {
+    return { pieceCount: titlePieceCount, source: "TITLE_SIZE_PACK" };
+  }
+
+  if (/\bpcs?\b/i.test(String(input.sourceLabel ?? ""))) {
+    return {
+      pieceCount: parsePieceCountText(input.extractedText) ?? normalizePieceCount(input.extractedValue),
+      source: "LABELED_PCS",
+    };
+  }
+
+  return { pieceCount: null, source: "UNTRUSTED" };
+}
+
 export function normalizePieceCountFromCandidates(value: unknown, ...textCandidates: Array<string | null | undefined>) {
   const valueText = typeof value === "string" ? value : null;
   return normalizePieceCount(value) ?? [valueText, ...textCandidates].map(parsePieceCountText).find((item) => item !== null) ?? null;

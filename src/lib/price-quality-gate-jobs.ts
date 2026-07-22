@@ -90,13 +90,19 @@ async function finalizeCandidate(input: {
   throw new Error(`Unexpected price quality finalization result: ${result}`);
 }
 
-export async function runPriceQualityGate(input: {
-  maxBatches?: number;
-  supabase?: SupabaseServiceClient;
-} = {}) {
-  const supabase = input.supabase ?? createSupabaseServiceClient();
-  const maxBatches = Math.max(1, Math.min(input.maxBatches ?? DEFAULT_MAX_BATCHES, DEFAULT_MAX_BATCHES));
-  const counters = {
+type QualityCounters = {
+  claimed: number;
+  passed: number;
+  review_required: number;
+  insufficient: number;
+  building_passed: number;
+  failed: number;
+  already_finalized: number;
+  ownership_lost: number;
+};
+
+function emptyQualityCounters(): QualityCounters {
+  return {
     claimed: 0,
     passed: 0,
     review_required: 0,
@@ -105,8 +111,132 @@ export async function runPriceQualityGate(input: {
     failed: 0,
     already_finalized: 0,
     ownership_lost: 0,
+  };
+}
+
+function addQualityCounters(target: QualityCounters, source: QualityCounters) {
+  target.claimed += source.claimed;
+  target.passed += source.passed;
+  target.review_required += source.review_required;
+  target.insufficient += source.insufficient;
+  target.building_passed += source.building_passed;
+  target.failed += source.failed;
+  target.already_finalized += source.already_finalized;
+  target.ownership_lost += source.ownership_lost;
+}
+
+async function finalizeClaimedQualityCandidates(input: {
+  supabase: SupabaseServiceClient;
+  workerId: string;
+  rows: ClaimedQualityCandidate[];
+}) {
+  const counters = emptyQualityCounters();
+  const passedCandidateIds: string[] = [];
+  counters.claimed = input.rows.length;
+
+  for (const row of input.rows) {
+    try {
+      const benchmarkPrice = nullableNumber(row.median_price_per_piece);
+      const result = evaluatePriceQualityGate({
+        candidatePricePerPiece: nullableNumber(row.candidate_price_per_piece),
+        evidenceReviewDecision: row.evidence_review_decision,
+        matchedEntityType: row.matched_entity_type,
+        matchedEntityId: row.matched_entity_id,
+        matchScore: nullableNumber(row.match_score),
+        hasWarnings: row.has_warnings,
+        hasConflicts: row.has_conflicts,
+        hasSourceImage: row.has_source_image,
+        hasValidPackageFacts: row.has_valid_package_facts,
+        promoType: row.promo_type,
+        benchmark: row.benchmark_date && benchmarkPrice !== null
+          ? {
+              benchmarkDate: row.benchmark_date,
+              medianPricePerPiece: benchmarkPrice,
+              sampleCount: nullableNumber(row.benchmark_sample_count) ?? 0,
+              storeCount: nullableNumber(row.benchmark_store_count) ?? 0,
+              status: row.benchmark_status ?? "INSUFFICIENT",
+            }
+          : null,
+      });
+      const finalizeResult = await finalizeCandidate({
+        supabase: input.supabase,
+        workerId: input.workerId,
+        candidateId: row.candidate_id,
+        expectedInputFingerprint: row.claim_input_fingerprint,
+        status: result.status,
+        reasonCodes: result.reasonCodes,
+        version: result.version,
+        benchmarkDate: result.benchmarkDate,
+        benchmarkPricePerPiece: result.benchmarkPricePerPiece,
+        benchmarkDeviationPct: result.benchmarkDeviationPct,
+        benchmarkSampleCount: result.benchmarkSampleCount,
+        benchmarkStoreCount: result.benchmarkStoreCount,
+        benchmarkAssessment: result.benchmarkAssessment,
+        benchmarkAssessmentReason: result.benchmarkAssessmentReason,
+        error: null,
+      });
+
+      if (finalizeResult === "ALREADY_FINALIZED") counters.already_finalized += 1;
+      else if (finalizeResult === "OWNERSHIP_LOST") counters.ownership_lost += 1;
+      else if (result.status === "PASSED") {
+        counters.passed += 1;
+        passedCandidateIds.push(row.candidate_id);
+        if (result.benchmarkAssessment === "BUILDING") counters.building_passed += 1;
+      } else {
+        counters.review_required += 1;
+      }
+    } catch (caught) {
+      const message = (caught instanceof Error ? caught.message : String(caught)).slice(0, 1000);
+      try {
+        const finalizeResult = await finalizeCandidate({
+          supabase: input.supabase,
+          workerId: input.workerId,
+          candidateId: row.candidate_id,
+          expectedInputFingerprint: row.claim_input_fingerprint,
+          status: "FAILED",
+          reasonCodes: [],
+          version: null,
+          benchmarkDate: row.benchmark_date,
+          benchmarkPricePerPiece: nullableNumber(row.median_price_per_piece),
+          benchmarkDeviationPct: null,
+          benchmarkSampleCount: nullableNumber(row.benchmark_sample_count),
+          benchmarkStoreCount: nullableNumber(row.benchmark_store_count),
+          benchmarkAssessment: "NOT_EVALUATED",
+          benchmarkAssessmentReason: null,
+          error: message,
+        });
+        if (finalizeResult === "ALREADY_FINALIZED") counters.already_finalized += 1;
+        else if (finalizeResult === "OWNERSHIP_LOST") counters.ownership_lost += 1;
+        else counters.failed += 1;
+      } catch (finalizeError) {
+        counters.failed += 1;
+        console.error("[price-quality-gate] failed to finalize candidate error", {
+          candidate_id: row.candidate_id,
+          worker_id: input.workerId,
+          error: finalizeError instanceof Error ? finalizeError.message : String(finalizeError),
+        });
+      }
+    }
+  }
+
+  return { ...counters, passedCandidateIds };
+}
+
+export async function runPriceQualityGate(input: {
+  maxBatches?: number;
+  supabase?: SupabaseServiceClient;
+} = {}) {
+  const supabase = input.supabase ?? createSupabaseServiceClient();
+  const maxBatches = Math.max(1, Math.min(input.maxBatches ?? DEFAULT_MAX_BATCHES, DEFAULT_MAX_BATCHES));
+  const counters = {
+    ...emptyQualityCounters(),
     auto_approved: 0,
     auto_approval_failed: 0,
+    priority_claimed: 0,
+    priority_passed: 0,
+    priority_review_required: 0,
+    priority_auto_approved: 0,
+    priority_auto_approval_failed: 0,
   };
 
   for (let batch = 0; batch < maxBatches; batch += 1) {
@@ -119,90 +249,7 @@ export async function runPriceQualityGate(input: {
 
     const rows = (data ?? []) as ClaimedQualityCandidate[];
     if (rows.length === 0) break;
-    counters.claimed += rows.length;
-
-    for (const row of rows) {
-      try {
-        const benchmarkPrice = nullableNumber(row.median_price_per_piece);
-        const result = evaluatePriceQualityGate({
-          candidatePricePerPiece: nullableNumber(row.candidate_price_per_piece),
-          evidenceReviewDecision: row.evidence_review_decision,
-          matchedEntityType: row.matched_entity_type,
-          matchedEntityId: row.matched_entity_id,
-          matchScore: nullableNumber(row.match_score),
-          hasWarnings: row.has_warnings,
-          hasConflicts: row.has_conflicts,
-          hasSourceImage: row.has_source_image,
-          hasValidPackageFacts: row.has_valid_package_facts,
-          promoType: row.promo_type,
-          benchmark: row.benchmark_date && benchmarkPrice !== null
-            ? {
-                benchmarkDate: row.benchmark_date,
-                medianPricePerPiece: benchmarkPrice,
-                sampleCount: nullableNumber(row.benchmark_sample_count) ?? 0,
-                storeCount: nullableNumber(row.benchmark_store_count) ?? 0,
-                status: row.benchmark_status ?? "INSUFFICIENT",
-              }
-            : null,
-        });
-        const finalizeResult = await finalizeCandidate({
-          supabase,
-          workerId,
-          candidateId: row.candidate_id,
-          expectedInputFingerprint: row.claim_input_fingerprint,
-          status: result.status,
-          reasonCodes: result.reasonCodes,
-          version: result.version,
-          benchmarkDate: result.benchmarkDate,
-          benchmarkPricePerPiece: result.benchmarkPricePerPiece,
-          benchmarkDeviationPct: result.benchmarkDeviationPct,
-          benchmarkSampleCount: result.benchmarkSampleCount,
-          benchmarkStoreCount: result.benchmarkStoreCount,
-          benchmarkAssessment: result.benchmarkAssessment,
-          benchmarkAssessmentReason: result.benchmarkAssessmentReason,
-          error: null,
-        });
-
-        if (finalizeResult === "ALREADY_FINALIZED") counters.already_finalized += 1;
-        else if (finalizeResult === "OWNERSHIP_LOST") counters.ownership_lost += 1;
-        else if (result.status === "PASSED") {
-          counters.passed += 1;
-          if (result.benchmarkAssessment === "BUILDING") counters.building_passed += 1;
-        }
-        else counters.review_required += 1;
-      } catch (caught) {
-        const message = (caught instanceof Error ? caught.message : String(caught)).slice(0, 1000);
-        try {
-          const finalizeResult = await finalizeCandidate({
-            supabase,
-            workerId,
-            candidateId: row.candidate_id,
-            expectedInputFingerprint: row.claim_input_fingerprint,
-            status: "FAILED",
-            reasonCodes: [],
-            version: null,
-            benchmarkDate: row.benchmark_date,
-            benchmarkPricePerPiece: nullableNumber(row.median_price_per_piece),
-            benchmarkDeviationPct: null,
-            benchmarkSampleCount: nullableNumber(row.benchmark_sample_count),
-            benchmarkStoreCount: nullableNumber(row.benchmark_store_count),
-            benchmarkAssessment: "NOT_EVALUATED",
-            benchmarkAssessmentReason: null,
-            error: message,
-          });
-          if (finalizeResult === "ALREADY_FINALIZED") counters.already_finalized += 1;
-          else if (finalizeResult === "OWNERSHIP_LOST") counters.ownership_lost += 1;
-          else counters.failed += 1;
-        } catch (finalizeError) {
-          counters.failed += 1;
-          console.error("[price-quality-gate] failed to finalize candidate error", {
-            candidate_id: row.candidate_id,
-            worker_id: workerId,
-            error: finalizeError instanceof Error ? finalizeError.message : String(finalizeError),
-          });
-        }
-      }
-    }
+    addQualityCounters(counters, await finalizeClaimedQualityCandidates({ supabase, workerId, rows }));
   }
 
   const autoApproval = await autoApprovePassedAiPriceCandidates({
@@ -213,6 +260,54 @@ export async function runPriceQualityGate(input: {
   counters.auto_approval_failed += autoApproval.failed;
 
   return counters;
+}
+
+export async function runPriorityPriceQualityGate(input: {
+  supabase: SupabaseServiceClient;
+  candidateIds: string[];
+}) {
+  const candidateIds = Array.from(new Set(input.candidateIds.map((value) => value.trim()).filter(Boolean))).slice(0, 50);
+  const empty = {
+    priority_claimed: 0,
+    priority_passed: 0,
+    priority_review_required: 0,
+    priority_auto_approved: 0,
+    priority_auto_approval_failed: 0,
+    quality_elapsed_ms: 0,
+    auto_approval_elapsed_ms: 0,
+  };
+  if (candidateIds.length === 0) return empty;
+
+  const workerId = `price-priority-${Date.now()}-${randomUUID()}`;
+  const qualityStartedAt = performance.now();
+  const { data, error } = await input.supabase.rpc("claim_ai_price_candidates_for_priority_quality_gate", {
+    p_worker_id: workerId,
+    p_candidate_ids: candidateIds,
+  });
+  if (error) throw new Error(error.message);
+
+  const quality = await finalizeClaimedQualityCandidates({
+    supabase: input.supabase,
+    workerId,
+    rows: (data ?? []) as ClaimedQualityCandidate[],
+  });
+  const qualityElapsedMs = Math.round(performance.now() - qualityStartedAt);
+  const autoApprovalStartedAt = performance.now();
+  const autoApproval = await autoApprovePassedAiPriceCandidates({
+    supabase: input.supabase,
+    candidateIds: quality.passedCandidateIds,
+    priority: true,
+  });
+
+  return {
+    priority_claimed: quality.claimed,
+    priority_passed: quality.passed,
+    priority_review_required: quality.review_required + quality.insufficient,
+    priority_auto_approved: autoApproval.approved,
+    priority_auto_approval_failed: autoApproval.failed,
+    quality_elapsed_ms: qualityElapsedMs,
+    auto_approval_elapsed_ms: Math.round(performance.now() - autoApprovalStartedAt),
+  };
 }
 
 export async function triggerPriceQualityGateRunner(input: { requestUrl: string }) {

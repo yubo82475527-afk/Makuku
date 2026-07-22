@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { resolveTrustedPieceCount } from "../src/lib/piece-count.ts";
 
 const pieceCountHelper = readFileSync("src/lib/piece-count.ts", "utf8");
 const storeVisitAi = readFileSync("src/lib/store-visit-ai.ts", "utf8");
@@ -17,10 +18,11 @@ test("piece count helper supports bonus pack and size-pack text formats", () => 
   assert.match(pieceCountHelper, /\[valueText, \.\.\.textCandidates\]/);
 });
 
-test("store visit price image normalization recovers piece count from sku text", () => {
-  assert.match(storeVisitAi, /normalizePieceCountFromCandidates\(row\.piece_count, sku\)/);
-  assert.match(storeVisitAi, /28\+6 pcs/);
-  assert.match(storeVisitAi, /piece_count_text/);
+test("store visit price image normalization carries a trusted piece-count source into candidate generation", () => {
+  assert.match(storeVisitAi, /resolveTrustedPieceCount/);
+  assert.match(storeVisitAi, /piece_count_source_label/);
+  assert.match(candidateService, /resolveTrustedPieceCount/);
+  assert.match(candidateService, /piece_count_source_label/);
 });
 
 test("AI price candidates preserve source row index while deduplicating by image, entity, and price", () => {
@@ -37,4 +39,49 @@ test("AI price candidates preserve source row index while deduplicating by image
 test("store visit analysis sends source image row index to candidate generation", () => {
   assert.match(storeVisitAnalysis, /rowIndex/);
   assert.match(storeVisitAnalysis, /sourceRowIndex: rowIndex/);
+});
+
+test("piece count uses size-pack text in the product title before table inventory values", () => {
+  assert.deepEqual(resolveTrustedPieceCount({
+    productTitle: "CONFIDENCE CLASSIC NIGHT XL-6 (12)",
+    extractedValue: 6,
+    extractedText: "6",
+    sourceLabel: "Q.Toko",
+  }), { pieceCount: 6, source: "TITLE_SIZE_PACK" });
+  assert.deepEqual(resolveTrustedPieceCount({
+    productTitle: "CONFIDENCE CLASSIC DAY L7 (12)",
+    extractedValue: 258,
+    extractedText: "258",
+    sourceLabel: "Q.Toko",
+  }), { pieceCount: 7, source: "TITLE_SIZE_PACK" });
+  assert.deepEqual(resolveTrustedPieceCount({
+    productTitle: "MAKUKU PANTS M30+6",
+    extractedValue: null,
+    extractedText: null,
+    sourceLabel: null,
+  }), { pieceCount: 36, source: "TITLE_SIZE_PACK" });
+});
+
+test("piece count accepts only explicitly labeled Pcs evidence when the title has no size-pack token", () => {
+  assert.deepEqual(resolveTrustedPieceCount({
+    productTitle: "GENERIC PRICE TAG XL",
+    extractedValue: 24,
+    extractedText: "24",
+    sourceLabel: "Pcs",
+  }), { pieceCount: 24, source: "LABELED_PCS" });
+  assert.deepEqual(resolveTrustedPieceCount({
+    productTitle: "GENERIC PRICE TAG XL",
+    extractedValue: 258,
+    extractedText: "258",
+    sourceLabel: "Q.Toko",
+  }), { pieceCount: null, source: "UNTRUSTED" });
+});
+
+test("piece count does not treat spaced size-and-weight text as a title pack count", () => {
+  assert.deepEqual(resolveTrustedPieceCount({
+    productTitle: "MERRIES GOOD SKIN JUMBO XXL 15-25 KG",
+    extractedValue: 28,
+    extractedText: "28",
+    sourceLabel: "Pcs",
+  }), { pieceCount: 28, source: "LABELED_PCS" });
 });

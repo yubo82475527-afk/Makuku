@@ -7,6 +7,7 @@ const dashboardPage = readFileSync("src/app/[locale]/dashboard/page.tsx", "utf8"
 const pricesPage = [
   readFileSync("src/app/[locale]/prices/page.tsx", "utf8"),
   readFileSync("src/components/price-snapshot-export-button.tsx", "utf8"),
+  readFileSync("src/components/price-snapshot-linked-filters.tsx", "utf8"),
 ].join("\n");
 
 test("zh dictionary stores readable utf8 copy", () => {
@@ -17,10 +18,12 @@ test("zh dictionary stores readable utf8 copy", () => {
 });
 
 test("dashboard and prices pages keep readable inline zh labels", () => {
-  assert.match(dashboardPage, /仪表盘重构中/);
-  assert.match(dashboardPage, /当前已临时停用首页仪表盘的所有报表查询/);
-  assert.match(pricesPage, /品牌\/系列/);
-  assert.match(pricesPage, /全部商品等级/);
+  assert.match(dashboardPage, /首页/);
+  assert.match(dashboardPage, /DashboardClient/);
+  assert.doesNotMatch(dashboardPage, /仪表盘重构中/);
+  assert.doesNotMatch(dashboardPage, /当前已临时停用首页仪表盘的所有报表查询/);
+  assert.match(pricesPage, /商品归属/);
+  assert.match(pricesPage, /全部系列/);
   assert.match(pricesPage, /导出 CSV/);
   assert.doesNotMatch(dashboardPage, /閺億娴爘/);
   assert.doesNotMatch(pricesPage, /閺億娴爘/);

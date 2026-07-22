@@ -1,4 +1,5 @@
 import { priceBrandSeriesLabel } from "@/lib/brand-series";
+import { getPriceSnapshotsPage, type PriceSnapshotOwnerFilter } from "@/lib/data";
 import { formatIdr, formatJakartaDateTimeSeconds, formatPricePerPiece, formatShortImageId } from "@/lib/format";
 import {
   priceSnapshotBenchmarkMaterial,
@@ -16,12 +17,17 @@ type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceClient>;
 export type PriceSnapshotExportLocale = "zh" | "en";
 
 export type PriceSnapshotExportFilters = {
-  owner?: "all" | "makuku" | "competitor";
+  owner?: PriceSnapshotOwnerFilter;
   brand?: string;
+  series?: string;
+  ownSeries?: string;
   sku?: string;
   line?: string;
   priceBand?: string;
   size?: string;
+  shape?: string;
+  organization?: string;
+  priceIndexDrill?: boolean;
   province?: string;
   cityName?: string;
   district?: string;
@@ -29,6 +35,8 @@ export type PriceSnapshotExportFilters = {
   visitCode?: string;
   createdFrom?: string;
   createdTo?: string;
+  dashboardDateFrom?: string;
+  dashboardDateTo?: string;
 };
 
 export const PRICE_SNAPSHOT_EXPORT_SELECT =
@@ -57,6 +65,8 @@ const csvColumns: Record<PriceSnapshotExportLocale, string[]> = {
     "\u533a",
     "\u91c7\u96c6\u4eba",
     "\u521b\u5efa\u65f6\u95f4",
+    "\u5de1\u5e97\u7f16\u53f7",
+    "\u56fe\u7247 ID",
   ],
   en: [
     "Captured",
@@ -92,6 +102,12 @@ function normalizeFilterValue(value: unknown) {
   return nextValue ? nextValue : undefined;
 }
 
+function normalizeBoolean(value: unknown) {
+  if (typeof value === "boolean") return value;
+  const text = clean(value).toLowerCase();
+  return text === "1" || text === "true" || text === "yes";
+}
+
 export function normalizePriceSnapshotExportLocale(value: unknown): PriceSnapshotExportLocale {
   return clean(value) === "zh" ? "zh" : "en";
 }
@@ -106,10 +122,14 @@ export function normalizePriceSnapshotExportFilters(input: Record<string, unknow
   const filters: PriceSnapshotExportFilters = {};
   const owner = normalizePriceSnapshotOwner(input.owner);
   const brand = normalizeFilterValue(input.brand);
+  const series = normalizeFilterValue(input.series);
+  const ownSeries = normalizeFilterValue(input.ownSeries);
   const sku = normalizeFilterValue(input.sku);
   const line = normalizeFilterValue(input.line);
   const priceBand = normalizeFilterValue(input.priceBand);
   const size = normalizeFilterValue(input.size);
+  const shape = normalizeFilterValue(input.shape);
+  const organization = normalizeFilterValue(input.organization);
   const province = normalizeFilterValue(input.province);
   const cityName = normalizeFilterValue(input.cityName);
   const district = normalizeFilterValue(input.district);
@@ -117,13 +137,20 @@ export function normalizePriceSnapshotExportFilters(input: Record<string, unknow
   const visitCode = normalizeFilterValue(input.visitCode);
   const createdFrom = normalizeFilterValue(input.createdFrom);
   const createdTo = normalizeFilterValue(input.createdTo);
+  const dashboardDateFrom = normalizeFilterValue(input.dashboardDateFrom);
+  const dashboardDateTo = normalizeFilterValue(input.dashboardDateTo);
 
   if (owner !== "all") filters.owner = owner;
   if (brand) filters.brand = brand;
+  if (series) filters.series = series;
+  if (ownSeries) filters.ownSeries = ownSeries;
   if (sku) filters.sku = sku;
   if (line) filters.line = line;
   if (priceBand) filters.priceBand = priceBand;
   if (size) filters.size = size;
+  if (shape) filters.shape = shape;
+  if (organization) filters.organization = organization;
+  if (normalizeBoolean(input.priceIndexDrill)) filters.priceIndexDrill = true;
   if (province) filters.province = province;
   if (cityName) filters.cityName = cityName;
   if (district) filters.district = district;
@@ -131,6 +158,8 @@ export function normalizePriceSnapshotExportFilters(input: Record<string, unknow
   if (visitCode) filters.visitCode = visitCode;
   if (createdFrom) filters.createdFrom = createdFrom;
   if (createdTo) filters.createdTo = createdTo;
+  if (dashboardDateFrom) filters.dashboardDateFrom = dashboardDateFrom;
+  if (dashboardDateTo) filters.dashboardDateTo = dashboardDateTo;
 
   return filters;
 }
@@ -145,10 +174,33 @@ export async function buildPriceSnapshotExport(input: {
   locale?: string;
   supabase?: SupabaseServiceClient;
 }) {
-  const supabase = input.supabase ?? createSupabaseServiceClient();
   const filters = normalizePriceSnapshotExportFilters(input.filters ?? {});
   const locale = normalizePriceSnapshotExportLocale(input.locale);
-  const snapshots = await loadPriceSnapshotExportRows({ supabase, filters });
+  const result = await getPriceSnapshotsPage({
+    owner: filters.owner ?? "all",
+    brand: filters.brand,
+    series: filters.series,
+    ownSeries: filters.ownSeries,
+    sku: filters.sku,
+    line: filters.line,
+    size: filters.size,
+    shape: filters.shape,
+    organization: filters.organization,
+    priceIndexDrill: filters.priceIndexDrill,
+    dashboardDateFrom: filters.dashboardDateFrom ?? filters.createdFrom,
+    dashboardDateTo: filters.dashboardDateTo ?? filters.createdTo,
+    province: filters.province,
+    cityName: filters.cityName,
+    district: filters.district,
+    store: filters.store,
+    visitCode: filters.visitCode,
+    capturedFrom: toInclusiveCapturedFrom(filters.createdFrom) ?? undefined,
+    capturedTo: toExclusiveCapturedTo(filters.createdTo) ?? undefined,
+    page: 1,
+    perPage: priceSnapshotExportLimit,
+  });
+  if (result.error) throw new Error(result.error);
+  const snapshots = result.data;
   const rows = snapshots.map((snapshot) => buildPriceSnapshotCsvRow(snapshot, locale));
   const csv = [csvColumns[locale].map(csvEscape).join(","), ...rows].join("\r\n");
 
@@ -159,19 +211,21 @@ export async function buildPriceSnapshotExport(input: {
   };
 }
 
-async function loadPriceSnapshotExportRows(input: {
-  supabase: SupabaseServiceClient;
-  filters: PriceSnapshotExportFilters;
-}) {
-  const { data, error } = await input.supabase
-    .from("price_snapshots")
-    .select(PRICE_SNAPSHOT_EXPORT_SELECT)
-    .order("created_at", { ascending: false })
-    .order("captured_at", { ascending: false })
-    .limit(priceSnapshotExportLimit);
+function toExclusiveCapturedTo(value: string | null | undefined) {
+  const text = clean(value);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+  const date = new Date(`${text}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setDate(date.getDate() + 1);
+  return date.toISOString();
+}
 
-  if (error) throw new Error(error.message);
-  return applyPriceSnapshotExportFilters((data ?? []) as PriceSnapshot[], input.filters);
+function toInclusiveCapturedFrom(value: string | null | undefined) {
+  const text = clean(value);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+  const date = new Date(`${text}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
 }
 
 export function applyPriceSnapshotExportFilters(snapshots: PriceSnapshot[], filters: PriceSnapshotExportFilters) {

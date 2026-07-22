@@ -13,6 +13,9 @@ const promoEventsPage = readFileSync("src/app/[locale]/promo-events/page.tsx", "
 const priceSnapshotsTable = existsSync("src/components/price-snapshots-table.tsx")
   ? readFileSync("src/components/price-snapshots-table.tsx", "utf8")
   : "";
+const priceSnapshotLinkedFilters = existsSync("src/components/price-snapshot-linked-filters.tsx")
+  ? readFileSync("src/components/price-snapshot-linked-filters.tsx", "utf8")
+  : "";
 const priceSnapshotsRoute = readFileSync("src/app/api/price-snapshots/route.ts", "utf8");
 const priceSnapshotsExportRoute = [
   readFileSync("src/app/api/price-snapshots/export/route.ts", "utf8"),
@@ -76,9 +79,10 @@ test("visible sample data does not look like throwaway mock data", () => {
   assert.match(demoData, /source: "pilot-sample"/);
 });
 
-test("dashboard states the price 1.0 homepage objective", () => {
-  assert.match(dashboardPage, /Dashboard under refactor/);
-  assert.match(dashboardPage, /All dashboard report queries are temporarily disabled/);
+test("dashboard restores the price 1.0 homepage as a client-loaded price index", () => {
+  assert.match(dashboardPage, /DashboardClient/);
+  assert.doesNotMatch(dashboardPage, /Dashboard under refactor/);
+  assert.doesNotMatch(dashboardPage, /All dashboard report queries are temporarily disabled/);
   assert.doesNotMatch(dashboardPage, /PriceIndexTreeTable/);
 });
 
@@ -91,6 +95,7 @@ test("dashboard keeps the weekly coefficient board but is no longer a single-pan
   assert.match(dataFile, /is_default_benchmark/);
   assert.match(dataFile, /materialMaster\.map\(\(item\) => cleanText\(item\.sub_brand\)\)/);
   assert.match(dataFile, /ownAvgPrice \/ benchmarkAvgPrice/);
+  assert.match(dashboardPage, /DashboardClient/);
   assert.doesNotMatch(dashboardPage, /PriceIndexTreeTable/);
   assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /PRICE\/PCS \{week\.label\}/);
   assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /CombinedMetricCell/);
@@ -144,17 +149,17 @@ test("prices table is store-region focused without manual snapshot entry", () =>
   assert.match(priceSnapshotsTable, /ConfirmDeletePanel/);
   assert.match(priceSnapshotsRoute, /export async function DELETE/);
   assert.match(priceSnapshotsRoute, /\.from\("price_snapshots"\)\s*\.delete\(\)/s);
-  assert.match(dataFile, /offline_store_visits\(id,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name/);
+  assert.match(dataFile, /const priceSnapshotVisitColumns = "id,visit_code,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at"/);
+  assert.match(dataFile, /offline_store_visits!source_visit_id\(\$\{priceSnapshotVisitColumns\}\)/);
   assert.match(dataFile, /competitorProductSegment/);
   assert.match(pricesPage, /name="province"/);
   assert.match(pricesPage, /name="cityName"/);
   assert.match(pricesPage, /name="district"/);
   assert.match(pricesPage, /name="store"/);
-  assert.match(pricesPage, /name="brand"/);
+  assert.match(priceSnapshotLinkedFilters, /name="brand"/);
+  assert.match(priceSnapshotLinkedFilters, /name="owner"/);
   assert.match(pricesPage, /currentParams\.set\("locale", locale\)/);
-  assert.doesNotMatch(pricesPage, /name="owner"/);
   assert.doesNotMatch(pricesPage, /name="channel"/);
-  assert.doesNotMatch(pricesPage, /currentParams\.set\("owner"/);
   assert.doesNotMatch(pricesPage, /currentParams\.set\("channel"/);
   assert.doesNotMatch(pricesPage, /name="line"/);
   assert.doesNotMatch(pricesPage, /dict\.prices\.promoType/);

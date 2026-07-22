@@ -70,6 +70,28 @@ test("store visit AI jobs reconcile persisted price rows into candidates after i
   assert.match(storeVisitAiJobs, /eligible_candidate_row_count/);
 });
 
+test("store visit AI runner shares one product match context across image workers", () => {
+  assert.match(storeVisitAiJobs, /let matchContextPromise: Promise<ProductMatchContext> \| null = null/);
+  assert.match(storeVisitAiJobs, /const getMatchContext = \(\) => matchContextPromise \?\?= loadProductMatchContext\(supabase\)/);
+  assert.match(storeVisitAiJobs, /getMatchContext: \(\) => Promise<ProductMatchContext>/);
+  assert.match(storeVisitAiJobs, /const matchContext = await input\.getMatchContext\(\)/);
+  assert.match(storeVisitAiJobs, /matchContext,\s*supabase,/);
+});
+
+test("store visit AI items persist monotonic pipeline stage timings", () => {
+  assert.match(storeVisitAiJobs, /const processStartedAt = performance\.now\(\)/);
+  assert.match(storeVisitAiJobs, /const performanceMs = \{[\s\S]*vision:[\s\S]*match_context:[\s\S]*candidate_sync:[\s\S]*priority_quality:[\s\S]*priority_auto_approval:[\s\S]*total:/);
+  assert.match(storeVisitAiJobs, /performance_ms: performanceMs/);
+  assert.match(storeVisitAiJobs, /Math\.round\(performance\.now\(\) - processStartedAt\)/);
+});
+
+test("store visit AI runs priority quality only for candidates inserted from the current image", () => {
+  assert.match(storeVisitAiJobs, /syncResult\.inserted_candidate_ids\.length > 0/);
+  assert.match(storeVisitAiJobs, /runPriorityPriceQualityGate\(\{[\s\S]*candidateIds: syncResult\.inserted_candidate_ids/);
+  assert.match(storeVisitAiJobs, /priority_claimed/);
+  assert.match(storeVisitAiJobs, /priority_auto_approved/);
+});
+
 test("store visit AI runner processes one claimed image through the full candidate pipeline", () => {
   assert.match(storeVisitAiJobs, /analyzeStoreVisitPriceImage/);
   assert.match(storeVisitAiJobs, /invalidateStoreVisitImagePriceImpact/);
@@ -111,7 +133,7 @@ test("H5 list does not expose manual whole-visit Ai after initial analysis", () 
   assert.doesNotMatch(storeVisitsListH5, /function reanalyzeVisit/);
   assert.doesNotMatch(storeVisitsListH5, /reanalyzingVisitId/);
   assert.doesNotMatch(storeVisitsListH5, /onClick=\{\(\) => reanalyzeVisit\(visit\.id\)\}/);
-  assert.match(storeVisitsListH5, /openVisitToHandlePhotos/);
+  assert.match(storeVisitsListH5, /openVisitToHandleWork/);
 });
 
 test("store visit analysis sends signed URLs to AI before falling back to inline images", () => {
@@ -316,7 +338,8 @@ test("derived visit analysis state keeps in-flight image analysis as analyzing",
 test("H5 list derives retake-required from structured status instead of error text", () => {
   assert.doesNotMatch(storeVisitsListH5, /price_photo_retake_required/);
   assert.doesNotMatch(storeVisitsListH5, /function hasPricePhotoRetakeRequired/);
-  assert.match(storeVisitsListH5, /if \(status === "partial" \|\| status === "action_required" \|\| status === "failed" \|\| status === "analyzing"\) return status;/);
+  assert.match(storeVisitsListH5, /visit\.price_handling\?\.action_counts\.retake_required/);
+  assert.match(storeVisitsListH5, /const priceRetakeRequired = \(visit\.price_handling\?\.action_counts\.retake_required \?\? 0\) > 0;/);
 });
 
 test("store visit analysis keeps display failures separate without running display AI in the price-only flow", () => {
@@ -372,17 +395,14 @@ test("store visit refresh reruns target images through the image-level AI pipeli
 });
 
 test("store visit refresh replaces old price impact only after image AI success", () => {
-  const invalidateIndex = storeVisitAiJobs.indexOf("await invalidateStoreVisitImagePriceImpact");
   const runAiIndex = storeVisitAiJobs.indexOf("await analyzeStoreVisitPriceImage");
   const imageUpdateIndex = storeVisitAiJobs.indexOf("vision_result: visionResult");
+  const noReadableRowsRetryIndex = storeVisitAiJobs.indexOf("await requeueNoReadableRowsItem({");
+  const finalRetakeIndex = storeVisitAiJobs.indexOf("if (retakeRequired) {");
   assert.ok(runAiIndex >= 0, "runner should invoke the image-level AI layer");
   assert.ok(imageUpdateIndex > runAiIndex, "vision result should be persisted after AI returns");
-  assert.ok(invalidateIndex > imageUpdateIndex, "old candidates and snapshots should be invalidated after AI succeeds");
-  assert.equal(
-    storeVisitAiJobs.slice(0, runAiIndex).includes("await invalidateStoreVisitImagePriceImpact"),
-    false,
-    "old candidates and snapshots must not be invalidated before AI returns",
-  );
+  assert.ok(noReadableRowsRetryIndex > imageUpdateIndex, "empty-result retries should clear old impact only after AI returns");
+  assert.ok(finalRetakeIndex > imageUpdateIndex, "terminal retakes should clear old impact only after AI returns");
 });
 
 test("store visit refresh clears old candidates when a forced photo now requires retake", () => {

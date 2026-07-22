@@ -8,6 +8,7 @@ function readIfExists(path) {
 
 const migration = readIfExists("supabase/migrations/202606160002_organizations_store_assignment.sql");
 const aiAssignmentMigration = readIfExists("supabase/migrations/202606160003_store_organization_ai_assignment.sql");
+const externalOrgMigration = readIfExists("supabase/migrations/202607200001_organization_external_org_id.sql");
 const replaceMembersMigration = readIfExists("supabase/migrations/202606250002_replace_user_organization_members.sql");
 const typesFile = readIfExists("src/lib/types.ts");
 const dataFile = readIfExists("src/lib/data.ts");
@@ -56,7 +57,12 @@ test("store organization AI assignment migration and helper are wired", () => {
 });
 
 test("organization types, data queries, and matching helper exist", () => {
+  assert.match(externalOrgMigration, /add column if not exists external_org_id text/);
+  assert.match(externalOrgMigration, /idx_organizations_external_org_id/);
+  assert.match(externalOrgMigration, /update public\.offline_stores store/);
+  assert.match(externalOrgMigration, /lower\(store\.external_org_id\) = lower\(org\.external_org_id\)/);
   assert.match(typesFile, /export type Organization/);
+  assert.match(typesFile, /external_org_id\?: string \| null/);
   assert.match(typesFile, /OrganizationMember/);
   assert.match(typesFile, /OrganizationRegionRule/);
   assert.match(typesFile, /organization_assignment_method/);
@@ -65,6 +71,9 @@ test("organization types, data queries, and matching helper exist", () => {
   assert.match(dataFile, /organization_region_rules/);
   assert.match(dataFile, /organizations\(id,name,status\)/);
   assert.match(helper, /resolveOrganizationForRegion/);
+  assert.match(helper, /normalizeExternalOrgId/);
+  assert.match(helper, /listActiveOrganizationsByExternalOrgId/);
+  assert.doesNotMatch(helper, /\.ilike\("external_org_id", normalizedExternalOrgId\)/);
   assert.match(helper, /cityName\) query = query\.or/);
   assert.match(helper, /provinceRule/);
   assert.match(helper, /organizationAssignmentPatch/);
@@ -78,17 +87,31 @@ test("organization management UI and APIs are wired", () => {
   assert.match(organizationsComponent, /\/api\/organizations/);
   assert.match(organizationsComponent, /\/api\/organizations\/members/);
   assert.match(organizationsComponent, /\/api\/organizations\/region-rules/);
+  assert.match(organizationsComponent, /external_org_id/);
+  assert.match(organizationsComponent, /External organization ID/);
+  assert.match(organizationsComponent, /externalOrgOrganization/);
+  assert.match(organizationsComponent, /linkExternalOrg/);
+  assert.match(organizationsComponent, /saveExternalOrgId/);
+  assert.match(organizationsComponent, /setExternalOrgOrganization\(organization\)/);
+  assert.match(organizationsComponent, /Dialog title=\{`\$\{isZh \? zh\.externalOrgTitle : "Link external organization ID"\}/);
+  assert.doesNotMatch(organizationsComponent, /organizations\.map[\s\S]*<TextInput[\s\S]*externalOrgDrafts\[organization\.id\]/);
   assert.match(organizationsComponent, /Organization owner/);
   assert.match(organizationsComponent, /Link regions/);
   assert.match(organizationsComponent, /Link users/);
   assert.match(organizationsComponent, /Add row/);
   assert.match(organizationsApi, /requireAdminSession/);
+  assert.match(organizationsApi, /external_org_id/);
+  assert.match(organizationsApi, /reconcileStoresForExternalOrganization/);
+  assert.match(organizationsApi, /previousExternalOrgId/);
+  assert.match(organizationsApi, /organization_assignment_method === "manual"/);
+  assert.match(organizationsApi, /offline_stores/);
+  assert.match(organizationsApi, /organization_assignment_method: "external_org_id"/);
   assert.match(organizationMembersApi, /organization_members/);
   assert.match(organizationRulesApi, /organization_region_rules/);
   assert.match(organizationRulesApi, /Array\.isArray\(body\.rules\)/);
 });
 
-test("store creation does not write organization assignment and store management only supports manual organization id", () => {
+test("store creation assigns organization from external org id while store management keeps manual override", () => {
   assert.doesNotMatch(offlineStoresApi, /resolveOrganizationForRegion/);
   assert.doesNotMatch(offlineStoresApi, /organizationAssignmentPatch/);
   assert.doesNotMatch(offlineStoresApi, /const organizationId = String\(body\.organization_id/);
@@ -99,6 +122,10 @@ test("store creation does not write organization assignment and store management
   assert.doesNotMatch(offlineStoresApi, /rule_matched_count/);
   assert.doesNotMatch(offlineStoresApi, /ai_suggested_count/);
   assert.doesNotMatch(offlineStoresApi, /manual_skipped_count/);
+  assert.match(offlineStoresApi, /resolveOrganizationByExternalOrgId/);
+  assert.match(offlineStoresApi, /organizationIdFromExternalOrgId/);
+  assert.match(offlineStoresApi, /organization_id: organizationIdFromExternalOrgId/);
+  assert.match(offlineStoresApi, /organization_assignment_method: organizationIdFromExternalOrgId \? "external_org_id" : null/);
   assert.match(offlineStoresApi, /hasOrganizationPatch/);
   assert.match(offlineStoresApi, /organization_id: organizationId/);
   assert.match(offlineStoresPage, /getOrganizations/);

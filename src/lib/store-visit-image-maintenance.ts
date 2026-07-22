@@ -1,5 +1,6 @@
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import { summarizeBrandSkuCounts } from "@/lib/store-visit-summary";
+import { priceImageRetakeReason } from "@/lib/store-visit-price-image-state";
 import type {
   OfflineStoreVisit,
   OfflineVisitImage,
@@ -26,7 +27,7 @@ function asPriceImageAnalysis(value: unknown): StoreVisitPriceImageAnalysis | nu
 }
 
 function isRetakeRequiredResult(result: StoreVisitPriceImageAnalysis | null) {
-  return result?.photo_quality?.status === "retake_required";
+  return priceImageRetakeReason(result) !== null;
 }
 
 function toImageCategory(image: OfflineVisitImage): StoreVisitImageCategory {

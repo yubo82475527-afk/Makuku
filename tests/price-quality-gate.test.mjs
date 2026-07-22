@@ -16,6 +16,8 @@ const independentReasonRequeueMigrationPath = "supabase/migrations/202607140005_
 const independentReasonRequeueMigration = existsSync(independentReasonRequeueMigrationPath) ? readFileSync(independentReasonRequeueMigrationPath, "utf8") : "";
 const promotionEvidenceRequeueMigrationPath = "supabase/migrations/202607170001_requeue_promotion_evidence_candidates.sql";
 const promotionEvidenceRequeueMigration = existsSync(promotionEvidenceRequeueMigrationPath) ? readFileSync(promotionEvidenceRequeueMigrationPath, "utf8") : "";
+const priorityFastPathMigrationPath = "supabase/migrations/202607200001_price_quality_priority_fast_path.sql";
+const priorityFastPathMigration = existsSync(priorityFastPathMigrationPath) ? readFileSync(priorityFastPathMigrationPath, "utf8") : "";
 const types = readFileSync("src/lib/types.ts", "utf8");
 const benchmarkServicePath = "src/lib/price-quality-benchmarks.ts";
 const benchmarkService = existsSync(benchmarkServicePath) ? readFileSync(benchmarkServicePath, "utf8") : "";
@@ -108,6 +110,18 @@ test("quality gate prioritizes recent Visit candidates without dropping the hist
   assert.match(recentPriorityMigration, /candidate\.quality_gate_status = 'PENDING'/i);
   assert.match(recentPriorityMigration, /candidate\.quality_gate_status = 'FAILED'/i);
   assert.match(recentPriorityMigration, /for update skip locked/i);
+});
+
+test("priority quality claims are limited to newly inserted candidate IDs", () => {
+  assert.equal(existsSync(priorityFastPathMigrationPath), true);
+  assert.match(priorityFastPathMigration, /create function public\.claim_ai_price_candidates_for_priority_quality_gate/i);
+  assert.match(priorityFastPathMigration, /create function public\.claim_ai_price_candidates_for_priority_auto_approval/i);
+  assert.match(priorityFastPathMigration, /candidate\.id = any\(p_candidate_ids\)/i);
+  assert.match(priorityFastPathMigration, /for update skip locked/i);
+  assert.match(priorityFastPathMigration, /quality_gate_attempt_count = candidate\.quality_gate_attempt_count \+ 1/i);
+  assert.match(priorityFastPathMigration, /auto_approval_attempt_count = candidate\.auto_approval_attempt_count \+ 1/i);
+  assert.match(priorityFastPathMigration, /revoke all on function public\.claim_ai_price_candidates_for_priority_quality_gate/i);
+  assert.match(priorityFastPathMigration, /grant execute on function public\.claim_ai_price_candidates_for_priority_auto_approval/i);
 });
 
 test("mature historical candidates can be safely re-evaluated for independent reason codes", () => {

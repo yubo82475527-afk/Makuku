@@ -9,7 +9,8 @@ import { formatIdr, formatShortImageId } from "@/lib/format";
 import type { Locale } from "@/lib/i18n/config";
 import { buildOperatorPriceReviewReasonGroups } from "@/lib/operator-price-review-reason-groups";
 import { isSupportedStoreVisitImageFile, summarizeStoreVisitImageError, unsupportedStoreVisitImageFormatMessage } from "@/lib/store-visit-image-errors";
-import { getMobileCopy, mobileAnalysisStatusLabel, mobileImageCategoryLabel } from "@/lib/mobile-i18n";
+import { priceImageRetakeReason } from "@/lib/store-visit-price-image-state";
+import { getMobileCopy, mobileImageCategoryLabel } from "@/lib/mobile-i18n";
 import type {
   AiPriceCandidate,
   AiPriceCandidateMatchType,
@@ -20,6 +21,7 @@ import type {
   StoreVisitImageCategory,
   StoreVisitPriceImageAnalysis,
   StoreVisitAiJobSummary,
+  VisitPriceHandlingSummary,
 } from "@/lib/types";
 import { LoadingOverlay } from "@/components/loading-overlay";
 
@@ -41,6 +43,7 @@ type StoreVisitDetail = {
   visit_status?: string | null;
   analysis_status?: "pending" | "analyzing" | "completed" | "partial" | "action_required" | "failed" | null;
   analysis_error?: string | null;
+  price_handling?: VisitPriceHandlingSummary;
   summary_result?: Record<string, unknown> | null;
   offline_visit_images?: OfflineVisitImage[];
   signed_images?: SignedVisitImage[];
@@ -178,23 +181,30 @@ function formatMoney(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? formatIdr(value) : "-";
 }
 
-type H5RowReviewState = "checking" | "needs_confirmation" | "confirmed";
 type PriceRowFilter = "all" | "needs_confirmation";
 
-function candidateReviewState(candidate: AiPriceCandidate | null): H5RowReviewState {
-  if (candidate?.status === "approved") return "confirmed";
-  if (!candidate || candidate.status !== "pending") return "checking";
-  // Quality gate passed: ready for manual confirmation
-  if (candidate.quality_gate_status === "PASSED") {
-    return "needs_confirmation";
-  }
-  if (candidate.quality_gate_status === "REVIEW_REQUIRED" || candidate.quality_gate_status === "INSUFFICIENT_BENCHMARK") {
-    return "needs_confirmation";
-  }
-  if (candidate.quality_gate_status === "FAILED" && Number(candidate.quality_gate_attempt_count ?? 0) >= 3) {
-    return "needs_confirmation";
-  }
-  return "checking";
+function candidateHandlingStatus(candidate: AiPriceCandidate | null) {
+  return candidate?.price_handling?.status ?? "PROCESSING";
+}
+
+function candidateNeedsManualConfirmation(candidate: AiPriceCandidate | null) {
+  return candidate?.price_handling?.action_type === "MANUAL_CONFIRMATION_REQUIRED";
+}
+
+function visitPriceHandlingStatusLabel(status: VisitPriceHandlingSummary["status"]) {
+  if (status === "ACTION_REQUIRED") return "Action required";
+  if (status === "COMPLETED") return "Completed";
+  return "Processing";
+}
+
+function visitPriceHandlingActionSummary(summary: VisitPriceHandlingSummary | undefined) {
+  const counts = summary?.action_counts;
+  if (!counts) return [];
+  return [
+    counts.retake_required > 0 ? `${counts.retake_required} photo retake${counts.retake_required === 1 ? "" : "s"}` : null,
+    counts.manual_confirmation_required > 0 ? `${counts.manual_confirmation_required} price confirmation${counts.manual_confirmation_required === 1 ? "" : "s"}` : null,
+    counts.retry_required > 0 ? (counts.retry_required === 1 ? "1 retry" : `${counts.retry_required} retries`) : null,
+  ].filter((value): value is string => Boolean(value));
 }
 
 function candidateRequiresProductCorrection(candidate: AiPriceCandidate) {
@@ -293,12 +303,12 @@ function isUpdatedImage(image: OfflineVisitImage) {
 
 function isRetakeRequiredPriceImage(image: OfflineVisitImage) {
   if (!isRecord(image.vision_result)) return false;
-  const photoQuality = (image.vision_result as Record<string, unknown>).photo_quality;
-  return isRecord(photoQuality) && photoQuality.status === "retake_required";
+  return priceImageRetakeReason(image.vision_result) !== null;
 }
 
-function retakeRequiredMessage(image: OfflineVisitImage, fallback: string) {
+function retakeRequiredMessage(image: OfflineVisitImage, fallback: string, noReadableRowsMessage: string) {
   if (!isRecord(image.vision_result)) return fallback;
+  if (priceImageRetakeReason(image.vision_result) === "NO_READABLE_PRICE_ROWS") return noReadableRowsMessage;
   const photoQuality = (image.vision_result as Record<string, unknown>).photo_quality;
   if (!isRecord(photoQuality)) return fallback;
   const message = String(photoQuality.message ?? "").trim();
@@ -459,8 +469,9 @@ function detailText(locale: Locale) {
         pricePerPiece: "Per Piece",
         pieceCount: "Pcs",
         needsConfirmationText: "Needs confirmation",
-        checkingText: "Checking",
-        confirmedText: "Confirmed",
+        processingText: "Processing",
+        actionRequiredText: "Action required",
+        completedText: "Completed",
         editRow: "Edit",
         deleteRow: "Delete SKU",
         rowUnmatched: "Unmatched",
@@ -529,6 +540,7 @@ function detailText(locale: Locale) {
         retakeRequired: "Please re-upload this photo",
         retakeRequiredSummary: "Price-tag photo needs retake. Use photo actions to retake or replace it.",
         retakeRequiredFallback: "Retake directly facing the price tags, closer to the shelf, with clear unobstructed price digits.",
+        retakeNoReadableRows: "No readable price rows were detected after retry. Retake the price board straight on, closer, with product names and price cells visible.",
         refreshVisit: "Refresh",
         reanalyzeFullVisit: "Analyze full visit",
         reanalyzeFullVisitSubmitted: "Full visit AI analysis submitted. Analysis is running in the background.",
@@ -544,8 +556,9 @@ function detailText(locale: Locale) {
         pricePerPiece: "Per Piece",
         pieceCount: "Pcs",
         needsConfirmationText: "Needs confirmation",
-        checkingText: "Checking",
-        confirmedText: "Confirmed",
+        processingText: "Processing",
+        actionRequiredText: "Action required",
+        completedText: "Completed",
         editRow: "Edit",
         deleteRow: "Delete SKU",
         rowUnmatched: "Unmatched",
@@ -614,6 +627,7 @@ function detailText(locale: Locale) {
         retakeRequired: "Please re-upload this photo",
         retakeRequiredSummary: "Price-tag photo needs retake. Use photo actions to retake or replace it.",
         retakeRequiredFallback: "Retake directly facing the price tags, closer to the shelf, with clear unobstructed price digits.",
+        retakeNoReadableRows: "No readable price rows were detected after retry. Retake the price board straight on, closer, with product names and price cells visible.",
         refreshVisit: "Refresh",
         reanalyzeFullVisit: "Analyze full visit",
         reanalyzeFullVisitSubmitted: "Full visit AI analysis submitted. Analysis is running in the background.",
@@ -799,21 +813,29 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   const activeAiJobForPolling = visit?.active_ai_job ?? null;
   const activeAiJobId = activeAiJobForPolling?.id;
   const activeAiJobStatus = activeAiJobForPolling?.status;
+  const shouldPollPriceHandling = visit?.price_handling?.status === "PROCESSING";
 
   useEffect(() => {
-    if (!activeAiJobId || !isActiveAiJob(activeAiJobForPolling)) return undefined;
+    if ((!activeAiJobId || !isActiveAiJob(activeAiJobForPolling)) && !shouldPollPriceHandling) return undefined;
 
     let cancelled = false;
     async function pollAiJob() {
       try {
-        const response = await fetch(`/api/store-visit/ai-jobs/${activeAiJobId}`);
-        const payload = await response.json().catch(() => ({}));
-        if (cancelled || !response.ok) return;
-        const summary = payload.summary as StoreVisitAiJobSummary | null | undefined;
-        if (summary) {
-          setVisit((current) => current ? { ...current, active_ai_job: summary } : current);
+        if (activeAiJobId && isActiveAiJob(activeAiJobForPolling)) {
+          const response = await fetch(`/api/store-visit/ai-jobs/${activeAiJobId}`);
+          const payload = await response.json().catch(() => ({}));
+          if (cancelled || !response.ok) return;
+          const summary = payload.summary as StoreVisitAiJobSummary | null | undefined;
+          if (summary) {
+            setVisit((current) => current ? { ...current, active_ai_job: summary } : current);
+          }
+          if (!isActiveAiJob(summary)) {
+            await loadVisit({ preserveLoading: true });
+          }
+          return;
         }
-        if (!isActiveAiJob(summary)) {
+
+        if (!cancelled) {
           await loadVisit({ preserveLoading: true });
         }
       } catch {
@@ -827,7 +849,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [activeAiJobForPolling, activeAiJobId, activeAiJobStatus, loadVisit]);
+  }, [activeAiJobForPolling, activeAiJobId, activeAiJobStatus, loadVisit, shouldPollPriceHandling]);
 
   useEffect(() => {
     let cancelled = false;
@@ -932,7 +954,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
     rowIndex: number,
     candidate: AiPriceCandidate,
   ) {
-    if (candidateReviewState(candidate) !== "needs_confirmation") {
+    if (!candidateNeedsManualConfirmation(candidate)) {
       setError(text.saveRowFailed);
       return;
     }
@@ -1050,6 +1072,8 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
   }
 
   const status = visit?.analysis_status ?? "pending";
+  const priceHandlingStatus = visit?.price_handling?.status ?? "PROCESSING";
+  const priceHandlingActions = visitPriceHandlingActionSummary(visit?.price_handling);
   const activeAiJob = isActiveAiJob(visit?.active_ai_job) ? visit?.active_ai_job ?? null : null;
   const activeAiJobImageIds = useMemo(() => (
     new Set(activeAiJob?.target_image_ids ?? [])
@@ -1383,8 +1407,8 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
             <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs font-medium uppercase text-slate-500">{copy.analysisStatus}</div>
-                  <div className="mt-1 text-lg font-bold">{mobileAnalysisStatusLabel(locale, status)}</div>
+                  <div className="text-xs font-medium uppercase text-slate-500">Price handling</div>
+                  <div className="mt-1 text-lg font-bold">{visitPriceHandlingStatusLabel(priceHandlingStatus)}</div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   {canRunWholeVisitAnalysis ? (
@@ -1417,6 +1441,9 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   </button>
                 </div>
               </div>
+              {priceHandlingStatus === "ACTION_REQUIRED" && priceHandlingActions.length > 0 ? (
+                <div className="mt-3 text-sm text-amber-800">{priceHandlingActions.join(" · ")}</div>
+              ) : null}
               {status === "partial" ? (
                 <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                   <div className="font-semibold">{text.partialSuccess}</div>
@@ -1980,7 +2007,7 @@ function PriceSectionGroup({
       section.image.id,
       section.result?.rows ?? [],
       hiddenPriceRowIndexes(section.image.vision_result),
-    ).some((displayRow) => candidateReviewState(displayRow.candidate) === "needs_confirmation")
+    ).some((displayRow) => candidateNeedsManualConfirmation(displayRow.candidate))
   ));
 
   return (
@@ -2013,7 +2040,7 @@ function PriceSectionGroup({
               section.image.id,
               section.result?.rows ?? [],
               hiddenPriceRowIndexes(section.image.vision_result),
-            ).filter((displayRow) => priceRowFilter === "all" || candidateReviewState(displayRow.candidate) === "needs_confirmation");
+            ).filter((displayRow) => priceRowFilter === "all" || candidateNeedsManualConfirmation(displayRow.candidate));
             const needsRetake = isRetakeRequiredPriceImage(section.image);
             const isActionDisabled = updateLocked || isReanalyzingImage || retryingImageIds.includes(section.image.id) || deletingImageIds.includes(section.image.id);
 
@@ -2158,7 +2185,7 @@ function PriceSectionGroup({
           {needsRetake && !isProcessingRetake && !isAnalyzingImage ? (
             <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               <div className="font-semibold">{text.retakeRequired}</div>
-              <div className="mt-1 text-xs leading-5">{retakeRequiredMessage(section.image, text.retakeRequiredFallback)}</div>
+              <div className="mt-1 text-xs leading-5">{retakeRequiredMessage(section.image, text.retakeRequiredFallback, text.retakeNoReadableRows)}</div>
             </div>
           ) : null}
 
@@ -2170,7 +2197,8 @@ function PriceSectionGroup({
               const matchInfo = candidateMatchDisplay(displayCandidate);
               const listPrice = candidateDisplayListPrice(displayCandidate, row.list_price_idr ?? row.package_price_idr ?? null);
               const netPrice = candidateDisplayNetPrice(displayCandidate, row.net_price_idr ?? null);
-              const reviewState = candidateReviewState(candidate);
+              const handlingStatus = candidateHandlingStatus(candidate);
+              const needsManualConfirmation = candidateNeedsManualConfirmation(candidate);
               const reasonMessages = candidate ? candidateReasonMessages(candidate, locale) : [];
               const primaryReason = reasonMessages[0] ?? null;
               return (
@@ -2178,7 +2206,7 @@ function PriceSectionGroup({
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
                     <div className="line-clamp-1 min-w-0 text-sm font-semibold leading-5 text-slate-900">{row.sku}</div>
                     <div className="flex shrink-0 items-center gap-2">
-                      {reviewState === "needs_confirmation" && candidate ? (
+                      {needsManualConfirmation && candidate ? (
                         <button
                           type="button"
                           onClick={() => onEditRow(section, row, rowIndex, candidate)}
@@ -2190,26 +2218,26 @@ function PriceSectionGroup({
                     </div>
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                    {reviewState === "needs_confirmation" ? (
+                    {handlingStatus === "ACTION_REQUIRED" ? (
                       <span className="rounded-full bg-amber-100 px-2 py-[1px] text-[10px] font-semibold leading-4 text-amber-700">
-                        {text.needsConfirmationText}
+                        {text.actionRequiredText}
                       </span>
                     ) : null}
-                    {reviewState === "checking" ? (
+                    {handlingStatus === "PROCESSING" ? (
                       <span className="rounded-full bg-slate-100 px-2 py-[1px] text-[10px] font-semibold leading-4 text-slate-600">
-                        {text.checkingText}
+                        {text.processingText}
                       </span>
                     ) : null}
-                    {reviewState === "confirmed" ? (
+                    {handlingStatus === "COMPLETED" ? (
                       <span className="rounded-full bg-emerald-100 px-2 py-[1px] text-[10px] font-semibold leading-4 text-emerald-700">
-                        {text.confirmedText}
+                        {text.completedText}
                       </span>
                     ) : null}
                     <span className={`break-words text-[10px] leading-4 ${matchInfo.matched ? "text-slate-500" : "font-semibold text-red-600"}`}>
                       {matchInfo.matched ? matchInfo.label : text.rowUnmatched}
                     </span>
                   </div>
-                  {reviewState === "needs_confirmation" && primaryReason ? (
+                  {needsManualConfirmation && primaryReason ? (
                     <div className="mt-1 line-clamp-2 text-[10px] leading-4 text-amber-800">{primaryReason}</div>
                   ) : null}
                   <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1">

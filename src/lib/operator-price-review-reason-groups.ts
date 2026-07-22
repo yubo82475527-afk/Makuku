@@ -164,9 +164,6 @@ function buildConfirmationMessages(
       ? "系统多次校验仍未得到可靠结果，需要人工确认。"
       : "Repeated checks did not produce a reliable result, so manual confirmation is required.");
   }
-  if (messages.length === 0) {
-    add(isZh ? "这个价格需要人工确认。" : "This price needs manual confirmation.");
-  }
   return messages;
 }
 

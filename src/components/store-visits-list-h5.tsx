@@ -10,9 +10,9 @@ import { MobileFeishuAutoLogin } from "@/components/mobile-feishu-auto-login";
 import { withMinimumDelay } from "@/lib/async-ui";
 import { localeLabels, replacePathLocale, type Locale } from "@/lib/i18n/config";
 import { writeLocalePreferenceCookie } from "@/lib/locale-preference";
-import { getMobileCopy, mobileAnalysisStatusLabel } from "@/lib/mobile-i18n";
+import { getMobileCopy } from "@/lib/mobile-i18n";
 import { summarizeBrandSkuCounts } from "@/lib/store-visit-summary";
-import type { StoreVisitAnalysisStatus, StoreVisitAiResult, StoreVisitAiJobSummary } from "@/lib/types";
+import type { PriceHandlingStatus, StoreVisitAnalysisStatus, StoreVisitAiResult, StoreVisitAiJobSummary, VisitPriceHandlingSummary } from "@/lib/types";
 import { MobileLanguageSwitch } from "@/components/mobile-language-switch";
 
 const storageKey = "makuku_app_user";
@@ -35,6 +35,7 @@ type VisitListItem = {
   visit_status?: string | null;
   analysis_status?: StoreVisitAnalysisStatus | null;
   analysis_error?: string | null;
+  price_handling?: VisitPriceHandlingSummary | null;
   ai_result?: StoreVisitAiResult | null;
   photo_count?: number;
   created_at: string;
@@ -61,20 +62,16 @@ function saveUser(user: AppUser) {
   localStorage.setItem(storageKey, JSON.stringify(user));
 }
 
-function statusClass(status: StoreVisitAnalysisStatus | null | undefined) {
+function handlingStatusClass(status: PriceHandlingStatus) {
   switch (status) {
-    case "analyzing":
+    case "PROCESSING":
       return "bg-blue-50 text-blue-700 ring-blue-200";
-    case "completed":
+    case "COMPLETED":
       return "bg-emerald-50 text-emerald-700 ring-emerald-200";
-    case "partial":
+    case "ACTION_REQUIRED":
       return "bg-amber-50 text-amber-700 ring-amber-200";
-    case "action_required":
-      return "bg-amber-50 text-amber-700 ring-amber-200";
-    case "failed":
-      return "bg-red-50 text-red-700 ring-red-200";
     default:
-      return "bg-amber-50 text-amber-700 ring-amber-200";
+      return "bg-slate-100 text-slate-700 ring-slate-200";
   }
 }
 
@@ -93,16 +90,19 @@ function summarizeVisitBrandCounts(aiResult: StoreVisitAiResult | null | undefin
   return summarizeBrandSkuCounts(priceRows, locale) ?? aiResult?.store_summary ?? null;
 }
 
-function visitDisplayStatus(visit: VisitListItem): StoreVisitAnalysisStatus {
-  if (visit.active_ai_job?.status === "queued" || visit.active_ai_job?.status === "running") return "analyzing";
-  const status = visit.analysis_status ?? "pending";
-  const photoCount = visit.photo_count ?? 0;
-  if (visit.visit_status === "draft" && photoCount === 0) return "pending";
-  if (status === "partial" || status === "action_required" || status === "failed" || status === "analyzing") return status;
-  if (status === "completed") {
-    return visit.visit_status === "analyzed" && photoCount > 0 ? "completed" : "pending";
+function visitHandlingStatus(visit: VisitListItem): PriceHandlingStatus {
+  return visit.price_handling?.status ?? "PROCESSING";
+}
+
+function priceHandlingStatusLabel(locale: Locale, status: PriceHandlingStatus) {
+  if (locale === "zh") {
+    if (status === "ACTION_REQUIRED") return "\u9700\u8981\u5904\u7406";
+    if (status === "COMPLETED") return "\u5df2\u5b8c\u6210";
+    return "\u5904\u7406\u4e2d";
   }
-  return status;
+  if (status === "ACTION_REQUIRED") return "Action required";
+  if (status === "COMPLETED") return "Completed";
+  return "Processing";
 }
 
 function Badge({ children, className }: { children: ReactNode; className: string }) {
@@ -415,10 +415,11 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
 
   useEffect(() => {
     if (!user?.id) return undefined;
-    const hasActiveAiJob = visits.some((visit) => (
+    const hasInFlightPriceWork = visits.some((visit) => (
       visit.active_ai_job?.status === "queued" || visit.active_ai_job?.status === "running"
+      || visit.price_handling?.status === "PROCESSING"
     ));
-    if (!hasActiveAiJob) return undefined;
+    if (!hasInFlightPriceWork) return undefined;
     const interval = window.setInterval(() => {
       void loadVisits(1, false, user);
     }, 3000);
@@ -550,10 +551,10 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
           </div>
         ) : null}
         {visits.map((visit) => {
-          const status = visitDisplayStatus(visit);
+          const handlingStatus = visitHandlingStatus(visit);
           const summary = summarizeVisitBrandCounts(visit.ai_result, locale);
-          const priceRetakeRequired = status === "action_required";
-          const openVisitToHandlePhotos = status === "partial" || status === "action_required" || status === "failed";
+          const priceRetakeRequired = (visit.price_handling?.action_counts.retake_required ?? 0) > 0;
+          const openVisitToHandleWork = handlingStatus === "ACTION_REQUIRED";
           const activeAiJob = visit.active_ai_job?.status === "queued" || visit.active_ai_job?.status === "running";
           return (
             <article key={visit.id} className="rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -570,7 +571,7 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
                 </div>
 
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <Badge className={statusClass(status)}>{mobileAnalysisStatusLabel(locale, status)}</Badge>
+                  <Badge className={handlingStatusClass(handlingStatus)}>{priceHandlingStatusLabel(locale, handlingStatus)}</Badge>
                   {activeAiJob ? (
                     <Badge className="bg-blue-50 text-blue-700 ring-blue-200">
                       {locale === "zh" ? "\u540e\u53f0\u91cd\u8dd1\u4e2d" : "Background re-run"}
@@ -582,9 +583,9 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
                   <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium leading-5 text-amber-800">
                     {loginText.pricePhotoRetakeRequired}
                   </p>
-                ) : openVisitToHandlePhotos ? (
+                ) : openVisitToHandleWork ? (
                   <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium leading-5 text-amber-800">
-                    {locale === "zh" ? "\u8fdb\u5165\u8be6\u60c5\u5904\u7406\u5355\u5f20\u56fe\u7247\u3002" : "Open details to handle individual photos."}
+                    {locale === "zh" ? "\u8fdb\u5165\u8be6\u60c5\u5904\u7406\u5f85\u529e\u4ef7\u683c\u6216\u56fe\u7247\u3002" : "Open details to handle required price or photo actions."}
                   </p>
                 ) : summary ? (
                   <p
