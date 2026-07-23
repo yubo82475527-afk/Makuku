@@ -99,6 +99,21 @@
 - 权限不仅控制可见性，还必须由服务端再次校验
 - 中英文文案进入现有 i18n 机制，不在组件中建立新的字典模式
 
+## 列表筛选标准（冻结）
+
+列表页筛选以「需人工审核」(`offline-price-candidates`) 为唯一标准样式。新建或改版筛选时直接对齐该实现，不要另起一套更宽、多行标签或独立卡片式筛选。
+
+标准参考：`src/app/[locale]/offline-price-candidates/page.tsx` 中的 `QueryForm` 与局部筛选字段。
+
+必须遵守：
+
+1. 使用 `QueryForm` + `QuerySubmitButton`（`src/components/query-form.tsx`），筛选条件写入 URL。
+2. 外层网格：`grid gap-3`，按字段数量选择列数（如 `md:grid-cols-2 xl:grid-cols-3`）。**一行放不下就换行**，不要强塞进单行导致重叠或按钮被压扁。字段少时可参考需人工审核用 `xl:grid-cols-[minmax(280px,1fr)_…]` 封顶；字段多时优先 2–3 列自动换行。
+3. 字段外观统一为单行内联：`flex min-h-10 items-center rounded-md border border-slate-300 bg-white px-3 text-sm ... focus-within:border-slate-500 focus-within:ring-2 focus-within:ring-slate-200`。
+4. 文本/下拉：左侧短标签 `text-xs font-medium text-slate-500`，右侧 `min-w-0 flex-1` 控件。
+5. 日期范围：不在字段内再放可见标题，只用 `aria-label`；两个 `type="date"` 用 `min-w-0 flex-1`，中间分隔「至」/「to」。不要给日期输入加过大的 `min-w-*` 或 `col-span` 撑宽。
+6. 操作区只放「筛选」（及可选「重置」），与字段同网格对齐；换行后留在下一行左侧即可，不要为占满宽行而拉伸按钮。
+
 ## Props 与类型
 
 - Props 使用业务含义明确的名称，避免 `data: any`、`mode2` 或含义不清的布尔组合

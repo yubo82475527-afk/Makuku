@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { StoreVisitMonitorExportButton } from "@/components/store-visit-monitor-export-button";
 import { StoreVisitMatchingRerunDialog, type MatchingRerunTarget } from "@/components/store-visit-matching-rerun-dialog";
 import StoreVisitMonitorLoading from "@/app/[locale]/store-visit-monitor/loading";
+import { QueryForm, QuerySubmitButton } from "@/components/query-form";
 import { Badge, Button, Card, DataNotice, EmptyState, MetricCard } from "@/components/ui";
 import { formatJakartaDateTimeSeconds, formatPercent } from "@/lib/format";
 import type { StoreVisitMonitorResult } from "@/lib/data";
@@ -145,12 +146,13 @@ export function StoreVisitMonitorClient({
       </Card>
 
       <Card className="mb-4">
-        <form className="grid gap-3 md:grid-cols-[minmax(180px,1fr)_minmax(220px,1.1fr)_minmax(180px,1fr)_minmax(180px,220px)]">
-          <LabeledTextFilter label="Visit code" name="visit_code" placeholder="Search visit" defaultValue={getFilter("visit_code")} />
-          <LabeledTextFilter label="Store name" name="store_name" placeholder="Search store" defaultValue={getFilter("store_name")} />
-          <LabeledTextFilter label="Promoter" name="promoter" placeholder="Search promoter" defaultValue={getFilter("promoter")} />
-          <LabeledSelectFilter label="Analysis status" name="analysis_status" defaultValue={getFilter("analysis_status")}>
-            <option value="">All status</option>
+        <QueryForm className="grid gap-3 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+          <DateRangeFilter locale={locale} dateFrom={monitor.filters.dateFrom} dateTo={monitor.filters.dateTo} />
+          <LabeledTextFilter label={locale === "zh" ? "巡店编号" : "Visit code"} name="visit_code" placeholder={locale === "zh" ? "输入巡店编号" : "Search visit"} defaultValue={getFilter("visit_code")} />
+          <LabeledTextFilter label={locale === "zh" ? "门店名称" : "Store name"} name="store_name" placeholder={locale === "zh" ? "搜索门店" : "Search store"} defaultValue={getFilter("store_name")} />
+          <LabeledTextFilter label={locale === "zh" ? "促销员" : "Promoter"} name="promoter" placeholder={locale === "zh" ? "搜索促销员" : "Search promoter"} defaultValue={getFilter("promoter")} />
+          <LabeledSelectFilter label={locale === "zh" ? "分析状态" : "Analysis status"} name="analysis_status" defaultValue={getFilter("analysis_status")}>
+            <option value="">{locale === "zh" ? "全部状态" : "All status"}</option>
             <option value="pending">pending</option>
             <option value="analyzing">analyzing</option>
             <option value="completed">completed</option>
@@ -158,14 +160,17 @@ export function StoreVisitMonitorClient({
             <option value="action_required">action_required</option>
             <option value="failed">failed</option>
           </LabeledSelectFilter>
-          <DateRangeFilter dateFrom={monitor.filters.dateFrom} dateTo={monitor.filters.dateTo} />
-          <div className="flex gap-2">
-            <Button type="submit">Filter</Button>
-            <Link href={`/${locale}/store-visit-monitor`} className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
-              Reset
+          <div className="flex items-center gap-2">
+            <QuerySubmitButton
+              idleLabel={dict.common.filter}
+              pendingLabel={locale === "zh" ? "筛选中..." : "Filtering..."}
+              className="whitespace-nowrap"
+            />
+            <Link href={`/${locale}/store-visit-monitor`} className="inline-flex h-9 shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
+              {locale === "zh" ? "重置" : "Reset"}
             </Link>
           </div>
-        </form>
+        </QueryForm>
       </Card>
 
       <Card>
@@ -384,25 +389,17 @@ function LabeledSelectFilter({
   );
 }
 
-function DateRangeFilter({ dateFrom, dateTo }: { dateFrom: string; dateTo: string }) {
+function DateRangeFilter({ locale, dateFrom, dateTo }: { locale: string; dateFrom: string; dateTo: string }) {
+  const label = locale === "zh" ? "巡店日期范围" : "Visit date range";
+  const fromLabel = locale === "zh" ? "开始日期" : "Start date";
+  const toLabel = locale === "zh" ? "结束日期" : "End date";
+  const separator = locale === "zh" ? "至" : "to";
+
   return (
-    <fieldset aria-label="Visit date range" className="flex min-h-10 items-center rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus-within:border-slate-500 focus-within:ring-2 focus-within:ring-slate-200">
-      <span className="mr-2 shrink-0 text-xs font-medium text-slate-500">Visit date range</span>
-      <input
-        name="date_from"
-        type="date"
-        defaultValue={dateFrom}
-        aria-label="Start date"
-        className="min-w-0 flex-1 bg-transparent py-2 outline-none [color-scheme:light]"
-      />
-      <span className="mx-2 shrink-0 text-xs font-medium text-slate-400">to</span>
-      <input
-        name="date_to"
-        type="date"
-        defaultValue={dateTo}
-        aria-label="End date"
-        className="min-w-0 flex-1 bg-transparent py-2 outline-none [color-scheme:light]"
-      />
+    <fieldset aria-label={label} className="flex min-h-10 items-center rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus-within:border-slate-500 focus-within:ring-2 focus-within:ring-slate-200">
+      <input name="date_from" type="date" defaultValue={dateFrom} aria-label={fromLabel} className="min-w-0 flex-1 bg-transparent py-2 outline-none [color-scheme:light]" />
+      <span className="mx-2 shrink-0 text-xs font-medium text-slate-400">{separator}</span>
+      <input name="date_to" type="date" defaultValue={dateTo} aria-label={toLabel} className="min-w-0 flex-1 bg-transparent py-2 outline-none [color-scheme:light]" />
     </fieldset>
   );
 }

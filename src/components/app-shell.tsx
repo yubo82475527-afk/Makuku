@@ -68,15 +68,15 @@ const navGroups = [
   {
     label: null,
     items: [
-      { href: "/dashboard", label: { zh: "仪表盘", en: "Dashboard" }, icon: Gauge },
+      { href: "/dashboard", label: { zh: "价格指数", en: "Price Index" }, icon: Gauge },
     ],
   },
   {
     label: { zh: "价格监控", en: "Price Monitoring" },
     items: [
-      { href: "/prices", label: { zh: "真实市场价格", en: "Real Market Price" }, icon: BarChart3 },
-      { href: "/offline-price-candidates", label: { zh: "价格异常审核", en: "Price Anomaly Review" }, icon: ClipboardCheck },
-      { href: "/store-visit-monitor", label: { zh: "巡店分析监控", en: "Store Visit Monitor" }, icon: ClipboardCheck },
+      { href: "/prices", label: { zh: "市场价格", en: "Market Price" }, icon: BarChart3 },
+      { href: "/offline-price-candidates", label: { zh: "需人工审核", en: "Needs Manual Review" }, icon: ClipboardCheck },
+      { href: "/store-visit-monitor", label: { zh: "巡店记录", en: "Store Visit Records" }, icon: ClipboardCheck },
     ],
   },
   {
@@ -90,7 +90,7 @@ const navGroups = [
     items: [
       { href: "/sku-master", label: { zh: "产品主数据", en: "Product Master" }, icon: Database },
       { href: "/competitor-products", label: { zh: "竞品主数据", en: "Competitor Product Master" }, icon: Tags },
-      { href: "/product-match-normalizations", label: { zh: "商品匹配标准化", en: "Product Match Normalization" }, icon: Tags },
+      { href: "/product-match-normalizations", label: { zh: "商品匹配设置", en: "Product Match Settings" }, icon: Tags },
       { href: "/offline-stores", label: { zh: "门店主数据", en: "Store Master" }, icon: Store },
       { href: "/organizations", label: { zh: "组织管理", en: "Organization Management" }, icon: Building2 },
       { href: "/users", label: { zh: "用户管理", en: "User Management" }, icon: Users },
@@ -161,7 +161,7 @@ function AppShellFrame({
   children: ReactNode;
 }) {
   const otherLocale: Locale = locale === "en" ? "zh" : "en";
-  const appSubtitle = locale === "zh" ? "AI 终端增长闭环样板" : "AI Terminal Growth Loop";
+  const appSubtitle = locale === "zh" ? "终端增长" : "Terminal Growth";
   const sampleBadge = locale === "zh" ? "7天样板数据" : "7-day pilot data";
   const timezonePricing = locale === "zh" ? "Asia/Jakarta 时区 / IDR 价格" : "Asia/Jakarta timezone / IDR pricing";
   const languageLabel = locale === "zh" ? "语言" : "Language";

@@ -4,8 +4,9 @@ import {
   type AiPriceCandidateSourceItem,
 } from "@/lib/ai-price-candidates";
 import type { ProductMatchContext } from "@/lib/ai-price-candidates";
+import { buildSingleVariantProductTitle, extractSizePackVariantsFromTitle } from "@/lib/piece-count";
 import { createSupabaseServiceClient } from "@/lib/supabase";
-import type { StoreVisitPriceImageAnalysis } from "@/lib/types";
+import type { StoreVisitPriceImageAnalysis, StoreVisitPriceImageRow } from "@/lib/types";
 
 type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceClient>;
 
@@ -37,24 +38,31 @@ function hiddenPriceRowIndexes(value: unknown) {
     .filter((rowIndex) => Number.isInteger(rowIndex) && rowIndex >= 0));
 }
 
-function sourceItemsFromImage(image: PriceImageRow): AiPriceCandidateSourceItem[] {
-  const result = asPriceImageAnalysis(image.vision_result);
-  if (!result) return [];
-  const hiddenRowIndexes = hiddenPriceRowIndexes(image.vision_result);
-
-  return result.rows.flatMap((row, rowIndex) => hiddenRowIndexes.has(rowIndex) ? [] : [{
+function sourceItemFromPriceRow(
+  image: PriceImageRow,
+  row: StoreVisitPriceImageRow,
+  sourceRowIndex: number,
+  overrides?: {
+    product?: string;
+    productFamilyText?: string | null;
+    rowAnchor?: string | null;
+    piece_count?: number | null;
+    raw_piece_count_text?: string | null;
+  },
+): AiPriceCandidateSourceItem {
+  return {
     brand: row.brand ?? "Unknown",
-    product: row.sku,
-    productFamilyText: row.product_family_text,
+    product: overrides?.product ?? row.sku,
+    productFamilyText: overrides && "productFamilyText" in overrides ? overrides.productFamilyText : row.product_family_text,
     sectionTitle: row.section_title,
-    rowAnchor: row.row_anchor,
+    rowAnchor: overrides?.rowAnchor ?? row.row_anchor,
     price: row.net_price_idr ? String(row.net_price_idr) : "",
     list_price: row.list_price_idr ? String(row.list_price_idr) : null,
     package_price: row.package_price_idr ? String(row.package_price_idr) : null,
     net_price: row.net_price_idr ? String(row.net_price_idr) : null,
     promo_type: row.promo_type,
-    piece_count: row.piece_count,
-    raw_piece_count_text: row.piece_count_text,
+    piece_count: overrides?.piece_count ?? row.piece_count,
+    raw_piece_count_text: overrides?.raw_piece_count_text ?? row.piece_count_text,
     piece_count_source_label: row.piece_count_source_label,
     raw_package_price_text: row.package_price_text,
     raw_net_price_text: row.net_price_text,
@@ -80,8 +88,54 @@ function sourceItemsFromImage(image: PriceImageRow): AiPriceCandidateSourceItem[
     source: "key_sku" as const,
     sourceImageId: image.id,
     sourceImagePath: image.image_path,
-    sourceRowIndex: rowIndex,
-  }]);
+    sourceRowIndex,
+  };
+}
+
+function dedupePriceSourceItems(items: AiPriceCandidateSourceItem[]): AiPriceCandidateSourceItem[] {
+  const seen = new Set<string>();
+  const result: AiPriceCandidateSourceItem[] = [];
+  for (const item of items) {
+    const fromTitle = extractSizePackVariantsFromTitle(item.product)[0];
+    const anchorSize = String(item.rowAnchor ?? "").split("|")[0]?.trim().toUpperCase() || "";
+    const size = fromTitle?.size || anchorSize;
+    const pieceCount = item.piece_count ?? fromTitle?.pieceCount ?? "";
+    const key = `${String(item.brand ?? "").trim().toUpperCase()}|${size}|${pieceCount}|${item.net_price ?? item.price ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(item);
+  }
+  return result;
+}
+
+function sourceItemsFromImage(image: PriceImageRow): AiPriceCandidateSourceItem[] {
+  const result = asPriceImageAnalysis(image.vision_result);
+  if (!result) return [];
+  const hiddenRowIndexes = hiddenPriceRowIndexes(image.vision_result);
+  const items: AiPriceCandidateSourceItem[] = [];
+
+  for (const [rowIndex, row] of result.rows.entries()) {
+    if (hiddenRowIndexes.has(rowIndex)) continue;
+    const variants = extractSizePackVariantsFromTitle(row.sku);
+    if (variants.length < 2) {
+      items.push(sourceItemFromPriceRow(image, row, rowIndex));
+      continue;
+    }
+
+    for (const [variantIndex, variant] of variants.entries()) {
+      // Keep the first variant on the original source_row_index; extras use a high band to avoid collisions.
+      const sourceRowIndex = variantIndex === 0 ? rowIndex : 1000 + rowIndex * 10 + variantIndex;
+      items.push(sourceItemFromPriceRow(image, row, sourceRowIndex, {
+        product: buildSingleVariantProductTitle(row.sku, variant),
+        productFamilyText: null,
+        rowAnchor: `${variant.size}|${variant.pieceCount}`,
+        piece_count: variant.pieceCount,
+        raw_piece_count_text: variant.pieceCountText,
+      }));
+    }
+  }
+
+  return dedupePriceSourceItems(items);
 }
 
 export function sourceItemsFromStoredPriceImages(images: PriceImageRow[]) {

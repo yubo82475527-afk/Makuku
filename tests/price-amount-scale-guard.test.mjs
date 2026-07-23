@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
 import ts from "typescript";
-import { resolveTrustedPieceCount } from "../src/lib/piece-count.ts";
+import { resolveTrustedPieceCount, extractSizePackVariantsFromTitle, buildSingleVariantProductTitle, normalizePieceCountFromCandidates, normalizePieceCountFromEvidence } from "../src/lib/piece-count.ts";
 
 function transpileModule(path) {
   return ts.transpileModule(readFileSync(path, "utf8"), {
@@ -45,24 +45,11 @@ function loadStoreVisitAi(priceUtils) {
       if (id === "@/lib/price-utils") return priceUtils;
       if (id === "@/lib/piece-count") {
         return {
-          normalizePieceCountFromEvidence: (value, pieceCountText, sku) => {
-            const text = String(pieceCountText ?? "");
-            const bonus = text.match(/\b(\d{1,3})\s*\+\s*(\d{1,3})\b/);
-            if (bonus) return Number(bonus[1]) + Number(bonus[2]);
-            const fromText = text.match(/\b(\d{1,3})\b/);
-            if (fromText) return Number(fromText[1]);
-            const numeric = Number(value);
-            if (Number.isFinite(numeric) && numeric > 0) return Math.floor(numeric);
-            const match = String(sku ?? "").match(/\b(\d{1,3})\s*(?:pcs?|pieces?)\b/i);
-            return match ? Number(match[1]) : null;
-          },
-          normalizePieceCountFromCandidates: (value, sku) => {
-            const numeric = Number(value);
-            if (Number.isFinite(numeric) && numeric > 0) return Math.floor(numeric);
-            const match = String(sku ?? "").match(/\b(\d{1,3})\s*(?:pcs?|pieces?)\b/i);
-            return match ? Number(match[1]) : null;
-          },
+          normalizePieceCountFromEvidence,
+          normalizePieceCountFromCandidates,
           resolveTrustedPieceCount,
+          extractSizePackVariantsFromTitle,
+          buildSingleVariantProductTitle,
         };
       }
       if (id === "@/lib/supabase") {

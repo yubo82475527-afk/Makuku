@@ -18,7 +18,14 @@ import type {
 } from "@/lib/types";
 import { createJsonChatCompletion, imageUrlPart, textPart } from "@/lib/ai-client";
 import { parseIdrPrice, reconcilePackagePriceMetrics } from "@/lib/price-utils";
-import { normalizePieceCountFromCandidates, normalizePieceCountFromEvidence, resolveTrustedPieceCount } from "@/lib/piece-count";
+import {
+  buildSingleVariantProductTitle,
+  extractSizePackVariantsFromTitle,
+  normalizePieceCountFromCandidates,
+  normalizePieceCountFromEvidence,
+  resolveTrustedPieceCount,
+  type SizePackVariant,
+} from "@/lib/piece-count";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
 
 const stockRiskLevels: StockRiskLevel[] = ["Normal", "Low Stock", "Out of Stock Risk"];
@@ -594,6 +601,57 @@ function normalizePhotoQuality(value: unknown): StoreVisitPhotoQuality {
   };
 }
 
+function expandMultiSizePackRawRows(rows: unknown[]): unknown[] {
+  return rows.flatMap((item) => {
+    const row = asRecord(item);
+    const brand = asOptionalString(row.brand);
+    const sectionTitle = asOptionalString(row.section_title);
+    const productFamilyText = resolvePriceRowProductFamilyText(asOptionalString(row.product_family_text), sectionTitle);
+    const sku = buildPriceImageSkuName(brand, productFamilyText, asString(row.sku, "Unknown SKU"));
+    const variants = extractSizePackVariantsFromTitle(sku);
+    if (variants.length < 2) return [item];
+
+    const groupId = asOptionalString(row.group_id);
+    return variants.map((variant: SizePackVariant) => ({
+      ...row,
+      // Put the full single-variant title in sku and clear family so it is not re-merged.
+      product_family_text: null,
+      sku: buildSingleVariantProductTitle(sku, variant),
+      row_anchor: `${variant.size}|${variant.pieceCount}`,
+      piece_count: variant.pieceCount,
+      piece_count_text: variant.pieceCountText,
+      group_id: groupId ? `${groupId}#${variant.size.toLowerCase()}` : groupId,
+      // Drop per-piece fields derived against the collapsed multi-size pack.
+      normal_piece_text: null,
+      promo_piece_text: null,
+      visible_price_per_piece_text: null,
+      visible_price_per_piece_idr: null,
+    }));
+  });
+}
+
+function dedupeNormalizedPriceImageRows<T extends {
+  brand: string | null;
+  sku: string;
+  row_anchor: string | null;
+  piece_count: number | null;
+  net_price_idr: number | null;
+}>(rows: T[]): T[] {
+  const seen = new Set<string>();
+  const result: T[] = [];
+  for (const row of rows) {
+    const fromTitle = extractSizePackVariantsFromTitle(row.sku)[0];
+    const anchorSize = String(row.row_anchor ?? "").split("|")[0]?.trim().toUpperCase() || "";
+    const size = fromTitle?.size || anchorSize;
+    const pieceCount = row.piece_count ?? fromTitle?.pieceCount ?? "";
+    const key = `${String(row.brand ?? "").trim().toUpperCase()}|${size}|${pieceCount}|${row.net_price_idr ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(row);
+  }
+  return result;
+}
+
 export function normalizeStoreVisitPriceImageAnalysis(
   value: unknown,
   category: StoreVisitImageCategory,
@@ -601,9 +659,10 @@ export function normalizeStoreVisitPriceImageAnalysis(
   const record = asRecord(value);
   const photoQuality = normalizePhotoQuality(record.photo_quality);
   const normalizationWarnings = normalizePriceImageWarnings(record.warnings);
-  const rows = photoQuality.status === "retake_required" ? [] : (Array.isArray(record.rows) ? record.rows : [])
-    .slice(0, 30)
-    .map((item) => {
+  const rawRows = photoQuality.status === "retake_required" ? [] : (Array.isArray(record.rows) ? record.rows : []);
+  const rows = dedupeNormalizedPriceImageRows(
+    expandMultiSizePackRawRows(rawRows.slice(0, 30))
+      .map((item) => {
       const row = asRecord(item);
       const sourceType = asOptionalString(row.source_type);
       const groupId = asOptionalString(row.group_id);
@@ -761,7 +820,8 @@ export function normalizeStoreVisitPriceImageAnalysis(
         price_per_piece_idr: pricePerPiece,
       };
     })
-    .filter((row) => row.net_price_idr !== null);
+    .filter((row) => row.net_price_idr !== null),
+  );
 
   return {
     schema_version: "store_visit_price_image_v1",

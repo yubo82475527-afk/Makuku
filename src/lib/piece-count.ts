@@ -4,6 +4,65 @@ export function normalizePieceCount(value: unknown): number | null {
   return Math.floor(parsed);
 }
 
+/** Longest-first size tokens so XXL is not split into XL. */
+const SIZE_PACK_SIZE_TOKEN = "XXXXL|XXXL|XXL|XL|NB-S|NB|L|M|S";
+
+function sizePackVariantPattern() {
+  return new RegExp(
+    String.raw`\b(${SIZE_PACK_SIZE_TOKEN})-?\s*(\d{1,3})(?:\s*\+\s*(\d{1,3}))?(?:s\b|\b)(?!\s*-\s*\d+\s*kg\b)`,
+    "gi",
+  );
+}
+
+export type SizePackVariant = {
+  size: string;
+  pieceCount: number;
+  pieceCountText: string;
+  label: string;
+};
+
+/**
+ * Find every distinct SIZE + pack-count variant in a product title.
+ * Only SIZE bound to a pack count counts (e.g. XL 24+4); bare XL/XXL does not.
+ */
+export function extractSizePackVariantsFromTitle(value: string | null | undefined): SizePackVariant[] {
+  const title = String(value ?? "").replace(/\([^)]*\)/g, " ");
+  const seen = new Set<string>();
+  const variants: SizePackVariant[] = [];
+
+  for (const match of title.matchAll(sizePackVariantPattern())) {
+    const size = String(match[1] ?? "").toUpperCase();
+    const base = Number(match[2]);
+    const bonus = match[3] ? Number(match[3]) : 0;
+    const pieceCount = normalizePieceCount(base + bonus);
+    if (!size || pieceCount === null) continue;
+
+    const key = `${size}|${pieceCount}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const pieceCountText = match[3] ? `${base}+${bonus}` : String(base);
+    variants.push({
+      size,
+      pieceCount,
+      pieceCountText,
+      label: `${size} ${pieceCountText}`,
+    });
+  }
+
+  return variants;
+}
+
+/** Strip all SIZE+pack spans, then append one variant label. */
+export function buildSingleVariantProductTitle(title: string, variant: SizePackVariant): string {
+  const stripped = String(title ?? "")
+    .replace(sizePackVariantPattern(), " ")
+    .replace(/[|/]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return stripped ? `${stripped} ${variant.label}` : variant.label;
+}
+
 export function parsePieceCountText(value: string | null | undefined): number | null {
   const text = String(value ?? "");
   const bonusMatch = text.match(/\b(\d{1,3})\s*\+\s*(\d{1,3})\b/);

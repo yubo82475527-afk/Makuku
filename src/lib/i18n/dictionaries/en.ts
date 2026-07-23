@@ -1,6 +1,6 @@
 const en = {
   app: {
-    name: "MAKUKU SA",
+    name: "MAKUKU SFA",
     subtitle: "MAKUKU Store Audit",
     timezonePricing: "Asia/Jakarta timezone / IDR pricing",
     demoData: "Demo data",
