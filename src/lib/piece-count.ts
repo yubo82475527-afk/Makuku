@@ -34,7 +34,7 @@ export function parsePieceCountText(value: string | null | undefined): number | 
   return null;
 }
 
-export type TrustedPieceCountSource = "TITLE_SIZE_PACK" | "LABELED_PCS" | "UNTRUSTED";
+export type TrustedPieceCountSource = "AI_EXTRACTED" | "TITLE_SIZE_PACK" | "LABELED_PCS" | "UNTRUSTED";
 
 export function parsePieceCountFromProductTitle(value: string | null | undefined): number | null {
   const title = String(value ?? "").replace(/\([^)]*\)/g, " ");
@@ -51,17 +51,21 @@ export function resolveTrustedPieceCount(input: {
   extractedText?: string | null;
   sourceLabel?: string | null;
 }): { pieceCount: number | null; source: TrustedPieceCountSource } {
-  const titlePieceCount = parsePieceCountFromProductTitle(input.productTitle);
-  if (titlePieceCount !== null) {
-    return { pieceCount: titlePieceCount, source: "TITLE_SIZE_PACK" };
-  }
-
-  if (/\bpcs?\b/i.test(String(input.sourceLabel ?? ""))) {
+  const extractedText = String(input.extractedText ?? "").trim();
+  const hasPcsLabel = /\bpcs?\b/i.test(String(input.sourceLabel ?? ""));
+  const parsedExtractedText = /\b\d{1,3}\s*\+\s*$/.test(extractedText)
+    ? null
+    : parsePieceCountText(extractedText);
+  const extractedPieceCount = parsedExtractedText ?? (hasPcsLabel ? normalizePieceCount(input.extractedValue) : null);
+  if (extractedPieceCount !== null) {
     return {
-      pieceCount: parsePieceCountText(input.extractedText) ?? normalizePieceCount(input.extractedValue),
-      source: "LABELED_PCS",
+      pieceCount: extractedPieceCount,
+      source: hasPcsLabel ? "LABELED_PCS" : "AI_EXTRACTED",
     };
   }
+
+  const titlePieceCount = parsePieceCountFromProductTitle(input.productTitle);
+  if (titlePieceCount !== null) return { pieceCount: titlePieceCount, source: "TITLE_SIZE_PACK" };
 
   return { pieceCount: null, source: "UNTRUSTED" };
 }

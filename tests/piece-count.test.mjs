@@ -41,19 +41,19 @@ test("store visit analysis sends source image row index to candidate generation"
   assert.match(storeVisitAnalysis, /sourceRowIndex: rowIndex/);
 });
 
-test("piece count uses size-pack text in the product title before table inventory values", () => {
+test("piece count prefers an effective AI value over title-derived pack text", () => {
   assert.deepEqual(resolveTrustedPieceCount({
     productTitle: "CONFIDENCE CLASSIC NIGHT XL-6 (12)",
     extractedValue: 6,
     extractedText: "6",
     sourceLabel: "Q.Toko",
-  }), { pieceCount: 6, source: "TITLE_SIZE_PACK" });
+  }), { pieceCount: 6, source: "AI_EXTRACTED" });
   assert.deepEqual(resolveTrustedPieceCount({
     productTitle: "CONFIDENCE CLASSIC DAY L7 (12)",
     extractedValue: 258,
     extractedText: "258",
     sourceLabel: "Q.Toko",
-  }), { pieceCount: 7, source: "TITLE_SIZE_PACK" });
+  }), { pieceCount: 258, source: "AI_EXTRACTED" });
   assert.deepEqual(resolveTrustedPieceCount({
     productTitle: "MAKUKU PANTS M30+6",
     extractedValue: null,
@@ -86,6 +86,15 @@ test("piece count uses size-pack text in the product title before table inventor
   }), { pieceCount: 9, source: "TITLE_SIZE_PACK" });
 });
 
+test("piece count keeps legacy AI evidence when its source label is missing", () => {
+  assert.deepEqual(resolveTrustedPieceCount({
+    productTitle: "MAKUKU Dry Care L",
+    extractedValue: 54,
+    extractedText: "44+10",
+    sourceLabel: null,
+  }), { pieceCount: 54, source: "AI_EXTRACTED" });
+});
+
 test("piece count accepts only explicitly labeled Pcs evidence when the title has no size-pack token", () => {
   assert.deepEqual(resolveTrustedPieceCount({
     productTitle: "GENERIC PRICE TAG XL",
@@ -98,7 +107,7 @@ test("piece count accepts only explicitly labeled Pcs evidence when the title ha
     extractedValue: 258,
     extractedText: "258",
     sourceLabel: "Q.Toko",
-  }), { pieceCount: null, source: "UNTRUSTED" });
+  }), { pieceCount: 258, source: "AI_EXTRACTED" });
 });
 
 test("piece count does not treat spaced size-and-weight text as a title pack count", () => {
