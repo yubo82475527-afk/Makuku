@@ -139,9 +139,11 @@ async function PricesContent({
       <DataNotice dict={dict} error={pricesResult.error ?? filterOptionsResult.error} />
       <Card className="mb-4">
         <form className="space-y-3">
-          <HiddenFilter name="shape" value={params.shape} />
-          <HiddenFilter name="priceIndexDrill" value={params.priceIndexDrill} />
-          <HiddenFilter name="ownSeries" value={params.ownSeries} />
+          {/*
+            Drill-through may land with priceIndexDrill / shape / ownSeries in the URL so the
+            first paint matches the price-index cell. Do not round-trip them as hidden inputs:
+            once the user submits the visible filter form, only visible fields should apply.
+          */}
           <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-[minmax(140px,0.55fr)_minmax(170px,0.8fr)_minmax(190px,0.9fr)_minmax(130px,0.6fr)_minmax(280px,1.1fr)_minmax(120px,0.45fr)]">
             <PriceSnapshotLinkedFilters
               key={`price-linked-filters:${owner}:${params.brand ?? ""}:${params.series ?? ""}:${params.size ?? ""}`}
@@ -237,10 +239,6 @@ function InlineTextFilter({
       />
     </label>
   );
-}
-
-function HiddenFilter({ name, value }: { name: string; value: string | undefined }) {
-  return value ? <input type="hidden" name={name} value={value} /> : null;
 }
 
 function normalizeOwner(value: string | undefined): PriceSnapshotOwnerFilter {

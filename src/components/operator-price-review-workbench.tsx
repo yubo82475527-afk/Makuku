@@ -9,7 +9,7 @@ import { OperatorPriceReviewExportButton } from "@/components/operator-price-rev
 import { UnmatchedImportDialog } from "@/components/unmatched-import-dialog";
 import { formatIdr, formatJakartaTime } from "@/lib/format";
 import type { OperatorPriceReviewReasonFilter } from "@/lib/operator-price-review-reasons";
-import type { OperatorPriceReviewListItem, OperatorPriceReviewReasonGroup, OperatorPriceReviewState } from "@/lib/types";
+import type { OperatorPriceReviewListItem, OperatorPriceReviewState } from "@/lib/types";
 
 type ReviewFilters = {
   state: OperatorPriceReviewState;
@@ -116,7 +116,7 @@ export function OperatorPriceReviewWorkbench({
                     <td className="px-4 py-3 text-center font-semibold text-slate-950">{item.ai_piece_count ?? "-"}</td>
                     <td className="px-4 py-3 font-semibold text-slate-950">{formatIdr(item.ai_package_price)}</td>
                     <td className="px-4 py-3 font-semibold text-slate-950">{formatIdr(item.ai_price_per_piece)}</td>
-                    <td className="px-4 py-3"><ReasonSummary groups={item.operator_reason_groups} fallback={item.operator_reason} /></td>
+                    <td className="px-4 py-3"><ReasonSummary labels={item.operator_reason_labels} fallback={item.operator_reason} /></td>
                     <td className="px-4 py-3 text-xs text-slate-500">{formatJakartaTime(item.created_at)}</td>
                     <td className="px-4 py-3 text-right">
                       <button type="button" onClick={() => setActiveId(item.id)} className="inline-flex h-9 items-center whitespace-nowrap rounded-md bg-slate-900 px-3 text-sm font-medium text-white hover:bg-slate-800">
@@ -147,7 +147,7 @@ export function OperatorPriceReviewWorkbench({
                     </div>
                   </div>
                 </div>
-                <div className="mt-3"><ReasonSummary groups={item.operator_reason_groups} fallback={item.operator_reason} /></div>
+                <div className="mt-3"><ReasonSummary labels={item.operator_reason_labels} fallback={item.operator_reason} /></div>
                 <div className="mt-2 text-xs text-slate-400">
                   {isZh ? "创建时间" : "Created"}: {formatJakartaTime(item.created_at)}
                   {item.processed_at ? <span className="ml-3">{isZh ? "处理时间" : "Processed"}: {formatJakartaTime(item.processed_at)}</span> : null}
@@ -198,14 +198,14 @@ function productAssociationLabel(item: OperatorPriceReviewListItem, isZh: boolea
   return isZh ? "商品待确认" : "Product not confirmed";
 }
 
-function ReasonSummary({ groups, fallback }: { groups: OperatorPriceReviewReasonGroup[]; fallback: string }) {
-  if (groups.length === 0) return <p className="text-sm leading-6 text-slate-700">{fallback}</p>;
+function ReasonSummary({ labels, fallback }: { labels: string[]; fallback: string }) {
+  if (labels.length === 0) return <p className="text-sm leading-6 text-slate-700">{fallback}</p>;
   return (
-    <div className="space-y-1.5 text-sm leading-5">
-      {groups.map((group) => (
-        <p key={group.kind} className={group.kind === "PRICE" ? "font-medium text-rose-700" : "text-slate-700"}>
-          <span className="mr-1">{group.title}：</span>{group.messages[0]}
-        </p>
+    <div className="flex flex-wrap gap-1.5">
+      {labels.map((label) => (
+        <span key={label} className="inline-flex max-w-full rounded-md bg-amber-50 px-2 py-1 text-xs font-medium leading-4 text-amber-900">
+          {label}
+        </span>
       ))}
     </div>
   );

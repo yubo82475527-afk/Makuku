@@ -979,12 +979,6 @@ export type AiPriceCandidate = {
 export type OperatorPriceReviewState = "pending" | "processed";
 export type OperatorPriceReviewDecision = "confirmed" | "corrected" | "rejected";
 
-export type OperatorPriceReviewReasonGroup = {
-  kind: "PRICE" | "CONFIRMATION";
-  title: string;
-  messages: string[];
-};
-
 export type OperatorPriceReviewListItem = {
   id: string;
   state: OperatorPriceReviewState;
@@ -997,7 +991,7 @@ export type OperatorPriceReviewListItem = {
   ai_piece_count: number | null;
   ai_price_per_piece: number | null;
   operator_reason: string;
-  operator_reason_groups: OperatorPriceReviewReasonGroup[];
+  operator_reason_labels: string[];
   requires_product_correction: boolean;
   processed_decision: OperatorPriceReviewDecision | null;
   processed_at: string | null;

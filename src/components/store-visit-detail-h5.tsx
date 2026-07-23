@@ -7,7 +7,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { withMinimumDelay } from "@/lib/async-ui";
 import { formatIdr, formatShortImageId } from "@/lib/format";
 import type { Locale } from "@/lib/i18n/config";
-import { buildOperatorPriceReviewReasonGroups } from "@/lib/operator-price-review-reason-groups";
+import { buildOperatorPriceReviewReasonLabels } from "@/lib/operator-price-review-reasons";
 import { isSupportedStoreVisitImageFile, summarizeStoreVisitImageError, unsupportedStoreVisitImageFormatMessage } from "@/lib/store-visit-image-errors";
 import { priceImageRetakeReason } from "@/lib/store-visit-price-image-state";
 import { getMobileCopy, mobileImageCategoryLabel } from "@/lib/mobile-i18n";
@@ -215,9 +215,7 @@ function candidateRequiresProductCorrection(candidate: AiPriceCandidate) {
 }
 
 function candidateReasonMessages(candidate: AiPriceCandidate, locale: Locale) {
-  return Array.from(new Set(buildOperatorPriceReviewReasonGroups(candidate, locale)
-    .flatMap((group) => group.messages)
-    .filter(Boolean)));
+  return buildOperatorPriceReviewReasonLabels(candidate, locale);
 }
 
 function formatImageShortCode(value: string | null | undefined) {
@@ -844,7 +842,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
     }
 
     void pollAiJob();
-    const interval = window.setInterval(pollAiJob, 2500);
+    const interval = window.setInterval(pollAiJob, 8000);
     return () => {
       cancelled = true;
       window.clearInterval(interval);

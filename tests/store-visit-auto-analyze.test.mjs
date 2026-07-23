@@ -453,6 +453,7 @@ test("store visit AI adds durable job routes, atomic RPC claim, and cron sweep",
   assert.match(storeVisitAiRunnerRoute, /runStoreVisitAiJob/);
   assert.match(storeVisitAiRunnerRoute, /CRON_SECRET|requireCronSecret/);
   assert.match(vercelConfig, /store-visit-ai\/run/);
+  assert.match(vercelConfig, /"\*\/10 \* \* \* \*"/);
   assert.match(migration, /create table if not exists public\.store_visit_ai_jobs/);
   assert.match(migration, /create table if not exists public\.store_visit_ai_job_items/);
   assert.match(migration, /where status in \('queued','running'\)/);

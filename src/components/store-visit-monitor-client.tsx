@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { StoreVisitMonitorExportButton } from "@/components/store-visit-monitor-export-button";
 import { StoreVisitMatchingRerunDialog, type MatchingRerunTarget } from "@/components/store-visit-matching-rerun-dialog";
@@ -49,6 +50,8 @@ export function StoreVisitMonitorClient({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [rerunTarget, setRerunTarget] = useState<MatchingRerunTarget | null>(null);
+  const [metricsExpanded, setMetricsExpanded] = useState(false);
+  const isZh = locale === "zh";
 
   useEffect(() => {
     const controller = new AbortController();
@@ -120,30 +123,43 @@ export function StoreVisitMonitorClient({
               {monitor.filters.isDefaultRecent24Hours ? "Recent 24 hours" : `${monitor.filters.dateFrom} to ${monitor.filters.dateTo}`}
             </p>
           </div>
+          <button
+            type="button"
+            onClick={() => setMetricsExpanded((value) => !value)}
+            aria-expanded={metricsExpanded}
+            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            {metricsExpanded ? (isZh ? "收起指标" : "Collapse metrics") : (isZh ? "展开指标" : "Expand metrics")}
+            {metricsExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </button>
         </div>
       </Card>
 
-      <div className="mb-4 grid gap-3 md:grid-cols-5">
-        <MetricCard label="Visits analyzed" value={monitor.summary.visitsAnalyzed} />
-        <MetricCard label="P50 visit analysis time" value={formatDuration(monitor.summary.p50)} />
-        <MetricCard label="P95 visit analysis time" value={formatDuration(monitor.summary.p95)} />
-        <MetricCard label="Action required / failed count" value={monitor.summary.actionRequiredOrFailedCount} />
-        <MetricCard label="Average images per visit" value={monitor.summary.averageImagesPerVisit ?? "-"} />
-      </div>
+      {metricsExpanded ? (
+        <>
+          <div className="mb-4 grid gap-3 md:grid-cols-5">
+            <MetricCard label="Visits analyzed" value={monitor.summary.visitsAnalyzed} />
+            <MetricCard label="P50 visit analysis time" value={formatDuration(monitor.summary.p50)} />
+            <MetricCard label="P95 visit analysis time" value={formatDuration(monitor.summary.p95)} />
+            <MetricCard label="Action required / failed count" value={monitor.summary.actionRequiredOrFailedCount} />
+            <MetricCard label="Average images per visit" value={monitor.summary.averageImagesPerVisit ?? "-"} />
+          </div>
 
-      <Card className="mb-4">
-        <div className="mb-3">
-          <h2 className="font-semibold">Price parsing quality</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Unchanged H5 flow. These metrics summarize the current page against final approved store price snapshots.
-          </p>
-        </div>
-        <div className="grid gap-3 md:grid-cols-3">
-          <MetricCard label="Accuracy" value={formatPercent(monitor.quality.accuracy !== null ? monitor.quality.accuracy * 100 : null)} />
-          <MetricCard label="Auto-approval rate" value={formatPercent(monitor.quality.autoApprovalRate !== null ? monitor.quality.autoApprovalRate * 100 : null)} />
-          <MetricCard label="Average price deviation" value={formatPercent(monitor.quality.avgPriceDeviationRate !== null ? monitor.quality.avgPriceDeviationRate * 100 : null)} />
-        </div>
-      </Card>
+          <Card className="mb-4">
+            <div className="mb-3">
+              <h2 className="font-semibold">Price parsing quality</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Unchanged H5 flow. These metrics summarize the current page against final approved store price snapshots.
+              </p>
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              <MetricCard label="Accuracy" value={formatPercent(monitor.quality.accuracy !== null ? monitor.quality.accuracy * 100 : null)} />
+              <MetricCard label="Auto-approval rate" value={formatPercent(monitor.quality.autoApprovalRate !== null ? monitor.quality.autoApprovalRate * 100 : null)} />
+              <MetricCard label="Average price deviation" value={formatPercent(monitor.quality.avgPriceDeviationRate !== null ? monitor.quality.avgPriceDeviationRate * 100 : null)} />
+            </div>
+          </Card>
+        </>
+      ) : null}
 
       <Card className="mb-4">
         <QueryForm className="grid gap-3 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">

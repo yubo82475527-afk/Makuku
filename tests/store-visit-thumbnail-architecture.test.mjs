@@ -69,6 +69,8 @@ test("detail routes sign thumbnails first and expose per-image original URL endp
   assert.ok(existsSync(offlineVisitOriginalRoutePath), "offline visit original image endpoint should exist");
   assert.match(storeVisitOriginalRoute, /requireAppSession\(request\)/);
   assert.match(storeVisitOriginalRoute, /searchParams\.get\("image_id"\)/);
+  assert.match(storeVisitOriginalRoute, /const shouldRedirect = searchParams\.get\("redirect"\) === "1"/);
+  assert.match(storeVisitOriginalRoute, /Response\.redirect\(signedUrl, 302\)/);
   assert.match(offlineVisitOriginalRoute, /requireAppSession\(request\)/);
   assert.match(offlineVisitOriginalRoute, /searchParams\.get\("image_id"\)/);
 });

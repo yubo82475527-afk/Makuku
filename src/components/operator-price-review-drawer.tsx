@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { formatIdr } from "@/lib/format";
-import type { AiPriceCandidateMatchType, OperatorPriceReviewDetail, OperatorPriceReviewReasonGroup } from "@/lib/types";
+import type { AiPriceCandidateMatchType, OperatorPriceReviewDetail } from "@/lib/types";
 
 type MatchOption = {
   type: Exclude<AiPriceCandidateMatchType, "unmatched">;
@@ -192,7 +192,7 @@ export function OperatorPriceReviewDrawer({
             </section>
 
             <section className="space-y-4 p-4 md:overflow-y-auto md:p-5">
-              <ReasonGroups groups={detail.operator_reason_groups} fallback={detail.operator_reason} />
+              <ReasonLabels labels={detail.operator_reason_labels} fallback={detail.operator_reason} />
 
               <section className="rounded-lg border border-slate-200 p-4">
                 <h3 className="text-sm font-semibold text-slate-950">{isZh ? "来源信息" : "Source"}</h3>
@@ -286,20 +286,19 @@ export function OperatorPriceReviewDrawer({
   );
 }
 
-function ReasonGroups({ groups, fallback }: { groups: OperatorPriceReviewReasonGroup[]; fallback: string }) {
-  if (groups.length === 0) {
+function ReasonLabels({ labels, fallback }: { labels: string[]; fallback: string }) {
+  if (labels.length === 0) {
     return <p className="rounded-lg bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">{fallback}</p>;
   }
   return (
-    <section className="space-y-3">
-      {groups.map((group) => (
-        <div key={group.kind} className={`rounded-lg px-4 py-3 ${group.kind === "PRICE" ? "bg-rose-50 text-rose-950" : "bg-amber-50 text-amber-900"}`}>
-          <h3 className="text-sm font-semibold">{group.title}</h3>
-          <div className="mt-1.5 space-y-1 text-sm leading-6">
-            {group.messages.map((message) => <p key={message}>{message}</p>)}
-          </div>
-        </div>
-      ))}
+    <section className="rounded-lg bg-amber-50 px-4 py-3 text-amber-900">
+      <div className="flex flex-wrap gap-1.5">
+        {labels.map((label) => (
+          <span key={label} className="inline-flex max-w-full rounded-md bg-white/70 px-2.5 py-1 text-sm font-medium leading-5 text-amber-950">
+            {label}
+          </span>
+        ))}
+      </div>
     </section>
   );
 }

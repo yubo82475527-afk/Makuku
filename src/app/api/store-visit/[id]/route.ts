@@ -33,8 +33,8 @@ class RouteError extends Error {
   }
 }
 
-const aiPriceCandidateSelect = "id,visit_id,candidate_key,source_image_id,source_image_path,source_row_index,raw_brand,raw_product,raw_price,parsed_price_idr,ai_list_price_idr,ai_package_price_idr,ai_net_price_idr,list_price_idr,package_price_idr,net_price_idr,raw_piece_count_text,raw_package_price_text,raw_net_price_text,raw_price_per_piece_text,visible_price_per_piece_idr,price_basis,ai_promo_type,promo_type,ai_piece_count,ai_price_per_piece,piece_count,price_per_piece,candidate_type,ai_confidence,legacy_confidence_fallback,price_evidence_status,price_evidence_confidence,price_evidence_detail,price_evidence_reason_code,conflicts,evidence_review_decision,review_decision,quality_gate_status,quality_gate_reason_codes,benchmark_price_per_piece,benchmark_deviation_pct,quality_gate_attempt_count,quality_gate_input_fingerprint,approval_input_fingerprint,ai_matched_entity_type,ai_matched_entity_id,ai_matched_label,ai_match_rule_version,ai_match_method,ai_match_evidence,matched_entity_type,matched_entity_id,matched_label,match_score,warnings,status,price_snapshot_id,reviewed_piece_count,reviewed_price_per_piece,created_at,reviewed_at,reviewed_by,rejection_reason,review_method,h5_lifecycle_status,h5_lifecycle_at";
-const aiPriceCandidatePreV2Select = aiPriceCandidateSelect.replace("ai_match_rule_version,ai_match_method,ai_match_evidence,", "");
+const aiPriceCandidateSelect = "id,visit_id,candidate_key,source_image_id,source_image_path,source_row_index,raw_brand,raw_product,raw_price,parsed_price_idr,ai_list_price_idr,ai_package_price_idr,ai_net_price_idr,list_price_idr,package_price_idr,net_price_idr,raw_piece_count_text,raw_package_price_text,raw_net_price_text,raw_price_per_piece_text,visible_price_per_piece_idr,price_basis,ai_promo_type,promo_type,ai_piece_count,ai_price_per_piece,piece_count,price_per_piece,candidate_type,ai_confidence,legacy_confidence_fallback,price_evidence_status,price_evidence_confidence,price_evidence_reason_code,evidence_review_decision,review_decision,quality_gate_status,quality_gate_reason_codes,benchmark_price_per_piece,benchmark_deviation_pct,quality_gate_attempt_count,quality_gate_input_fingerprint,approval_input_fingerprint,ai_matched_entity_type,ai_matched_entity_id,ai_matched_label,ai_match_rule_version,ai_match_method,matched_entity_type,matched_entity_id,matched_label,match_score,status,price_snapshot_id,reviewed_piece_count,reviewed_price_per_piece,created_at,reviewed_at,reviewed_by,rejection_reason,review_method,h5_lifecycle_status,h5_lifecycle_at";
+const aiPriceCandidatePreV2Select = aiPriceCandidateSelect.replace("ai_match_rule_version,ai_match_method,", "");
 const aiPriceCandidateLegacySelect = aiPriceCandidatePreV2Select.replace("source_row_index,", "");
 const visitColumns = "id,visit_code,store_name,region,channel,promoter,visit_date,visit_status,analysis_status,analysis_error,summary_result,image_urls,image_thumbnail_paths,image_categories";
 const currentImageSelect = "offline_visit_images(id,visit_id,replaces_image_id,replaced_by_image_id,deleted_at,deletion_reason,image_type,image_path,thumbnail_path,image_url,file_name,content_type,file_size,analysis_status,vision_result,analysis_error,error_message,uploaded_at,created_at)";
@@ -45,6 +45,51 @@ const visitLegacyCandidateSelect = `${visitColumns},${currentImageSelect},ai_pri
 const legacyVisitSelect = `${visitColumns},${legacyImageSelect},ai_price_candidates(${aiPriceCandidateSelect})`;
 const legacyVisitPreV2CandidateSelect = `${visitColumns},${legacyImageSelect},ai_price_candidates(${aiPriceCandidatePreV2Select})`;
 const fullyLegacyVisitSelect = `${visitColumns},${legacyImageSelect},ai_price_candidates(${aiPriceCandidateLegacySelect})`;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Keep only fields H5 detail UI reads from vision_result. */
+function slimVisionResultForH5(vision: unknown) {
+  if (!isRecord(vision)) return vision ?? null;
+  return {
+    schema_version: vision.schema_version ?? null,
+    rows: Array.isArray(vision.rows) ? vision.rows : undefined,
+    photo_quality: vision.photo_quality ?? undefined,
+    is_retake: vision.is_retake ?? undefined,
+    is_replaced: vision.is_replaced ?? undefined,
+    h5_deleted: vision.h5_deleted ?? undefined,
+    h5_hidden_price_row_indexes: vision.h5_hidden_price_row_indexes ?? undefined,
+    upload_category: vision.upload_category ?? undefined,
+  };
+}
+
+function slimVisitImageForH5<T extends OfflineVisitImage>(image: T): T {
+  return {
+    ...image,
+    vision_result: slimVisionResultForH5(image.vision_result) as T["vision_result"],
+  };
+}
+
+/** Drop bulky match/debug payloads unused by H5 detail. */
+function slimCandidateForH5(candidate: AiPriceCandidate & { price_handling?: unknown; matched_sku_label?: string | null }) {
+  const {
+    ai_match_evidence: _aiMatchEvidence,
+    price_evidence_detail: _priceEvidenceDetail,
+    warnings: _warnings,
+    conflicts: _conflicts,
+    ...rest
+  } = candidate as AiPriceCandidate & {
+    ai_match_evidence?: unknown;
+    price_evidence_detail?: unknown;
+    warnings?: unknown;
+    conflicts?: unknown;
+    price_handling?: unknown;
+    matched_sku_label?: string | null;
+  };
+  return rest;
+}
 
 async function createSignedThumbnailUrl(input: {
   bucket: "store-visits" | "offline-visit-images";
@@ -211,8 +256,8 @@ export async function GET(request: Request, ctx: RouteContext) {
       ? { display_analysis: (visit.summary_result as Record<string, unknown>).display_analysis ?? null }
       : null;
     const allImages = Array.isArray(visit.offline_visit_images) ? visit.offline_visit_images : [];
-    const activeImages = allImages.filter((image) => !isInactiveVisitImage(image));
-    const inactiveImages = allImages.filter((image) => isInactiveVisitImage(image));
+    const activeImages = allImages.filter((image) => !isInactiveVisitImage(image)).map(slimVisitImageForH5);
+    const inactiveImages = allImages.filter((image) => isInactiveVisitImage(image)).map(slimVisitImageForH5);
     const replacedImages = inactiveImages.filter((image) => Boolean(image.replaced_by_image_id)
       || (typeof image.vision_result === "object" && image.vision_result !== null && (image.vision_result as Record<string, unknown>).is_replaced === true));
     const signedVisitWithActiveImages = await attachSignedImageUrls({
@@ -236,7 +281,7 @@ export async function GET(request: Request, ctx: RouteContext) {
       && candidate.h5_lifecycle_status !== "reanalyzed"
     ));
     const candidatesWithLabels = await attachAiPriceCandidateMatchLabels(supabase, currentCandidates);
-    const candidateResponses = candidatesWithLabels.map((candidate) => ({
+    const candidateResponses = candidatesWithLabels.map((candidate) => slimCandidateForH5({
       ...candidate,
       price_handling: resolveCandidatePriceHandling(candidate),
     }));

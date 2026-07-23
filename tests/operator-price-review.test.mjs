@@ -1,8 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
-import vm from "node:vm";
-import ts from "typescript";
 
 const read = (path) => existsSync(path) ? readFileSync(path, "utf8") : "";
 
@@ -19,16 +17,10 @@ const legacyCandidateRoute = read("src/app/api/ai-price-candidates/[id]/route.ts
 const h5CandidateRoute = read("src/app/api/store-visit/price-candidates/[id]/route.ts");
 const migration = read("supabase/migrations/202607130002_operator_price_review_phase2.sql");
 const reasonFilters = read("src/lib/operator-price-review-reasons.ts");
-const reasonGroups = read("src/lib/operator-price-review-reason-groups.ts");
+const reasonCatalogPath = new URL("../src/lib/operator-price-review-reasons.ts", import.meta.url);
 
-function loadReasonGroups() {
-  if (!reasonGroups) return null;
-  const transpiled = ts.transpileModule(reasonGroups, {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  }).outputText;
-  const testModule = { exports: {} };
-  vm.runInNewContext(transpiled, { module: testModule, exports: testModule.exports });
-  return testModule.exports;
+async function loadReasonCatalog() {
+  return import(reasonCatalogPath.href);
 }
 
 test("operator reason filters use one complete shared catalog", () => {
@@ -144,86 +136,70 @@ test("operator navigation preserves the anomaly reason filter", () => {
   assert.match(workbench, /if \(filters\.reason\) params\.set\("reason", filters\.reason\)/);
 });
 
-test("operator reason mapping is server-owned and follows business priority", () => {
+test("operator reason mapping uses shared short labels", () => {
   assert.match(domain, /buildOperatorReason/);
-  assert.match(domain, /SKU_MATCH_UNCERTAIN[\s\S]*EVIDENCE_REVIEW_REQUIRED[\s\S]*AMOUNT_SCALE_SUSPECTED[\s\S]*PRICE_DEVIATION_CRITICAL[\s\S]*PRICE_DEVIATION_HIGH/);
-  assert.match(domain, /INSUFFICIENT_BENCHMARK/);
-  assert.match(domain, /PROMOTION_EVIDENCE/);
-  assert.match(domain, /Intl\.NumberFormat/);
+  assert.match(domain, /buildOperatorPriceReviewReasonLabels/);
+  assert.match(reasonFilters, /resolveOperatorPriceReviewReasonKeys/);
+  assert.match(reasonFilters, /图片证据需确认/);
+  assert.match(reasonFilters, /Image evidence needs review/);
 });
 
-test("operator reason groups put stored price deviation before confirmation evidence", () => {
-  assert.match(reasonGroups, /buildOperatorPriceReviewReasonGroups/);
-  assert.match(reasonGroups, /kind:\s*"PRICE"/);
-  assert.match(reasonGroups, /kind:\s*"CONFIRMATION"/);
-  assert.match(reasonGroups, /benchmark_price_per_piece/);
-  assert.match(reasonGroups, /benchmark_deviation_pct/);
-  assert.match(reasonGroups, /AI 识别/);
-  assert.match(reasonGroups, /偏差/);
-  assert.match(domain, /operator_reason_groups/);
-  assert.match(workbench, /operator_reason_groups/);
-  assert.match(drawer, /operator_reason_groups/);
+test("operator and H5 share catalog short labels for deviation and evidence", async () => {
+  assert.match(domain, /operator_reason_labels/);
+  assert.match(workbench, /operator_reason_labels/);
+  assert.match(drawer, /operator_reason_labels/);
 
-  const groups = loadReasonGroups()?.buildOperatorPriceReviewReasonGroups({
+  const catalog = await loadReasonCatalog();
+  const keys = catalog.resolveOperatorPriceReviewReasonKeys({
     quality_gate_reason_codes: ["PRICE_DEVIATION_CRITICAL", "EVIDENCE_REVIEW_REQUIRED"],
-    benchmark_price_per_piece: 2142,
-    ai_price_per_piece: 3854,
-    benchmark_deviation_pct: 79.9253,
     price_evidence_reason_code: "PRICE_TAG_UNCLEAR",
     price_evidence_status: "REVIEW_REQUIRED",
     matched_entity_type: "material_master",
     matched_entity_id: "SKU-1",
     match_score: 0.95,
-    conflicts: [],
-  }, "zh");
-  assert.equal(groups?.[0]?.kind, "PRICE");
-  assert.match(groups?.[0]?.messages.join(" ") ?? "", /Rp 2,142\/片.*AI 识别 Rp 3,854\/片.*\+80%/);
-  assert.equal(groups?.[1]?.kind, "CONFIRMATION");
-  assert.match(groups?.[1]?.messages.join(" ") ?? "", /价格牌或金额不清晰/);
+  });
+  assert.deepEqual(keys, ["PRICE_TAG_UNCLEAR", "PRICE_DEVIATION_CRITICAL"]);
+  const labels = catalog.formatOperatorPriceReviewReasonLabels(keys, "zh");
+  assert.equal(labels[0], catalog.operatorPriceReviewReasonLabel("PRICE_TAG_UNCLEAR", "zh"));
+  assert.equal(labels[1], catalog.operatorPriceReviewReasonLabel("PRICE_DEVIATION_CRITICAL", "zh"));
 });
 
-test("operator and H5 share a concrete package-piece conflict explanation", () => {
-  const build = loadReasonGroups()?.buildOperatorPriceReviewReasonGroups;
-  const groups = build?.({
-    quality_gate_reason_codes: ["EVIDENCE_REVIEW_REQUIRED"],
-    price_evidence_reason_code: "PRICE_MATH_CONFLICT",
-    price_evidence_status: "CONFLICT",
-    ai_net_price_idr: 46000,
-    ai_piece_count: 30,
-    visible_price_per_piece_idr: 1616,
-    matched_entity_type: "material_master",
-    matched_entity_id: "14013012502",
-    match_score: 1,
-    conflicts: [{ type: "PACKAGE_PIECE_MISMATCH", message: "Mismatch" }],
-  }, "en");
-  const message = groups?.flatMap((group) => group.messages).join(" ") ?? "";
-  assert.match(message, /Rp 46,000/);
-  assert.match(message, /30 pieces/);
-  assert.match(message, /Rp 1,616\/piece/);
-  assert.match(message, /Rp 1,533\/piece/);
-
-  const fallback = build?.({
+test("operator and H5 share short labels for package-piece conflict", async () => {
+  const catalog = await loadReasonCatalog();
+  const keys = catalog.resolveOperatorPriceReviewReasonKeys({
     quality_gate_reason_codes: ["EVIDENCE_REVIEW_REQUIRED"],
     price_evidence_reason_code: "PRICE_MATH_CONFLICT",
     price_evidence_status: "CONFLICT",
     matched_entity_type: "material_master",
     matched_entity_id: "14013012502",
     match_score: 1,
-    conflicts: [],
-  }, "en");
-  assert.match(fallback?.flatMap((group) => group.messages).join(" ") ?? "", /do not reconcile/i);
+  });
+  assert.deepEqual(keys, ["PRICE_MATH_CONFLICT"]);
+  assert.equal(
+    catalog.operatorPriceReviewReasonLabel("PRICE_MATH_CONFLICT", "en"),
+    "Pack price, pcs, and unit price conflict",
+  );
 });
 
-test("operator reason reserves legacy evidence copy for candidates without current evidence", () => {
-  assert.match(domain, /const hasCurrentEvidence = Boolean\(candidate\.price_evidence_reason_code\)\s*\|\| Boolean\(candidate\.price_evidence_status\)/);
-  assert.match(domain, /if \(!hasCurrentEvidence\) \{[\s\S]*historical record lacks the original recognition evidence/i);
-  assert.match(domain, /Current recognition evidence exists, but the product, price, or package facts still need confirmation/);
+test("other evidence review uses the shared short label fallback", async () => {
+  const catalog = await loadReasonCatalog();
+  const keys = catalog.resolveOperatorPriceReviewReasonKeys({
+    quality_gate_reason_codes: ["EVIDENCE_REVIEW_REQUIRED"],
+    price_evidence_reason_code: null,
+    price_evidence_status: "REVIEW_REQUIRED",
+    matched_entity_type: "material_master",
+    matched_entity_id: "SKU-1",
+  });
+  assert.deepEqual(keys, ["OTHER_EVIDENCE_REVIEW_REQUIRED"]);
+  assert.equal(catalog.operatorPriceReviewReasonLabel("OTHER_EVIDENCE_REVIEW_REQUIRED", "zh"), "图片证据需确认");
+  assert.equal(catalog.operatorPriceReviewReasonLabel("OTHER_EVIDENCE_REVIEW_REQUIRED", "en"), "Image evidence needs review");
 });
 
 test("operator view models expose an explicit minimal contract", () => {
   assert.match(domain, /OperatorPriceReviewListItem/);
   assert.match(domain, /OperatorPriceReviewDetail/);
   assert.match(domain, /operator_reason/);
+  assert.match(domain, /operator_reason_labels/);
   assert.match(domain, /review_token/);
   assert.match(domain, /visit_detail_href/);
   assert.doesNotMatch(domain, /\.\.\.candidate/);
@@ -365,8 +341,10 @@ test("the existing photo-review route renders the operator workbench", () => {
   assert.match(page, /getOperatorPriceReviewsPage/);
   assert.doesNotMatch(page, /AiPriceCandidatesWorkbench/);
   assert.doesNotMatch(page, /getAiPriceReviewRule/);
-  assert.match(appShell, /价格异常审核/);
-  assert.match(appShell, /Price Anomaly Review/);
+  assert.match(page, /价格异常审核/);
+  assert.match(page, /Price Anomaly Review/);
+  assert.match(appShell, /需人工审核/);
+  assert.match(appShell, /Needs Manual Review/);
 });
 
 test("operator list exposes only two states and no technical bulk workflow", () => {

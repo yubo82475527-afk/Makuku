@@ -233,7 +233,8 @@ test("prices accepts structured dashboard drilldown filters", () => {
   assert.match(pricesPage, /owner\?: string/);
   assert.match(pricesPage, /series\?: string/);
   assert.match(pricesPage, /shape\?: string/);
-  assert.match(pricesPage, /name="shape"/);
+  assert.match(pricesPage, /shape: params\.shape \|\| undefined/);
+  assert.match(pricesPage, /ownSeries: params\.ownSeries \|\| undefined/);
   assert.match(dataFile, /function shouldUseNormalizedPriceSnapshotPageFilters\(filters: PriceSnapshotPageFilters\)/);
   assert.match(dataFile, /function priceSnapshotVisitForFilters\(snapshot: PriceSnapshot\)/);
   assert.match(dataFile, /snapshot\.ai_price_candidates\?\.find\(\(candidate\) => candidate\.offline_store_visits\)\?\.offline_store_visits/);
@@ -272,12 +273,16 @@ test("real market price filters use primary and collapsible advanced groups", ()
   assert.match(pricesPage, /<PriceDateRangeFilter/);
   assert.match(pricesPage, /<details open=\{hasAdvancedFilters \|\| undefined\}/);
   assert.match(pricesPage, /<summary[\s\S]*SlidersHorizontal/);
-  for (const name of ["createdFrom", "createdTo", "province", "cityName", "district", "store", "sku", "visitCode", "shape"]) {
+  for (const name of ["createdFrom", "createdTo", "province", "cityName", "district", "store", "sku", "visitCode", "organization"]) {
     assert.match(pricesPage, new RegExp(`name="${name}"`));
   }
   for (const name of ["owner", "brand", "series", "size"]) {
     assert.match(priceSnapshotLinkedFilters, new RegExp(`name="${name}"`));
   }
+  // Drill-only scopes stay URL-only; they must not appear as form fields.
+  assert.doesNotMatch(pricesPage, /name="shape"/);
+  assert.doesNotMatch(pricesPage, /name="ownSeries"/);
+  assert.doesNotMatch(pricesPage, /name="priceIndexDrill"/);
 });
 
 test("real market price pagination and filters are pushed down to the data layer", () => {
@@ -342,7 +347,7 @@ test("real market price excludes own material brands from competitor results", (
   assert.match(dataFile, /!isOwnMaterialBrandName\(priceSnapshotBrandForFilters\(snapshot\), context\.ownBrandKeys\)/);
 });
 
-test("price index drill-through keeps the dashboard calendar sample scope", () => {
+test("price index drill-through keeps the dashboard calendar sample scope on first landing only", () => {
   assert.match(dataFile, /priceIndexDrill\?: boolean/);
   assert.match(dataFile, /if \(filters\.priceIndexDrill && !snapshotMatchesPriceIndexDrillPeriod\(snapshot, filters\)\) return false/);
   assert.match(dataFile, /function snapshotMatchesPriceIndexDrillPeriod\(/);
@@ -351,7 +356,11 @@ test("price index drill-through keeps the dashboard calendar sample scope", () =
   assert.match(pricesPage, /priceIndexDrill\?: string/);
   assert.match(pricesPage, /dashboardDateFrom: params\.createdFrom \|\| undefined/);
   assert.match(pricesPage, /dashboardDateTo: params\.createdTo \|\| undefined/);
-  assert.match(pricesPage, /<HiddenFilter name="priceIndexDrill" value=\{params\.priceIndexDrill\} \/>/);
+  assert.match(pricesPage, /priceIndexDrill: params\.priceIndexDrill === "1"/);
+  // Drill markers stay in the landing URL, but must not round-trip via hidden form fields.
+  assert.doesNotMatch(pricesPage, /<HiddenFilter name="priceIndexDrill"/);
+  assert.doesNotMatch(pricesPage, /<HiddenFilter name="shape"/);
+  assert.doesNotMatch(pricesPage, /<HiddenFilter name="ownSeries"/);
 });
 
 test("dashboard drill-through sends structured ownership brand and series filters", () => {
@@ -383,7 +392,7 @@ test("price snapshot export reuses the list scope, including dashboard drill-thr
   assert.match(dataFile, /const shouldScan = shouldPostFilter \|\| perPage > 200/);
   assert.match(pricesPage, /<InlineTextFilter name="organization"/);
   assert.match(priceSnapshotLinkedFilters, /name="series"/);
-  assert.match(pricesPage, /<HiddenFilter name="ownSeries" value=\{params\.ownSeries\} \/>/);
+  assert.doesNotMatch(pricesPage, /<HiddenFilter name="ownSeries"/);
 });
 
 test("dashboard price index avoids loading unrelated snapshot relationships", () => {

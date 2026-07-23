@@ -917,11 +917,44 @@ export async function enqueuePendingStoreVisitInitialAnalysisJobs(input: {
   return { enqueued_count: enqueuedCount, skipped_count: skippedCount };
 }
 
+async function hasActiveStoreVisitAiWork(supabase: SupabaseServiceClient, jobId?: string | null) {
+  if (jobId) return true;
+  const activeJobs = await supabase
+    .from("store_visit_ai_jobs")
+    .select("id")
+    .in("status", [...activeJobStatuses])
+    .limit(1);
+  if (!isMissingAiJobTable(activeJobs.error) && activeJobs.error) throw new Error(activeJobs.error.message);
+  if ((activeJobs.data ?? []).length > 0) return true;
+
+  const pendingVisits = await supabase
+    .from("offline_store_visits")
+    .select("id")
+    .eq("visit_status", "uploaded")
+    .or("analysis_status.is.null,analysis_status.eq.pending")
+    .limit(1);
+  if (pendingVisits.error) throw new Error(pendingVisits.error.message);
+  return (pendingVisits.data ?? []).length > 0;
+}
+
 export async function runStoreVisitAiJob(input: {
   jobId?: string | null;
   supabase?: SupabaseServiceClient;
 } = {}) {
   const supabase = input.supabase ?? createSupabaseServiceClient();
+  const emptyResult = {
+    processed: 0,
+    job: null,
+    items: [] as StoreVisitAiJobItem[],
+    remaining_count: 0,
+    enqueued_count: 0,
+    skipped_count: 0,
+  };
+
+  if (!(await hasActiveStoreVisitAiWork(supabase, input.jobId))) {
+    return emptyResult;
+  }
+
   let matchContextPromise: Promise<ProductMatchContext> | null = null;
   const getMatchContext = () => matchContextPromise ??= loadProductMatchContext(supabase);
   const enqueueResult = await enqueuePendingStoreVisitInitialAnalysisJobs({
@@ -954,14 +987,16 @@ export async function runStoreVisitAiJob(input: {
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
   const finishedJob = lastJob as StoreVisitAiJob | null;
 
-  console.info("[store-visit-ai-jobs] runner completed", {
-    requested_job_id: input.jobId ?? null,
-    processed,
-    enqueued_count: enqueueResult.enqueued_count,
-    skipped_count: enqueueResult.skipped_count,
-    last_job_id: finishedJob?.id ?? null,
-    last_job_remaining_count: finishedJob?.remaining_count ?? 0,
-  });
+  if (processed > 0 || enqueueResult.enqueued_count > 0) {
+    console.info("[store-visit-ai-jobs] runner completed", {
+      requested_job_id: input.jobId ?? null,
+      processed,
+      enqueued_count: enqueueResult.enqueued_count,
+      skipped_count: enqueueResult.skipped_count,
+      last_job_id: finishedJob?.id ?? null,
+      last_job_remaining_count: finishedJob?.remaining_count ?? 0,
+    });
+  }
 
   return {
     processed,

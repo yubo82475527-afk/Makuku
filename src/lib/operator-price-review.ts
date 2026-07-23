@@ -1,7 +1,9 @@
 import "server-only";
 
-import type { OperatorPriceReviewReasonFilter } from "@/lib/operator-price-review-reasons";
-import { buildOperatorPriceReviewReasonGroups } from "@/lib/operator-price-review-reason-groups";
+import {
+  buildOperatorPriceReviewReasonLabels,
+  type OperatorPriceReviewReasonFilter,
+} from "@/lib/operator-price-review-reasons";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
 import type {
   AiPriceCandidate,
@@ -9,7 +11,6 @@ import type {
   OperatorPriceReviewDetail,
   OperatorPriceReviewListItem,
   OperatorPriceReviewState,
-  PriceQualityReasonCode,
 } from "@/lib/types";
 
 type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceClient>;
@@ -120,16 +121,6 @@ const CANDIDATE_SELECT = [
   "created_at",
 ].join(",");
 
-const REASON_PRIORITY: PriceQualityReasonCode[] = [
-  "SKU_MATCH_UNCERTAIN",
-  "EVIDENCE_REVIEW_REQUIRED",
-  "AMOUNT_SCALE_SUSPECTED",
-  "PRICE_DEVIATION_CRITICAL",
-  "PRICE_DEVIATION_HIGH",
-  "PROMOTION_EVIDENCE",
-  "INSUFFICIENT_BENCHMARK",
-];
-
 export function isPendingOperatorReviewCandidate(candidate: Pick<AiPriceCandidate,
   "status" | "candidate_type" | "h5_lifecycle_status" | "quality_gate_status" | "quality_gate_attempt_count"
 >) {
@@ -149,95 +140,9 @@ export function isProcessedOperatorReviewCandidate(candidate: Pick<AiPriceCandid
 }
 
 export function buildOperatorReason(candidate: AiPriceCandidate, locale = "zh") {
-  const isZh = locale === "zh";
-  const reasons = new Set(candidate.quality_gate_reason_codes ?? []);
-  const primaryReason = REASON_PRIORITY.find((reason) => reasons.has(reason));
-  const hasMathConflict = (candidate.conflicts ?? []).some((conflict) =>
-    String(conflict.type ?? conflict.message).toUpperCase().includes("PACKAGE_PIECE"),
+  return buildOperatorPriceReviewReasonLabels(candidate, locale).join("；") || (
+    locale === "zh" ? "其他原因" : "Other reason"
   );
-  const hasCurrentEvidence = Boolean(candidate.price_evidence_reason_code)
-    || Boolean(candidate.price_evidence_status);
-
-  if (candidate.ai_match_method === "MASTER_DATA_DUPLICATE") {
-    return isZh
-      ? "主数据中存在多个同规格有效 SKU，系统不会自动选择。"
-      : "Multiple active master SKUs share this specification, so the system will not choose one automatically.";
-  }
-  if (primaryReason === "SKU_MATCH_UNCERTAIN" || candidate.matched_entity_type === "unmatched" || !candidate.matched_entity_id) {
-    return isZh ? "AI 无法确认这个价格属于哪款商品。" : "AI could not confirm which product this price belongs to.";
-  }
-  if (candidate.price_evidence_reason_code === "PRODUCT_PRICE_BINDING_UNCLEAR") {
-    return isZh ? "商品与价格的对应关系不明确，需要人工确认。" : "The product-to-price binding is unclear and needs confirmation.";
-  }
-  if (candidate.price_evidence_reason_code === "PRICE_TAG_UNCLEAR") {
-    return isZh ? "价格牌或金额不清晰，需要人工确认。" : "The price label or amount is unclear and needs confirmation.";
-  }
-  if (candidate.price_evidence_reason_code === "PIECE_COUNT_UNCLEAR") {
-    return isZh ? "图片中的包装片数不清晰，无法确认单片价。" : "The package piece count is unclear, so the per-piece price cannot be confirmed.";
-  }
-  if (candidate.price_evidence_reason_code === "PRICE_MATH_CONFLICT") {
-    return isZh ? "图片中的包装价、片数和单片价无法相互验证。" : "The package price, piece count, and per-piece price do not reconcile.";
-  }
-  if (candidate.price_evidence_reason_code === "PRICE_DERIVED") {
-    return isZh ? "单片价由包装价和片数换算，需要确认包装价和片数。" : "The per-piece price was derived from the package price and piece count, which need confirmation.";
-  }
-  if (candidate.price_evidence_reason_code === "LEGACY_EVIDENCE_UNAVAILABLE") {
-    return isZh ? "历史记录缺少原始识别依据，无法自动判断。" : "The historical record lacks the original recognition evidence for an automatic decision.";
-  }
-  if (primaryReason === "EVIDENCE_REVIEW_REQUIRED" || candidate.price_evidence_status === "LOW_CONFIDENCE" || candidate.price_evidence_status === "REVIEW_REQUIRED") {
-    if (!hasCurrentEvidence) {
-      return isZh ? "历史记录缺少原始识别依据，无法自动判断。" : "The historical record lacks the original recognition evidence for an automatic decision.";
-    }
-    return isZh
-      ? "本次识别已有图片依据，但商品、价格或包装信息仍存在不确定之处，需要人工确认。"
-      : "Current recognition evidence exists, but the product, price, or package facts still need confirmation.";
-  }
-  if (hasMathConflict || candidate.price_evidence_status === "CONFLICT") {
-    return isZh ? "图片中的包装价格和包装片数无法换算出当前单片价。" : "The package price and piece count do not reconcile with the current per-piece price.";
-  }
-  if (primaryReason === "AMOUNT_SCALE_SUSPECTED") {
-    return isZh ? "本次价格接近历史常见价格的 10 倍、100 倍或 1000 倍，可能多识别了一个或多个 0。" : "The price is close to 10, 100, or 1,000 times the common price and may contain extra zeroes.";
-  }
-  if (primaryReason === "PRICE_DEVIATION_CRITICAL" || primaryReason === "PRICE_DEVIATION_HIGH") {
-    return buildHistoricalDeviationReason(candidate, locale);
-  }
-  if (primaryReason === "PROMOTION_EVIDENCE") {
-    return isZh ? "图片显示为促销价，但需要确认该促销是否属于这款商品。" : "The image shows a promotion, but the promotion-to-product match needs confirmation.";
-  }
-  if (primaryReason === "INSUFFICIENT_BENCHMARK" || candidate.quality_gate_status === "INSUFFICIENT_BENCHMARK") {
-    return isZh ? "目前没有足够的历史价格，系统无法自动判断。" : "There is not enough price history for an automatic decision.";
-  }
-  if (candidate.quality_gate_status === "FAILED") {
-    return isZh ? "系统多次校验仍未得到可靠结果，需要人工确认。" : "Repeated checks did not produce a reliable result, so manual confirmation is required.";
-  }
-  return isZh ? "这个价格需要人工确认。" : "This price needs manual confirmation.";
-}
-
-function buildHistoricalDeviationReason(candidate: AiPriceCandidate, locale: string) {
-  const benchmark = positiveNumber(candidate.benchmark_price_per_piece);
-  const current = positiveNumber(candidate.ai_price_per_piece ?? candidate.price_per_piece)
-    ?? derivedPerPiece(candidate.ai_package_price_idr ?? candidate.parsed_price_idr, candidate.ai_piece_count ?? candidate.piece_count);
-  const rawDeviation = Number(candidate.benchmark_deviation_pct);
-  const deviation = Number.isFinite(rawDeviation)
-    ? Math.round(Math.abs(rawDeviation) * (Math.abs(rawDeviation) <= 2 ? 100 : 1))
-    : benchmark && current ? Math.round(Math.abs(current - benchmark) / benchmark * 100) : null;
-
-  if (!benchmark || !current || deviation === null) {
-    return locale === "zh"
-      ? "本次价格明显偏离这款商品的历史常见价格。"
-      : "This price is materially different from the product's common historical price.";
-  }
-
-  const directionZh = current >= benchmark ? "高出" : "低于";
-  const directionEn = current >= benchmark ? "above" : "below";
-  if (locale === "zh") {
-    return `这款商品过去通常约 ${formatRupiah(benchmark)}/片，本次识别为 ${formatRupiah(current)}/片，${directionZh}约 ${deviation}%。`;
-  }
-  return `This product is usually about ${formatRupiah(benchmark)}/piece; AI read ${formatRupiah(current)}/piece, about ${deviation}% ${directionEn} the common price.`;
-}
-
-function formatRupiah(value: number) {
-  return `Rp ${new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.round(value))}`;
 }
 
 export async function getOperatorPriceReviewsPage(filters: OperatorPriceReviewFilters = {}): Promise<OperatorPriceReviewPage> {
@@ -454,7 +359,7 @@ async function toListItem(
   const sourceImage = findSourceImage(candidate, imageMap);
   const thumbnailPath = sourceImage?.thumbnail_path ?? sourceImage?.image_path ?? null;
   const sourceImageUrl = thumbnailPath ? await signImage(supabase, thumbnailPath) : null;
-  const operatorReasonGroups = buildOperatorPriceReviewReasonGroups(candidate, locale);
+  const operatorReasonLabels = buildOperatorPriceReviewReasonLabels(candidate, locale);
   const matchEvidence = candidate.ai_match_evidence as { signature?: { size?: string } } | null | undefined;
   return {
     id: candidate.id,
@@ -468,8 +373,8 @@ async function toListItem(
     ai_piece_count: positiveInteger(candidate.ai_piece_count ?? candidate.piece_count),
     ai_price_per_piece: positiveNumber(candidate.ai_price_per_piece)
       ?? derivedPerPiece(candidate.ai_package_price_idr ?? candidate.parsed_price_idr, candidate.ai_piece_count ?? candidate.piece_count),
-    operator_reason: operatorReasonGroups.flatMap((group) => group.messages).join(" "),
-    operator_reason_groups: operatorReasonGroups,
+    operator_reason: operatorReasonLabels.join(locale === "zh" ? "；" : "; "),
+    operator_reason_labels: operatorReasonLabels,
     requires_product_correction: requiresProductCorrection(candidate),
     processed_decision: state === "processed" ? deriveProcessedDecision(candidate) : null,
     processed_at: state === "processed" ? candidate.reviewed_at : null,
@@ -483,7 +388,7 @@ function toExportRow(
   locale: string,
   matchedLabelMap: Map<string, string>,
 ): OperatorPriceReviewExportRow {
-  const operatorReasonGroups = buildOperatorPriceReviewReasonGroups(candidate, locale);
+  const operatorReasonLabels = buildOperatorPriceReviewReasonLabels(candidate, locale);
   const matchEvidence = candidate.ai_match_evidence as { signature?: { size?: string } } | null | undefined;
   return {
     candidate_id: candidate.id,
@@ -499,7 +404,7 @@ function toExportRow(
     ai_piece_count: positiveInteger(candidate.ai_piece_count ?? candidate.piece_count),
     ai_price_per_piece: positiveNumber(candidate.ai_price_per_piece)
       ?? derivedPerPiece(candidate.ai_package_price_idr ?? candidate.parsed_price_idr, candidate.ai_piece_count ?? candidate.piece_count),
-    operator_reason: operatorReasonGroups.flatMap((group) => group.messages).join(" "),
+    operator_reason: operatorReasonLabels.join(locale === "zh" ? "；" : "; "),
     status: exportStatus(candidate, state, locale),
   };
 }

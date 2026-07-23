@@ -13,6 +13,7 @@ export async function GET(request: Request, ctx: RouteContext) {
     const { searchParams } = new URL(request.url);
     const imageId = searchParams.get("image_id")?.trim() || "";
     const path = searchParams.get("path")?.trim() || "";
+    const shouldRedirect = searchParams.get("redirect") === "1";
     const supabase = createSupabaseServiceClient();
 
     if (imageId) {
@@ -26,7 +27,14 @@ export async function GET(request: Request, ctx: RouteContext) {
         return Response.json({ error: error?.message ?? "Image not found" }, { status: 404 });
       }
       const signed = await supabase.storage.from("offline-visit-images").createSignedUrl(String(image.image_path), 60 * 60);
-      return Response.json({ url: signed.data?.signedUrl ?? null });
+      const signedUrl = signed.data?.signedUrl ?? null;
+      if (!signedUrl) {
+        return Response.json({ error: "Unable to sign image URL" }, { status: 404 });
+      }
+      if (shouldRedirect) {
+        return Response.redirect(signedUrl, 302);
+      }
+      return Response.json({ url: signedUrl });
     }
 
     if (path) {
@@ -43,7 +51,14 @@ export async function GET(request: Request, ctx: RouteContext) {
         return Response.json({ error: "Image not found" }, { status: 404 });
       }
       const signed = await supabase.storage.from("store-visits").createSignedUrl(path, 60 * 60);
-      return Response.json({ url: signed.data?.signedUrl ?? null });
+      const signedUrl = signed.data?.signedUrl ?? null;
+      if (!signedUrl) {
+        return Response.json({ error: "Unable to sign image URL" }, { status: 404 });
+      }
+      if (shouldRedirect) {
+        return Response.redirect(signedUrl, 302);
+      }
+      return Response.json({ url: signedUrl });
     }
 
     return Response.json({ error: "image_id or path is required" }, { status: 400 });

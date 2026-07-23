@@ -481,11 +481,11 @@ test("manual benchmark refresh rejects impossible calendar dates", () => {
   assert.match(refreshRoute, /!isValidBenchmarkDate\(benchmarkDate\)/);
 });
 
-test("cron refreshes T+1 daily and repairs candidate work every minute", () => {
+test("cron refreshes T+1 daily and repairs candidate work every 10 minutes", () => {
   assert.match(vercelConfig, /\/api\/internal\/price-quality\/refresh-benchmarks/);
   assert.match(vercelConfig, /"30 17 \* \* \*"/);
   assert.match(vercelConfig, /\/api\/internal\/price-quality\/run/);
-  assert.match(vercelConfig, /"\* \* \* \* \*"/);
+  assert.match(vercelConfig, /"\*\/10 \* \* \* \*"/);
 });
 
 test("new candidates preserve evidence decision and wait for historical quality", () => {

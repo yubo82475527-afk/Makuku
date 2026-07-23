@@ -1009,7 +1009,7 @@ function WaitingScreen({
     const timeout = setTimeout(() => {
       void poll();
     }, 0);
-    const interval = setInterval(poll, 3000);
+    const interval = setInterval(poll, 8000);
     return () => {
       clearTimeout(timeout);
       clearInterval(interval);
@@ -1041,7 +1041,7 @@ function WaitingScreen({
       <main className="flex-1 space-y-3 overflow-y-auto px-4 py-4 pb-28">
         <div className="flex items-center gap-2 text-sm text-slate-500">
           <RefreshCw className={`h-4 w-4 ${pollCount > 0 ? "text-blue-500" : "text-slate-400"}`} />
-          <span>每 3 秒自动刷新 · 已刷新 {pollCount} 次</span>
+          <span>每 8 秒自动刷新 · 已刷新 {pollCount} 次</span>
         </div>
 
         {images.length === 0 ? (

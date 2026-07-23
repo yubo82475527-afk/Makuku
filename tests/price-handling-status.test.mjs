@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildOperatorPriceReviewReasonGroups } from "../src/lib/operator-price-review-reason-groups.ts";
+import { buildOperatorPriceReviewReasonLabels } from "../src/lib/operator-price-review-reasons.ts";
 
 const modulePath = new URL("../src/lib/price-handling-status.ts", import.meta.url);
 const storeVisitRoute = readFileSync("src/app/api/store-visit/[id]/route.ts", "utf8");
@@ -104,7 +104,7 @@ test("a partial image analysis requires retry", async () => {
 });
 
 test("clear auto-approved candidates have no invented manual-confirmation reason", () => {
-  const messages = buildOperatorPriceReviewReasonGroups({
+  const messages = buildOperatorPriceReviewReasonLabels({
     ...clearAutoApproveCandidate,
     quality_gate_reason_codes: [],
     price_evidence_reason_code: null,
@@ -113,7 +113,7 @@ test("clear auto-approved candidates have no invented manual-confirmation reason
     matched_entity_id: "sku-1",
     match_score: 1,
     conflicts: [],
-  }, "zh").flatMap((group) => group.messages);
+  }, "zh");
 
   assert.deepEqual(messages, []);
 });

@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/internal/store-visit-ai/run",
-      "schedule": "* * * * *"
+      "schedule": "*/10 * * * *"
     },
     {
       "path": "/api/internal/price-quality/refresh-benchmarks",
@@ -14,7 +14,7 @@
     },
     {
       "path": "/api/internal/price-quality/run",
-      "schedule": "* * * * *"
+      "schedule": "*/10 * * * *"
     }
   ]
 }

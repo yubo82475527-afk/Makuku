@@ -422,7 +422,7 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
     if (!hasInFlightPriceWork) return undefined;
     const interval = window.setInterval(() => {
       void loadVisits(1, false, user);
-    }, 3000);
+    }, 8000);
     return () => window.clearInterval(interval);
   }, [loadVisits, user, visits]);
 

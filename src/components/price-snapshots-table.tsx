@@ -15,7 +15,10 @@ type PriceSnapshotForStoreRegion = {
   captured_at?: string | null;
   created_at?: string | null;
   source?: string | null;
+  source_visit_id?: string | null;
+  source_image_id?: string | null;
   offline_store_visits?: {
+    id?: string | null;
     visit_code?: string | null;
     store_name?: string | null;
     city?: string | null;
@@ -36,6 +39,7 @@ type PriceSnapshotForStoreRegion = {
   competitor_products?: { shop_name?: string | null; normalized_name?: string | null } | null;
   ai_price_candidates?: {
     offline_store_visits?: {
+      id?: string | null;
       visit_code?: string | null;
       store_name?: string | null;
       city?: string | null;
@@ -221,10 +225,7 @@ export function PriceSnapshotsTable({
                     />
                   </td>
                   <td className="whitespace-nowrap py-3 pr-3">
-                    <LinkedReviewValue
-                      value={imageIdForSnapshot(snapshot)}
-                      href={photoReviewHref(locale, { imageId: imageIdForSnapshot(snapshot) })}
-                    />
+                    <LinkedSourceImageValue snapshot={snapshot} />
                   </td>
                 </tr>
               );
@@ -246,13 +247,40 @@ function LinkedReviewValue({ value, href }: { value: string; href: string }) {
   );
 }
 
-function photoReviewHref(locale: string, filters: { visitCode?: string | null; imageId?: string | null }) {
+function LinkedSourceImageValue({ snapshot }: { snapshot: PriceSnapshotForStoreRegion }) {
+  const label = imageIdForSnapshot(snapshot);
+  const href = sourceImageHref(snapshot);
+  if (!cleanDisplayText(label)) return <span>-</span>;
+  if (!href) return <span>{label}</span>;
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="font-medium text-blue-700 underline-offset-2 hover:underline"
+    >
+      {label}
+    </a>
+  );
+}
+
+function photoReviewHref(locale: string, filters: { visitCode?: string | null }) {
   const params = new URLSearchParams();
   const visitCode = cleanDisplayText(filters.visitCode);
-  const imageId = cleanDisplayText(filters.imageId);
   if (visitCode) params.set("visit_code", visitCode);
-  if (imageId) params.set("image_id", imageId);
   return `/${locale}/offline-price-candidates?${params.toString()}`;
+}
+
+function sourceImageHref(snapshot: PriceSnapshotForStoreRegion) {
+  const visitId = visitIdForSnapshot(snapshot);
+  const imageId = cleanDisplayText(snapshot.source_image_id);
+  if (!visitId || !imageId) return null;
+  const params = new URLSearchParams({
+    image_id: imageId,
+    redirect: "1",
+  });
+  return `/api/store-visit/${encodeURIComponent(visitId)}/image-url?${params.toString()}`;
 }
 
 function ConfirmDeletePanel({
@@ -397,7 +425,13 @@ function visitCodeForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
   return cleanDisplayText(storeVisitForSnapshot(snapshot)?.visit_code) ?? "-";
 }
 
-function imageIdForSnapshot(snapshot: PriceSnapshot) {
+function visitIdForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
+  return cleanDisplayText(snapshot.source_visit_id)
+    ?? cleanDisplayText(snapshot.offline_store_visits?.id)
+    ?? cleanDisplayText(storeVisitForSnapshot(snapshot)?.id);
+}
+
+function imageIdForSnapshot(snapshot: PriceSnapshotForStoreRegion) {
   return formatShortImageId(snapshot.source_image_id);
 }
 

@@ -386,7 +386,8 @@ test("store visit detail route returns signed photos from new image table and le
   assert.match(storeVisitRoute, /const aiPriceCandidateSelect = /);
   assert.match(storeVisitRoute, /attachAiPriceCandidateMatchLabels/);
   assert.match(storeVisitRoute, /const currentCandidates = \(signedVisit\.ai_price_candidates \?\? \[\]\)\.filter/);
-  assert.match(storeVisitRoute, /const candidateResponses = candidatesWithLabels\.map\(\(candidate\) => \(\{[\s\S]+price_handling: resolveCandidatePriceHandling\(candidate\)/);
+  assert.match(storeVisitRoute, /const candidateResponses = candidatesWithLabels\.map\(\(candidate\) => slimCandidateForH5\(\{[\s\S]+price_handling: resolveCandidatePriceHandling\(candidate\)/);
+  assert.match(storeVisitRoute, /slimVisitImageForH5/);
   assert.match(storeVisitRoute, /price_handling: summarizeVisitPriceHandling\(\{/);
   assert.match(storeVisitRoute, /ai_price_candidates: candidateResponses/);
   assert.match(storeVisitRoute, /candidate\.status !== "rejected"/);
@@ -575,7 +576,7 @@ test("mobile store visit detail confirms H5 row edits through one request", () =
 });
 
 test("mobile store visit row editor combines shared reasons, image evidence, and confirmation fields", () => {
-  assert.match(storeVisitDetailH5, /buildOperatorPriceReviewReasonGroups/);
+  assert.match(storeVisitDetailH5, /buildOperatorPriceReviewReasonLabels/);
   assert.match(storeVisitDetailH5, /whyConfirmation: "Why this needs confirmation"/);
   assert.match(storeVisitDetailH5, /visiblePricePerPiece/);
   assert.match(storeVisitDetailH5, /reasonMessages\.slice\(0, 3\)/);
@@ -641,7 +642,7 @@ test("H5 detail keeps polling while backend price handling is processing", () =>
   assert.match(storeVisitDetailH5, /const shouldPollPriceHandling = visit\?\.price_handling\?\.status === "PROCESSING"/);
   assert.match(storeVisitDetailH5, /\(!activeAiJobId \|\| !isActiveAiJob\(activeAiJobForPolling\)\) && !shouldPollPriceHandling/);
   assert.match(storeVisitDetailH5, /if \(activeAiJobId && isActiveAiJob\(activeAiJobForPolling\)\)/);
-  assert.match(storeVisitDetailH5, /window\.setInterval\(pollAiJob, 2500\)/);
+  assert.match(storeVisitDetailH5, /window\.setInterval\(pollAiJob, 8000\)/);
 });
 
 test("mobile store visit detail does not crash when selected SKU option is missing", () => {
