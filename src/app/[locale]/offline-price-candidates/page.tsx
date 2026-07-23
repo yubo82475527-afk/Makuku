@@ -45,7 +45,7 @@ export default async function OfflinePriceCandidatesPage({
     perPage,
     locale,
   });
-  const pageTitle = locale === "zh" ? "价格异常审核" : "Price Anomaly Review";
+  const pageTitle = locale === "zh" ? "需人工审核" : "Needs Manual Review";
   return (
     <>
       <PageShellState

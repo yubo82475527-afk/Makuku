@@ -341,8 +341,8 @@ test("the existing photo-review route renders the operator workbench", () => {
   assert.match(page, /getOperatorPriceReviewsPage/);
   assert.doesNotMatch(page, /AiPriceCandidatesWorkbench/);
   assert.doesNotMatch(page, /getAiPriceReviewRule/);
-  assert.match(page, /价格异常审核/);
-  assert.match(page, /Price Anomaly Review/);
+  assert.match(page, /需人工审核/);
+  assert.match(page, /Needs Manual Review/);
   assert.match(appShell, /需人工审核/);
   assert.match(appShell, /Needs Manual Review/);
 });

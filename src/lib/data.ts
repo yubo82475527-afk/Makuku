@@ -345,10 +345,10 @@ export async function getFilteredAppUsers(filters: {
   const roleFilter = cleanText(filters.role);
   let { data, error } = await supabase
     .from("app_users")
-    .select("id,username,display_name,email,feishu_user_id,password_login_enabled,feishu_org_mismatch,role,status,disabled_at,updated_at,created_at,organization_members(*, organizations(id,name,status))")
+    .select("id,username,display_name,email,feishu_user_id,password_login_enabled,feishu_org_mismatch,feishu_org_ids,feishu_org_names,organization_assignment_method,role,status,disabled_at,updated_at,created_at,organization_members(*, organizations(id,name,status))")
     .order("created_at", { ascending: false });
 
-  if (error?.message.includes("status") || error?.message.includes("disabled_at") || error?.message.includes("updated_at") || error?.message.includes("email") || error?.message.includes("feishu_user_id") || error?.message.includes("password_login_enabled") || error?.message.includes("feishu_org_mismatch")) {
+  if (error?.message.includes("status") || error?.message.includes("disabled_at") || error?.message.includes("updated_at") || error?.message.includes("email") || error?.message.includes("feishu_user_id") || error?.message.includes("password_login_enabled") || error?.message.includes("feishu_org_mismatch") || error?.message.includes("feishu_org_ids") || error?.message.includes("feishu_org_names") || error?.message.includes("organization_assignment_method")) {
     const legacy = await supabase
       .from("app_users")
       .select("id,username,display_name,role,created_at")
@@ -362,6 +362,9 @@ export async function getFilteredAppUsers(filters: {
       feishu_user_id: null,
       password_login_enabled: true,
       feishu_org_mismatch: false,
+      feishu_org_ids: [],
+      feishu_org_names: [],
+      organization_assignment_method: null,
       organization_members: [],
     }));
     error = legacy.error;
@@ -384,6 +387,7 @@ export async function getFilteredAppUsers(filters: {
       user.display_name,
       user.role,
       organizationNames,
+      ...(user.feishu_org_names ?? []),
     ].join(" ").toLowerCase();
 
     return haystack.includes(q);

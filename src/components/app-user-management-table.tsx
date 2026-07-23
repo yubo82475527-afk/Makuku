@@ -24,7 +24,10 @@ const zh = {
   username: "\u7528\u6237\u540d",
   displayName: "\u663e\u793a\u540d",
   email: "\u90ae\u7bb1",
-  organization: "\u5f52\u5c5e\u7ec4\u7ec7",
+  feishuOrganization: "\u98de\u4e66\u7ec4\u7ec7",
+  systemOrganization: "\u5f53\u524d\u7ec4\u7ec7",
+  orgSourceAuto: "\u98de\u4e66\u81ea\u52a8",
+  orgSourceManual: "\u624b\u5de5",
   orgMismatch: "\u8ddf\u98de\u4e66\u7ec4\u7ec7\u4e0d\u5339\u914d",
   role: "\u89d2\u8272",
   status: "\u72b6\u6001",
@@ -70,12 +73,26 @@ export function AppUserManagementTable({ users, locale }: { users: AppUser[]; lo
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  function organizationLabel(user: AppUser) {
+  function systemOrganizationLabel(user: AppUser) {
     const names = (user.organization_members ?? [])
       .filter((member) => member.active)
       .map((member) => member.organizations?.name)
       .filter((name): name is string => Boolean(name));
     return Array.from(new Set(names));
+  }
+
+  function feishuOrganizationLabel(user: AppUser) {
+    return Array.from(new Set((user.feishu_org_names ?? []).map((name) => name.trim()).filter(Boolean)));
+  }
+
+  function assignmentSourceLabel(user: AppUser) {
+    if (user.organization_assignment_method === "manual") {
+      return isZh ? zh.orgSourceManual : "Manual";
+    }
+    if (user.organization_assignment_method === "feishu_auto") {
+      return isZh ? zh.orgSourceAuto : "Feishu auto";
+    }
+    return null;
   }
 
   async function patchUser(id: string, body: Record<string, string>) {
@@ -171,13 +188,14 @@ export function AppUserManagementTable({ users, locale }: { users: AppUser[]; lo
       {notice ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{notice}</div> : null}
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1180px] text-left text-sm">
+        <table className="w-full min-w-[1380px] text-left text-sm">
           <thead className="border-b border-slate-200 text-xs uppercase text-slate-500">
             <tr>
               <th className="whitespace-nowrap py-2 pr-3">{isZh ? zh.username : "Username"}</th>
               <th className="whitespace-nowrap py-2 pr-3">{isZh ? zh.displayName : "Display name"}</th>
               <th className="whitespace-nowrap py-2 pr-3">{isZh ? zh.email : "Email"}</th>
-              <th className="whitespace-nowrap py-2 pr-3">{isZh ? zh.organization : "Organization"}</th>
+              <th className="whitespace-nowrap py-2 pr-3">{isZh ? zh.feishuOrganization : "Feishu organization"}</th>
+              <th className="whitespace-nowrap py-2 pr-3">{isZh ? zh.systemOrganization : "Current organization"}</th>
               <th className="whitespace-nowrap py-2 pr-3">{isZh ? zh.role : "Role"}</th>
               <th className="whitespace-nowrap py-2 pr-3">{isZh ? zh.status : "Status"}</th>
               <th className="whitespace-nowrap py-2 pr-3">{isZh ? zh.created : "Created"}</th>
@@ -188,6 +206,9 @@ export function AppUserManagementTable({ users, locale }: { users: AppUser[]; lo
             {users.map((user) => {
               const disabled = isDisabled(user);
               const busy = busyId === user.id;
+              const feishuOrgs = feishuOrganizationLabel(user);
+              const systemOrgs = systemOrganizationLabel(user);
+              const sourceLabel = assignmentSourceLabel(user);
               return (
                 <tr key={user.id}>
                   <td className="py-3 pr-3 font-medium">{user.username}</td>
@@ -195,7 +216,7 @@ export function AppUserManagementTable({ users, locale }: { users: AppUser[]; lo
                   <td className="py-3 pr-3">{user.email || "-"}</td>
                   <td className="max-w-[220px] py-3 pr-3 text-slate-600">
                     <div className="flex items-center gap-2">
-                      <span>{organizationLabel(user).length ? organizationLabel(user).join(", ") : "-"}</span>
+                      <span>{feishuOrgs.length ? feishuOrgs.join(", ") : "-"}</span>
                       {user.feishu_org_mismatch ? (
                         <span
                           title={isZh ? zh.orgMismatch : "Mismatch with Feishu organization"}
@@ -205,6 +226,12 @@ export function AppUserManagementTable({ users, locale }: { users: AppUser[]; lo
                           <AlertCircle className="h-4 w-4" />
                         </span>
                       ) : null}
+                    </div>
+                  </td>
+                  <td className="max-w-[240px] py-3 pr-3 text-slate-600">
+                    <div className="space-y-1">
+                      <div>{systemOrgs.length ? systemOrgs.join(", ") : "-"}</div>
+                      {sourceLabel ? <div className="text-xs text-slate-400">{sourceLabel}</div> : null}
                     </div>
                   </td>
                   <td className="py-3 pr-3">

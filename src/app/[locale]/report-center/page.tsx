@@ -1,12 +1,13 @@
 import { PageShellState } from "@/components/page-shell-state";
+import { QueryForm, QuerySubmitButton } from "@/components/query-form";
 import { ReportCenter } from "@/components/report-center";
-import { Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
+import { Card, DataNotice } from "@/components/ui";
 import { listEnabledAgentReportDefinitions } from "@/lib/agent-report-definitions";
 import { listAgentReportSubscriptions } from "@/lib/agent-report-subscriptions";
 import { listAgentReports } from "@/lib/agent-reports";
 import { getAppUsers, getOrganizations } from "@/lib/data";
 import { getPageI18n } from "@/lib/i18n/server";
-import type { AgentReport, AgentReportDefinition, AgentReportFamily, AgentReportScopeType, AgentReportStatus, AgentReportSubscription } from "@/lib/types";
+import type { AgentReport, AgentReportDefinition, AgentReportSubscription } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -20,18 +21,6 @@ function clean(value: string | string[] | undefined) {
   return Array.isArray(value) ? (value[0] ?? "").trim() : (value ?? "").trim();
 }
 
-function readReportFamily(value: string): AgentReportFamily | undefined {
-  return value === "daily" || value === "weekly" || value === "monthly" ? value : undefined;
-}
-
-function readScopeType(value: string): AgentReportScopeType | undefined {
-  return value === "global" || value === "organization" || value === "user" ? value : undefined;
-}
-
-function readStatus(value: string): AgentReportStatus | undefined {
-  return value === "draft" || value === "generated" || value === "sent" || value === "failed" ? value : undefined;
-}
-
 export function buildLatestStatusItems(definitions: AgentReportDefinition[], reports: AgentReport[], subscriptions: AgentReportSubscription[]) {
   return definitions.map((definition): LatestStatusItem => {
     const report = reports.find((item) => item.report_definition_code === definition.code) ?? null;
@@ -40,6 +29,14 @@ export function buildLatestStatusItems(definitions: AgentReportDefinition[], rep
     ).length;
     return { definition, report, matchedSubscriptions };
   });
+}
+
+export function filterDefinitionsByReportName(definitions: AgentReportDefinition[], reportName: string) {
+  const keyword = reportName.trim().toLowerCase();
+  if (!keyword) return definitions;
+  return definitions.filter((definition) =>
+    definition.name.toLowerCase().includes(keyword) || definition.code.toLowerCase().includes(keyword),
+  );
 }
 
 export default async function ReportsPage({
@@ -51,10 +48,7 @@ export default async function ReportsPage({
 }) {
   const { locale, dict } = await getPageI18n(params);
   const query = await searchParams;
-  const reportFamily = readReportFamily(clean(query.report_family) || clean(query.report_type));
-  const reportScopeType = readScopeType(clean(query.scope_type));
-  const reportStatus = readStatus(clean(query.status));
-  const periodStart = clean(query.period_start);
+  const reportName = clean(query.report_name);
   const queryString = new URLSearchParams(
     Object.entries(query).flatMap(([key, value]) => typeof value === "string" && value ? [[key, value]] : []),
   ).toString();
@@ -62,21 +56,13 @@ export default async function ReportsPage({
   const isZh = locale === "zh";
 
   const [reportsResult, subscriptionsResult, organizationsResult, usersResult] = await Promise.all([
-    listAgentReports({
-      reportFamily,
-      scopeType: reportScopeType,
-      status: reportStatus,
-      periodStart: periodStart || undefined,
-      limit: 50,
-    }),
-    listAgentReportSubscriptions({
-      limit: 100,
-    }),
+    listAgentReports({ limit: 50 }),
+    listAgentReportSubscriptions({ limit: 100 }),
     getOrganizations(),
     getAppUsers(),
   ]);
 
-  const definitions = listEnabledAgentReportDefinitions();
+  const definitions = filterDefinitionsByReportName(listEnabledAgentReportDefinitions(), reportName);
   const error = reportsResult.error ?? subscriptionsResult.error ?? organizationsResult.error ?? usersResult.error;
   const isDemo = reportsResult.isDemo || subscriptionsResult.isDemo || organizationsResult.isDemo || usersResult.isDemo;
   const latestStatus = buildLatestStatusItems(definitions, reportsResult.data, subscriptionsResult.data);
@@ -87,44 +73,39 @@ export default async function ReportsPage({
       <DataNotice dict={dict} error={error} />
 
       <Card className="mb-4">
-        <div className="mb-3">
-          <h2 className="font-semibold">{isZh ? "筛选" : "Filters"}</h2>
-        </div>
-        <form className="grid gap-3 md:grid-cols-4">
-          <SelectInput name="report_family" defaultValue={reportFamily ?? ""}>
-            <option value="">{isZh ? "全部分类" : "All families"}</option>
-            <option value="daily">daily</option>
-            <option value="weekly">weekly</option>
-            <option value="monthly">monthly</option>
-          </SelectInput>
-          <SelectInput name="scope_type" defaultValue={reportScopeType ?? ""}>
-            <option value="">{isZh ? "全部范围" : "All scopes"}</option>
-            <option value="global">{isZh ? "全局" : "Global"}</option>
-            <option value="organization">{isZh ? "组织" : "Organization"}</option>
-            <option value="user">{isZh ? "用户" : "User"}</option>
-          </SelectInput>
-          <SelectInput name="status" defaultValue={reportStatus ?? ""}>
-            <option value="">{isZh ? "全部状态" : "All statuses"}</option>
-            <option value="generated">generated</option>
-            <option value="sent">sent</option>
-            <option value="failed">failed</option>
-          </SelectInput>
-          <TextInput type="date" name="period_start" defaultValue={periodStart} />
-          <div className="md:col-span-4 flex justify-end">
-            <button type="submit" className="inline-flex h-9 items-center justify-center rounded-md bg-slate-900 px-3 text-sm font-medium text-white hover:bg-slate-800">
-              {isZh ? "筛选" : "Filter"}
-            </button>
-          </div>
-        </form>
+        <QueryForm className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(280px,1fr)_minmax(120px,180px)]">
+          <ReportNameFilter locale={locale} reportName={reportName} />
+          <QuerySubmitButton
+            idleLabel={dict.common.filter}
+            pendingLabel={isZh ? "筛选中..." : "Filtering..."}
+          />
+        </QueryForm>
       </Card>
 
       <ReportCenter
         locale={locale}
         latestStatus={latestStatus}
-        reports={reportsResult.data}
         subscriptions={subscriptionsResult.data}
         users={usersResult.data}
       />
     </>
+  );
+}
+
+function ReportNameFilter({ locale, reportName }: { locale: string; reportName: string }) {
+  const isZh = locale === "zh";
+  const label = isZh ? "报表名称" : "Report name";
+  const placeholder = isZh ? "输入报表名称或编码" : "Search by name or code";
+
+  return (
+    <label className="flex min-h-10 items-center rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus-within:border-slate-500 focus-within:ring-2 focus-within:ring-slate-200">
+      <span className="mr-2 shrink-0 text-xs font-medium text-slate-500">{label}</span>
+      <input
+        name="report_name"
+        defaultValue={reportName}
+        placeholder={placeholder}
+        className="min-w-0 flex-1 bg-transparent py-2 outline-none"
+      />
+    </label>
   );
 }

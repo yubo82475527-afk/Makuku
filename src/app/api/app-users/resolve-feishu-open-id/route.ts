@@ -38,7 +38,7 @@ export async function POST(request: Request) {
       .from("app_users")
       .update({ email, feishu_user_id: resolved.openId, feishu_org_mismatch: false, updated_at: new Date().toISOString() })
       .eq("id", id)
-      .select("id,username,display_name,email,feishu_user_id,password_login_enabled,feishu_org_mismatch,role,status,disabled_at,updated_at,created_at")
+      .select("id,username,display_name,email,feishu_user_id,password_login_enabled,feishu_org_mismatch,feishu_org_ids,feishu_org_names,organization_assignment_method,role,status,disabled_at,updated_at,created_at")
       .single();
 
     if (error) return Response.json({ error: error.message }, { status: 400 });

@@ -219,7 +219,12 @@ function uniqueNonEmpty(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean)));
 }
 
-export async function getFeishuDepartmentNamesByOpenId(openId: string) {
+export type FeishuDepartment = {
+  id: string;
+  name: string;
+};
+
+export async function getFeishuDepartmentsByOpenId(openId: string): Promise<FeishuDepartment[]> {
   const normalizedOpenId = openId.trim();
   if (!normalizedOpenId) throw new Error("Missing Feishu open_id");
 
@@ -244,7 +249,7 @@ export async function getFeishuDepartmentNamesByOpenId(openId: string) {
   ]);
   if (departmentIds.length === 0) return [];
 
-  const names: string[] = [];
+  const departments: FeishuDepartment[] = [];
   for (const ids of chunk(departmentIds, 50)) {
     const departmentUrl = new URL("https://open.feishu.cn/open-apis/contact/v3/departments/batch");
     departmentUrl.searchParams.set("department_id_type", "open_department_id");
@@ -265,10 +270,20 @@ export async function getFeishuDepartmentNamesByOpenId(openId: string) {
     }
 
     const items = departmentPayload.data?.items ?? departmentPayload.data?.department_infos ?? [];
-    names.push(...items.map((item) => item.name ?? "").filter(Boolean));
+    for (const item of items) {
+      const id = String(item.open_department_id ?? item.department_id ?? "").trim();
+      const name = String(item.name ?? "").trim();
+      if (!id || !name) continue;
+      departments.push({ id, name });
+    }
   }
 
-  return uniqueNonEmpty(names);
+  const seen = new Set<string>();
+  return departments.filter((department) => {
+    if (seen.has(department.id)) return false;
+    seen.add(department.id);
+    return true;
+  });
 }
 
 export async function resolveFeishuOpenIdByEmail(email: string) {

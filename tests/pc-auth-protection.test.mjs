@@ -117,7 +117,12 @@ test("Feishu login API exchanges auth code for user info and creates app session
   assert.match(feishuLoginRoute, /Failed to read existing user/);
   assert.match(feishuLoginRoute, /findAppUserByEmail/);
   assert.match(feishuLoginRoute, /bindFeishuOpenIdToExistingUser/);
-  assert.match(feishuLoginRoute, /updateFeishuOrgMismatch/);
+  assert.match(feishuLoginRoute, /updateFeishuOrgSnapshot/);
+  assert.match(feishuLoginRoute, /syncUserOrganizationsFromFeishu/);
+  assert.match(feishuLoginRoute, /organization_assignment_method/);
+  assert.match(feishuLoginRoute, /feishu_org_ids/);
+  assert.match(feishuLoginRoute, /feishu_org_names/);
+  assert.match(feishuLoginRoute, /canAutoAssignOrganizations/);
   assert.match(feishuLoginRoute, /Multiple local users share this email/);
   assert.match(feishuLoginRoute, /status.*disabled|disabled.*status/s);
   assert.match(feishuLoginRoute, /createSessionCookie/);
@@ -130,6 +135,7 @@ test("Feishu helper supports tenant directory and department lookup", () => {
   assert.match(readFileSync("src/lib/feishu.ts", "utf8"), /contact\/v3\/users\/batch_get_id/);
   assert.match(readFileSync("src/lib/feishu.ts", "utf8"), /contact\/v3\/users\//);
   assert.match(readFileSync("src/lib/feishu.ts", "utf8"), /contact\/v3\/departments\/batch/);
+  assert.match(readFileSync("src/lib/feishu.ts", "utf8"), /getFeishuDepartmentsByOpenId/);
 });
 
 test("proxy protects PC backend pages but leaves H5 capture public", () => {

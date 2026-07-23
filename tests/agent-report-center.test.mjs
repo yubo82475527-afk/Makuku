@@ -54,6 +54,7 @@ test("agent report types expose definition-aware schedule delivery summary and r
   assert.match(typesFile, /send_weekday\?: number \| null/);
   assert.match(typesFile, /send_day_of_month\?: number \| null/);
   assert.match(typesFile, /export type AgentReportDeliverySummary = \{/);
+  assert.match(typesFile, /last_sent_at\?: string \| null/);
   assert.match(typesFile, /delivery_summary\?: AgentReportDeliverySummary/);
   assert.match(typesFile, /matched_subscriptions_count\?: number/);
   assert.match(typesFile, /recipients\?: AgentReportRecipient\[]/);
@@ -88,7 +89,7 @@ test("creating or re-enabling a subscription syncs pending delivery onto the lat
   assert.match(subscriptionSource, /order\("period_end", \{ ascending: false \}\)/);
 });
 
-test("reports page shows latest status and history with definition-aware subscriptions", () => {
+test("reports page shows reports primary table with send-history second layer", () => {
   assert.match(replayRouteFile, /requireAdminSession/);
   assert.match(replayRouteFile, /export async function POST/);
   assert.match(runSubscriptionsRouteFile, /dispatchPendingAgentReportRecipients/);
@@ -109,17 +110,49 @@ test("reports page shows latest status and history with definition-aware subscri
   assert.match(reportCenterPageFile, /PageShellState/);
   assert.match(reportCenterPageFile, /buildLatestStatusItems/);
   assert.match(reportCenterPageFile, /listEnabledAgentReportDefinitions/);
+  assert.match(reportCenterPageFile, /import \{ QueryForm, QuerySubmitButton \} from "@\/components\/query-form"/);
+  assert.match(reportCenterPageFile, /<QueryForm[\s\S]*?<\/QueryForm>/);
+  assert.match(reportCenterPageFile, /QuerySubmitButton/);
+  assert.match(reportCenterPageFile, /flex min-h-10 items-center rounded-md border border-slate-300/);
+  assert.match(reportCenterPageFile, /report_name/);
+  assert.match(reportCenterPageFile, /filterDefinitionsByReportName/);
+  assert.match(reportCenterPageFile, /报表名称|Report name/);
+  assert.doesNotMatch(reportCenterPageFile, /report_family|scope_type|period_start/);
+  assert.doesNotMatch(reportCenterPageFile, /<h2 className="font-semibold">\{isZh \? "筛选" : "Filters"\}<\/h2>/);
+  assert.doesNotMatch(reportCenterPageFile, /SelectInput|TextInput/);
+  assert.doesNotMatch(reportCenterPageFile, /reports=\{reportsResult\.data\}/);
   assert.match(reportCenterComponentFile, /Reports/);
-  assert.match(reportCenterComponentFile, /Latest Status/);
-  assert.match(reportCenterComponentFile, /History/);
-  assert.match(reportCenterComponentFile, /Report definition|Definition/);
-  assert.match(reportCenterComponentFile, /daily_price_country/);
+  assert.match(reportCenterComponentFile, /Send history|发送记录/);
+  assert.doesNotMatch(reportCenterComponentFile, /View latest|查看最近/);
+  assert.match(reportCenterComponentFile, /openSendHistory/);
+  assert.match(reportCenterComponentFile, /loadSendHistory/);
+  assert.match(reportCenterComponentFile, /report_definition_code/);
+  assert.match(reportCenterComponentFile, /\/api\/internal\/agent-reports\?/);
+  assert.doesNotMatch(reportCenterComponentFile, /Latest Status/);
+  assert.doesNotMatch(reportCenterComponentFile, /<h2 className="font-semibold">History<\/h2>/);
+  assert.match(reportCenterComponentFile, /报表名称|Report name/);
+  assert.match(reportCenterComponentFile, /订阅人数|Subscribers/);
+  assert.match(reportCenterComponentFile, /最近发送时间|Last sent/);
+  assert.match(reportCenterComponentFile, /delivery_summary\?\.last_sent_at/);
+  assert.doesNotMatch(reportCenterComponentFile, /最近周期|Latest period/);
+  assert.match(definitionsFile, /daily_price_country/);
   assert.doesNotMatch(reportCenterComponentFile, /weekly_price_management/);
+  assert.match(reportCenterComponentFile, /openSubscriptions/);
+  assert.match(reportCenterComponentFile, /Manage subscriptions|管理订阅/);
   assert.match(reportCenterComponentFile, /Add subscription|新增订阅/);
-  assert.match(reportCenterComponentFile, /Not generated|未生成/);
+  assert.match(reportCenterComponentFile, /subscriptionsDefinition/);
+  assert.match(reportCenterComponentFile, /report_definition_code === subscriptionsDefinition\.code/);
+  assert.doesNotMatch(reportCenterComponentFile, /setSubscriptionsOpen\(true\)/);
+  assert.match(reportCenterComponentFile, /definition\.enabled/);
+  assert.match(reportCenterComponentFile, /启用|Enabled/);
+  assert.match(reportCenterComponentFile, /禁用|Disabled/);
   assert.match(reportCenterComponentFile, /formatReportStatus/);
   assert.match(reportCenterComponentFile, /Redeliver|重新投递/);
-  assert.match(reportCenterComponentFile, /Rerun|重算/);
+  assert.match(reportCenterComponentFile, /Regenerate|重新生成/);
+  assert.doesNotMatch(reportCenterComponentFile, /Rerun|重算/);
+  assert.match(reportCenterComponentFile, /regenerateLabel/);
+  assert.match(reportCenterComponentFile, /regenerateLatest\(report\.report_definition_code, report\)/);
+  assert.doesNotMatch(reportCenterComponentFile, /regenerateLatest\(item\.definition\.code/);
   assert.match(reportCenterComponentFile, /Dispatch pending|发送待发送/);
   assert.match(reportCenterComponentFile, /Retry failed|仅补失败/);
   assert.match(reportCenterComponentFile, /Template|模板预览/);
@@ -358,14 +391,15 @@ test("subscription scheduling and delivery summary helpers validate definition-a
 
   assert.deepEqual(subscriptionsModule.summarizeRecipients([
     { send_status: "pending" },
-    { send_status: "sent" },
-    { send_status: "sent" },
+    { send_status: "sent", sent_at: "2026-07-20T01:00:00.000Z" },
+    { send_status: "sent", sent_at: "2026-07-21T02:00:00.000Z" },
     { send_status: "failed" },
   ]), {
     recipient_count: 4,
     pending_count: 1,
     sent_count: 2,
     failed_count: 1,
+    last_sent_at: "2026-07-21T02:00:00.000Z",
   });
 
   assert.equal(

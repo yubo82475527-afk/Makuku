@@ -336,6 +336,9 @@ export type AppUser = {
   feishu_user_id?: string | null;
   password_login_enabled?: boolean | null;
   feishu_org_mismatch?: boolean | null;
+  feishu_org_ids?: string[] | null;
+  feishu_org_names?: string[] | null;
+  organization_assignment_method?: UserOrganizationAssignmentMethod | null;
   role: AppUserRole;
   status?: AppUserStatus | null;
   disabled_at?: string | null;
@@ -346,6 +349,7 @@ export type AppUser = {
 
 export type OrganizationStatus = "active" | "inactive";
 export type OrganizationAssignmentMethod = "auto_region_rule" | "manual" | "ai_suggested" | "external_org_id";
+export type UserOrganizationAssignmentMethod = "feishu_auto" | "manual";
 
 export type Organization = {
   id: string;
@@ -449,6 +453,7 @@ export type AgentReportDeliverySummary = {
   pending_count: number;
   sent_count: number;
   failed_count: number;
+  last_sent_at?: string | null;
 };
 
 export type AgentReport = {

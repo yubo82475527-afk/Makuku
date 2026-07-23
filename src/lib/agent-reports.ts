@@ -697,11 +697,17 @@ function summarizeRecipients(recipients: AgentReportRecipient[]): AgentReportDel
     pending_count: 0,
     sent_count: 0,
     failed_count: 0,
+    last_sent_at: null,
   };
   for (const recipient of recipients) {
     if (recipient.send_status === "pending") summary.pending_count += 1;
     if (recipient.send_status === "sent") summary.sent_count += 1;
     if (recipient.send_status === "failed") summary.failed_count += 1;
+    if (recipient.send_status === "sent" && recipient.sent_at) {
+      if (!summary.last_sent_at || recipient.sent_at > summary.last_sent_at) {
+        summary.last_sent_at = recipient.sent_at;
+      }
+    }
   }
   return summary;
 }

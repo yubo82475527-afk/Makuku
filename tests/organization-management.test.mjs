@@ -107,6 +107,8 @@ test("organization management UI and APIs are wired", () => {
   assert.match(organizationsApi, /offline_stores/);
   assert.match(organizationsApi, /organization_assignment_method: "external_org_id"/);
   assert.match(organizationMembersApi, /organization_members/);
+  assert.match(organizationMembersApi, /markUserOrganizationAssignmentManual/);
+  assert.match(organizationMembersApi, /organization_assignment_method: "manual"/);
   assert.match(organizationRulesApi, /organization_region_rules/);
   assert.match(organizationRulesApi, /Array\.isArray\(body\.rules\)/);
 });

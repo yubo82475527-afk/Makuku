@@ -19,6 +19,7 @@ const migration = readIfExists("supabase/migrations/202606080004_app_user_manage
 const feishuMigration = readIfExists("supabase/migrations/202606160001_app_user_feishu_id.sql");
 const feishuAutoProvisionMigration = readIfExists("supabase/migrations/202606250001_feishu_h5_auto_provision.sql");
 const feishuOrgMismatchMigration = readIfExists("supabase/migrations/202606250003_app_user_feishu_org_mismatch.sql");
+const feishuOrgSnapshotMigration = readIfExists("supabase/migrations/202607230001_app_user_feishu_org_snapshot.sql");
 
 test("PC navigation exposes app user management", () => {
   assert.match(appShell, /href:\s*"\/users"/);
@@ -55,9 +56,15 @@ test("app user management API hashes passwords and supports account status", () 
   assert.match(userCreateDialog, /name="email"/);
   assert.doesNotMatch(usersPage, /name="feishu_user_id"/);
   assert.match(userTable, /Feishu Open ID/);
-  assert.match(userTable, /organizationLabel/);
+  assert.match(userTable, /systemOrganizationLabel/);
+  assert.match(userTable, /feishuOrganizationLabel/);
+  assert.match(userTable, /assignmentSourceLabel/);
+  assert.match(userTable, /feishuOrganization/);
+  assert.match(userTable, /systemOrganization/);
   assert.match(userTable, /orgMismatch/);
   assert.match(userTable, /feishu_org_mismatch/);
+  assert.match(userTable, /feishu_org_names/);
+  assert.match(userTable, /organization_assignment_method/);
   assert.match(userTable, /AlertCircle/);
   assert.match(userTable, /organizations\?\.name/);
   assert.match(userTable, /SelectInput/);
@@ -67,6 +74,12 @@ test("app user management API hashes passwords and supports account status", () 
   assert.match(userTable, /option value="field_agent"/);
   assert.match(userTable, /option value="manager"/);
   assert.match(userTable, /option value="admin"/);
+});
+
+test("app user management API hashes passwords and supports account status fields for feishu org snapshot", () => {
+  assert.match(dataFile, /feishu_org_ids/);
+  assert.match(dataFile, /feishu_org_names/);
+  assert.match(dataFile, /organization_assignment_method/);
 });
 
 test("user management keeps table compact and moves actions into controls", () => {
@@ -126,4 +139,9 @@ test("migration adds app user lifecycle fields", () => {
   assert.match(feishuAutoProvisionMigration, /add column if not exists password_login_enabled/);
   assert.match(feishuAutoProvisionMigration, /create unique index if not exists uniq_app_users_feishu_user_id/);
   assert.match(feishuOrgMismatchMigration, /add column if not exists feishu_org_mismatch/);
+  assert.match(feishuOrgSnapshotMigration, /add column if not exists feishu_org_ids/);
+  assert.match(feishuOrgSnapshotMigration, /add column if not exists feishu_org_names/);
+  assert.match(feishuOrgSnapshotMigration, /add column if not exists organization_assignment_method/);
+  assert.match(feishuOrgSnapshotMigration, /feishu_auto/);
+  assert.match(feishuOrgSnapshotMigration, /manual/);
 });

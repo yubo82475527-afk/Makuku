@@ -10,6 +10,23 @@ function clean(value: unknown) {
 function revalidateViews() {
   revalidatePath("/zh/organizations");
   revalidatePath("/en/organizations");
+  revalidatePath("/zh/users");
+  revalidatePath("/en/users");
+}
+
+async function markUserOrganizationAssignmentManual(appUserId: string) {
+  const supabase = createSupabaseServiceClient();
+  const { error } = await supabase
+    .from("app_users")
+    .update({
+      organization_assignment_method: "manual",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", appUserId);
+
+  if (error && !error.message.includes("organization_assignment_method")) {
+    throw new Error(error.message);
+  }
 }
 
 export async function POST(request: Request) {
@@ -29,6 +46,13 @@ export async function POST(request: Request) {
       .single();
 
     if (error) return Response.json({ error: error.message }, { status: 400 });
+
+    try {
+      await markUserOrganizationAssignmentManual(appUserId);
+    } catch (markError) {
+      return Response.json({ error: markError instanceof Error ? markError.message : "Failed to mark manual assignment" }, { status: 500 });
+    }
+
     revalidateViews();
     return Response.json({ member: data });
   } catch (error) {
@@ -53,6 +77,16 @@ export async function DELETE(request: Request) {
       .single();
 
     if (error) return Response.json({ error: error.message }, { status: 400 });
+
+    const appUserId = clean(data?.app_user_id);
+    if (appUserId) {
+      try {
+        await markUserOrganizationAssignmentManual(appUserId);
+      } catch (markError) {
+        return Response.json({ error: markError instanceof Error ? markError.message : "Failed to mark manual assignment" }, { status: 500 });
+      }
+    }
+
     revalidateViews();
     return Response.json({ member: data });
   } catch (error) {

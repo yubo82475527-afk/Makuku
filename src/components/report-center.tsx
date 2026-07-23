@@ -34,13 +34,11 @@ type SubscriptionDraft = {
 export function ReportCenter({
   locale,
   latestStatus,
-  reports,
   subscriptions,
   users,
 }: {
   locale: string;
   latestStatus: LatestStatusItem[];
-  reports: AgentReport[];
   subscriptions: AgentReportSubscription[];
   users: AppUser[];
 }) {
@@ -49,9 +47,12 @@ export function ReportCenter({
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editingSubscription, setEditingSubscription] = useState<SubscriptionDraft | null>(null);
-  const [subscriptionsOpen, setSubscriptionsOpen] = useState(false);
+  const [subscriptionsDefinition, setSubscriptionsDefinition] = useState<AgentReportDefinition | null>(null);
   const [selectedReport, setSelectedReport] = useState<AgentReport | null>(null);
   const [viewLoading, setViewLoading] = useState(false);
+  const [historyDefinition, setHistoryDefinition] = useState<AgentReportDefinition | null>(null);
+  const [historyReports, setHistoryReports] = useState<AgentReport[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const usersById = useMemo(() => new Map(users.map((user) => [user.id, user])), [users]);
   const definitionsByCode = useMemo(() => new Map(latestStatus.map((item) => [item.definition.code, item.definition])), [latestStatus]);
 
@@ -79,26 +80,32 @@ export function ReportCenter({
     }
   }
 
-  function startCreateSubscription() {
+  function openSubscriptions(definition: AgentReportDefinition) {
+    setSubscriptionsDefinition(definition);
+  }
+
+  function startCreateSubscription(definition: AgentReportDefinition) {
+    setSubscriptionsDefinition(definition);
     setEditingSubscription({
-      report_definition_code: latestStatus[0]?.definition.code ?? "daily_price_country",
-      report_family: latestStatus[0]?.definition.family ?? "daily",
+      report_definition_code: definition.code,
+      report_family: definition.family,
       recipient_type: "user",
       app_user_id: "",
       feishu_user_id: "",
       feishu_chat_id: "",
-      scope_type: "global",
+      scope_type: (definition.supported_scope_types[0] as SubscriptionDraft["scope_type"]) ?? "global",
       scope_id: "",
-      send_time_local: "08:30",
-      send_weekday: "1",
-      send_day_of_month: "1",
+      send_time_local: definition.default_schedule_rule.send_time_local.slice(0, 5),
+      send_weekday: String(definition.default_schedule_rule.send_weekday ?? 1),
+      send_day_of_month: String(definition.default_schedule_rule.send_day_of_month ?? 1),
       timezone: "Asia/Jakarta",
       enabled: true,
     });
   }
 
   function startEditSubscription(subscription: AgentReportSubscription) {
-    setSubscriptionsOpen(true);
+    const definition = definitionsByCode.get(subscription.report_definition_code) ?? subscriptionsDefinition;
+    if (definition) setSubscriptionsDefinition(definition);
     setEditingSubscription({
       id: subscription.id,
       report_definition_code: subscription.report_definition_code,
@@ -126,20 +133,6 @@ export function ReportCenter({
     } : current);
   }
 
-  function syncDefinition(code: string) {
-    const definition = definitionsByCode.get(code);
-    setEditingSubscription((current) => current && definition ? {
-      ...current,
-      report_definition_code: code,
-      report_family: definition.family,
-      scope_type: definition.supported_scope_types[0] as SubscriptionDraft["scope_type"],
-      scope_id: definition.supported_scope_types[0] === "global" ? "" : current.scope_id,
-      send_time_local: definition.default_schedule_rule.send_time_local.slice(0, 5),
-      send_weekday: String(definition.default_schedule_rule.send_weekday ?? 1),
-      send_day_of_month: String(definition.default_schedule_rule.send_day_of_month ?? 1),
-    } : current);
-  }
-
   async function saveSubscription() {
     if (!editingSubscription) return;
     const definition = definitionsByCode.get(editingSubscription.report_definition_code);
@@ -163,7 +156,7 @@ export function ReportCenter({
       : await submitJson("/api/internal/agent-report-subscriptions", "POST", body);
     if (ok) {
       setEditingSubscription(null);
-      setSubscriptionsOpen(true);
+      if (definition) setSubscriptionsDefinition(definition);
     }
   }
 
@@ -171,27 +164,33 @@ export function ReportCenter({
     const targetScopeType = report?.scope_type ?? (definitionsByCode.get(definitionCode)?.supported_scope_types[0] ?? "global");
     const targetScopeId = report?.scope_id ?? null;
     const targetPeriodAnchor = report?.period_start ?? resolveLatestPeriodAnchor(definitionCode);
-    await submitJson(report ? `/api/internal/agent-reports/${report.id}/rerun` : "/api/internal/agent-reports", "POST", report ? {} : {
+    const ok = await submitJson(report ? `/api/internal/agent-reports/${report.id}/rerun` : "/api/internal/agent-reports", "POST", report ? {} : {
       report_definition_code: definitionCode,
       period_anchor: targetPeriodAnchor,
       scope_type: targetScopeType,
       scope_id: targetScopeId,
       force: true,
     });
+    if (ok && historyDefinition?.code === definitionCode) {
+      await loadSendHistory(definitionCode);
+    }
   }
 
   async function redeliverReport(report: AgentReport) {
     if (!window.confirm(confirmRedeliverMessage(isZh))) return;
-    await submitJson(`/api/internal/agent-reports/${report.id}/redeliver`, "POST", {});
+    const ok = await submitJson(`/api/internal/agent-reports/${report.id}/redeliver`, "POST", {});
+    if (ok && historyDefinition) await loadSendHistory(historyDefinition.code);
   }
 
   async function retryFailedReport(report: AgentReport) {
     if (!window.confirm(confirmRetryFailedMessage(isZh))) return;
-    await submitJson(`/api/internal/agent-reports/${report.id}/retry-failed`, "POST", {});
+    const ok = await submitJson(`/api/internal/agent-reports/${report.id}/retry-failed`, "POST", {});
+    if (ok && historyDefinition) await loadSendHistory(historyDefinition.code);
   }
 
   async function dispatchPendingReport(report: AgentReport) {
-    await submitJson(`/api/internal/agent-reports/${report.id}/dispatch`, "POST", {});
+    const ok = await submitJson(`/api/internal/agent-reports/${report.id}/dispatch`, "POST", {});
+    if (ok && historyDefinition) await loadSendHistory(historyDefinition.code);
   }
 
   async function openReport(report: AgentReport) {
@@ -212,6 +211,36 @@ export function ReportCenter({
     } finally {
       setViewLoading(false);
     }
+  }
+
+  async function loadSendHistory(definitionCode: string) {
+    setHistoryLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({
+        report_definition_code: definitionCode,
+        limit: "50",
+      });
+      const response = await fetch(`/api/internal/agent-reports?${params.toString()}`, { cache: "no-store" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(payload.error ?? (isZh ? "加载发送记录失败。" : "Failed to load send history."));
+        setHistoryReports([]);
+        return;
+      }
+      setHistoryReports(Array.isArray(payload.reports) ? payload.reports : []);
+    } catch {
+      setError(isZh ? "网络异常，发送记录加载失败。" : "Network error. Failed to load send history.");
+      setHistoryReports([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  async function openSendHistory(definition: AgentReportDefinition) {
+    setHistoryDefinition(definition);
+    setHistoryReports([]);
+    await loadSendHistory(definition.code);
   }
 
   async function toggleSubscription(subscription: AgentReportSubscription) {
@@ -240,38 +269,23 @@ export function ReportCenter({
       {error ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Reports</div>
-            <h2 className="font-semibold">Latest Status</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              {isZh ? "按报表定义查看最近一次生成状态和投递情况。" : "Track the latest generated state and delivery summary by report definition."}
-            </p>
-          </div>
-          <div className="flex flex-wrap justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setSubscriptionsOpen(true)}
-              className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-              {isZh ? "管理订阅" : "Manage subscriptions"}
-            </button>
-            <Button type="button" onClick={startCreateSubscription}>
-              {isZh ? "新增订阅" : "Add subscription"}
-            </Button>
-          </div>
+        <div className="mb-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Reports</div>
+          <h2 className="font-semibold">{isZh ? "报表" : "Reports"}</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            {isZh ? "按定义查看启用状态；订阅与发送记录在行内打开。" : "Enabled status by definition. Open subscriptions and send history from each row."}
+          </p>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] text-left text-sm">
+          <table className="w-full min-w-[720px] text-left text-sm">
             <thead className="border-b border-slate-200 text-xs uppercase text-slate-500">
               <tr>
-                <th className="py-2 pr-3">{isZh ? "报表定义" : "Report definition"}</th>
-                <th className="py-2 pr-3">{isZh ? "分类" : "Family"}</th>
-                <th className="py-2 pr-3">{isZh ? "最近周期" : "Latest period"}</th>
+                <th className="py-2 pr-3">{isZh ? "报表名称" : "Report name"}</th>
                 <th className="py-2 pr-3">{isZh ? "状态" : "Status"}</th>
-                <th className="py-2 pr-3">{isZh ? "命中订阅" : "Matched subscriptions"}</th>
-                <th className="py-2 pr-3">{isZh ? "发送摘要" : "Delivery summary"}</th>
+                <th className="py-2 pr-3">{isZh ? "订阅人数" : "Subscribers"}</th>
+                <th className="py-2 pr-3">{isZh ? "最近发送时间" : "Last sent"}</th>
+                <th className="py-2 pr-3">{isZh ? "操作" : "Actions"}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -283,17 +297,33 @@ export function ReportCenter({
                     <div className="font-medium">{item.definition.name}</div>
                     <div className="mt-1 text-xs text-slate-500">{item.definition.code}</div>
                   </td>
-                  <td className="whitespace-nowrap py-3 pr-3 align-top">{item.definition.family}</td>
-                  <td className="whitespace-nowrap py-3 pr-3 align-top">
-                    {item.report ? `${item.report.period_start} - ${item.report.period_end}` : "-"}
-                  </td>
                   <td className="py-3 pr-3 align-top">
-                    <Badge tone={report ? (report.status === "failed" ? "high" : "low") : "medium"}>
-                      {report ? formatReportStatus(report, isZh) : (isZh ? "未生成" : "Not generated")}
+                    <Badge tone={item.definition.enabled ? "low" : "medium"}>
+                      {item.definition.enabled ? (isZh ? "启用" : "Enabled") : (isZh ? "禁用" : "Disabled")}
                     </Badge>
                   </td>
                   <td className="whitespace-nowrap py-3 pr-3 align-top">{item.matchedSubscriptions}</td>
-                  <td className="py-3 pr-3 align-top">{formatDeliverySummary(report?.delivery_summary)}</td>
+                  <td className="whitespace-nowrap py-3 pr-3 align-top">
+                    {formatDateTime(report?.delivery_summary?.last_sent_at)}
+                  </td>
+                  <td className="py-3 pr-3 align-top">
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => openSubscriptions(item.definition)}
+                        className="inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        {isZh ? "管理订阅" : "Manage subscriptions"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void openSendHistory(item.definition)}
+                        className="inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        {isZh ? "发送记录" : "Send history"}
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               )})}
             </tbody>
@@ -301,117 +331,130 @@ export function ReportCenter({
         </div>
       </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="mb-4">
-          <h2 className="font-semibold">History</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            {isZh ? "展示真实生成过的报表实例记录。" : "History of generated report instances."}
+      {historyDefinition ? (
+        <Dialog
+          title={isZh ? `发送记录 · ${historyDefinition.name}` : `Send history · ${historyDefinition.name}`}
+          closeLabel={isZh ? "关闭" : "Close"}
+          onClose={() => {
+            setHistoryDefinition(null);
+            setHistoryReports([]);
+          }}
+        >
+          <p className="mb-4 text-sm text-slate-500">
+            {isZh
+              ? `展示 ${historyDefinition.code} 的生成与投递记录。`
+              : `Generated and delivery records for ${historyDefinition.code}.`}
           </p>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1280px] text-left text-sm">
-            <thead className="border-b border-slate-200 text-xs uppercase text-slate-500">
-              <tr>
-                <th className="py-2 pr-3">{isZh ? "标题" : "Title"}</th>
-                <th className="py-2 pr-3">{isZh ? "报表定义" : "Report definition"}</th>
-                <th className="py-2 pr-3">{isZh ? "分类" : "Family"}</th>
-                <th className="py-2 pr-3">{isZh ? "周期" : "Period"}</th>
-                <th className="py-2 pr-3">{isZh ? "数据范围" : "Data scope"}</th>
-                <th className="py-2 pr-3">{isZh ? "状态" : "Status"}</th>
-                <th className="py-2 pr-3">{isZh ? "命中订阅" : "Matched subscriptions"}</th>
-                <th className="py-2 pr-3">{isZh ? "发送摘要" : "Delivery summary"}</th>
-                <th className="py-2 pr-3">{isZh ? "生成时间" : "Generated"}</th>
-                <th className="py-2 pr-3">{isZh ? "操作" : "Actions"}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {reports.map((report) => (
-                <tr key={report.id}>
-                  <td className="py-3 pr-3 align-top">
-                    <div className="font-medium">{report.content_json.title}</div>
-                    <div className="mt-1 text-xs text-slate-500">{report.content_json.ai_insight}</div>
-                  </td>
-                  <td className="py-3 pr-3 align-top">
-                    <div>{report.definition_name}</div>
-                    <div className="mt-1 text-xs text-slate-500">{report.report_definition_code}</div>
-                  </td>
-                  <td className="whitespace-nowrap py-3 pr-3 align-top">{report.report_family}</td>
-                  <td className="whitespace-nowrap py-3 pr-3 align-top">{report.period_start} - {report.period_end}</td>
-                  <td className="py-3 pr-3 align-top">{report.scope_name}</td>
-                  <td className="py-3 pr-3 align-top">
-                    <Badge tone={report.status === "failed" ? "high" : report.status === "sent" ? "low" : "neutral"}>
-                      {formatReportStatus(report, isZh)}
-                    </Badge>
-                  </td>
-                  <td className="whitespace-nowrap py-3 pr-3 align-top">{report.matched_subscriptions_count ?? 0}</td>
-                  <td className="py-3 pr-3 align-top">{formatDeliverySummary(report.delivery_summary)}</td>
-                  <td className="whitespace-nowrap py-3 pr-3 align-top">{formatDateTime(report.generated_at)}</td>
-                  <td className="py-3 pr-3 align-top">
-                    <div className="flex flex-wrap gap-1.5">
-                      <button type="button" onClick={() => void openReport(report)} className="inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                        {isZh ? "查看" : "View"}
-                      </button>
-                      <a href={`/${locale}/report-center/template-preview?report_id=${encodeURIComponent(report.id)}`} className="inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                        {templatePreviewLabel(isZh)}
-                      </a>
-                      <button type="button" onClick={() => void regenerateLatest(report.report_definition_code, report)} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                        <RefreshCw className="h-3.5 w-3.5" />
-                        {rerunLabel(isZh)}
-                      </button>
-                      <button type="button" onClick={() => void redeliverReport(report)} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                        <Send className="h-3.5 w-3.5" />
-                        {redeliverLabel(isZh)}
-                      </button>
-                      <button type="button" onClick={() => void dispatchPendingReport(report)} className="inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                        {dispatchPendingLabel(isZh)}
-                      </button>
-                      <button type="button" onClick={() => void retryFailedReport(report)} className="inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                        {retryFailedLabel(isZh)}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {reports.length === 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1180px] text-left text-sm">
+              <thead className="border-b border-slate-200 text-xs uppercase text-slate-500">
                 <tr>
-                  <td colSpan={10} className="py-8 text-center text-slate-500">{isZh ? "暂无报表记录。" : "No reports found."}</td>
+                  <th className="py-2 pr-3">{isZh ? "标题" : "Title"}</th>
+                  <th className="py-2 pr-3">{isZh ? "周期" : "Period"}</th>
+                  <th className="py-2 pr-3">{isZh ? "数据范围" : "Data scope"}</th>
+                  <th className="py-2 pr-3">{isZh ? "状态" : "Status"}</th>
+                  <th className="py-2 pr-3">{isZh ? "命中订阅" : "Matched subscriptions"}</th>
+                  <th className="py-2 pr-3">{isZh ? "发送摘要" : "Delivery summary"}</th>
+                  <th className="py-2 pr-3">{isZh ? "生成时间" : "Generated"}</th>
+                  <th className="py-2 pr-3">{isZh ? "操作" : "Actions"}</th>
                 </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </section>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {historyLoading ? (
+                  <tr>
+                    <td colSpan={8} className="py-10 text-center text-slate-500">
+                      <span className="inline-flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        {isZh ? "加载中" : "Loading"}
+                      </span>
+                    </td>
+                  </tr>
+                ) : null}
+                {!historyLoading ? historyReports.map((report) => (
+                  <tr key={report.id}>
+                    <td className="py-3 pr-3 align-top">
+                      <div className="font-medium">{report.content_json.title}</div>
+                      <div className="mt-1 text-xs text-slate-500">{report.content_json.ai_insight}</div>
+                    </td>
+                    <td className="whitespace-nowrap py-3 pr-3 align-top">{report.period_start} - {report.period_end}</td>
+                    <td className="py-3 pr-3 align-top">{report.scope_name}</td>
+                    <td className="py-3 pr-3 align-top">
+                      <Badge tone={report.status === "failed" ? "high" : report.status === "sent" ? "low" : "neutral"}>
+                        {formatReportStatus(report, isZh)}
+                      </Badge>
+                    </td>
+                    <td className="whitespace-nowrap py-3 pr-3 align-top">{report.matched_subscriptions_count ?? 0}</td>
+                    <td className="py-3 pr-3 align-top">{formatDeliverySummary(report.delivery_summary)}</td>
+                    <td className="whitespace-nowrap py-3 pr-3 align-top">{formatDateTime(report.generated_at)}</td>
+                    <td className="py-3 pr-3 align-top">
+                      <div className="flex flex-wrap gap-1.5">
+                        <button type="button" onClick={() => void openReport(report)} className="inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                          {isZh ? "查看" : "View"}
+                        </button>
+                        <a href={`/${locale}/report-center/template-preview?report_id=${encodeURIComponent(report.id)}`} className="inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                          {templatePreviewLabel(isZh)}
+                        </a>
+                        <button type="button" onClick={() => void regenerateLatest(report.report_definition_code, report)} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                          <RefreshCw className="h-3.5 w-3.5" />
+                          {regenerateLabel(isZh)}
+                        </button>
+                        <button type="button" onClick={() => void redeliverReport(report)} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                          <Send className="h-3.5 w-3.5" />
+                          {redeliverLabel(isZh)}
+                        </button>
+                        <button type="button" onClick={() => void dispatchPendingReport(report)} className="inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                          {dispatchPendingLabel(isZh)}
+                        </button>
+                        <button type="button" onClick={() => void retryFailedReport(report)} className="inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                          {retryFailedLabel(isZh)}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )) : null}
+                {!historyLoading && historyReports.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-8 text-center text-slate-500">{isZh ? "该定义暂无发送记录。" : "No send history for this definition."}</td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </Dialog>
+      ) : null}
 
-      {subscriptionsOpen ? (
-        <Dialog title={isZh ? "管理订阅" : "Manage subscriptions"} closeLabel={isZh ? "关闭" : "Close"} onClose={() => setSubscriptionsOpen(false)}>
+      {subscriptionsDefinition ? (
+        <Dialog
+          title={isZh ? `管理订阅 · ${subscriptionsDefinition.name}` : `Manage subscriptions · ${subscriptionsDefinition.name}`}
+          closeLabel={isZh ? "关闭" : "Close"}
+          onClose={() => setSubscriptionsDefinition(null)}
+        >
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm text-slate-500">
-                {isZh ? "订阅直接绑定具体报表定义。当前只启用 daily country report，配置只保留接收对象。" : "Subscriptions target concrete report definitions. Only the daily country report is enabled right now, so the form only keeps recipient settings."}
+                {isZh
+                  ? `管理 ${subscriptionsDefinition.code} 的接收对象。`
+                  : `Manage recipients for ${subscriptionsDefinition.code}.`}
               </p>
-              <Button type="button" onClick={startCreateSubscription}>
+              <Button type="button" onClick={() => startCreateSubscription(subscriptionsDefinition)}>
                 {isZh ? "新增订阅" : "Add subscription"}
               </Button>
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[920px] text-left text-sm">
+              <table className="w-full min-w-[720px] text-left text-sm">
                 <thead className="border-b border-slate-200 text-xs uppercase text-slate-500">
                   <tr>
-                    <th className="py-2 pr-3">{isZh ? "报表定义" : "Report definition"}</th>
                     <th className="py-2 pr-3">{isZh ? "接收对象" : "Recipient"}</th>
                     <th className="py-2 pr-3">{isZh ? "状态" : "Status"}</th>
                     <th className="py-2 pr-3">{isZh ? "操作" : "Actions"}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {subscriptions.map((subscription) => (
+                  {subscriptions
+                    .filter((subscription) => subscription.report_definition_code === subscriptionsDefinition.code)
+                    .map((subscription) => (
                     <tr key={subscription.id}>
-                      <td className="py-3 pr-3">
-                        <div className="font-medium">{definitionsByCode.get(subscription.report_definition_code)?.name ?? subscription.report_definition_code}</div>
-                        <div className="mt-1 text-xs text-slate-500">{subscription.report_definition_code}</div>
-                      </td>
                       <td className="py-3 pr-3">
                         <div className="font-medium">{subscriptionRecipientLabel(subscription, usersById)}</div>
                         <div className="mt-1 text-xs text-slate-500">{subscription.recipient_type}</div>
@@ -434,9 +477,9 @@ export function ReportCenter({
                       </td>
                     </tr>
                   ))}
-                  {subscriptions.length === 0 ? (
+                  {subscriptions.filter((subscription) => subscription.report_definition_code === subscriptionsDefinition.code).length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="py-8 text-center text-slate-500">{isZh ? "暂无订阅配置。" : "No subscriptions found."}</td>
+                      <td colSpan={3} className="py-8 text-center text-slate-500">{isZh ? "该报表暂无订阅配置。" : "No subscriptions for this report."}</td>
                     </tr>
                   ) : null}
                 </tbody>
@@ -491,14 +534,13 @@ export function ReportCenter({
 
       {editingSubscription ? (
         <Dialog title={editingSubscription.id ? (isZh ? "编辑订阅" : "Edit subscription") : (isZh ? "新增订阅" : "Add subscription")} closeLabel={isZh ? "关闭" : "Close"} onClose={() => setEditingSubscription(null)}>
+          <div className="mb-4">
+            <MetaField
+              label={isZh ? "报表定义" : "Report definition"}
+              value={`${definitionsByCode.get(editingSubscription.report_definition_code)?.name ?? editingSubscription.report_definition_code} (${editingSubscription.report_definition_code})`}
+            />
+          </div>
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label={isZh ? "报表定义" : "Report definition"}>
-              <SelectInput value={editingSubscription.report_definition_code} onChange={(event) => syncDefinition(event.target.value)}>
-                {latestStatus.map((item) => (
-                  <option key={item.definition.code} value={item.definition.code}>{item.definition.name} ({item.definition.code})</option>
-                ))}
-              </SelectInput>
-            </Field>
             <Field label={isZh ? "接收对象类型" : "Recipient type"}>
               <SelectInput value={editingSubscription.recipient_type} onChange={(event) => setEditingSubscription((current) => current ? { ...current, recipient_type: event.target.value as SubscriptionDraft["recipient_type"] } : current)}>
                 <option value="user">{isZh ? "个人" : "User"}</option>
@@ -557,8 +599,8 @@ function formatDeliverySummary(summary: AgentReport["delivery_summary"] | undefi
   return `${summary.recipient_count} recipients / ${summary.sent_count} sent / ${summary.pending_count} pending / ${summary.failed_count} failed`;
 }
 
-function rerunLabel(isZh: boolean) {
-  return isZh ? "重算" : "Rerun";
+function regenerateLabel(isZh: boolean) {
+  return isZh ? "重新生成" : "Regenerate";
 }
 
 function templatePreviewLabel(isZh: boolean) {
