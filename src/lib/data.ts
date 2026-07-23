@@ -19,6 +19,7 @@ import { monthWeeks } from "@/lib/periods";
 import { normalizePriceIndexDimensions } from "@/lib/price-index-dimensions";
 import { priceSnapshotBusinessLine, priceSnapshotBusinessSize } from "@/lib/price-snapshot-business";
 import { findMatchingMaterialForSeries, materialShapeKey, productShapeKey } from "@/lib/competitor-series-mapping";
+import { compareDiaperSize } from "@/lib/size-order";
 import { createSupabaseAnonClient, createSupabaseServiceClient, hasSupabaseConfig, hasSupabaseServiceConfig } from "@/lib/supabase";
 import { buildStoreVisitThumbnailPath } from "@/lib/store-visit-image-variants";
 import type {
@@ -2369,7 +2370,12 @@ function buildWeeklyCoefficientNodes(input: {
         children,
       });
     })
-    .sort((a, b) => String(nodeLabelForSort(a, level)).localeCompare(String(nodeLabelForSort(b, level))));
+    .sort((a, b) => {
+      const left = String(nodeLabelForSort(a, level));
+      const right = String(nodeLabelForSort(b, level));
+      if (level === "size") return compareDiaperSize(left, right);
+      return left.localeCompare(right);
+    });
 }
 
 function weeklyCoefficientBenchmarkRecordsForOwnGroup(input: {
