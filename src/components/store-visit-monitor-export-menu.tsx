@@ -21,9 +21,9 @@ function formatTime(value: string) {
 }
 
 function taskLabel(kind: ExportJob["kind"], locale: string) {
-  if (kind === "price_snapshot") return locale === "zh" ? "真实市场价格" : "Real Market Price";
-  if (kind === "operator_price_review") return locale === "zh" ? "价格异常审核" : "Price anomaly review";
-  return locale === "zh" ? "巡店分析" : "Visit analysis";
+  if (kind === "price_snapshot") return locale === "zh" ? "市场价格" : "Market Price";
+  if (kind === "operator_price_review") return locale === "zh" ? "人工审核" : "Manual Review";
+  return locale === "zh" ? "巡店记录" : "Store Visit Records";
 }
 
 export function StoreVisitMonitorExportMenu({ locale }: { locale: string }) {

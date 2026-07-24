@@ -1,10 +1,16 @@
 "use client";
 
 import { Ban, CheckCircle2, Loader2 } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { Badge, SelectInput } from "@/components/ui";
 import type { OfflineStore, Organization } from "@/lib/types";
+
+type StoreMasterFilters = {
+  status: "enabled" | "disabled" | "all";
+  organization: string;
+};
 
 type ConfirmDeletePanel = {
   stores: OfflineStore[];
@@ -46,12 +52,20 @@ function storeCreator(store: OfflineStore) {
 
 export function StoreMasterTable({
   stores,
+  total,
+  page,
+  perPage,
   organizations,
   locale,
+  filters,
 }: {
   stores: OfflineStore[];
+  total: number;
+  page: number;
+  perPage: number;
   organizations: Organization[];
   locale: string;
+  filters: StoreMasterFilters;
 }) {
   const router = useRouter();
   const isZh = locale === "zh";
@@ -67,6 +81,9 @@ export function StoreMasterTable({
   const visibleStores = useMemo(() => stores.filter((store) => !changedIds.has(store.id)), [changedIds, stores]);
   const selectedVisibleIds = selectedIds.filter((id) => visibleStores.some((store) => store.id === id));
   const allSelected = visibleStores.length > 0 && selectedVisibleIds.length === visibleStores.length;
+  const pageCount = Math.max(1, Math.ceil(total / perPage));
+  const from = total === 0 ? 0 : (page - 1) * perPage + 1;
+  const to = Math.min(total, page * perPage);
 
   function toggleStore(id: string, checked: boolean) {
     setSelectedIds((current) => checked ? Array.from(new Set([...current, id])) : current.filter((item) => item !== id));
@@ -316,8 +333,45 @@ export function StoreMasterTable({
           </tbody>
         </table>
       </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3 text-sm text-slate-500">
+        <span>{isZh ? `${from}-${to} / ${total}` : `${from}-${to} of ${total}`}</span>
+        <div className="flex gap-2">
+          <PaginationLink locale={locale} filters={filters} page={page - 1} perPage={perPage} disabled={page <= 1} label={isZh ? "上一页" : "Previous"} />
+          <span className="inline-flex h-9 items-center px-2">{page} / {pageCount}</span>
+          <PaginationLink locale={locale} filters={filters} page={page + 1} perPage={perPage} disabled={page >= pageCount} label={isZh ? "下一页" : "Next"} />
+        </div>
+      </div>
     </div>
   );
+}
+
+function PaginationLink({
+  locale,
+  filters,
+  page,
+  perPage,
+  disabled,
+  label,
+}: {
+  locale: string;
+  filters: StoreMasterFilters;
+  page: number;
+  perPage: number;
+  disabled: boolean;
+  label: string;
+}) {
+  if (disabled) return <span className="inline-flex h-9 items-center rounded-md border border-slate-200 px-3 text-slate-300">{label}</span>;
+  return <Link href={buildHref(locale, filters, { page, per_page: perPage })} className="inline-flex h-9 items-center rounded-md border border-slate-300 px-3 text-slate-700 hover:bg-slate-50">{label}</Link>;
+}
+
+function buildHref(locale: string, filters: StoreMasterFilters, overrides: Record<string, string | number>) {
+  const params = new URLSearchParams();
+  if (filters.status !== "enabled") params.set("status", filters.status);
+  if (filters.organization !== "all") params.set("organization", filters.organization);
+  for (const [key, value] of Object.entries(overrides)) params.set(key, String(value));
+  const query = params.toString();
+  return `/${locale}/offline-stores${query ? `?${query}` : ""}`;
 }
 
 function ConfirmDeletePanel({

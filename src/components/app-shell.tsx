@@ -75,7 +75,7 @@ const navGroups = [
     label: { zh: "价格监控", en: "Price Monitoring" },
     items: [
       { href: "/prices", label: { zh: "市场价格", en: "Market Price" }, icon: BarChart3 },
-      { href: "/offline-price-candidates", label: { zh: "需人工审核", en: "Needs Manual Review" }, icon: ClipboardCheck },
+      { href: "/offline-price-candidates", label: { zh: "人工审核", en: "Manual Review" }, icon: ClipboardCheck },
       { href: "/store-visit-monitor", label: { zh: "巡店记录", en: "Store Visit Records" }, icon: ClipboardCheck },
     ],
   },

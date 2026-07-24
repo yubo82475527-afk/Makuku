@@ -84,7 +84,13 @@ test("price export types and header menu expose both export domains", () => {
   assert.match(types, /export type PriceSnapshotExportJob =/);
   assert.match(menu, /fetch\("\/api\/store-visit-monitor\/export-jobs"/);
   assert.match(menu, /fetch\("\/api\/price-snapshots\/export-jobs"/);
-  assert.match(menu, /Real Market Price/);
+  assert.match(menu, /Market Price/);
+  assert.match(menu, /市场价格/);
+  assert.match(menu, /Manual Review/);
+  assert.match(menu, /人工审核/);
+  assert.match(menu, /Store Visit Records/);
+  assert.match(menu, /巡店记录/);
+  assert.doesNotMatch(menu, /真实市场价格|Real Market Price|价格异常审核|Price anomaly review|巡店分析|Visit analysis/);
   assert.match(menu, /setInterval\([\s\S]*10000/);
   assert.match(menu, /visitResponse\.ok \?/);
   assert.match(menu, /priceResponse\.ok \?/);

@@ -11,18 +11,33 @@ export default async function OfflineStoresPage({
   searchParams,
 }: {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ status?: string | string[] | undefined; organization?: string | string[] | undefined }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { locale, dict } = await getPageI18n(params);
   const query = await searchParams;
-  const rawStatus = Array.isArray(query.status) ? query.status[0] : query.status;
-  const rawOrganization = Array.isArray(query.organization) ? query.organization[0] : query.organization;
+  const getFilter = (key: string) => {
+    const value = query[key];
+    return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+  };
+
+  const rawStatus = getFilter("status");
+  const rawOrganization = getFilter("organization");
   const statusFilter = rawStatus === "disabled" || rawStatus === "all" ? rawStatus : "enabled";
-  const organizationFilter = rawOrganization?.trim() || "all";
+  const organizationFilter = rawOrganization.trim() || "all";
+  const pageParam = Number.parseInt(getFilter("page") || "1", 10);
+  const perPageParam = Number.parseInt(getFilter("per_page") || "25", 10);
+  const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
+  const perPage = Number.isFinite(perPageParam) && perPageParam > 0 ? Math.min(100, Math.max(10, perPageParam)) : 25;
+
   const [storesResult, organizationsResult] = await Promise.all([
     getOfflineStores({ status: statusFilter, organization: organizationFilter }),
     getOrganizations(),
   ]);
+  const total = storesResult.data.length;
+  const pageCount = Math.max(1, Math.ceil(total / perPage));
+  const currentPage = Math.min(page, pageCount);
+  const from = (currentPage - 1) * perPage;
+  const pagedStores = storesResult.data.slice(from, from + perPage);
   const isZh = locale === "zh";
   const queryParts = [
     statusFilter === "enabled" ? "" : `status=${statusFilter}`,
@@ -38,6 +53,7 @@ export default async function OfflineStoresPage({
       <Card className="mb-4">
         <div className="flex flex-wrap items-center gap-3">
           <form className="grid flex-1 gap-3 md:grid-cols-[160px_240px_120px]">
+            <input type="hidden" name="per_page" value={perPage} />
             <SelectInput name="status" defaultValue={statusFilter}>
               <option value="enabled">{isZh ? "\u542f\u7528" : "Enabled"}</option>
               <option value="disabled">{isZh ? "\u7981\u7528" : "Disabled"}</option>
@@ -57,9 +73,16 @@ export default async function OfflineStoresPage({
 
       <Card>
         <StoreMasterTable
-          stores={storesResult.data}
+          stores={pagedStores}
+          total={total}
+          page={currentPage}
+          perPage={perPage}
           organizations={organizationsResult.data}
           locale={locale}
+          filters={{
+            status: statusFilter,
+            organization: organizationFilter,
+          }}
         />
       </Card>
     </>

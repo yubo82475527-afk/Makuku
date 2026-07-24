@@ -56,6 +56,15 @@ test("store master page exposes delete action for stores", () => {
   assert.match(offlineStoresPage, /getOfflineStores\(\{ status: statusFilter, organization: organizationFilter \}\)/);
   assert.match(offlineStoresPage, /name="status"/);
   assert.match(offlineStoresPage, /name="organization"/);
+  assert.match(offlineStoresPage, /name="per_page"/);
+  assert.match(offlineStoresPage, /pagedStores/);
+  assert.match(offlineStoresPage, /total=\{total\}/);
+  assert.match(offlineStoresPage, /page=\{currentPage\}/);
+  assert.match(offlineStoresPage, /perPage=\{perPage\}/);
+  assert.match(storeMasterTable, /PaginationLink/);
+  assert.match(storeMasterTable, /buildHref/);
+  assert.match(storeMasterTable, /上一页|Previous/);
+  assert.match(storeMasterTable, /下一页|Next/);
   assert.doesNotMatch(storeMasterTable, /StoreCreateDialog/);
   assert.match(dataFile, /\.order\("created_at", \{ ascending: false \}\)/);
   assert.match(storeMasterTable, /selectedIds/);
