@@ -46,7 +46,7 @@ export function PriceIndexSection({
 }
 
 const dashboardFilterControlClassName =
-  "flex min-h-10 items-center rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus-within:border-slate-500 focus-within:ring-2 focus-within:ring-slate-200";
+  "flex h-10 items-center rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus-within:border-slate-500 focus-within:ring-2 focus-within:ring-slate-200";
 
 function WeeklyPriceCoefficientFilters({
   board,
@@ -60,7 +60,7 @@ function WeeklyPriceCoefficientFilters({
   onDimensionsChange?: (dimensions: PriceIndexDimension[]) => void;
 }) {
   return (
-    <QueryForm className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(180px,220px)_minmax(220px,280px)_minmax(240px,320px)_minmax(120px,180px)_minmax(120px,180px)]">
+    <QueryForm className="mb-4 grid items-stretch gap-3 md:grid-cols-2 xl:grid-cols-[minmax(180px,220px)_minmax(220px,1fr)_minmax(240px,1fr)_auto_auto]">
       <MonthFilter month={board.month} isZh={isZh} />
       <OrganizationFilter
         selectedOrganization={board.selectedOrganization}
@@ -69,12 +69,11 @@ function WeeklyPriceCoefficientFilters({
       />
       <OwnSeriesFilter selectedOwnSeries={board.selectedOwnSeries} options={board.ownSeriesOptions} isZh={isZh} />
       <QuerySubmitButton
-        className="min-h-10"
+        className="h-10 whitespace-nowrap"
         idleLabel={isZh ? "查询" : "Filter"}
         pendingLabel={isZh ? "加载中..." : "Loading..."}
       />
       <PriceIndexLayoutDialog
-        className="min-h-10"
         dimensions={dimensions}
         isZh={isZh}
         onSave={(nextDimensions) => onDimensionsChange?.(nextDimensions)}
@@ -92,7 +91,7 @@ function MonthFilter({ month, isZh }: { month: string; isZh: boolean }) {
         type="month"
         defaultValue={month}
         aria-label={isZh ? "月份" : "Month"}
-        className="min-w-0 flex-1 bg-transparent py-2 outline-none [color-scheme:light]"
+        className="min-w-0 flex-1 bg-transparent outline-none [color-scheme:light]"
       />
     </label>
   );
@@ -113,7 +112,7 @@ function OrganizationFilter({
       <select
         name="organization"
         defaultValue={selectedOrganization ?? ""}
-        className="min-w-0 flex-1 bg-transparent py-2 outline-none"
+        className="min-w-0 flex-1 bg-transparent outline-none"
       >
         <option value="">{isZh ? "全部组织" : "All organizations"}</option>
         {options.map((item) => (
@@ -141,7 +140,7 @@ function OwnSeriesFilter({
       <select
         name="ownSeries"
         defaultValue={selectedOwnSeries ?? ""}
-        className="min-w-0 flex-1 bg-transparent py-2 outline-none"
+        className="min-w-0 flex-1 bg-transparent outline-none"
       >
         <option value="">{isZh ? "全部自有系列" : "All own series"}</option>
         {options.map((series) => (

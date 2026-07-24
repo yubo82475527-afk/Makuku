@@ -1295,13 +1295,21 @@ async function priceSnapshotStoreIdsForOrganization(
   const organizationIds = (organizations ?? []).map((item) => item.id);
   if (organizationIds.length === 0) return [];
 
-  const { data: stores, error: storeError, count } = await supabase
-    .from("offline_stores")
-    .select("id", { count: "exact" })
-    .in("organization_id", organizationIds)
-    .range(0, 999);
-  if (storeError || (count ?? 0) > (stores ?? []).length) return null;
-  return (stores ?? []).map((store) => store.id);
+  const storeIds: string[] = [];
+  const pageSize = 1000;
+  for (let from = 0; ; from += pageSize) {
+    const { data: stores, error: storeError } = await supabase
+      .from("offline_stores")
+      .select("id")
+      .in("organization_id", organizationIds)
+      .order("id", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (storeError) return null;
+    const page = (stores ?? []).map((store) => store.id).filter(Boolean);
+    storeIds.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return storeIds;
 }
 
 async function priceSnapshotCompetitorProductIdsForBrand(
@@ -1937,13 +1945,40 @@ export async function getWeeklyPriceCoefficientBoard(
     if (!mapping.active) return false;
     return seriesNamesOverlap(mapping.target_makuku_series, selectedOwnSeries);
   });
+
+  let storeIds = scopedStoreIds;
+  if (cleanText(filters.organization) && hasSupabaseServiceConfig()) {
+    const organizationStoreIds = await priceSnapshotStoreIdsForOrganization(
+      createSupabaseServiceClient(),
+      filters.organization,
+    );
+    // Only push down when the org resolves to real stores. Empty/null keeps memory filter semantics.
+    if (organizationStoreIds && organizationStoreIds.length > 0) {
+      storeIds = intersectStoreIdLists(organizationStoreIds, scopedStoreIds);
+      if (storeIds?.length === 0) {
+        const emptyBoard = buildWeeklyPriceCoefficientBoard({
+          locale,
+          materialMaster: materialResult.data,
+          snapshots: [],
+          mappings: mappingsResult.data,
+          filters,
+        });
+        return {
+          data: emptyBoard,
+          error: materialResult.error ?? mappingsResult.error,
+          isDemo: materialResult.isDemo || mappingsResult.isDemo,
+        };
+      }
+    }
+  }
+
   const scopedSnapshotsResult = await getWeeklyBoardSnapshotsForPeriod({
     capturedFrom: monthStart,
     capturedTo: monthEnd,
     materialCodes: scopedMaterialCodes,
     competitorMappings: scopedMappings,
     includeVisitRegion: dimensions.some((level) => level === "province" || level === "city" || level === "district"),
-    storeIds: scopedStoreIds,
+    storeIds,
   });
   const data = buildWeeklyPriceCoefficientBoard({
     locale,
@@ -1989,73 +2024,163 @@ async function getWeeklyBoardSnapshotsForPeriod(filters: {
     : "";
   const select = `id,competitor_product_id,material_sku_code,price_per_piece,captured_at,created_at,offline_store_id${visitRegionSelect},offline_stores(id,city,province,city_name,district,organization_id,organizations(id,name,status)),competitor_products(id,brand_id,product_series,raw_title,normalized_name,size,piece_count,pack_type,brands(id,name))`;
 
-  let ownRows: PriceSnapshot[] = [];
-  if (filters.materialCodes.length > 0) {
-    const ownResult = await getAllWeeklyBoardSnapshotPages((from, to, includeCount) => {
-      let query = supabase
-        .from("price_snapshots")
-        .select(select, includeCount ? { count: "exact" } : undefined)
-        .gte("captured_at", filters.capturedFrom)
-        .lt("captured_at", filters.capturedTo)
-        .is("competitor_product_id", null)
-        .in("material_sku_code", filters.materialCodes)
-        .order("captured_at", { ascending: false })
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: true })
-        .range(from, to);
-      if (filters.storeIds) query = query.in("offline_store_id", filters.storeIds);
-      return query;
-    }, dashboardSnapshotPageSize);
-    if (ownResult.error) return { data: demoPriceSnapshots, error: ownResult.error, isDemo: true };
-    ownRows = ownResult.data;
+  async function loadOwnSnapshots() {
+    if (filters.materialCodes.length === 0) return { data: [] as PriceSnapshot[], error: null as string | null };
+    return getWeeklyBoardSnapshotsForInChunks({
+      ids: filters.materialCodes,
+      storeIds: filters.storeIds,
+      loadForIds: (materialCodes, storeIds) => getAllWeeklyBoardSnapshotPages((from, to, includeCount) => {
+        let query = supabase
+          .from("price_snapshots")
+          .select(select, includeCount ? { count: "exact" } : undefined)
+          .gte("captured_at", filters.capturedFrom)
+          .lt("captured_at", filters.capturedTo)
+          .is("competitor_product_id", null)
+          .in("material_sku_code", materialCodes)
+          .order("captured_at", { ascending: false })
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: true })
+          .range(from, to);
+        if (storeIds) query = query.in("offline_store_id", storeIds);
+        return query;
+      }, dashboardSnapshotPageSize),
+    });
   }
 
-  const competitorKeySet = new Set(filters.competitorMappings.map((mapping) => benchmarkSeriesKey(mapping.brand_id, mapping.product_series)));
-  const { data: competitorProducts, error: competitorProductsError } = await supabase
-    .from("competitor_products")
-    .select("id,brand_id,product_series")
-    .order("created_at", { ascending: false });
-  if (competitorProductsError) {
-    return { data: demoPriceSnapshots, error: competitorProductsError.message, isDemo: true };
+  async function loadCompetitorSnapshots() {
+    const competitorIdsResult = await resolveWeeklyBoardCompetitorProductIds(supabase, filters.competitorMappings);
+    if (competitorIdsResult.error) return { data: [] as PriceSnapshot[], error: competitorIdsResult.error };
+    if (competitorIdsResult.data.length === 0) return { data: [] as PriceSnapshot[], error: null };
+    return getWeeklyBoardSnapshotsForInChunks({
+      ids: competitorIdsResult.data,
+      storeIds: filters.storeIds,
+      loadForIds: (competitorIds, storeIds) => getAllWeeklyBoardSnapshotPages((from, to, includeCount) => {
+        let query = supabase
+          .from("price_snapshots")
+          .select(select, includeCount ? { count: "exact" } : undefined)
+          .gte("captured_at", filters.capturedFrom)
+          .lt("captured_at", filters.capturedTo)
+          .in("competitor_product_id", competitorIds)
+          .order("captured_at", { ascending: false })
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: true })
+          .range(from, to);
+        if (storeIds) query = query.in("offline_store_id", storeIds);
+        return query;
+      }, dashboardSnapshotPageSize),
+    });
   }
-  const competitorIds = (competitorProducts ?? [])
-    .filter((item) => competitorKeySet.has(benchmarkSeriesKey(item.brand_id, item.product_series)))
-    .map((item) => item.id);
 
-  let competitorRows: PriceSnapshot[] = [];
-  if (competitorIds.length > 0) {
-    const competitorResult = await getAllWeeklyBoardSnapshotPages((from, to, includeCount) => {
-      let query = supabase
-        .from("price_snapshots")
-        .select(select, includeCount ? { count: "exact" } : undefined)
-        .gte("captured_at", filters.capturedFrom)
-        .lt("captured_at", filters.capturedTo)
-        .in("competitor_product_id", competitorIds)
-        .order("captured_at", { ascending: false })
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: true })
-        .range(from, to);
-      if (filters.storeIds) query = query.in("offline_store_id", filters.storeIds);
-      return query;
-    }, dashboardSnapshotPageSize);
-    if (competitorResult.error) return { data: demoPriceSnapshots, error: competitorResult.error, isDemo: true };
-    competitorRows = competitorResult.data;
-  }
+  const [ownResult, competitorResult] = await Promise.all([loadOwnSnapshots(), loadCompetitorSnapshots()]);
+  if (ownResult.error) return { data: demoPriceSnapshots, error: ownResult.error, isDemo: true };
+  if (competitorResult.error) return { data: demoPriceSnapshots, error: competitorResult.error, isDemo: true };
 
   return {
-    data: [...ownRows, ...competitorRows],
+    data: [...ownResult.data, ...competitorResult.data],
     error: null,
     isDemo: false,
   } satisfies QueryResult<PriceSnapshot[]>;
 }
 
 const dashboardSnapshotPageConcurrency = 4;
+const dashboardSnapshotInChunkSize = 200;
 
 type WeeklyBoardSnapshotPage = {
   data: unknown[] | null;
   error: { message: string } | null;
   count: number | null;
 };
+
+async function resolveWeeklyBoardCompetitorProductIds(
+  supabase: ReturnType<typeof createSupabaseServiceClient>,
+  competitorMappings: CompetitorSeriesMapping[],
+) {
+  const competitorKeySet = new Set(
+    competitorMappings.map((mapping) => benchmarkSeriesKey(mapping.brand_id, mapping.product_series)),
+  );
+  const brandIds = uniqueStrings(competitorMappings.map((mapping) => mapping.brand_id));
+  if (brandIds.length === 0 || competitorKeySet.size === 0) {
+    return { data: [] as string[], error: null as string | null };
+  }
+
+  const products: Array<{ id: string; brand_id?: string | null; product_series?: string | null }> = [];
+  const pageSize = 1000;
+  for (let offset = 0; offset < brandIds.length; offset += dashboardSnapshotInChunkSize) {
+    const brandChunk = brandIds.slice(offset, offset + dashboardSnapshotInChunkSize);
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supabase
+        .from("competitor_products")
+        .select("id,brand_id,product_series")
+        .in("brand_id", brandChunk)
+        .order("id", { ascending: true })
+        .range(from, from + pageSize - 1);
+      if (error) return { data: [] as string[], error: error.message };
+      const page = (data ?? []) as typeof products;
+      products.push(...page);
+      if (page.length < pageSize) break;
+    }
+  }
+
+  return {
+    data: products
+      .filter((item) => competitorKeySet.has(benchmarkSeriesKey(item.brand_id, item.product_series)))
+      .map((item) => item.id)
+      .filter(Boolean),
+    error: null as string | null,
+  };
+}
+
+async function getWeeklyBoardSnapshotsForInChunks(input: {
+  ids: string[];
+  storeIds?: string[] | null;
+  loadForIds: (ids: string[], storeIds: string[] | null | undefined) => Promise<{ data: PriceSnapshot[]; error: string | null }>;
+}) {
+  const uniqueIds = [...new Set(input.ids.filter(Boolean))];
+  if (uniqueIds.length === 0) return { data: [] as PriceSnapshot[], error: null as string | null };
+
+  const idChunks = chunkValues(uniqueIds, dashboardSnapshotInChunkSize);
+  const uniqueStoreIds = input.storeIds
+    ? [...new Set(input.storeIds.filter(Boolean))]
+    : null;
+  // Avoid id×store cartesian blowups: when both are large, fetch by id only and filter stores in memory.
+  const maxChunkCombinations = 40;
+  const storeChunks = uniqueStoreIds
+    ? chunkValues(uniqueStoreIds, dashboardSnapshotInChunkSize)
+    : [null];
+  const useInMemoryStoreFilter = Boolean(
+    uniqueStoreIds
+    && storeChunks.length > 1
+    && idChunks.length * storeChunks.length > maxChunkCombinations,
+  );
+  const effectiveStoreChunks = useInMemoryStoreFilter ? [null] : storeChunks;
+  const storeIdSet = useInMemoryStoreFilter ? new Set(uniqueStoreIds) : null;
+
+  const rows: PriceSnapshot[] = [];
+  const seen = new Set<string>();
+  for (const idChunk of idChunks) {
+    for (const storeChunk of effectiveStoreChunks) {
+      const result = await input.loadForIds(idChunk, storeChunk ?? undefined);
+      if (result.error) return result;
+      for (const row of result.data) {
+        const rowId = String(row.id ?? "");
+        if (!rowId || seen.has(rowId)) continue;
+        if (storeIdSet && (!row.offline_store_id || !storeIdSet.has(row.offline_store_id))) continue;
+        seen.add(rowId);
+        rows.push(row);
+      }
+    }
+  }
+  return { data: rows, error: null as string | null };
+}
+
+function chunkValues<T>(values: T[], chunkSize: number) {
+  if (values.length === 0) return [] as T[][];
+  const chunks: T[][] = [];
+  for (let offset = 0; offset < values.length; offset += chunkSize) {
+    chunks.push(values.slice(offset, offset + chunkSize));
+  }
+  return chunks;
+}
 
 async function getAllWeeklyBoardSnapshotPages(
   loadPage: (from: number, to: number, includeCount: boolean) => PromiseLike<WeeklyBoardSnapshotPage>,
@@ -2367,10 +2492,11 @@ function buildWeeklyCoefficientRecords(input: {
   isCompetitor: boolean;
 }): WeeklyCoefficientRecord[] {
   const materialByCode = new Map(input.materialMaster.map((material) => [material.tenant_sku_code, material]));
+  const competitorMaterialCodeCache = input.isCompetitor ? new Map<string, string | null>() : null;
   return input.snapshots.flatMap((snapshot) => {
     const organization = snapshotOrganizationName(snapshot);
     const sku = input.isCompetitor
-      ? competitorSnapshotMaterialCode(snapshot, input.mappings, input.materialMaster)
+      ? competitorSnapshotMaterialCode(snapshot, input.mappings, input.materialMaster, competitorMaterialCodeCache)
       : snapshotMaterialCode(snapshot);
     if (!organization || !sku) return [];
     const region = snapshotRegionParts(snapshot);
@@ -2429,13 +2555,16 @@ function buildWeeklyCoefficientNodes(input: {
 
   const ownGroups = groupWeeklyCoefficientRecords(input.ownRecords, level);
   const benchmarkGroups = groupWeeklyCoefficientRecords(input.benchmarkRecords, level);
+  const benchmarkByBroadcastKey = level === "sku"
+    ? groupWeeklyCoefficientRecordsByBroadcastKey(input.benchmarkRecords)
+    : null;
   return Array.from(ownGroups.entries())
     .map(([label, ownRecords]) => {
       const benchmarkRecords = weeklyCoefficientBenchmarkRecordsForOwnGroup({
         level,
         ownRecords,
         exactBenchmarkRecords: benchmarkGroups.get(label) ?? [],
-        benchmarkRecords: input.benchmarkRecords,
+        benchmarkByBroadcastKey,
       });
       const context = weeklyCoefficientContextForLevel(input.context, level, label, ownRecords[0] ?? null);
       const selectedSku = context.skuCode ?? input.selectedSku;
@@ -2481,13 +2610,25 @@ function weeklyCoefficientBenchmarkRecordsForOwnGroup(input: {
   level: WeeklyPriceCoefficientNodeLevel;
   ownRecords: WeeklyCoefficientRecord[];
   exactBenchmarkRecords: WeeklyCoefficientRecord[];
-  benchmarkRecords: WeeklyCoefficientRecord[];
+  benchmarkByBroadcastKey: Map<string, WeeklyCoefficientRecord[]> | null;
 }) {
   const { level, ownRecords, exactBenchmarkRecords } = input;
   if (level !== "sku") return exactBenchmarkRecords;
   const broadcastKey = weeklyCoefficientBroadcastKey(ownRecords[0]);
   if (!broadcastKey) return exactBenchmarkRecords;
-  return input.benchmarkRecords.filter((record) => weeklyCoefficientBroadcastKey(record) === broadcastKey);
+  return input.benchmarkByBroadcastKey?.get(broadcastKey) ?? [];
+}
+
+function groupWeeklyCoefficientRecordsByBroadcastKey(records: WeeklyCoefficientRecord[]) {
+  const groups = new Map<string, WeeklyCoefficientRecord[]>();
+  for (const record of records) {
+    const key = weeklyCoefficientBroadcastKey(record);
+    if (!key) continue;
+    const current = groups.get(key) ?? [];
+    current.push(record);
+    groups.set(key, current);
+  }
+  return groups;
 }
 
 function weeklyCoefficientBroadcastKey(record: WeeklyCoefficientRecord) {
@@ -2598,6 +2739,8 @@ function buildWeeklyCoefficientNode(input: {
     skuCode: input.skuCode,
     label: input.label,
   });
+  const ownSnapshotsByWeek = bucketSnapshotsByWeek(input.ownSnapshots, input.weeks);
+  const benchmarkSnapshotsByWeek = bucketSnapshotsByWeek(input.benchmarkSnapshots, input.weeks);
 
   return {
     id: nodeKey,
@@ -2609,24 +2752,48 @@ function buildWeeklyCoefficientNode(input: {
     size: input.size,
     skuCode: input.skuCode,
     skuName: input.skuName,
-    cells: input.weeks.map((week) => buildWeeklyCoefficientCell({
-      locale: input.locale,
-      week,
-      ownSnapshots: input.ownSnapshots,
-      benchmarkSnapshots: input.benchmarkSnapshots,
-      competitorSeries: input.competitorSeries,
-      selectedOwnSeries: input.selectedOwnSeries,
-      selectedSku: input.selectedSku,
-      organization: input.organization,
-      province: input.province,
-      cityName: input.cityName,
-      district: input.district,
-      size: input.size,
-      shape: input.shape,
-      ownSeries: input.selectedOwnSeries,
-    })),
+    cells: input.weeks.map((week) => {
+      const weekKey = week.key ?? week.label ?? week.startDate;
+      return buildWeeklyCoefficientCell({
+        locale: input.locale,
+        week,
+        ownSnapshots: ownSnapshotsByWeek.get(weekKey) ?? [],
+        benchmarkSnapshots: benchmarkSnapshotsByWeek.get(weekKey) ?? [],
+        competitorSeries: input.competitorSeries,
+        selectedOwnSeries: input.selectedOwnSeries,
+        selectedSku: input.selectedSku,
+        organization: input.organization,
+        province: input.province,
+        cityName: input.cityName,
+        district: input.district,
+        size: input.size,
+        shape: input.shape,
+        ownSeries: input.selectedOwnSeries,
+      });
+    }),
     children: input.children,
   };
+}
+
+function bucketSnapshotsByWeek(
+  snapshots: PriceSnapshot[],
+  weeks: WeeklyPriceCoefficientBoard["weeks"],
+) {
+  const buckets = new Map<string, PriceSnapshot[]>();
+  for (const week of weeks) {
+    buckets.set(week.key ?? week.label ?? week.startDate, []);
+  }
+  for (const snapshot of snapshots) {
+    const capturedDate = dateKey(new Date(snapshot.captured_at));
+    for (const week of weeks) {
+      if (capturedDate < week.startDate || capturedDate > week.endDate) continue;
+      const weekKey = week.key ?? week.label ?? week.startDate;
+      const bucket = buckets.get(weekKey);
+      if (bucket) bucket.push(snapshot);
+      break;
+    }
+  }
+  return buckets;
 }
 
 function buildWeeklyCoefficientCell(input: {
@@ -2645,8 +2812,7 @@ function buildWeeklyCoefficientCell(input: {
   shape: string | null;
   ownSeries: string | null;
 }) {
-  const weeklyOwnSnapshots = input.ownSnapshots
-    .filter((snapshot) => snapshotInPeriod(snapshot, input.week.startDate, input.week.endDate));
+  const weeklyOwnSnapshots = input.ownSnapshots;
   const ownPrices = weeklyOwnSnapshots
     .map((snapshot) => Number(snapshot.price_per_piece))
     .filter(isPositiveNumber);
@@ -2654,19 +2820,17 @@ function buildWeeklyCoefficientCell(input: {
   const ownBrandOptions = uniqueStrings(weeklyOwnSnapshots.map((snapshot) => priceSnapshotBrandForFilters(snapshot)));
   const ownBrand = ownBrandOptions.length === 1 ? ownBrandOptions[0] : undefined;
   const defaultBenchmarkSeries = input.competitorSeries.find((series) => series.isBenchmark) ?? null;
-  const weeklyBenchmarkSnapshots = input.benchmarkSnapshots
-    .filter((snapshot) => snapshotInPeriod(snapshot, input.week.startDate, input.week.endDate));
+  const weeklyBenchmarkSnapshots = input.benchmarkSnapshots;
+  const benchmarkSnapshotsBySeries = bucketSnapshotsByBenchmarkSeries(weeklyBenchmarkSnapshots);
   const defaultBenchmarkPrices = defaultBenchmarkSeries
-    ? weeklyBenchmarkSnapshots
-      .filter((snapshot) => benchmarkSeriesKey(snapshot.competitor_products?.brand_id, snapshot.competitor_products?.product_series) === defaultBenchmarkSeries.key)
+    ? (benchmarkSnapshotsBySeries.get(defaultBenchmarkSeries.key) ?? [])
       .map((snapshot) => Number(snapshot.price_per_piece))
       .filter(isPositiveNumber)
     : [];
   const ownBenchmarkPrices = defaultBenchmarkSeries ? defaultBenchmarkPrices : [];
   const ownBenchmarkAvgPrice = averageOrNull(ownBenchmarkPrices);
   const competitorCells = input.competitorSeries.map((series) => {
-    const benchmarkPrices = weeklyBenchmarkSnapshots
-      .filter((snapshot) => benchmarkSeriesKey(snapshot.competitor_products?.brand_id, snapshot.competitor_products?.product_series) === series.key)
+    const benchmarkPrices = (benchmarkSnapshotsBySeries.get(series.key) ?? [])
       .map((snapshot) => Number(snapshot.price_per_piece))
       .filter(isPositiveNumber);
     const benchmarkAvgPrice = averageOrNull(benchmarkPrices);
@@ -2722,6 +2886,18 @@ function buildWeeklyCoefficientCell(input: {
   } satisfies WeeklyPriceCoefficientCell;
 }
 
+function bucketSnapshotsByBenchmarkSeries(snapshots: PriceSnapshot[]) {
+  const buckets = new Map<string, PriceSnapshot[]>();
+  for (const snapshot of snapshots) {
+    const key = benchmarkSeriesKey(snapshot.competitor_products?.brand_id, snapshot.competitor_products?.product_series);
+    if (!key) continue;
+    const current = buckets.get(key) ?? [];
+    current.push(snapshot);
+    buckets.set(key, current);
+  }
+  return buckets;
+}
+
 function buildWeeklyCoefficientNodeId(input: {
   level: WeeklyPriceCoefficientNode["level"];
   organization: string | null;
@@ -2756,13 +2932,25 @@ function snapshotMaterialCode(snapshot: PriceSnapshot) {
     ?? null;
 }
 
-function competitorSnapshotMaterialCode(snapshot: PriceSnapshot, mappings: CompetitorSeriesMapping[], materials: MaterialMaster[]) {
+function competitorSnapshotMaterialCode(
+  snapshot: PriceSnapshot,
+  mappings: CompetitorSeriesMapping[],
+  materials: MaterialMaster[],
+  cache?: Map<string, string | null> | null,
+) {
   const product = snapshot.competitor_products;
   if (!product) return null;
+  const cacheKey = cleanText(snapshot.competitor_product_id) ?? cleanText(product.id);
+  if (cacheKey && cache?.has(cacheKey)) return cache.get(cacheKey) ?? null;
   const mapping = mappings.find((item) => item.active && benchmarkSeriesKey(item.brand_id, item.product_series) === benchmarkSeriesKey(product.brand_id, product.product_series));
-  if (!mapping) return null;
+  if (!mapping) {
+    if (cacheKey && cache) cache.set(cacheKey, null);
+    return null;
+  }
   const materialMatch = findMatchingMaterialForSeries(product, mapping.target_makuku_series, materials);
-  return materialMatch.material?.tenant_sku_code ?? null;
+  const materialCode = materialMatch.material?.tenant_sku_code ?? null;
+  if (cacheKey && cache) cache.set(cacheKey, materialCode);
+  return materialCode;
 }
 
 function snapshotOrganizationName(snapshot: PriceSnapshot) {
@@ -2779,11 +2967,6 @@ function snapshotRegionParts(snapshot: PriceSnapshot) {
     cityName: visitRegionParts.cityName ?? storeRegionParts.cityName ?? null,
     district: visitRegionParts.district ?? storeRegionParts.district ?? null,
   };
-}
-
-function snapshotInPeriod(snapshot: PriceSnapshot, startDate: string, endDate: string) {
-  const capturedDate = dateKey(new Date(snapshot.captured_at));
-  return capturedDate >= startDate && capturedDate <= endDate;
 }
 
 function buildWeeklyPriceHref(locale: string, input: {

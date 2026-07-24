@@ -44,9 +44,8 @@ const storeMasterTable = readFileSync("src/components/store-master-table.tsx", "
 test("app shell groups the backend navigation for price positioning and master data", () => {
   assert.match(appShell, /Price Index/);
   assert.match(appShell, /Price Governance/);
-  assert.match(appShell, /Confirmed Prices/);
+  assert.match(appShell, /Real Prices/);
   assert.match(appShell, /Price Review/);
-  assert.match(appShell, /Price Standards/);
   assert.match(appShell, /Competitor Benchmarking/);
   assert.doesNotMatch(appShell, /Market Benchmarks/);
   assert.doesNotMatch(appShell, /\/market-benchmarks/);
@@ -131,6 +130,8 @@ test("dashboard organization selection matches normalized labels", () => {
   assert.match(dataFile, /const selectedOrganization = selectDashboardTextOption\(input\.filters\.organization, organizationOptions\)/);
   assert.match(dataFile, /matchesDashboardText\(snapshotOrganizationName\(snapshot\), selectedOrganization\)/);
   assert.match(dataFile, /\.ilike\("name", organizationName\)/);
+  assert.match(dataFile, /organizationStoreIds && organizationStoreIds\.length > 0/);
+  assert.match(dataFile, /intersectStoreIdLists\(organizationStoreIds, scopedStoreIds\)/);
 });
 
 test("dashboard price API normalizes and forwards requested dimension order", () => {
@@ -163,7 +164,8 @@ test("sku-level benchmark prices are broadcast by same size and product shape", 
   assert.match(dataFile, /function weeklyCoefficientBenchmarkRecordsForOwnGroup\(/);
   assert.match(dataFile, /if \(level !== "sku"\) return exactBenchmarkRecords/);
   assert.match(dataFile, /const broadcastKey = weeklyCoefficientBroadcastKey\(ownRecords\[0\]\)/);
-  assert.match(dataFile, /input\.benchmarkRecords\.filter\(\(record\) => weeklyCoefficientBroadcastKey\(record\) === broadcastKey\)/);
+  assert.match(dataFile, /groupWeeklyCoefficientRecordsByBroadcastKey\(input\.benchmarkRecords\)/);
+  assert.match(dataFile, /input\.benchmarkByBroadcastKey\?\.get\(broadcastKey\) \?\? \[\]/);
   assert.match(dataFile, /function weeklyCoefficientBroadcastKey\(record: WeeklyCoefficientRecord\)/);
   assert.match(dataFile, /return `\$\{normalizeDashboardText\(record\.size\)\}\|\$\{record\.shape\}`/);
   assert.match(dataFile, /function weeklyCoefficientRecordShape\(/);
@@ -422,6 +424,41 @@ test("dashboard loads snapshot pages with bounded concurrency", () => {
   assert.match(dataFile, /pageIndex \+= dashboardSnapshotPageConcurrency/);
 });
 
+test("dashboard price index loads own and competitor snapshots in parallel with narrowed competitor products", () => {
+  const boardQuerySource = dataFile.slice(
+    dataFile.indexOf("async function getWeeklyBoardSnapshotsForPeriod"),
+    dataFile.indexOf("export async function getProductSegmentPriceIndexBattles"),
+  );
+  assert.match(boardQuerySource, /Promise\.all\(\[loadOwnSnapshots\(\), loadCompetitorSnapshots\(\)\]\)/);
+  assert.match(boardQuerySource, /function resolveWeeklyBoardCompetitorProductIds\(/);
+  assert.match(boardQuerySource, /\.in\("brand_id", brandChunk\)/);
+  assert.match(boardQuerySource, /\.range\(from, from \+ pageSize - 1\)/);
+  assert.match(boardQuerySource, /competitorKeySet\.has\(benchmarkSeriesKey/);
+  assert.match(boardQuerySource, /useInMemoryStoreFilter/);
+  assert.doesNotMatch(boardQuerySource, /\.from\("competitor_products"\)[\s\S]*\.select\("id,brand_id,product_series"\)\s*\.order\("created_at"/);
+});
+
+test("dashboard price index chunks large IN filters and paginates scoped store ids", () => {
+  assert.match(dataFile, /const dashboardSnapshotInChunkSize = 200/);
+  assert.match(dataFile, /function getWeeklyBoardSnapshotsForInChunks\(/);
+  assert.match(dataFile, /chunkValues\(uniqueIds, dashboardSnapshotInChunkSize\)/);
+  const dataScope = readFileSync("src/lib/data-scope.ts", "utf8");
+  assert.match(dataScope, /const scopedStoreIdPageSize = 1000/);
+  assert.match(dataScope, /\.range\(from, from \+ scopedStoreIdPageSize - 1\)/);
+});
+
+test("dashboard price index cells read week and series buckets instead of rescanning snapshots", () => {
+  assert.match(dataFile, /function bucketSnapshotsByWeek\(/);
+  assert.match(dataFile, /function bucketSnapshotsByBenchmarkSeries\(/);
+  assert.match(dataFile, /ownSnapshotsByWeek\.get\(weekKey\) \?\? \[\]/);
+  assert.match(dataFile, /benchmarkSnapshotsBySeries\.get\(series\.key\) \?\? \[\]/);
+  assert.match(dataFile, /competitorMaterialCodeCache/);
+  assert.doesNotMatch(
+    dataFile.slice(dataFile.indexOf("function buildWeeklyCoefficientCell"), dataFile.indexOf("function bucketSnapshotsByBenchmarkSeries")),
+    /snapshotInPeriod/,
+  );
+});
+
 test("next config keeps instant navigation tooling without enabling cacheComponents on dynamic routes", () => {
   assert.match(nextConfig, /instantNavigationDevToolsToggle:\s*true/);
   assert.doesNotMatch(nextConfig, /cacheComponents:\s*true/);
@@ -465,7 +502,7 @@ test("dashboard price index removes the competitor mapping quick entry", () => {
 
 test("dashboard price index filters follow the price review filter shell and place column setup after query", () => {
   const formStart = dashboardContent.indexOf(
-    '<QueryForm className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(180px,220px)_minmax(220px,280px)_minmax(240px,320px)_minmax(120px,180px)_minmax(120px,180px)]">',
+    '<QueryForm className="mb-4 grid items-stretch gap-3 md:grid-cols-2 xl:grid-cols-[minmax(180px,220px)_minmax(220px,1fr)_minmax(240px,1fr)_auto_auto]">',
   );
   assert.notEqual(formStart, -1);
   const formEnd = dashboardContent.indexOf("</QueryForm>", formStart);
@@ -474,12 +511,12 @@ test("dashboard price index filters follow the price review filter shell and pla
 
   assert.match(
     dashboardContent,
-    /flex min-h-10 items-center rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm/,
+    /flex h-10 items-center rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm/,
   );
   assert.match(filterForm, /<MonthFilter/);
   assert.match(filterForm, /<OrganizationFilter/);
   assert.match(filterForm, /<OwnSeriesFilter/);
-  assert.match(filterForm, /<QuerySubmitButton[\s\S]*className="min-h-10"/);
+  assert.match(filterForm, /<QuerySubmitButton[\s\S]*className="h-10 whitespace-nowrap"/);
   assert.match(filterForm, /<PriceIndexLayoutDialog[\s\S]*dimensions=\{dimensions\}/);
   assert.ok(filterForm.indexOf("<QuerySubmitButton") < filterForm.indexOf("<PriceIndexLayoutDialog"));
 });

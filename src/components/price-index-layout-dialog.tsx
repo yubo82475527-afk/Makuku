@@ -20,6 +20,16 @@ const zh = {
   moveDown: "\u4e0b\u79fb",
 };
 
+const en = {
+  configureColumns: "Columns",
+  title: "Configure price index columns",
+  close: "Close",
+  cancel: "Cancel",
+  save: "Save",
+  moveUp: "Move up",
+  moveDown: "Move down",
+};
+
 export function PriceIndexLayoutDialog({
   className,
   dimensions,
@@ -70,17 +80,17 @@ export function PriceIndexLayoutDialog({
         type="button"
         onClick={openDialog}
         className={clsx(
-          "inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50",
+          "inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50",
           className,
         )}
       >
-        <Columns3 className="h-4 w-4" />
-        {isZh ? zh.configureColumns : "Configure columns"}
+        <Columns3 className="h-4 w-4 shrink-0" aria-hidden="true" />
+        {isZh ? zh.configureColumns : en.configureColumns}
       </button>
       {open ? (
         <DialogShell
-          title={isZh ? zh.title : "Configure price index columns"}
-          closeLabel={isZh ? zh.close : "Close"}
+          title={isZh ? zh.title : en.title}
+          closeLabel={isZh ? zh.close : en.close}
           onClose={() => setOpen(false)}
         >
           <div className="space-y-2">
@@ -104,8 +114,8 @@ export function PriceIndexLayoutDialog({
                         onClick={() => moveDimension(dimension, -1)}
                         disabled={index <= 1}
                         className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-                        aria-label={isZh ? zh.moveUp : "Move up"}
-                        title={isZh ? zh.moveUp : "Move up"}
+                        aria-label={isZh ? zh.moveUp : en.moveUp}
+                        title={isZh ? zh.moveUp : en.moveUp}
                       >
                         <ArrowUp className="h-3.5 w-3.5" />
                       </button>
@@ -114,8 +124,8 @@ export function PriceIndexLayoutDialog({
                         onClick={() => moveDimension(dimension, 1)}
                         disabled={index === draftDimensions.length - 1}
                         className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-                        aria-label={isZh ? zh.moveDown : "Move down"}
-                        title={isZh ? zh.moveDown : "Move down"}
+                        aria-label={isZh ? zh.moveDown : en.moveDown}
+                        title={isZh ? zh.moveDown : en.moveDown}
                       >
                         <ArrowDown className="h-3.5 w-3.5" />
                       </button>
@@ -131,9 +141,9 @@ export function PriceIndexLayoutDialog({
               onClick={() => setOpen(false)}
               className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
-              {isZh ? zh.cancel : "Cancel"}
+              {isZh ? zh.cancel : en.cancel}
             </button>
-            <Button type="button" onClick={save}>{isZh ? zh.save : "Save"}</Button>
+            <Button type="button" onClick={save}>{isZh ? zh.save : en.save}</Button>
           </div>
         </DialogShell>
       ) : null}

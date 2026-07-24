@@ -61,6 +61,8 @@ export function organizationIdsInScope(scope: DataScope): string[] | null {
   return scope.organizationIds;
 }
 
+const scopedStoreIdPageSize = 1000;
+
 /** Returns store IDs visible under scope. null = unrestricted; [] = none. */
 export async function resolveScopedStoreIds(scope: DataScope): Promise<string[] | null> {
   if (scope.mode === "all") return null;
@@ -68,13 +70,20 @@ export async function resolveScopedStoreIds(scope: DataScope): Promise<string[] 
   if (!hasSupabaseServiceConfig()) return [];
 
   const supabase = createSupabaseServiceClient();
-  const { data, error } = await supabase
-    .from("offline_stores")
-    .select("id")
-    .in("organization_id", scope.organizationIds);
-
-  if (error) return [];
-  return (data ?? []).map((row) => String(row.id));
+  const storeIds: string[] = [];
+  for (let from = 0; ; from += scopedStoreIdPageSize) {
+    const { data, error } = await supabase
+      .from("offline_stores")
+      .select("id")
+      .in("organization_id", scope.organizationIds)
+      .order("id", { ascending: true })
+      .range(from, from + scopedStoreIdPageSize - 1);
+    if (error) return [];
+    const page = (data ?? []).map((row) => String(row.id)).filter(Boolean);
+    storeIds.push(...page);
+    if (page.length < scopedStoreIdPageSize) break;
+  }
+  return storeIds;
 }
 
 export function storeMatchesDataScope(

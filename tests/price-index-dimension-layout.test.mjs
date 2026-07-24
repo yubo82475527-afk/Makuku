@@ -36,6 +36,13 @@ test("price index layout dialog locks Organization and saves only explicit draft
   assert.doesNotMatch(dialog, /localStorage/);
 });
 
+test("price index layout trigger keeps a single-line filter-row height in English", () => {
+  const dialog = readFileSync("src/components/price-index-layout-dialog.tsx", "utf8");
+  assert.match(dialog, /configureColumns: "Columns"/);
+  assert.match(dialog, /inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap/);
+  assert.doesNotMatch(dialog, /Configure columns/);
+});
+
 test("price index layout trigger supports dashboard filter action alignment", () => {
   const dialog = readFileSync("src/components/price-index-layout-dialog.tsx", "utf8");
   assert.match(dialog, /className\?: string/);
