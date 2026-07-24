@@ -13,7 +13,7 @@ export const PRICE_INDEX_DIMENSIONS = [
 
 export type PriceIndexDimension = (typeof PRICE_INDEX_DIMENSIONS)[number];
 
-export const DEFAULT_PRICE_INDEX_DIMENSIONS: PriceIndexDimension[] = ["organization"];
+export const DEFAULT_PRICE_INDEX_DIMENSIONS: PriceIndexDimension[] = ["organization", "size"];
 
 export function normalizePriceIndexDimensions(input: unknown): PriceIndexDimension[] {
   const values = Array.isArray(input)

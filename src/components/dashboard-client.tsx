@@ -102,7 +102,9 @@ export function DashboardClient({
 
 function readPriceIndexDimensions(storage: Pick<Storage, "getItem">) {
   try {
-    return normalizePriceIndexDimensions(JSON.parse(storage.getItem(PRICE_INDEX_DIMENSION_STORAGE_KEY) ?? "null"));
+    const raw = storage.getItem(PRICE_INDEX_DIMENSION_STORAGE_KEY);
+    if (raw == null) return DEFAULT_PRICE_INDEX_DIMENSIONS;
+    return normalizePriceIndexDimensions(JSON.parse(raw));
   } catch {
     return DEFAULT_PRICE_INDEX_DIMENSIONS;
   }

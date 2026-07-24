@@ -7,13 +7,20 @@ import {
 } from "../src/lib/price-index-dimensions.ts";
 
 test("price index dimensions always retain Organization first and discard invalid values", () => {
-  assert.deepEqual(DEFAULT_PRICE_INDEX_DIMENSIONS, ["organization"]);
+  assert.deepEqual(DEFAULT_PRICE_INDEX_DIMENSIONS, ["organization", "size"]);
   assert.deepEqual(
     normalizePriceIndexDimensions(["sku", "organization", "size", "city", "sku", "unknown"]),
     ["organization", "sku", "size", "city"],
   );
   assert.deepEqual(normalizePriceIndexDimensions([]), ["organization"]);
   assert.deepEqual(normalizePriceIndexDimensions("organization,province,size,sku"), ["organization", "province", "size", "sku"]);
+});
+
+test("dashboard uses default Organization+Size when local layout is unset", () => {
+  const client = readFileSync("src/components/dashboard-client.tsx", "utf8");
+  assert.match(client, /const raw = storage\.getItem\(PRICE_INDEX_DIMENSION_STORAGE_KEY\)/);
+  assert.match(client, /if \(raw == null\) return DEFAULT_PRICE_INDEX_DIMENSIONS/);
+  assert.match(client, /return normalizePriceIndexDimensions\(JSON\.parse\(raw\)\)/);
 });
 
 test("price index layout dialog locks Organization and saves only explicit drafts", () => {
