@@ -100,6 +100,7 @@ export const demoMaterialMaster: MaterialMaster[] = demoSkuMaster.map((sku, inde
     sub_category: sku.pack_type === "tape" ? "Tape" : "Pants",
     brand: "Makuku",
     sub_brand: subBrand,
+    material_group2: null,
     type: sku.pack_type,
     sub_type: sku.size,
     pack_count: sku.piece_count,

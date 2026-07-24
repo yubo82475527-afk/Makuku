@@ -35,6 +35,7 @@ export async function GET(request: Request) {
     sku.sub_category,
     sku.brand,
     sku.sub_brand,
+    sku.material_group2,
     sku.type,
     sku.sub_type,
     sku.pack_count,

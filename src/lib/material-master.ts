@@ -5,6 +5,7 @@ export const materialMasterColumns = [
   "sub_category",
   "brand",
   "sub_brand",
+  "material_group2",
   "type",
   "sub_type",
   "pack_count",

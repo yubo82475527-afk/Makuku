@@ -300,6 +300,7 @@ export type MaterialMaster = {
   sub_category: string;
   brand: string;
   sub_brand: string | null;
+  material_group2: string | null;
   type: string | null;
   sub_type: string | null;
   pack_count: number;

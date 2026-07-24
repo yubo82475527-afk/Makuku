@@ -11,6 +11,7 @@ function material(code: string, subCategory: string, packCount: number): Materia
     sub_category: subCategory,
     brand: "MAKUKU",
     sub_brand: "DRY CARE",
+    material_group2: null,
     type: subCategory,
     sub_type: "L",
     pack_count: packCount,
