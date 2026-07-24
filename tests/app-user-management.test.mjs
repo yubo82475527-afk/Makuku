@@ -71,9 +71,8 @@ test("app user management API hashes passwords and supports account status", () 
   assert.match(userTable, /resolve-feishu-open-id/);
   assert.match(userTable, /Reset password/);
   assert.match(userTable, /Disable|Enable/);
-  assert.match(userTable, /option value="field_agent"/);
-  assert.match(userTable, /option value="manager"/);
-  assert.match(userTable, /option value="admin"/);
+  assert.match(userTable, /roleOptions/);
+  assert.match(userTable, /roles\?: Array<\{ code: string; name: string \}>/);
 });
 
 test("app user management API hashes passwords and supports account status fields for feishu org snapshot", () => {

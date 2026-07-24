@@ -2,6 +2,7 @@ import {
   getWeeklyPriceCoefficientBoard,
   type WeeklyPriceCoefficientFilters,
 } from "@/lib/data";
+import type { DataScope } from "@/lib/data-scope";
 import { normalizePriceIndexDimensions } from "@/lib/price-index-dimensions";
 import type { WeeklyPriceCoefficientBoard } from "@/lib/types";
 
@@ -23,12 +24,14 @@ export type DashboardPricePayload = {
 export async function getDashboardPriceData(
   locale: string,
   query: DashboardSearchParams,
+  dataScope?: DataScope,
 ): Promise<DashboardPricePayload> {
   const priceFilters: WeeklyPriceCoefficientFilters = {
     month: query.month || undefined,
     ownSeries: query.ownSeries || undefined,
     organization: query.organization || undefined,
     dimensions: normalizePriceIndexDimensions(query.dimensions),
+    dataScope,
   };
 
   const priceResult = await getWeeklyPriceCoefficientBoard(locale, priceFilters);

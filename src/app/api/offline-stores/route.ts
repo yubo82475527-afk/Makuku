@@ -4,7 +4,8 @@ import { demoOfflineStores } from "@/lib/demo-data";
 import { getOfflineStores } from "@/lib/data";
 import { resolveOrganizationByExternalOrgId } from "@/lib/organizations";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
-import { requireAdminSession, requireAppSession } from "@/lib/auth-session";
+import { requireAdminSession, requireAppSession, requirePagePermission } from "@/lib/auth-session";
+import { resolveDataScopeForSession } from "@/lib/data-scope";
 import type { OfflineStore } from "@/lib/types";
 
 function isMissingSchemaError(error: { message?: string } | null) {
@@ -160,7 +161,7 @@ async function readStoreMasterOptions({ q, limit }: { q: string; limit: number }
   const keyword = q.trim();
   let query = supabase
     .from("offline_stores")
-    .select("id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,created_at,channels(id,code,name,type)")
+    .select("id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,created_at,organization_id,channels(id,code,name,type)")
     .order("name")
     .limit(limit);
 
@@ -173,7 +174,7 @@ async function readStoreMasterOptions({ q, limit }: { q: string; limit: number }
   if (error?.message.includes("channels") || error?.message.includes("schema cache")) {
     let legacyQuery = supabase
       .from("offline_stores")
-      .select("id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,created_at")
+      .select("id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,created_at,organization_id")
       .order("name")
       .limit(limit);
     if (keyword) legacyQuery = legacyQuery.or(`name.ilike.%${keyword}%,city.ilike.%${keyword}%,province.ilike.%${keyword}%,city_name.ilike.%${keyword}%,district.ilike.%${keyword}%`);
@@ -221,17 +222,37 @@ function revalidateOfflineStoreViews() {
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const q = searchParams.get("q")?.trim() ?? "";
-    const scope = searchParams.get("scope")?.trim() ?? "";
-    const limit = cleanLimit(searchParams.get("limit"));
-
-    if (scope === "master") {
+    const auth = await requirePagePermission(request, "offline-stores");
+    if (auth.response) {
+      // H5 capture still needs store master options for authenticated field agents.
+      const appAuth = await requireAppSession(request);
+      if (appAuth.response) return appAuth.response;
+      const { searchParams } = new URL(request.url);
+      const scope = searchParams.get("scope")?.trim() ?? "";
+      if (scope !== "master") return auth.response;
+      const q = searchParams.get("q")?.trim() ?? "";
+      const limit = cleanLimit(searchParams.get("limit"));
       const result = await readStoreMasterOptions({ q, limit });
       return Response.json({ stores: result.stores, demo: result.demo, error: result.error }, { status: result.error && !result.demo ? 400 : 200 });
     }
 
-    const result = await getOfflineStores();
+    const { searchParams } = new URL(request.url);
+    const q = searchParams.get("q")?.trim() ?? "";
+    const scope = searchParams.get("scope")?.trim() ?? "";
+    const limit = cleanLimit(searchParams.get("limit"));
+    const dataScope = await resolveDataScopeForSession(auth.session);
+
+    if (scope === "master") {
+      const result = await readStoreMasterOptions({ q, limit });
+      const stores = result.stores.filter((store) => {
+        if (dataScope.mode === "all") return true;
+        if (dataScope.mode === "empty") return false;
+        return Boolean(store.organization_id && dataScope.organizationIds.includes(store.organization_id));
+      });
+      return Response.json({ stores, demo: result.demo, error: result.error }, { status: result.error && !result.demo ? 400 : 200 });
+    }
+
+    const result = await getOfflineStores({ dataScope });
     const keyword = q.toLowerCase();
     const stores = result.data
       .filter((store) => !keyword || store.name.toLowerCase().includes(keyword) || store.city.toLowerCase().includes(keyword))

@@ -1,10 +1,15 @@
 import crypto from "crypto";
 import { cookies } from "next/headers";
+import type { PageKey } from "@/lib/page-permissions";
+import { isSystemAdminRole } from "@/lib/page-permissions";
+import { loadRoleAccess, roleCanAccessPc, roleHasPagePermission } from "@/lib/role-access";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 
 export const appSessionCookieName = "app_session";
 const sessionMaxAgeSeconds = 60 * 60 * 24 * 7;
-const allowedAdminRoles = new Set(["manager", "admin"]);
+
+/** Legacy sync check used by older call sites; prefer async roleCanAccessPc / roleHasPagePermission. */
+const legacyPcRoles = new Set(["manager", "admin"]);
 
 export type AppSession = {
   id: string;
@@ -17,7 +22,7 @@ export type AppSession = {
 type AuthResult = { session: AppSession; response: null } | { session: null; response: Response };
 
 export function isAllowedAdminRole(role: string | null | undefined) {
-  return allowedAdminRoles.has(String(role ?? ""));
+  return legacyPcRoles.has(String(role ?? "")) || isSystemAdminRole(role);
 }
 
 function sessionSecret() {
@@ -112,11 +117,36 @@ export async function requireAppSession(request: Request): Promise<AuthResult> {
   return { session, response: null };
 }
 
+/** PC console session: any role with at least one page permission. */
 export async function requireAdminSession(request: Request): Promise<AuthResult> {
   const auth = await requireAppSession(request);
   if (auth.response) return auth;
-  if (!isAllowedAdminRole(auth.session.role)) {
-    return { session: null, response: authFailure("Manager or admin account required", 403) };
+  if (!(await roleCanAccessPc(auth.session.role))) {
+    return { session: null, response: authFailure("PC console access required", 403) };
   }
   return auth;
+}
+
+export async function requirePagePermission(request: Request, pageKey: PageKey): Promise<AuthResult> {
+  const auth = await requireAppSession(request);
+  if (auth.response) return auth;
+  if (!(await roleHasPagePermission(auth.session.role, pageKey))) {
+    return { session: null, response: authFailure("Page permission required", 403) };
+  }
+  return auth;
+}
+
+export async function requireSystemAdminSession(request: Request): Promise<AuthResult> {
+  const auth = await requireAppSession(request);
+  if (auth.response) return auth;
+  if (!isSystemAdminRole(auth.session.role)) {
+    return { session: null, response: authFailure("Admin account required", 403) };
+  }
+  return auth;
+}
+
+export async function sessionPageKeys(session: AppSession | null | undefined): Promise<PageKey[]> {
+  if (!session) return [];
+  const access = await loadRoleAccess(session.role);
+  return access?.pages ?? [];
 }

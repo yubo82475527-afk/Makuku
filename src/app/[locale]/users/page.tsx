@@ -4,6 +4,7 @@ import { PageShellState } from "@/components/page-shell-state";
 import { Button, Card, DataNotice, SelectInput, TextInput } from "@/components/ui";
 import { getFilteredAppUsers } from "@/lib/data";
 import { getPageI18n } from "@/lib/i18n/server";
+import { listActiveRoles } from "@/lib/role-access";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,9 @@ export default async function UsersPage({
   const rawQ = Array.isArray(query.q) ? query.q[0] : query.q;
   const rawRole = Array.isArray(query.role) ? query.role[0] : query.role;
   const q = rawQ?.trim() || "";
-  const role = rawRole === "field_agent" || rawRole === "manager" || rawRole === "admin" ? rawRole : "all";
+  const roles = await listActiveRoles();
+  const roleCodes = new Set(roles.map((role) => role.code));
+  const role = rawRole && roleCodes.has(rawRole) ? rawRole : "all";
   const result = await getFilteredAppUsers({
     q,
     role: role === "all" ? "" : role,
@@ -38,6 +41,7 @@ export default async function UsersPage({
     role !== "all" ? `role=${role}` : "",
   ].filter(Boolean);
   const currentPath = `/users${queryParts.length ? `?${queryParts.join("&")}` : ""}`;
+  const roleOptions = roles.map((item) => ({ code: item.code, name: item.name }));
 
   return (
     <>
@@ -53,9 +57,9 @@ export default async function UsersPage({
           />
           <SelectInput name="role" defaultValue={role}>
             <option value="all">{isZh ? zh.allRoles : "All roles"}</option>
-            <option value="field_agent">field_agent</option>
-            <option value="manager">manager</option>
-            <option value="admin">admin</option>
+            {roleOptions.map((item) => (
+              <option key={item.code} value={item.code}>{item.name}</option>
+            ))}
           </SelectInput>
           <Button type="submit">{isZh ? zh.filter : "Filter"}</Button>
         </form>
@@ -64,9 +68,9 @@ export default async function UsersPage({
       <Card>
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="font-semibold">{isZh ? zh.list : "Users"}</h2>
-          <AppUserCreateDialog locale={locale} isZh={isZh} />
+          <AppUserCreateDialog locale={locale} isZh={isZh} roles={roleOptions} />
         </div>
-        <AppUserManagementTable users={result.data} locale={locale} />
+        <AppUserManagementTable users={result.data} locale={locale} roles={roleOptions} />
       </Card>
     </>
   );

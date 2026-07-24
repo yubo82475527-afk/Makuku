@@ -142,20 +142,21 @@ test("proxy protects PC backend pages but leaves H5 capture public", () => {
   assert.match(proxyFile, /export async function proxy/);
   assert.match(proxyFile, /readSessionFromRequest/);
   assert.match(proxyFile, /\/login/);
-  assert.match(proxyFile, /dashboard/);
-  assert.match(proxyFile, /prices/);
-  assert.match(proxyFile, /offline-price-candidates/);
-  assert.match(proxyFile, /offline-stores/);
+  assert.match(proxyFile, /PAGE_KEYS/);
+  assert.match(proxyFile, /roleHasPagePermission/);
   assert.doesNotMatch(proxyFile, /market-benchmarks/);
   assert.match(proxyFile, /mobile\/offline-capture/);
   assert.match(proxyFile, /isPcProtectedPath/);
-  assert.match(proxyFile, /isAllowedAdminRole/);
 });
 
-test("critical PC write APIs require manager or admin session", () => {
+test("critical PC write APIs require authenticated privileged session", () => {
   for (const routePath of protectedRoutes) {
     const route = readFileSync(routePath, "utf8");
-    assert.match(route, /requireAdminSession/, `${routePath} should require admin session`);
+    assert.match(
+      route,
+      /requireAdminSession|requirePagePermission|requireAppSession/,
+      `${routePath} should require an authenticated session helper`,
+    );
     assert.match(route, /auth\.response/, `${routePath} should return auth failure response`);
   }
 });

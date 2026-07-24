@@ -11,6 +11,7 @@ import {
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
+  Shield,
   Store,
   Tags,
   Users,
@@ -30,12 +31,14 @@ import type { Dictionary } from "@/lib/i18n/get-dictionary";
 import { writeLocalePreferenceCookie } from "@/lib/locale-preference";
 import { StoreVisitMonitorExportMenu } from "@/components/store-visit-monitor-export-menu";
 import { StoreVisitRerunJobMenu } from "@/components/store-visit-rerun-job-menu";
+import type { PageKey } from "@/lib/page-permissions";
 
 const sidebarStorageKey = "makuku_sidebar_collapsed";
 
 export type HeaderUser = {
   displayName: string;
   role: string;
+  pages?: PageKey[];
 };
 
 type ShellState = {
@@ -52,7 +55,13 @@ type AppShellContextValue = {
 export const AppShellContext = createContext<AppShellContextValue | null>(null);
 
 function isSameHeaderUser(a: HeaderUser | null | undefined, b: HeaderUser | null | undefined) {
-  return (a?.displayName ?? null) === (b?.displayName ?? null) && (a?.role ?? null) === (b?.role ?? null);
+  const aPages = (a?.pages ?? []).join(",");
+  const bPages = (b?.pages ?? []).join(",");
+  return (
+    (a?.displayName ?? null) === (b?.displayName ?? null)
+    && (a?.role ?? null) === (b?.role ?? null)
+    && aPages === bPages
+  );
 }
 
 function isSameShellState(a: ShellState, b: ShellState) {
@@ -68,38 +77,39 @@ const navGroups = [
   {
     label: null,
     items: [
-      { href: "/dashboard", label: { zh: "价格指数", en: "Price Index" }, icon: Gauge },
+      { href: "/dashboard", pageKey: "dashboard" as PageKey, label: { zh: "价格指数", en: "Price Index" }, icon: Gauge },
     ],
   },
   {
     label: { zh: "价格监控", en: "Price Monitoring" },
     items: [
-      { href: "/prices", label: { zh: "市场价格", en: "Market Price" }, icon: BarChart3 },
-      { href: "/offline-price-candidates", label: { zh: "人工审核", en: "Manual Review" }, icon: ClipboardCheck },
-      { href: "/store-visit-monitor", label: { zh: "巡店记录", en: "Store Visit Records" }, icon: ClipboardCheck },
+      { href: "/prices", pageKey: "prices" as PageKey, label: { zh: "市场价格", en: "Market Price" }, icon: BarChart3 },
+      { href: "/offline-price-candidates", pageKey: "offline-price-candidates" as PageKey, label: { zh: "人工审核", en: "Manual Review" }, icon: ClipboardCheck },
+      { href: "/store-visit-monitor", pageKey: "store-visit-monitor" as PageKey, label: { zh: "巡店记录", en: "Store Visit Records" }, icon: ClipboardCheck },
     ],
   },
   {
     label: { zh: "价格定位管理", en: "Price Positioning" },
     items: [
-      { href: "/competitor-mappings", label: { zh: "竞品映射", en: "Competitor Mapping" }, icon: Tags },
+      { href: "/competitor-mappings", pageKey: "competitor-mappings" as PageKey, label: { zh: "竞品映射", en: "Competitor Mapping" }, icon: Tags },
     ],
   },
   {
     label: { zh: "主数据", en: "Master Data" },
     items: [
-      { href: "/sku-master", label: { zh: "产品主数据", en: "Product Master" }, icon: Database },
-      { href: "/competitor-products", label: { zh: "竞品主数据", en: "Competitor Product Master" }, icon: Tags },
-      { href: "/product-match-normalizations", label: { zh: "商品匹配设置", en: "Product Match Settings" }, icon: Tags },
-      { href: "/offline-stores", label: { zh: "门店主数据", en: "Store Master" }, icon: Store },
-      { href: "/organizations", label: { zh: "组织管理", en: "Organization Management" }, icon: Building2 },
-      { href: "/users", label: { zh: "用户管理", en: "User Management" }, icon: Users },
+      { href: "/sku-master", pageKey: "sku-master" as PageKey, label: { zh: "产品主数据", en: "Product Master" }, icon: Database },
+      { href: "/competitor-products", pageKey: "competitor-products" as PageKey, label: { zh: "竞品主数据", en: "Competitor Product Master" }, icon: Tags },
+      { href: "/product-match-normalizations", pageKey: "product-match-normalizations" as PageKey, label: { zh: "商品匹配设置", en: "Product Match Settings" }, icon: Tags },
+      { href: "/offline-stores", pageKey: "offline-stores" as PageKey, label: { zh: "门店主数据", en: "Store Master" }, icon: Store },
+      { href: "/organizations", pageKey: "organizations" as PageKey, label: { zh: "组织管理", en: "Organization Management" }, icon: Building2 },
+      { href: "/users", pageKey: "users" as PageKey, label: { zh: "用户管理", en: "User Management" }, icon: Users },
+      { href: "/roles", pageKey: "roles" as PageKey, label: { zh: "角色管理", en: "Role Management" }, icon: Shield },
     ],
   },
   {
     label: { zh: "自动化报表", en: "Automated Reports" },
     items: [
-      { href: "/report-center", label: { zh: "自动化报表", en: "Automated Reports" }, icon: FileSpreadsheet },
+      { href: "/report-center", pageKey: "report-center" as PageKey, label: { zh: "自动化报表", en: "Automated Reports" }, icon: FileSpreadsheet },
     ],
   },
 ] as const;
@@ -109,15 +119,25 @@ function NavLinks({
   currentPath,
   className,
   collapsed = false,
+  allowedPages,
 }: {
   locale: Locale;
   currentPath: string;
   className: string;
   collapsed?: boolean;
+  allowedPages?: PageKey[] | null;
 }) {
+  const allowed = allowedPages ? new Set(allowedPages) : null;
+  const visibleGroups = navGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !allowed || allowed.has(item.pageKey)),
+    }))
+    .filter((group) => group.items.length > 0);
+
   return (
     <nav className={className}>
-      {navGroups.map((group, groupIndex) => (
+      {visibleGroups.map((group, groupIndex) => (
         <div key={group.label?.en ?? "root"} className={groupIndex === 0 ? "" : collapsed ? "mt-3" : "mt-4"}>
           {group.label && !collapsed ? <div className="px-3 pb-1 text-xs font-semibold text-slate-500">{group.label[locale]}</div> : null}
           <div className="space-y-1">
@@ -212,7 +232,13 @@ function AppShellFrame({
             {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
           </button>
         </div>
-        <NavLinks locale={locale} currentPath={state.currentPath} collapsed={sidebarCollapsed} className={sidebarCollapsed ? "px-2 py-3" : "px-3 py-4"} />
+        <NavLinks
+          locale={locale}
+          currentPath={state.currentPath}
+          collapsed={sidebarCollapsed}
+          allowedPages={state.headerUser?.pages}
+          className={sidebarCollapsed ? "px-2 py-3" : "px-3 py-4"}
+        />
       </aside>
       <main className={sidebarCollapsed ? "lg:pl-[64px]" : "lg:pl-64"}>
         <header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 lg:px-8">
@@ -230,7 +256,7 @@ function AppShellFrame({
                   <div className="text-sm font-semibold">{dict.app.name}</div>
                   <div className="text-xs text-slate-500">{appSubtitle}</div>
                 </div>
-                <NavLinks locale={locale} currentPath={state.currentPath} className="pt-2" />
+                <NavLinks locale={locale} currentPath={state.currentPath} allowedPages={state.headerUser?.pages} className="pt-2" />
               </div>
             </details>
             <div className="min-w-0">

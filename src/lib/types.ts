@@ -319,7 +319,23 @@ export type ChannelMaster = {
 };
 
 export type AppUserStatus = "enabled" | "disabled";
-export type AppUserRole = "field_agent" | "manager" | "admin";
+/** Role code stored on app_users.role; system defaults are admin + field_agent. */
+export type AppUserRole = string;
+export type AppRoleStatus = "active" | "inactive";
+export type AppRoleDataScope = "all" | "organization";
+
+export type AppRole = {
+  id: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  is_system: boolean;
+  data_scope: AppRoleDataScope;
+  status: AppRoleStatus;
+  created_at: string;
+  updated_at?: string | null;
+  page_keys?: string[];
+};
 export type AgentReportFamily = "daily" | "weekly" | "monthly";
 export type AgentReportType = AgentReportFamily;
 export type AgentReportScopeType = "global" | "organization" | "user";

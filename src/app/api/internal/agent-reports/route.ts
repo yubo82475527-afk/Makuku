@@ -2,6 +2,8 @@ import { revalidatePath } from "next/cache";
 import { generateAgentReport, listAgentReports } from "@/lib/agent-reports";
 import { normalizeScopeIdInput } from "@/lib/agent-report-route-inputs";
 import { requireAdminSession } from "@/lib/auth-session";
+import { resolveDataScopeForSession } from "@/lib/data-scope";
+import { isSystemAdminRole } from "@/lib/page-permissions";
 import { readRequestBody } from "@/lib/request";
 import type { AgentReportFamily, AgentReportScopeType, AgentReportStatus } from "@/lib/types";
 
@@ -68,6 +70,18 @@ export async function POST(request: Request) {
     if (!periodAnchor) return Response.json({ error: "Missing period_anchor" }, { status: 400 });
     if (!scopeType) return Response.json({ error: "Missing valid scope_type" }, { status: 400 });
     if (scopeType !== "global" && !scopeId) return Response.json({ error: "Missing scope_id" }, { status: 400 });
+
+    const dataScope = await resolveDataScopeForSession(auth.session);
+    if (!isSystemAdminRole(auth.session.role)) {
+      if (scopeType === "global") {
+        return Response.json({ error: "Global report scope requires admin" }, { status: 403 });
+      }
+      if (scopeType === "organization") {
+        if (dataScope.mode !== "organization" || !scopeId || !dataScope.organizationIds.includes(scopeId)) {
+          return Response.json({ error: "Organization is outside your data scope" }, { status: 403 });
+        }
+      }
+    }
 
     const result = await generateAgentReport({
       reportDefinitionCode: reportDefinitionCode ?? undefined,

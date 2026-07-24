@@ -61,7 +61,22 @@ const zh = {
   networkOpenIdFailed: "\u7f51\u7edc\u5f02\u5e38\uff0c\u98de\u4e66 Open ID \u6ca1\u6709\u83b7\u53d6\u6210\u529f\u3002",
 };
 
-export function AppUserManagementTable({ users, locale }: { users: AppUser[]; locale: string }) {
+export function AppUserManagementTable({
+  users,
+  locale,
+  roles = [],
+}: {
+  users: AppUser[];
+  locale: string;
+  roles?: Array<{ code: string; name: string }>;
+}) {
+  const roleOptions = roles.length > 0
+    ? roles
+    : [
+      { code: "field_agent", name: "field_agent" },
+      { code: "manager", name: "manager" },
+      { code: "admin", name: "admin" },
+    ];
   const router = useRouter();
   const isZh = locale === "zh";
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -242,9 +257,12 @@ export function AppUserManagementTable({ users, locale }: { users: AppUser[]; lo
                       className="h-8 min-w-[132px]"
                       aria-label={isZh ? zh.role : "Role"}
                     >
-                      <option value="field_agent">field_agent</option>
-                      <option value="manager">manager</option>
-                      <option value="admin">admin</option>
+                      {!roleOptions.some((role) => role.code === user.role) ? (
+                        <option value={user.role}>{user.role}</option>
+                      ) : null}
+                      {roleOptions.map((role) => (
+                        <option key={role.code} value={role.code}>{role.name} ({role.code})</option>
+                      ))}
                     </SelectInput>
                   </td>
                   <td className="whitespace-nowrap py-3 pr-3"><Badge tone={disabled ? "medium" : "low"}>{disabled ? (isZh ? zh.disabled : "Disabled") : (isZh ? zh.enabled : "Enabled")}</Badge></td>

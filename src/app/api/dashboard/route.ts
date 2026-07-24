@@ -1,8 +1,9 @@
-import { isAllowedAdminRole, readSessionFromRequest, requireAdminSession } from "@/lib/auth-session";
+import { requirePagePermission } from "@/lib/auth-session";
 import {
   getDashboardPriceData,
   type DashboardSearchParams,
 } from "@/lib/dashboard-data";
+import { resolveDataScopeForSession } from "@/lib/data-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -14,11 +15,8 @@ const dashboardSearchKeys = [
 ] as const;
 
 export async function GET(request: Request) {
-  const auth = await requireAdminSession(request);
-  if (auth.response) {
-    const localSession = process.env.NODE_ENV !== "production" ? readSessionFromRequest(request) : null;
-    if (!localSession || !isAllowedAdminRole(localSession.role)) return auth.response;
-  }
+  const auth = await requirePagePermission(request, "dashboard");
+  if (auth.response) return auth.response;
 
   try {
     const url = new URL(request.url);
@@ -29,8 +27,9 @@ export async function GET(request: Request) {
       if (value) query[key] = value;
     }
 
+    const dataScope = await resolveDataScopeForSession(auth.session);
     const section = url.searchParams.get("section");
-    if (section === "price") return Response.json(await getDashboardPriceData(locale, query));
+    if (section === "price") return Response.json(await getDashboardPriceData(locale, query, dataScope));
     return Response.json(
       { error: "Unsupported dashboard section" },
       { status: 400 },

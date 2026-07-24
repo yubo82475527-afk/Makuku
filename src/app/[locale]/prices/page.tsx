@@ -9,6 +9,7 @@ import { PriceSnapshotExportButton } from "@/components/price-snapshot-export-bu
 import { Button, Card, DataNotice } from "@/components/ui";
 import { priceBrandSeriesLabel } from "@/lib/brand-series";
 import { getPriceSnapshotFilterOptions, getPriceSnapshotsPage, type PriceSnapshotOwnerFilter } from "@/lib/data";
+import { resolveSessionDataScope } from "@/lib/data-scope";
 import { getPageI18n } from "@/lib/i18n/server";
 import {
   priceSnapshotBusinessLine,
@@ -107,6 +108,7 @@ async function PricesContent({
 }) {
   const owner = normalizeOwner(params.owner);
   const capturedToExclusive = toExclusiveCapturedTo(params.createdTo);
+  const dataScope = await resolveSessionDataScope();
   const [pricesResult, filterOptionsResult] = await Promise.all([
     getPriceSnapshotsPage({
       owner,
@@ -130,6 +132,7 @@ async function PricesContent({
       capturedTo: capturedToExclusive ?? undefined,
       page: requestedPage,
       perPage,
+      dataScope,
     }),
     getPriceSnapshotFilterOptions({ owner, brand: params.brand || undefined }),
   ]);

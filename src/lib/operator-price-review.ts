@@ -4,6 +4,7 @@ import {
   buildOperatorPriceReviewReasonLabels,
   type OperatorPriceReviewReasonFilter,
 } from "@/lib/operator-price-review-reasons";
+import { resolveScopedStoreIds, type DataScope } from "@/lib/data-scope";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
 import type {
   AiPriceCandidate,
@@ -43,6 +44,7 @@ export type OperatorPriceReviewFilters = {
   page?: number;
   perPage?: number;
   locale?: string;
+  dataScope?: DataScope;
 };
 
 export type OperatorPriceReviewPage = {
@@ -149,6 +151,9 @@ export async function getOperatorPriceReviewsPage(filters: OperatorPriceReviewFi
   const state = filters.state === "processed" ? "processed" : "pending";
   const page = Math.max(1, Math.floor(filters.page ?? 1));
   const perPage = Math.min(100, Math.max(10, Math.floor(filters.perPage ?? 25)));
+  if (filters.dataScope?.mode === "empty") {
+    return { data: [], total: 0, page, perPage, error: null, isDemo: false };
+  }
   if (!hasSupabaseServiceConfig()) {
     return {
       data: [],
@@ -160,8 +165,13 @@ export async function getOperatorPriceReviewsPage(filters: OperatorPriceReviewFi
     };
   }
 
+  const scopedStoreIds = filters.dataScope ? await resolveScopedStoreIds(filters.dataScope) : null;
+  if (scopedStoreIds?.length === 0) {
+    return { data: [], total: 0, page, perPage, error: null, isDemo: false };
+  }
+
   const supabase = createSupabaseServiceClient();
-  const query = buildOperatorPriceReviewQuery(supabase, filters, state, true);
+  const query = buildOperatorPriceReviewQuery(supabase, filters, state, true, scopedStoreIds);
   const from = (page - 1) * perPage;
   const { data, error, count } = await query.range(from, from + perPage - 1);
   if (error) return { data: [], total: 0, page, perPage, error: error.message, isDemo: false };
@@ -189,13 +199,21 @@ export async function getOperatorPriceReviewsExport(filters: OperatorPriceReview
     };
   }
 
+  if (filters.dataScope?.mode === "empty") {
+    return { data: [], error: null, isDemo: false };
+  }
+  const scopedStoreIds = filters.dataScope ? await resolveScopedStoreIds(filters.dataScope) : null;
+  if (scopedStoreIds?.length === 0) {
+    return { data: [], error: null, isDemo: false };
+  }
+
   const state = filters.state === "processed" ? "processed" : "pending";
   const supabase = createSupabaseServiceClient();
   const rows: ReviewCandidateRow[] = [];
   const batchSize = 1000;
 
   for (let from = 0; ; from += batchSize) {
-    const { data, error } = await buildOperatorPriceReviewQuery(supabase, filters, state, false)
+    const { data, error } = await buildOperatorPriceReviewQuery(supabase, filters, state, false, scopedStoreIds)
       .range(from, from + batchSize - 1);
     if (error) return { data: [], error: error.message, isDemo: false };
 
@@ -217,15 +235,18 @@ function buildOperatorPriceReviewQuery(
   filters: OperatorPriceReviewFilters,
   state: OperatorPriceReviewState,
   includeCount: boolean,
+  scopedStoreIds: string[] | null = null,
 ) {
-  const visitSelect = filters.dateFrom || filters.dateTo || filters.visitCode
-    ? "offline_store_visits!inner(id,visit_code,visit_date,created_at,uploader_name)"
-    : "offline_store_visits(id,visit_code,visit_date,created_at,uploader_name)";
+  const needsInnerVisit = Boolean(filters.dateFrom || filters.dateTo || filters.visitCode || scopedStoreIds);
+  const visitSelect = needsInnerVisit
+    ? "offline_store_visits!inner(id,visit_code,visit_date,created_at,uploader_name,store_id)"
+    : "offline_store_visits(id,visit_code,visit_date,created_at,uploader_name,store_id)";
   let query = supabase
     .from("ai_price_candidates")
     .select(`${CANDIDATE_SELECT},${visitSelect}`, includeCount ? { count: "exact" } : undefined)
     .eq("candidate_type", "SKU")
     .is("h5_lifecycle_status", null);
+  if (scopedStoreIds) query = query.in("offline_store_visits.store_id", scopedStoreIds);
 
   if (state === "pending") {
     query = query

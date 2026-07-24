@@ -2,6 +2,7 @@ import { OperatorPriceReviewWorkbench } from "@/components/operator-price-review
 import { PageShellState } from "@/components/page-shell-state";
 import { QueryForm, QuerySubmitButton } from "@/components/query-form";
 import { Card, DataNotice } from "@/components/ui";
+import { resolveSessionDataScope } from "@/lib/data-scope";
 import { getPageI18n } from "@/lib/i18n/server";
 import { getOperatorPriceReviewsPage } from "@/lib/operator-price-review";
 import {
@@ -35,6 +36,7 @@ export default async function OfflinePriceCandidatesPage({
   const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
   const perPage = Number.isFinite(perPageParam) && perPageParam > 0 ? Math.min(100, Math.max(10, perPageParam)) : 25;
 
+  const dataScope = await resolveSessionDataScope();
   const reviews = await getOperatorPriceReviewsPage({
     state,
     dateFrom: dateFrom || undefined,
@@ -44,6 +46,7 @@ export default async function OfflinePriceCandidatesPage({
     page,
     perPage,
     locale,
+    dataScope,
   });
   const pageTitle = locale === "zh" ? "人工审核" : "Manual Review";
   return (

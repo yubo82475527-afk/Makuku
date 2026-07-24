@@ -1,23 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isAllowedAdminRole, readSessionFromRequest } from "@/lib/auth-session";
+import { readSessionFromRequest } from "@/lib/auth-session";
 import { defaultLocale, isLocale, replacePathLocale, type Locale } from "@/lib/i18n/config";
 import { readLocalePreferenceFromRequest } from "@/lib/locale-preference";
+import { PAGE_KEYS, pageKeyFromPathRoot, type PageKey } from "@/lib/page-permissions";
+import { roleHasPagePermission } from "@/lib/role-access";
 
-const pcProtectedRoots = new Set([
-  "dashboard",
-  "prices",
-  "offline-price-candidates",
-  "offline-stores",
-  "sku-master",
-  "users",
-  "competitors",
-  "competitor-products",
-  "competitor-mappings",
-  "promo-events",
-  "alerts",
-  "channels",
-  "offline-uploads",
-  "store-visit-ai-debug",
+const pcProtectedRoots = new Set<string>([
+  ...PAGE_KEYS,
 ]);
 
 const h5CaptureRoot = "/mobile/offline-capture";
@@ -46,6 +35,11 @@ function loginUrl(request: NextRequest, locale: Locale) {
   url.search = "";
   url.searchParams.set("next", `${request.nextUrl.pathname}${request.nextUrl.search}`);
   return url;
+}
+
+function pathPageKey(pathname: string): PageKey | null {
+  const parts = pathname.split("/").filter(Boolean);
+  return pageKeyFromPathRoot(parts[1] ?? "");
 }
 
 export async function proxy(request: NextRequest) {
@@ -79,7 +73,8 @@ export async function proxy(request: NextRequest) {
   if (!isPcProtectedPath(request.nextUrl.pathname)) return NextResponse.next();
   const locale = request.nextUrl.pathname.split("/").filter(Boolean)[0] as Locale;
   const session = readSessionFromRequest(request);
-  if (!session || !isAllowedAdminRole(session.role)) {
+  const pageKey = pathPageKey(request.nextUrl.pathname);
+  if (!session || !pageKey || !(await roleHasPagePermission(session.role, pageKey))) {
     return NextResponse.redirect(loginUrl(request, locale));
   }
   return NextResponse.next();

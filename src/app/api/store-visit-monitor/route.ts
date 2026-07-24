@@ -1,5 +1,6 @@
-import { isAllowedAdminRole, readSessionFromRequest, requireAdminSession } from "@/lib/auth-session";
+import { requirePagePermission } from "@/lib/auth-session";
 import { getStoreVisitMonitor } from "@/lib/data";
+import { resolveDataScopeForSession } from "@/lib/data-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -9,14 +10,12 @@ function readPositiveInt(value: string | null, fallback: number) {
 }
 
 export async function GET(request: Request) {
-  const auth = await requireAdminSession(request);
-  if (auth.response) {
-    const localSession = process.env.NODE_ENV !== "production" ? readSessionFromRequest(request) : null;
-    if (!localSession || !isAllowedAdminRole(localSession.role)) return auth.response;
-  }
+  const auth = await requirePagePermission(request, "store-visit-monitor");
+  if (auth.response) return auth.response;
 
   try {
     const url = new URL(request.url);
+    const dataScope = await resolveDataScopeForSession(auth.session);
     const result = await getStoreVisitMonitor({
       dateFrom: url.searchParams.get("date_from") || undefined,
       dateTo: url.searchParams.get("date_to") || undefined,
@@ -27,6 +26,7 @@ export async function GET(request: Request) {
       includeQuality: url.searchParams.get("include_quality") === "1",
       page: readPositiveInt(url.searchParams.get("page"), 1),
       pageSize: readPositiveInt(url.searchParams.get("page_size"), 50),
+      dataScope,
     });
 
     return Response.json(result);

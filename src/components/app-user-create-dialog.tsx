@@ -12,16 +12,28 @@ const zh = {
   email: "\u90ae\u7bb1",
   password: "\u521d\u59cb\u5bc6\u7801",
   role: "\u89d2\u8272",
-  fieldAgent: "\u5de1\u5e97\u4eba\u5458",
-  manager: "\u7ecf\u7406",
-  admin: "\u7ba1\u7406\u5458",
   cancel: "\u53d6\u6d88",
   save: "\u4fdd\u5b58",
   close: "\u5173\u95ed",
 };
 
-export function AppUserCreateDialog({ locale, isZh }: { locale: string; isZh: boolean }) {
+export function AppUserCreateDialog({
+  locale,
+  isZh,
+  roles = [],
+}: {
+  locale: string;
+  isZh: boolean;
+  roles?: Array<{ code: string; name: string }>;
+}) {
   const [open, setOpen] = useState(false);
+  const roleOptions = roles.length > 0
+    ? roles
+    : [
+      { code: "field_agent", name: isZh ? "巡店人员" : "Field agent" },
+      { code: "manager", name: isZh ? "经理" : "Manager" },
+      { code: "admin", name: isZh ? "管理员" : "Admin" },
+    ];
 
   return (
     <>
@@ -51,9 +63,9 @@ export function AppUserCreateDialog({ locale, isZh }: { locale: string; isZh: bo
               <TextInput name="email" type="email" placeholder={isZh ? zh.email : "Email"} />
               <TextInput name="password" type="password" placeholder={isZh ? zh.password : "Initial password"} required />
               <SelectInput name="role" defaultValue="field_agent" className="md:col-span-2" aria-label={isZh ? zh.role : "Role"}>
-                <option value="field_agent">{isZh ? zh.fieldAgent : "Field agent"}</option>
-                <option value="manager">{isZh ? zh.manager : "Manager"}</option>
-                <option value="admin">{isZh ? zh.admin : "Admin"}</option>
+                {roleOptions.map((role) => (
+                  <option key={role.code} value={role.code}>{role.name}</option>
+                ))}
               </SelectInput>
               <div className="flex justify-end gap-2 md:col-span-2">
                 <button

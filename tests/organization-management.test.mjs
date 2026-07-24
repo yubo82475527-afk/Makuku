@@ -132,7 +132,8 @@ test("store creation assigns organization from external org id while store manag
   assert.match(offlineStoresApi, /organization_id: organizationId/);
   assert.match(offlineStoresPage, /getOrganizations/);
   assert.match(offlineStoresPage, /organizationFilter/);
-  assert.match(offlineStoresPage, /organizations=\{organizationsResult\.data\}/);
+  assert.match(offlineStoresPage, /resolveSessionDataScope/);
+  assert.match(offlineStoresPage, /organizations=\{visibleOrganizations\}/);
   assert.match(offlineStoresPage, /name="status"/);
   assert.match(offlineStoresPage, /name="organization"/);
   assert.doesNotMatch(storeTable, /StoreCreateDialog/);

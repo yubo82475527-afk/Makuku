@@ -1,5 +1,6 @@
 import { createSupabaseServiceClient } from "@/lib/supabase";
-import { createSessionCookie, isAllowedAdminRole } from "@/lib/auth-session";
+import { createSessionCookie } from "@/lib/auth-session";
+import { roleCanAccessPc } from "@/lib/role-access";
 import crypto from "crypto";
 
 const LOCAL_DEMO_USERS = [
@@ -138,8 +139,8 @@ export async function POST(request: Request) {
       role: user.role,
     };
 
-    if (purpose === "pc_console" && !isAllowedAdminRole(responseUser.role)) {
-      return Response.json({ error: "Manager or admin account required" }, { status: 403 });
+    if (purpose === "pc_console" && !(await roleCanAccessPc(responseUser.role))) {
+      return Response.json({ error: "PC console access required" }, { status: 403 });
     }
 
     return Response.json(

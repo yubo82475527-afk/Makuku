@@ -20,6 +20,12 @@ import { normalizePriceIndexDimensions } from "@/lib/price-index-dimensions";
 import { priceSnapshotBusinessLine, priceSnapshotBusinessSize } from "@/lib/price-snapshot-business";
 import { findMatchingMaterialForSeries, materialShapeKey, productShapeKey } from "@/lib/competitor-series-mapping";
 import { compareDiaperSize } from "@/lib/size-order";
+import {
+  intersectStoreIdLists,
+  resolveScopedStoreIds,
+  storeMatchesDataScope,
+  type DataScope,
+} from "@/lib/data-scope";
 import { createSupabaseAnonClient, createSupabaseServiceClient, hasSupabaseConfig, hasSupabaseServiceConfig } from "@/lib/supabase";
 import { buildStoreVisitThumbnailPath } from "@/lib/store-visit-image-variants";
 import type {
@@ -84,6 +90,7 @@ export type StoreVisitMonitorFilters = {
   limit?: number;
   page?: number;
   pageSize?: number;
+  dataScope?: DataScope;
 };
 
 export type StoreVisitMonitorItem = {
@@ -154,6 +161,7 @@ export type AiPriceCandidateFilters = {
   limit?: number;
   page?: number;
   perPage?: number;
+  dataScope?: DataScope;
 };
 
 export type PriceSnapshotOwnerFilter = "all" | "makuku" | "competitor";
@@ -185,6 +193,7 @@ export type PriceSnapshotPageFilters = PriceSnapshotFilters & {
   store?: string;
   page?: number;
   perPage?: number;
+  dataScope?: DataScope;
 };
 
 const priceSnapshotVisitColumns = "id,visit_code,store_name,city,province,city_name,district,channel_type,visit_date,uploader_name,created_at";
@@ -427,15 +436,26 @@ export async function getOrganizations(): Promise<QueryResult<Organization[]>> {
 }
 
 type OfflineStoreStatusFilter = "enabled" | "disabled" | "all";
-type OfflineStoreOrganizationFilter = "all" | "unassigned" | string;
+type OfflineStoreOrganizationFilter = "all" | "unassigned" | "empty" | string;
 
 export async function getOfflineStores({
   status = "enabled",
   organization = "all",
-}: { status?: OfflineStoreStatusFilter; organization?: OfflineStoreOrganizationFilter } = {}): Promise<QueryResult<OfflineStore[]>> {
+  dataScope,
+}: {
+  status?: OfflineStoreStatusFilter;
+  organization?: OfflineStoreOrganizationFilter;
+  dataScope?: DataScope;
+} = {}): Promise<QueryResult<OfflineStore[]>> {
+  if (organization === "empty" || dataScope?.mode === "empty") {
+    return { data: [], error: null, isDemo: false };
+  }
+
   if (!hasSupabaseServiceConfig()) {
+    const demo = filterStoresByOrganization(filterOfflineStoresByStatus(demoOfflineStores, status), organization)
+      .filter((store) => !dataScope || storeMatchesDataScope(store, dataScope));
     return {
-      data: filterOfflineStoresByStatus(demoOfflineStores, status),
+      data: demo,
       error: null,
       isDemo: true,
     };
@@ -479,7 +499,8 @@ export async function getOfflineStores({
         ...(status === "all" ? masterStores : activeMasterStores),
         ...filterDisabledOfflineStores(visitsResult.stores, disabledStoreIds, disabledStoreKeys),
         ...filterDisabledOfflineStores(uploadsResult.stores, disabledStoreIds, disabledStoreKeys),
-      ]), organization);
+      ]), organization)
+    .filter((store) => !dataScope || storeMatchesDataScope(store, dataScope));
 
   if (stores.length > 0) {
     return {
@@ -855,7 +876,8 @@ function matchesAiPriceCandidateImageId(candidate: AiPriceCandidate, imageId: st
   return normalizedSourceImageId.endsWith(normalizedQuery) || formatShortImageId(candidate.source_image_id) === normalizedQuery;
 }
 
-function filterStoresByOrganization(stores: OfflineStore[], organization: OfflineStoreOrganizationFilter) {
+function filterStoresByOrganization(stores: OfflineStore[], organization: OfflineStoreOrganizationFilter | "empty") {
+  if (organization === "empty") return [];
   if (organization === "all") return stores;
   if (organization === "unassigned") return stores.filter((store) => !store.organization_id);
   return stores.filter((store) => store.organization_id === organization);
@@ -1062,6 +1084,9 @@ export async function getPriceSnapshotsPage(filters: PriceSnapshotPageFilters = 
   const perPage = Math.min(5000, Math.max(1, Math.floor(filters.perPage ?? filters.limit ?? 50)));
   const from = (page - 1) * perPage;
   const to = from + perPage - 1;
+  if (filters.dataScope?.mode === "empty") {
+    return { data: [], total: 0, page, perPage, error: null, isDemo: false };
+  }
   const filterContext = await buildPriceSnapshotPageFilterContext(filters);
   const fallback = filterPriceSnapshotPageRows(filterPriceSnapshotsByOwner(demoPriceSnapshots, owner, filterContext), filters, filterContext);
   const shouldPostFilter = shouldUseNormalizedPriceSnapshotPageFilters(filters);
@@ -1219,12 +1244,14 @@ async function buildPriceSnapshotPageQueryScope(
       })
       .map((material) => material.tenant_sku_code)
     : null;
-  const [storeIds, competitorProductIds] = await Promise.all([
+  const [uiStoreIds, competitorProductIds, scopedStoreIds] = await Promise.all([
     priceSnapshotStoreIdsForOrganization(supabase, filters.organization),
     filters.owner === "competitor"
       ? priceSnapshotCompetitorProductIdsForBrand(supabase, filters.brand, filters.series, context.ownBrandKeys)
       : Promise.resolve(null),
+    filters.dataScope ? resolveScopedStoreIds(filters.dataScope) : Promise.resolve(null),
   ]);
+  const storeIds = intersectStoreIdLists(uiStoreIds, scopedStoreIds);
   return { storeIds, competitorProductIds, ownMaterialCodes };
 }
 
@@ -1833,21 +1860,48 @@ export type WeeklyPriceCoefficientFilters = {
   sku?: string;
   organization?: string;
   dimensions?: WeeklyPriceCoefficientNodeLevel[];
+  dataScope?: DataScope;
 };
 
 export async function getWeeklyPriceCoefficientBoard(
   locale = "zh",
   filters: WeeklyPriceCoefficientFilters = {},
 ): Promise<QueryResult<WeeklyPriceCoefficientBoard>> {
+  if (filters.dataScope?.mode === "empty") {
+    const emptyBoard = buildWeeklyPriceCoefficientBoard({
+      locale,
+      materialMaster: [],
+      snapshots: [],
+      mappings: [],
+      filters,
+    });
+    return { data: emptyBoard, error: null, isDemo: false };
+  }
+
   const month = normalizeDashboardMonth(filters.month);
   const dimensions = normalizePriceIndexDimensions(filters.dimensions);
   const [year, monthNumber] = month.split("-").map(Number);
   const monthStart = `${month}-01T00:00:00.000Z`;
   const monthEnd = new Date(Date.UTC(year, monthNumber ?? 1, 1)).toISOString();
-  const [materialResult, mappingsResult] = await Promise.all([
+  const [materialResult, mappingsResult, scopedStoreIds] = await Promise.all([
     getMaterialMaster(),
     getCompetitorSeriesMappings(),
+    filters.dataScope ? resolveScopedStoreIds(filters.dataScope) : Promise.resolve(null),
   ]);
+  if (scopedStoreIds?.length === 0) {
+    const emptyBoard = buildWeeklyPriceCoefficientBoard({
+      locale,
+      materialMaster: materialResult.data,
+      snapshots: [],
+      mappings: mappingsResult.data,
+      filters,
+    });
+    return {
+      data: emptyBoard,
+      error: materialResult.error ?? mappingsResult.error,
+      isDemo: materialResult.isDemo || mappingsResult.isDemo,
+    };
+  }
   const ownSeriesOptions = uniqueStrings(materialResult.data.map((item) => cleanText(item.sub_brand)));
   const selectedOwnSeries = filters.ownSeries && ownSeriesOptions.includes(filters.ownSeries)
     ? filters.ownSeries
@@ -1865,6 +1919,7 @@ export async function getWeeklyPriceCoefficientBoard(
     materialCodes: scopedMaterialCodes,
     competitorMappings: scopedMappings,
     includeVisitRegion: dimensions.some((level) => level === "province" || level === "city" || level === "district"),
+    storeIds: scopedStoreIds,
   });
   const data = buildWeeklyPriceCoefficientBoard({
     locale,
@@ -1886,10 +1941,18 @@ async function getWeeklyBoardSnapshotsForPeriod(filters: {
   materialCodes: string[];
   competitorMappings: CompetitorSeriesMapping[];
   includeVisitRegion: boolean;
+  storeIds?: string[] | null;
 }) {
+  if (filters.storeIds?.length === 0) {
+    return { data: [], error: null, isDemo: false } satisfies QueryResult<PriceSnapshot[]>;
+  }
+
   if (!hasSupabaseServiceConfig()) {
+    const demo = filters.storeIds
+      ? demoPriceSnapshots.filter((snapshot) => snapshot.offline_store_id && filters.storeIds!.includes(snapshot.offline_store_id))
+      : demoPriceSnapshots;
     return {
-      data: demoPriceSnapshots,
+      data: demo,
       error: null,
       isDemo: true,
     } satisfies QueryResult<PriceSnapshot[]>;
@@ -1904,7 +1967,8 @@ async function getWeeklyBoardSnapshotsForPeriod(filters: {
 
   let ownRows: PriceSnapshot[] = [];
   if (filters.materialCodes.length > 0) {
-    const ownResult = await getAllWeeklyBoardSnapshotPages((from, to, includeCount) => supabase
+    const ownResult = await getAllWeeklyBoardSnapshotPages((from, to, includeCount) => {
+      let query = supabase
         .from("price_snapshots")
         .select(select, includeCount ? { count: "exact" } : undefined)
         .gte("captured_at", filters.capturedFrom)
@@ -1914,7 +1978,10 @@ async function getWeeklyBoardSnapshotsForPeriod(filters: {
         .order("captured_at", { ascending: false })
         .order("created_at", { ascending: false })
         .order("id", { ascending: true })
-        .range(from, to), dashboardSnapshotPageSize);
+        .range(from, to);
+      if (filters.storeIds) query = query.in("offline_store_id", filters.storeIds);
+      return query;
+    }, dashboardSnapshotPageSize);
     if (ownResult.error) return { data: demoPriceSnapshots, error: ownResult.error, isDemo: true };
     ownRows = ownResult.data;
   }
@@ -1933,7 +2000,8 @@ async function getWeeklyBoardSnapshotsForPeriod(filters: {
 
   let competitorRows: PriceSnapshot[] = [];
   if (competitorIds.length > 0) {
-    const competitorResult = await getAllWeeklyBoardSnapshotPages((from, to, includeCount) => supabase
+    const competitorResult = await getAllWeeklyBoardSnapshotPages((from, to, includeCount) => {
+      let query = supabase
         .from("price_snapshots")
         .select(select, includeCount ? { count: "exact" } : undefined)
         .gte("captured_at", filters.capturedFrom)
@@ -1942,7 +2010,10 @@ async function getWeeklyBoardSnapshotsForPeriod(filters: {
         .order("captured_at", { ascending: false })
         .order("created_at", { ascending: false })
         .order("id", { ascending: true })
-        .range(from, to), dashboardSnapshotPageSize);
+        .range(from, to);
+      if (filters.storeIds) query = query.in("offline_store_id", filters.storeIds);
+      return query;
+    }, dashboardSnapshotPageSize);
     if (competitorResult.error) return { data: demoPriceSnapshots, error: competitorResult.error, isDemo: true };
     competitorRows = competitorResult.data;
   }
@@ -4201,6 +4272,15 @@ async function getStoreVisitMonitorQualityBundle(visitIds: string[]): Promise<Qu
 }
 
 async function getStoreVisitMonitorRows(filters: StoreVisitMonitorFilters, dateFrom: string, dateTo: string) {
+  if (filters.dataScope?.mode === "empty") {
+    return { rows: [], total: 0, error: null, isDemo: false };
+  }
+
+  const scopedStoreIds = filters.dataScope ? await resolveScopedStoreIds(filters.dataScope) : null;
+  if (scopedStoreIds?.length === 0) {
+    return { rows: [], total: 0, error: null, isDemo: false };
+  }
+
   if (!hasSupabaseServiceConfig()) {
     const sorted = sortMonitorItems(filterMonitorItems(demoOfflineStoreVisits.map(toMonitorItem), filters, dateFrom, dateTo));
     return { rows: sorted, total: sorted.length, error: null, isDemo: true };
@@ -4213,7 +4293,7 @@ async function getStoreVisitMonitorRows(filters: StoreVisitMonitorFilters, dateF
   const to = includeExactCount ? from + pageSize - 1 : from + pageSize;
 
   const runQuery = async (select: string) => {
-    const query = supabase
+    let query = supabase
       .from("offline_store_visits")
       .select(select, includeExactCount ? { count: "exact" } : undefined)
       .neq("visit_status", "draft")
@@ -4221,6 +4301,7 @@ async function getStoreVisitMonitorRows(filters: StoreVisitMonitorFilters, dateF
       .lte("visit_date", dateTo)
       .order("created_at", { ascending: false })
       .range(from, to);
+    if (scopedStoreIds) query = query.in("store_id", scopedStoreIds);
 
     return applyStoreVisitMonitorRowFilters(
       query,
@@ -4274,21 +4355,26 @@ export async function getStoreVisitMonitorExportCount(
   dateFrom: string,
   dateTo: string,
 ): Promise<QueryResult<number>> {
+  if (filters.dataScope?.mode === "empty") return { data: 0, error: null, isDemo: false };
+  const scopedStoreIds = filters.dataScope ? await resolveScopedStoreIds(filters.dataScope) : null;
+  if (scopedStoreIds?.length === 0) return { data: 0, error: null, isDemo: false };
+
   if (!hasSupabaseServiceConfig()) {
     const sorted = sortMonitorItems(filterMonitorItems(demoOfflineStoreVisits.map(toMonitorItem), filters, dateFrom, dateTo));
     return { data: sorted.length, error: null, isDemo: true };
   }
 
   const supabase = createSupabaseServiceClient();
-  const runCount = async (select: string) => applyStoreVisitMonitorRowFilters(
-    supabase
+  const runCount = async (select: string) => {
+    let query = supabase
       .from("offline_store_visits")
       .select(select, { count: "exact", head: true })
       .neq("visit_status", "draft")
       .gte("visit_date", dateFrom)
-      .lte("visit_date", dateTo),
-    filters,
-  );
+      .lte("visit_date", dateTo);
+    if (scopedStoreIds) query = query.in("store_id", scopedStoreIds);
+    return applyStoreVisitMonitorRowFilters(query, filters);
+  };
 
   let result = await runCount("id");
   if (isMissingStoreVisitUpdatedAtError(result.error)) {
@@ -4306,6 +4392,10 @@ export async function getStoreVisitMonitorExportBatch(
   limit: number,
   options: { includeQuality?: boolean } = {},
 ): Promise<QueryResult<StoreVisitMonitorItem[]>> {
+  if (filters.dataScope?.mode === "empty") return { data: [], error: null, isDemo: false };
+  const scopedStoreIds = filters.dataScope ? await resolveScopedStoreIds(filters.dataScope) : null;
+  if (scopedStoreIds?.length === 0) return { data: [], error: null, isDemo: false };
+
   if (!hasSupabaseServiceConfig()) {
     const sorted = sortMonitorItems(filterMonitorItems(demoOfflineStoreVisits.map(toMonitorItem), filters, dateFrom, dateTo));
     return { data: sorted.slice(offset, offset + limit), error: null, isDemo: true };
@@ -4313,18 +4403,17 @@ export async function getStoreVisitMonitorExportBatch(
 
   const supabase = createSupabaseServiceClient();
   const runBatch = async (select: string) => {
-    const { data, error } = await applyStoreVisitMonitorRowFilters(
-      supabase
-        .from("offline_store_visits")
-        .select(select)
-        .neq("visit_status", "draft")
-        .gte("visit_date", dateFrom)
-        .lte("visit_date", dateTo)
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: false })
-        .range(offset, offset + limit - 1),
-      filters,
-    );
+    let query = supabase
+      .from("offline_store_visits")
+      .select(select)
+      .neq("visit_status", "draft")
+      .gte("visit_date", dateFrom)
+      .lte("visit_date", dateTo)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(offset, offset + limit - 1);
+    if (scopedStoreIds) query = query.in("store_id", scopedStoreIds);
+    const { data, error } = await applyStoreVisitMonitorRowFilters(query, filters);
     if (error) return { rows: [] as StoreVisitMonitorItem[], error: error.message, isDemo: false };
     return {
       rows: ((data ?? []) as unknown as OfflineStoreVisit[]).map(toMonitorItem),
