@@ -17,7 +17,7 @@ export default async function OrganizationsPage({
 
   return (
     <>
-      <PageShellState locale={locale} dict={dict} title={isZh ? "\u7ec4\u7ec7\u7ba1\u7406" : "Organization Management"} currentPath="/organizations" isDemo={organizationsResult.isDemo || usersResult.isDemo} />
+      <PageShellState locale={locale} dict={dict} title={isZh ? "组织" : "Organizations"} currentPath="/organizations" isDemo={organizationsResult.isDemo || usersResult.isDemo} />
       <DataNotice dict={dict} error={organizationsResult.error ?? usersResult.error} />
 
       <Card>

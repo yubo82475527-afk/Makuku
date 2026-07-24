@@ -42,26 +42,29 @@ const priceSnapshotsTable = readFileSync("src/components/price-snapshots-table.t
 const storeMasterTable = readFileSync("src/components/store-master-table.tsx", "utf8");
 
 test("app shell groups the backend navigation for price positioning and master data", () => {
-  assert.match(appShell, /Dashboard/);
-  assert.match(appShell, /Price Monitoring/);
-  assert.match(appShell, /鐪熷疄甯傚満浠锋牸|Real Market Price/);
-  assert.match(appShell, /Price Anomaly Review/);
-  assert.match(appShell, /Price Positioning/);
-  assert.match(appShell, /Competitor Mapping/);
+  assert.match(appShell, /Price Index/);
+  assert.match(appShell, /Price Governance/);
+  assert.match(appShell, /Confirmed Prices/);
+  assert.match(appShell, /Price Review/);
+  assert.match(appShell, /Price Standards/);
+  assert.match(appShell, /Competitor Benchmarking/);
   assert.doesNotMatch(appShell, /Market Benchmarks/);
   assert.doesNotMatch(appShell, /\/market-benchmarks/);
   assert.match(appShell, /Master Data/);
-  assert.match(appShell, /Product Master/);
-  assert.match(appShell, /Store Master/);
-  assert.match(appShell, /User Management/);
+  assert.match(appShell, /Own Products/);
+  assert.match(appShell, /Stores/);
+  assert.match(appShell, /System Admin/);
+  assert.match(appShell, /Users/);
   assert.doesNotMatch(appShell, /SKU Price Monitor/);
   assert.doesNotMatch(appShell, /Executive Board/);
+  assert.doesNotMatch(appShell, /Price Monitoring/);
+  assert.doesNotMatch(appShell, /Price Positioning/);
 });
 
 test("market benchmark management moved into competitor mapping", () => {
   assert.equal(existsSync("src/app/[locale]/market-benchmarks/page.tsx"), false);
   assert.equal(existsSync("src/app/api/market-benchmarks/route.ts"), false);
-  assert.match(appShell, /Competitor Mapping/);
+  assert.match(appShell, /Competitor Benchmarking/);
   assert.match(appShell, /\/competitor-mappings/);
   assert.match(typesFile, /export type MarketBenchmark/);
   assert.match(dataFile, /getMarketBenchmarks/);

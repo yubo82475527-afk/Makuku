@@ -90,8 +90,8 @@ export async function POST(request: Request) {
     const localDemoUser = getLocalDemoUser(username, password);
 
     if (localDemoUser && (isMissingTableError(error) || error || !user)) {
-      if (purpose === "pc_console" && !isAllowedAdminRole(localDemoUser.role)) {
-        return Response.json({ error: "Manager or admin account required" }, { status: 403 });
+      if (purpose === "pc_console" && !(await roleCanAccessPc(localDemoUser.role))) {
+        return Response.json({ error: "PC console access required" }, { status: 403 });
       }
       return Response.json(
         { user: localDemoUser },

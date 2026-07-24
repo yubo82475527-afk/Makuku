@@ -17,7 +17,7 @@ export default async function CompetitorProductImportPage({
       <PageShellState
         locale={locale}
         dict={dict}
-        title={isZh ? "竞品主数据导入" : "Competitor Product Import"}
+        title={isZh ? "竞品产品导入" : "Competitor Product Import"}
         currentPath="/competitor-products/import"
       />
       <Card className="mb-4">

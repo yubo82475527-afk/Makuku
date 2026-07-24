@@ -112,7 +112,7 @@ const zh: typeof en = {
     noHighRiskAi: "暂无高风险 AI 建议。",
   },
   skuMaster: {
-    title: "SKU 主数据",
+    title: "自有产品",
     importTitle: "导入物料档案",
     importHint: "上传 Excel 或 CSV。表头文字可以不同，但列顺序必须与模板一致。",
     importColumnsLabel: "列顺序",
@@ -152,7 +152,7 @@ const zh: typeof en = {
     addButton: "新增商品",
   },
   prices: {
-    title: "真实市场价格",
+    title: "确认价格",
     addTitle: "新增价格快照",
     skuId: "SKU id",
     listIdr: "标价 IDR",

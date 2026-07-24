@@ -106,8 +106,8 @@ function productNameMatches(product: { raw_title: string; normalized_name: strin
 function getCopy(locale: string) {
   const isZh = locale === "zh";
   return {
-    title: isZh ? "竞品主数据" : "Competitor Product Master",
-    hint: isZh ? "维护竞品商品规格字段；Makuku 对标关系请到竞品映射维护。" : "Maintain competitor product fields here. Manage Makuku links in Competitor Mapping.",
+    title: isZh ? "竞品产品" : "Competitor Products",
+    hint: isZh ? "维护竞品商品规格字段；Makuku 对标关系请到竞品对标维护。" : "Maintain competitor product fields here. Manage Makuku links in Competitor Benchmarking.",
     export: isZh ? "导出" : "Export",
     excelImport: isZh ? "Excel 导入" : "Excel Import",
     allStatus: isZh ? "全部状态" : "All Status",

@@ -82,10 +82,10 @@ function isOwnBrandName(value: string | null | undefined) {
 function getCopy(locale: string) {
   const isZh = locale === "zh";
   return {
-    title: isZh ? "竞品系列映射" : "Competitor Series Mapping",
+    title: isZh ? "竞品对标" : "Competitor Benchmarking",
     allSeries: isZh ? "全部系列" : "All series",
     noSeries: isZh ? "无系列" : "No series",
-    productMasterLink: isZh ? "进入竞品主数据" : "Go to Competitor Product Master",
+    productMasterLink: isZh ? "进入竞品产品" : "Go to Competitor Products",
   };
 }
 

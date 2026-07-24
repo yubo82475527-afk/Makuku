@@ -23,7 +23,7 @@ const feishuOrgSnapshotMigration = readIfExists("supabase/migrations/20260723000
 
 test("PC navigation exposes app user management", () => {
   assert.match(appShell, /href:\s*"\/users"/);
-  assert.match(appShell, /User Management/);
+  assert.match(appShell, /Users/);
   assert.match(usersPage, /PageShellState/);
   assert.match(usersPage, /currentPath=\{currentPath\}/);
   assert.match(usersPage, /getFilteredAppUsers/);

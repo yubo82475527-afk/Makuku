@@ -110,7 +110,7 @@ const en = {
     noHighRiskAi: "No high-risk AI recommendations yet.",
   },
   skuMaster: {
-    title: "SKU Master",
+    title: "Own Products",
     importTitle: "Import Material Master",
     importHint: "Upload Excel or CSV. Header text can vary, but column order must match the template.",
     importColumnsLabel: "Column order",
@@ -150,7 +150,7 @@ const en = {
     addButton: "Add Product",
   },
   prices: {
-    title: "Real Market Price",
+    title: "Confirmed Prices",
     addTitle: "Add Price Snapshot",
     skuId: "SKU id",
     listIdr: "List IDR",

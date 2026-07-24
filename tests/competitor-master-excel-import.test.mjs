@@ -17,7 +17,7 @@ const excelParser = readFileSync("src/lib/offline-price-excel-import.ts", "utf8"
 const require = createRequire(import.meta.url);
 
 test("competitor product master is framed as product master data with editable master fields", () => {
-  assert.match(competitorProductsPage, /竞品主数据|Competitor Product Master/);
+  assert.match(competitorProductsPage, /竞品产品|Competitor Products/);
   assert.match(competitorProductsPage, /Excel 导入|Excel Import/);
   assert.match(competitorProductsPage, /const productBrandIds = new Set/);
   assert.match(competitorProductsPage, /looksLikeBrandSeries/);

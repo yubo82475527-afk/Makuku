@@ -48,7 +48,7 @@ export default async function OfflinePriceCandidatesPage({
     locale,
     dataScope,
   });
-  const pageTitle = locale === "zh" ? "人工审核" : "Manual Review";
+  const pageTitle = locale === "zh" ? "价格审核" : "Price Review";
   return (
     <>
       <PageShellState

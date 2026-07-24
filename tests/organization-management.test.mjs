@@ -81,7 +81,7 @@ test("organization types, data queries, and matching helper exist", () => {
 
 test("organization management UI and APIs are wired", () => {
   assert.match(appShell, /\/organizations/);
-  assert.match(appShell, /Organization Management/);
+  assert.match(appShell, /Organizations/);
   assert.match(organizationsPage, /getOrganizations/);
   assert.match(organizationsPage, /OrganizationManagement/);
   assert.match(organizationsComponent, /\/api\/organizations/);

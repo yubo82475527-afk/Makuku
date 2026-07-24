@@ -54,7 +54,7 @@ export default async function OfflineStoresPage({
 
   return (
     <>
-      <PageShellState locale={locale} dict={dict} title={isZh ? "\u95e8\u5e97\u5217\u8868" : "Store List"} currentPath={currentPath} isDemo={storesResult.isDemo || organizationsResult.isDemo} />
+      <PageShellState locale={locale} dict={dict} title={isZh ? "门店" : "Stores"} currentPath={currentPath} isDemo={storesResult.isDemo || organizationsResult.isDemo} />
       <DataNotice dict={dict} error={storesResult.error ?? organizationsResult.error} />
 
       <Card className="mb-4">

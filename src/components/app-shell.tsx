@@ -4,9 +4,11 @@ import {
   BarChart3,
   Building2,
   ClipboardCheck,
+  ClipboardList,
   Database,
   FileSpreadsheet,
   Gauge,
+  Link2,
   LogOut,
   Menu,
   PanelLeftClose,
@@ -75,41 +77,51 @@ function isSameShellState(a: ShellState, b: ShellState) {
 
 const navGroups = [
   {
-    label: null,
+    label: { zh: "经营看板", en: "Command" },
     items: [
       { href: "/dashboard", pageKey: "dashboard" as PageKey, label: { zh: "价格指数", en: "Price Index" }, icon: Gauge },
     ],
   },
   {
-    label: { zh: "价格监控", en: "Price Monitoring" },
+    label: { zh: "市场价格", en: "Market Prices" },
     items: [
-      { href: "/prices", pageKey: "prices" as PageKey, label: { zh: "市场价格", en: "Market Price" }, icon: BarChart3 },
-      { href: "/offline-price-candidates", pageKey: "offline-price-candidates" as PageKey, label: { zh: "人工审核", en: "Manual Review" }, icon: ClipboardCheck },
-      { href: "/store-visit-monitor", pageKey: "store-visit-monitor" as PageKey, label: { zh: "巡店记录", en: "Store Visit Records" }, icon: ClipboardCheck },
+      { href: "/prices", pageKey: "prices" as PageKey, label: { zh: "确认价格", en: "Confirmed Prices" }, icon: BarChart3 },
     ],
   },
   {
-    label: { zh: "价格定位管理", en: "Price Positioning" },
+    label: { zh: "价格治理", en: "Price Governance" },
     items: [
-      { href: "/competitor-mappings", pageKey: "competitor-mappings" as PageKey, label: { zh: "竞品映射", en: "Competitor Mapping" }, icon: Tags },
+      { href: "/offline-price-candidates", pageKey: "offline-price-candidates" as PageKey, label: { zh: "价格审核", en: "Price Review" }, icon: ClipboardCheck },
+      { href: "/store-visit-monitor", pageKey: "store-visit-monitor" as PageKey, label: { zh: "巡店记录", en: "Store Visit Records" }, icon: ClipboardList },
+    ],
+  },
+  {
+    label: { zh: "价格标准", en: "Price Standards" },
+    items: [
+      { href: "/competitor-mappings", pageKey: "competitor-mappings" as PageKey, label: { zh: "竞品对标", en: "Competitor Benchmarking" }, icon: Tags },
+      { href: "/product-match-normalizations", pageKey: "product-match-normalizations" as PageKey, label: { zh: "商品匹配规则", en: "Product Match Rules" }, icon: Link2 },
     ],
   },
   {
     label: { zh: "主数据", en: "Master Data" },
     items: [
-      { href: "/sku-master", pageKey: "sku-master" as PageKey, label: { zh: "产品主数据", en: "Product Master" }, icon: Database },
-      { href: "/competitor-products", pageKey: "competitor-products" as PageKey, label: { zh: "竞品主数据", en: "Competitor Product Master" }, icon: Tags },
-      { href: "/product-match-normalizations", pageKey: "product-match-normalizations" as PageKey, label: { zh: "商品匹配设置", en: "Product Match Settings" }, icon: Tags },
-      { href: "/offline-stores", pageKey: "offline-stores" as PageKey, label: { zh: "门店主数据", en: "Store Master" }, icon: Store },
-      { href: "/organizations", pageKey: "organizations" as PageKey, label: { zh: "组织管理", en: "Organization Management" }, icon: Building2 },
-      { href: "/users", pageKey: "users" as PageKey, label: { zh: "用户管理", en: "User Management" }, icon: Users },
-      { href: "/roles", pageKey: "roles" as PageKey, label: { zh: "角色管理", en: "Role Management" }, icon: Shield },
+      { href: "/sku-master", pageKey: "sku-master" as PageKey, label: { zh: "自有产品", en: "Own Products" }, icon: Database },
+      { href: "/competitor-products", pageKey: "competitor-products" as PageKey, label: { zh: "竞品产品", en: "Competitor Products" }, icon: Tags },
+      { href: "/offline-stores", pageKey: "offline-stores" as PageKey, label: { zh: "门店", en: "Stores" }, icon: Store },
     ],
   },
   {
-    label: { zh: "自动化报表", en: "Automated Reports" },
+    label: { zh: "报表", en: "Reports" },
     items: [
-      { href: "/report-center", pageKey: "report-center" as PageKey, label: { zh: "自动化报表", en: "Automated Reports" }, icon: FileSpreadsheet },
+      { href: "/report-center", pageKey: "report-center" as PageKey, label: { zh: "报表中心", en: "Report Center" }, icon: FileSpreadsheet },
+    ],
+  },
+  {
+    label: { zh: "系统管理", en: "System Admin" },
+    items: [
+      { href: "/organizations", pageKey: "organizations" as PageKey, label: { zh: "组织", en: "Organizations" }, icon: Building2 },
+      { href: "/users", pageKey: "users" as PageKey, label: { zh: "用户", en: "Users" }, icon: Users },
+      { href: "/roles", pageKey: "roles" as PageKey, label: { zh: "角色权限", en: "Roles & Permissions" }, icon: Shield },
     ],
   },
 ] as const;
@@ -181,7 +193,7 @@ function AppShellFrame({
   children: ReactNode;
 }) {
   const otherLocale: Locale = locale === "en" ? "zh" : "en";
-  const appSubtitle = locale === "zh" ? "终端增长" : "Terminal Growth";
+  const appSubtitle = locale === "zh" ? "价格智能" : "Price Intelligence";
   const sampleBadge = locale === "zh" ? "7天样板数据" : "7-day pilot data";
   const timezonePricing = locale === "zh" ? "Asia/Jakarta 时区 / IDR 价格" : "Asia/Jakarta timezone / IDR pricing";
   const languageLabel = locale === "zh" ? "语言" : "Language";
@@ -214,10 +226,10 @@ function AppShellFrame({
   return (
     <div className="min-h-screen">
       <aside className={sidebarCollapsed
-        ? "fixed inset-y-0 left-0 z-10 hidden w-[64px] border-r border-slate-200 bg-white transition-[width] duration-200 lg:block"
-        : "fixed inset-y-0 left-0 z-10 hidden w-64 border-r border-slate-200 bg-white transition-[width] duration-200 lg:block"}
+        ? "fixed inset-y-0 left-0 z-10 hidden w-[64px] flex-col border-r border-slate-200 bg-white transition-[width] duration-200 lg:flex"
+        : "fixed inset-y-0 left-0 z-10 hidden w-64 flex-col border-r border-slate-200 bg-white transition-[width] duration-200 lg:flex"}
       >
-        <div className={sidebarCollapsed ? "flex min-h-16 items-center justify-center border-b border-slate-200 px-2 py-3" : "flex min-h-16 items-center justify-between gap-3 border-b border-slate-200 px-5 py-3"}>
+        <div className={sidebarCollapsed ? "flex min-h-16 shrink-0 items-center justify-center border-b border-slate-200 px-2 py-3" : "flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-5 py-3"}>
           <div className={sidebarCollapsed ? "sr-only" : "min-w-0"}>
             <div className="truncate text-lg font-semibold">{dict.app.name}</div>
             <div className="truncate text-xs text-slate-500">{appSubtitle}</div>
@@ -237,7 +249,9 @@ function AppShellFrame({
           currentPath={state.currentPath}
           collapsed={sidebarCollapsed}
           allowedPages={state.headerUser?.pages}
-          className={sidebarCollapsed ? "px-2 py-3" : "px-3 py-4"}
+          className={sidebarCollapsed
+            ? "scrollbar-hidden min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-3"
+            : "scrollbar-hidden min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4"}
         />
       </aside>
       <main className={sidebarCollapsed ? "lg:pl-[64px]" : "lg:pl-64"}>
@@ -251,12 +265,17 @@ function AppShellFrame({
               >
                 <Menu className="h-5 w-5" />
               </summary>
-              <div className="absolute left-0 top-12 w-64 rounded-md border border-slate-200 bg-white p-2 shadow-lg">
-                <div className="border-b border-slate-100 px-3 pb-2 pt-1">
+              <div className="absolute left-0 top-12 max-h-[min(80vh,36rem)] w-64 overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
+                <div className="border-b border-slate-100 px-3 pb-2 pt-2">
                   <div className="text-sm font-semibold">{dict.app.name}</div>
                   <div className="text-xs text-slate-500">{appSubtitle}</div>
                 </div>
-                <NavLinks locale={locale} currentPath={state.currentPath} allowedPages={state.headerUser?.pages} className="pt-2" />
+                <NavLinks
+                  locale={locale}
+                  currentPath={state.currentPath}
+                  allowedPages={state.headerUser?.pages}
+                  className="scrollbar-hidden max-h-[min(72vh,32rem)] overflow-y-auto overscroll-contain px-2 pb-2 pt-2"
+                />
               </div>
             </details>
             <div className="min-w-0">

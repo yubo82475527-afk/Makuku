@@ -83,7 +83,7 @@ export async function buildOperatorPriceReviewExport(input: {
     { wch: 52 }, { wch: 10 }, { wch: 10 }, { wch: 18 }, { wch: 18 }, { wch: 72 }, { wch: 20 },
   ];
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, locale === "zh" ? "人工审核" : "Manual Review");
+  XLSX.utils.book_append_sheet(workbook, worksheet, locale === "zh" ? "价格审核" : "Price Review");
 
   return {
     xlsx: XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer,

@@ -341,10 +341,10 @@ test("the existing photo-review route renders the operator workbench", () => {
   assert.match(page, /getOperatorPriceReviewsPage/);
   assert.doesNotMatch(page, /AiPriceCandidatesWorkbench/);
   assert.doesNotMatch(page, /getAiPriceReviewRule/);
-  assert.match(page, /人工审核/);
-  assert.match(page, /Manual Review/);
-  assert.match(appShell, /人工审核/);
-  assert.match(appShell, /Manual Review/);
+  assert.match(page, /价格审核/);
+  assert.match(page, /Price Review/);
+  assert.match(appShell, /价格审核/);
+  assert.match(appShell, /Price Review/);
 });
 
 test("operator list exposes only two states and no technical bulk workflow", () => {

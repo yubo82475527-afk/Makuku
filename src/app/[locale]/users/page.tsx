@@ -9,7 +9,7 @@ import { listActiveRoles } from "@/lib/role-access";
 export const dynamic = "force-dynamic";
 
 const zh = {
-  title: "\u7528\u6237\u7ba1\u7406",
+  title: "\u7528\u6237",
   list: "\u8d26\u6237\u5217\u8868",
   filter: "\u7b5b\u9009",
   keyword: "\u7528\u6237\u540d/\u663e\u793a\u540d/\u7ec4\u7ec7/\u89d2\u8272",
@@ -45,7 +45,7 @@ export default async function UsersPage({
 
   return (
     <>
-      <PageShellState locale={locale} dict={dict} title={isZh ? zh.title : "User Management"} currentPath={currentPath} isDemo={result.isDemo} />
+      <PageShellState locale={locale} dict={dict} title={isZh ? zh.title : "Users"} currentPath={currentPath} isDemo={result.isDemo} />
       <DataNotice dict={dict} error={result.error} />
 
       <Card className="mb-4">

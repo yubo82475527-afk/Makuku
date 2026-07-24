@@ -78,7 +78,7 @@ export default async function RolesPage({
       <PageShellState
         locale={locale}
         dict={dict}
-        title={isZh ? "角色管理" : "Role Management"}
+        title={isZh ? "角色权限" : "Roles & Permissions"}
         currentPath="/roles"
         isDemo={result.isDemo}
       />

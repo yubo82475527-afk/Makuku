@@ -33,7 +33,7 @@ export default async function StoreVisitMonitorPage({
       <PageShellState
         locale={locale}
         dict={dict}
-        title="Store Visit Monitor"
+        title={locale === "zh" ? "巡店记录" : "Store Visit Records"}
         currentPath={`/store-visit-monitor${queryString}`}
       />
       <StoreVisitMonitorClient locale={locale} dict={dict} queryString={queryString.slice(1)} canRerunMatching={canRerunMatching} />

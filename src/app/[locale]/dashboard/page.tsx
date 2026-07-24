@@ -18,7 +18,7 @@ export default async function DashboardPage({
       <PageShellState
         locale={locale}
         dict={dict}
-        title={isZh ? "首页" : "Dashboard"}
+        title={isZh ? "价格指数" : "Price Index"}
         currentPath="/dashboard"
         isDemo={false}
       />

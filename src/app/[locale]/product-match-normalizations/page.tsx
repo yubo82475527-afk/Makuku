@@ -13,7 +13,7 @@ export default async function ProductMatchNormalizationsPage({ params }: { param
     getProductMatchNormalizations(),
   ]);
   const options = canonicalOptions(materialsResult.data, productsResult.data);
-  const title = locale === "zh" ? "商品匹配标准化" : "Product Match Normalization";
+  const title = locale === "zh" ? "商品匹配规则" : "Product Match Rules";
   return (
     <>
       <PageShellState locale={locale} dict={dict} title={title} currentPath="/product-match-normalizations" isDemo={materialsResult.isDemo || productsResult.isDemo || rulesResult.isDemo} />

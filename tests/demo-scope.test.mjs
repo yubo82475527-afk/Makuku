@@ -24,17 +24,23 @@ const priceSnapshotsExportRoute = [
 const priceSnapshotBusiness = readFileSync("src/lib/price-snapshot-business.ts", "utf8");
 
 test("board navigation exposes the one-week product workflow", () => {
-  assert.match(appShell, /Dashboard/);
-  assert.match(appShell, /Price Monitoring/);
-  assert.match(appShell, /Real Market Price/);
-  assert.match(appShell, /真实市场价格|\\u771f\\u5b9e\\u5e02\\u573a\\u4ef7\\u683c/);
-  assert.match(appShell, /Price Anomaly Review/);
-  assert.match(appShell, /Price Positioning/);
-  assert.match(appShell, /Competitor Mapping/);
+  assert.match(appShell, /Price Index/);
+  assert.match(appShell, /Command/);
+  assert.match(appShell, /Market Prices/);
+  assert.match(appShell, /Confirmed Prices/);
+  assert.match(appShell, /确认价格/);
+  assert.match(appShell, /Price Governance/);
+  assert.match(appShell, /Price Review/);
+  assert.match(appShell, /Price Standards/);
+  assert.match(appShell, /Competitor Benchmarking/);
+  assert.match(appShell, /Product Match Rules/);
   assert.match(appShell, /Master Data/);
-  assert.match(appShell, /Product Master/);
-  assert.match(appShell, /Store Master/);
-  assert.match(appShell, /User Management/);
+  assert.match(appShell, /Own Products/);
+  assert.match(appShell, /Stores/);
+  assert.match(appShell, /System Admin/);
+  assert.match(appShell, /Users/);
+  assert.match(appShell, /Reports/);
+  assert.match(appShell, /Report Center/);
   assert.match(appShell, /\/offline-stores/);
   assert.match(appShell, /\/competitor-mappings/);
   assert.doesNotMatch(appShell, /\/market-benchmarks/);
@@ -47,6 +53,9 @@ test("board navigation exposes the one-week product workflow", () => {
   assert.doesNotMatch(appShell, /Channels|channels/);
   assert.doesNotMatch(appShell, /Competitors"/);
   assert.doesNotMatch(appShell, /Alerts|alerts/);
+  assert.doesNotMatch(appShell, /Price Monitoring/);
+  assert.doesNotMatch(appShell, /Price Positioning/);
+  assert.doesNotMatch(appShell, /Manual Review/);
 });
 
 test("mobile screens keep access to the board navigation", () => {
@@ -65,6 +74,10 @@ test("desktop sidebar can collapse to an icon rail and persist the choice", () =
   assert.match(appShell, /w-\[64px\]/);
   assert.match(appShell, /aria-label=\{sidebarToggleLabel\}/);
   assert.match(appShell, /title=\{item\.label\[locale\]\}/);
+  assert.match(appShell, /scrollbar-hidden/);
+  assert.match(appShell, /overflow-y-auto/);
+  assert.match(appShell, /lg:flex/);
+  assert.doesNotMatch(appShell, /footerNavGroups/);
 });
 
 test("root layout avoids build-time Google font network fetches", () => {

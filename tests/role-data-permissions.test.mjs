@@ -82,7 +82,7 @@ test("proxy enforces page permissions and includes roles route", () => {
 test("app shell filters nav by page permissions and exposes roles", () => {
   assert.match(appShell, /allowedPages/);
   assert.match(appShell, /pageKey:\s*"roles"/);
-  assert.match(appShell, /Role Management/);
+  assert.match(appShell, /Roles & Permissions/);
   assert.match(appShell, /pages\?: PageKey\[]/);
 });
 
