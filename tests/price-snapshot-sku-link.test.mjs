@@ -92,17 +92,17 @@ test("real market price page supports captured_at date range filters in page and
   assert.doesNotMatch(priceExportRoute, /matchesCreated(?:From|To)\(snapshot\.created_at/);
 });
 
-test("real market price visit links to photo review and image opens source photo", () => {
+test("real market price visit opens H5 detail and image opens source photo", () => {
   assert.match(priceSnapshotsTable, /import Link from "next\/link"/);
-  assert.match(priceSnapshotsTable, /function photoReviewHref\(locale: string, filters: \{ visitCode\?: string \| null \}\)/);
-  assert.match(priceSnapshotsTable, /params\.set\("visit_code", visitCode\)/);
-  assert.match(priceSnapshotsTable, /`\/\$\{locale\}\/offline-price-candidates\?\$\{params\.toString\(\)\}`/);
-  assert.match(priceSnapshotsTable, /<LinkedReviewValue[\s\S]+value=\{visitCodeForSnapshot\(snapshot\)\}[\s\S]+href=\{photoReviewHref\(locale, \{ visitCode: visitCodeForSnapshot\(snapshot\) \}\)\}/);
+  assert.match(priceSnapshotsTable, /function visitDetailHref\(locale: string, visitId: string \| null \| undefined\)/);
+  assert.match(priceSnapshotsTable, /`\/\$\{locale\}\/mobile\/offline-capture\/\$\{id\}`/);
+  assert.match(priceSnapshotsTable, /<LinkedVisitDetailValue[\s\S]+value=\{visitCodeForSnapshot\(snapshot\)\}[\s\S]+href=\{visitDetailHref\(locale, visitIdForSnapshot\(snapshot\)\)\}/);
   assert.match(priceSnapshotsTable, /function LinkedSourceImageValue/);
   assert.match(priceSnapshotsTable, /target="_blank"/);
   assert.match(priceSnapshotsTable, /redirect: "1"/);
   assert.match(priceSnapshotsTable, /\/api\/store-visit\/\$\{encodeURIComponent\(visitId\)\}\/image-url/);
   assert.doesNotMatch(priceSnapshotsTable, /params\.set\("image_id", imageId\)/);
+  assert.doesNotMatch(priceSnapshotsTable, /offline-price-candidates\?/);
 });
 
 test("real market price page shows activity type and three business prices", () => {

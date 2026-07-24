@@ -225,9 +225,9 @@ export function PriceSnapshotsTable({
                   <td className="whitespace-nowrap py-3 pr-3">{uploaderNameForSnapshot(snapshot)}</td>
                   <td className="py-3 pr-3">{formatSnapshotCreatedAt(snapshot)}</td>
                   <td className="whitespace-nowrap py-3 pr-3">
-                    <LinkedReviewValue
+                    <LinkedVisitDetailValue
                       value={visitCodeForSnapshot(snapshot)}
-                      href={photoReviewHref(locale, { visitCode: visitCodeForSnapshot(snapshot) })}
+                      href={visitDetailHref(locale, visitIdForSnapshot(snapshot))}
                     />
                   </td>
                   <td className="whitespace-nowrap py-3 pr-3">
@@ -243,11 +243,18 @@ export function PriceSnapshotsTable({
   );
 }
 
-function LinkedReviewValue({ value, href }: { value: string; href: string }) {
+function LinkedVisitDetailValue({ value, href }: { value: string; href: string | null }) {
   if (!cleanDisplayText(value)) return <span>-</span>;
+  if (!href) return <span>{value}</span>;
 
   return (
-    <Link href={href} prefetch={false} className="font-medium text-blue-700 underline-offset-2 hover:underline">
+    <Link
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      prefetch={false}
+      className="font-medium text-blue-700 underline-offset-2 hover:underline"
+    >
       {value}
     </Link>
   );
@@ -271,11 +278,10 @@ function LinkedSourceImageValue({ snapshot }: { snapshot: PriceSnapshotForStoreR
   );
 }
 
-function photoReviewHref(locale: string, filters: { visitCode?: string | null }) {
-  const params = new URLSearchParams();
-  const visitCode = cleanDisplayText(filters.visitCode);
-  if (visitCode) params.set("visit_code", visitCode);
-  return `/${locale}/offline-price-candidates?${params.toString()}`;
+function visitDetailHref(locale: string, visitId: string | null | undefined) {
+  const id = cleanDisplayText(visitId);
+  if (!id) return null;
+  return `/${locale}/mobile/offline-capture/${id}`;
 }
 
 function sourceImageHref(snapshot: PriceSnapshotForStoreRegion) {
