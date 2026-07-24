@@ -4,6 +4,7 @@ import { readRequestBody } from "@/lib/request";
 import {
   createStoreVisitMonitorExportJob,
   getStoreVisitMonitorExportDownloadPath,
+  getStoreVisitMonitorExportView,
   listStoreVisitMonitorExportJobs,
   normalizeStoreVisitMonitorExportFilters,
   triggerStoreVisitMonitorExportJobRunner,
@@ -28,6 +29,7 @@ export async function GET(request: Request) {
         started_at: job.started_at,
         completed_at: job.completed_at,
         requested_by: job.requested_by,
+        export_view: getStoreVisitMonitorExportView(job.filters),
         download_url: job.status === "completed" ? getStoreVisitMonitorExportDownloadPath(job.id) : null,
       })),
     });

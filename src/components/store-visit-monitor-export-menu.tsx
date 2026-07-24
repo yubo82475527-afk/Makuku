@@ -12,6 +12,7 @@ type ExportJob = {
   error_message: string | null;
   created_at: string;
   download_url: string | null;
+  export_view?: "visit" | "promoter" | "store";
 };
 
 function formatTime(value: string) {
@@ -20,9 +21,11 @@ function formatTime(value: string) {
   return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
 }
 
-function taskLabel(kind: ExportJob["kind"], locale: string) {
-  if (kind === "price_snapshot") return locale === "zh" ? "市场价格" : "Market Price";
-  if (kind === "operator_price_review") return locale === "zh" ? "价格审核" : "Price Review";
+function taskLabel(job: ExportJob, locale: string) {
+  if (job.kind === "price_snapshot") return locale === "zh" ? "市场价格" : "Market Price";
+  if (job.kind === "operator_price_review") return locale === "zh" ? "价格审核" : "Price Review";
+  if (job.export_view === "promoter") return locale === "zh" ? "巡店记录·按导购" : "Store Visit · By promoter";
+  if (job.export_view === "store") return locale === "zh" ? "巡店记录·按门店" : "Store Visit · By store";
   return locale === "zh" ? "巡店记录" : "Store Visit Records";
 }
 
@@ -111,14 +114,14 @@ export function StoreVisitMonitorExportMenu({ locale }: { locale: string }) {
   return (
     <details className="relative shrink-0" onToggle={handleToggle}>
       <summary className="inline-flex h-8 cursor-pointer list-none items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
-        <span>Exports</span>
+        <span>{locale === "zh" ? "导出" : "Exports"}</span>
         {runningCount > 0 ? (
           <span className="rounded-full bg-slate-900 px-1.5 py-0.5 text-[11px] text-white">{runningCount}</span>
         ) : null}
       </summary>
       <div className="absolute right-0 top-10 z-30 w-[360px] rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
         <div className="mb-2 flex items-center justify-between">
-          <div className="text-sm font-semibold text-slate-900">Exports</div>
+          <div className="text-sm font-semibold text-slate-900">{locale === "zh" ? "导出" : "Exports"}</div>
           {loading ? <Loader2 className="h-4 w-4 animate-spin text-slate-400" /> : null}
         </div>
 
@@ -126,7 +129,7 @@ export function StoreVisitMonitorExportMenu({ locale }: { locale: string }) {
 
         {!error && jobs.length === 0 ? (
           <div className="rounded-md bg-slate-50 px-3 py-6 text-center text-xs text-slate-500">
-            {loading ? "Loading..." : emptyText}
+            {loading ? (locale === "zh" ? "加载中..." : "Loading...") : emptyText}
           </div>
         ) : null}
 
@@ -140,7 +143,7 @@ export function StoreVisitMonitorExportMenu({ locale }: { locale: string }) {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="truncate text-xs font-medium text-slate-900">{job.id}</div>
-                    <div className="mt-1 text-[11px] text-slate-500">{taskLabel(job.kind, locale)}</div>
+                    <div className="mt-1 text-[11px] text-slate-500">{taskLabel(job, locale)}</div>
                     <div className="mt-1 text-[11px] text-slate-500">Created: {formatTime(job.created_at)}</div>
                   </div>
                   <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200">

@@ -1,13 +1,16 @@
 "use client";
 
 import {
+  BadgeCheck,
   BarChart3,
   Building2,
+  ChevronDown,
   ClipboardCheck,
   ClipboardList,
   Database,
   FileSpreadsheet,
   Gauge,
+  Languages,
   Link2,
   LogOut,
   Menu,
@@ -16,6 +19,7 @@ import {
   Shield,
   Store,
   Tags,
+  Target,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -80,23 +84,25 @@ const navGroups = [
     label: { zh: "经营看板", en: "Command" },
     items: [
       { href: "/dashboard", pageKey: "dashboard" as PageKey, label: { zh: "价格指数", en: "Price Index" }, icon: Gauge },
+      { href: "/standard-store", pageKey: "standard-store" as PageKey, label: { zh: "完美终端2.0", en: "Perfect Store 2.0" }, icon: BadgeCheck },
+      { href: "/prices", pageKey: "prices" as PageKey, label: { zh: "真实价格", en: "Real Prices" }, icon: BarChart3 },
     ],
   },
   {
-    label: { zh: "市场价格", en: "Market Prices" },
+    label: { zh: "执行跟进", en: "Execution" },
     items: [
-      { href: "/prices", pageKey: "prices" as PageKey, label: { zh: "确认价格", en: "Confirmed Prices" }, icon: BarChart3 },
+      { href: "/goal-execution", pageKey: "goal-execution" as PageKey, label: { zh: "目标执行2.0", en: "Goal Execution 2.0" }, icon: Target },
+      { href: "/store-visit-monitor", pageKey: "store-visit-monitor" as PageKey, label: { zh: "巡店记录", en: "Store Visit Records" }, icon: ClipboardList },
     ],
   },
   {
     label: { zh: "价格治理", en: "Price Governance" },
     items: [
       { href: "/offline-price-candidates", pageKey: "offline-price-candidates" as PageKey, label: { zh: "价格审核", en: "Price Review" }, icon: ClipboardCheck },
-      { href: "/store-visit-monitor", pageKey: "store-visit-monitor" as PageKey, label: { zh: "巡店记录", en: "Store Visit Records" }, icon: ClipboardList },
     ],
   },
   {
-    label: { zh: "价格标准", en: "Price Standards" },
+    label: { zh: "对标与匹配", en: "Matching & Rules" },
     items: [
       { href: "/competitor-mappings", pageKey: "competitor-mappings" as PageKey, label: { zh: "竞品对标", en: "Competitor Benchmarking" }, icon: Tags },
       { href: "/product-match-normalizations", pageKey: "product-match-normalizations" as PageKey, label: { zh: "商品匹配规则", en: "Product Match Rules" }, icon: Link2 },
@@ -283,38 +289,75 @@ function AppShellFrame({
               <p className="text-xs text-slate-500">{timezonePricing}</p>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <StoreVisitRerunJobMenu locale={locale} />
-            <StoreVisitMonitorExportMenu locale={locale} />
+          <div className="flex shrink-0 items-center gap-3">
+            {/* 作业工具：后台任务 / 导出，与账号会话分离 */}
+            <div className="flex items-center gap-2">
+              <StoreVisitRerunJobMenu locale={locale} />
+              <StoreVisitMonitorExportMenu locale={locale} />
+              {state.isDemo ? (
+                <span className="hidden rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-medium text-amber-800 ring-1 ring-amber-200 sm:inline">
+                  {sampleBadge}
+                </span>
+              ) : null}
+            </div>
+
+            {/* 账号会话：身份一眼可见，语言与退出收进菜单 */}
             {state.headerUser ? (
-              <div className="hidden items-center gap-2 text-xs text-slate-600 sm:flex">
-                <span className="max-w-32 truncate font-medium text-slate-800">{state.headerUser.displayName}</span>
-                <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-500">{state.headerUser.role}</span>
-                <button
-                  type="button"
-                  onClick={logout}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  <LogOut className="h-3.5 w-3.5" />
-                  {locale === "zh" ? "退出" : "Logout"}
-                </button>
-              </div>
-            ) : null}
-            <Link
-              href={replacePathLocale(`/${locale}${state.currentPath}`, otherLocale)}
-              onClick={() => {
-                document.cookie = writeLocalePreferenceCookie(otherLocale);
-              }}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-              title={languageLabel}
-            >
-              {localeLabels[otherLocale]}
-            </Link>
-            {state.isDemo ? (
-              <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800 ring-1 ring-amber-200">
-                {sampleBadge}
-              </span>
-            ) : null}
+              <>
+                <div className="hidden h-5 w-px bg-slate-200 sm:block" aria-hidden />
+                <details className="relative shrink-0">
+                  <summary
+                    className="inline-flex h-8 max-w-[11rem] cursor-pointer list-none items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-xs hover:bg-slate-50 sm:max-w-none [&::-webkit-details-marker]:hidden"
+                    title={locale === "zh" ? "账号与退出" : "Account & logout"}
+                  >
+                    <span className="min-w-0 truncate font-medium text-slate-800">{state.headerUser.displayName}</span>
+                    <span className="hidden shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500 sm:inline">
+                      {state.headerUser.role}
+                    </span>
+                    <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                  </summary>
+                  <div className="absolute right-0 z-40 mt-2 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+                    <div className="border-b border-slate-100 px-3 py-2.5">
+                      <div className="truncate text-sm font-semibold text-slate-900">{state.headerUser.displayName}</div>
+                      <div className="mt-0.5 text-xs text-slate-500">{state.headerUser.role}</div>
+                    </div>
+                    <div className="p-1.5">
+                      <Link
+                        href={replacePathLocale(`/${locale}${state.currentPath}`, otherLocale)}
+                        onClick={() => {
+                          document.cookie = writeLocalePreferenceCookie(otherLocale);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-slate-700 hover:bg-slate-50"
+                        title={languageLabel}
+                      >
+                        <Languages className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                        <span className="flex-1 text-[13px] font-medium leading-5">{locale === "zh" ? "切换语言" : "Language"}</span>
+                        <span className="text-[13px] font-medium leading-5 text-slate-500">{localeLabels[otherLocale]}</span>
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={logout}
+                        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-slate-700 hover:bg-slate-50"
+                      >
+                        <LogOut className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                        <span className="text-[13px] font-medium leading-5">{locale === "zh" ? "退出登录" : "Log out"}</span>
+                      </button>
+                    </div>
+                  </div>
+                </details>
+              </>
+            ) : (
+              <Link
+                href={replacePathLocale(`/${locale}${state.currentPath}`, otherLocale)}
+                onClick={() => {
+                  document.cookie = writeLocalePreferenceCookie(otherLocale);
+                }}
+                className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                title={languageLabel}
+              >
+                {localeLabels[otherLocale]}
+              </Link>
+            )}
           </div>
         </header>
         <div className="px-4 py-6 lg:px-8">{children}</div>
@@ -362,7 +405,14 @@ export function AppShell({
   });
   const updateShellState = useCallback((nextState: ShellState) => {
     setShellState((current) => {
-      return isSameShellState(current, nextState) ? current : nextState;
+      const merged: ShellState = {
+        title: nextState.title,
+        currentPath: nextState.currentPath,
+        isDemo: nextState.isDemo,
+        // undefined = caller did not touch user; keep layout-injected session
+        headerUser: nextState.headerUser !== undefined ? nextState.headerUser : current.headerUser,
+      };
+      return isSameShellState(current, merged) ? current : merged;
     });
   }, []);
   const shellContextValue = useMemo(() => ({ setShellState: updateShellState }), [updateShellState]);

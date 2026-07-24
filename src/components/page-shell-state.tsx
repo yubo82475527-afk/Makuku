@@ -22,7 +22,11 @@ export function PageShellState({
   const setShellState = shellContext?.setShellState;
 
   useEffect(() => {
-    setShellState?.({ title, currentPath, isDemo, headerUser });
+    if (headerUser !== undefined) {
+      setShellState?.({ title, currentPath, isDemo, headerUser });
+      return;
+    }
+    setShellState?.({ title, currentPath, isDemo });
   }, [currentPath, headerUser, isDemo, setShellState, title]);
 
   return null;

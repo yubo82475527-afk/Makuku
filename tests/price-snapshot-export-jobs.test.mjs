@@ -78,6 +78,7 @@ test("price export types and header menu expose both export domains", () => {
   const types = read("src/lib/types.ts");
   const menu = read("src/components/store-visit-monitor-export-menu.tsx");
   const button = read("src/components/price-snapshot-export-button.tsx");
+  const table = read("src/components/price-snapshots-table.tsx");
   const page = read("src/app/[locale]/prices/page.tsx");
 
   assert.match(types, /export type PriceSnapshotExportJobStatus = "queued" \| "running" \| "completed" \| "failed"/);
@@ -96,7 +97,8 @@ test("price export types and header menu expose both export domains", () => {
   assert.match(menu, /priceResponse\.ok \?/);
   assert.doesNotMatch(menu, /if \(!visitResponse\.ok \|\| !priceResponse\.ok\)/);
   assert.match(button, /fetch\("\/api\/price-snapshots\/export-jobs"/);
-  assert.match(page, /PriceSnapshotExportButton/);
+  assert.match(table, /PriceSnapshotExportButton/);
+  assert.match(page, /exportFilters=\{\{/);
   assert.match(page, /series:\s*params\.series/);
   assert.match(page, /ownSeries:\s*params\.ownSeries/);
   assert.match(page, /organization:\s*params\.organization/);

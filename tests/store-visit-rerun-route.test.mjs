@@ -55,7 +55,7 @@ test("rerun job menu uses the same quiet header button style as exports", () => 
   assert.match(menu, /type ToggleEvent/);
   assert.match(menu, /<details className="relative shrink-0" onToggle=\{handleToggle\}>/);
   assert.match(menu, /<summary className="inline-flex h-8/);
-  assert.match(menu, />\s*Tasks\s*</);
+  assert.match(menu, /isZh \? "任务" : "Tasks"/);
   assert.match(menu, /inline-flex h-8/);
   assert.match(menu, /border border-slate-300 bg-white/);
   assert.match(menu, /text-xs font-medium text-slate-700/);

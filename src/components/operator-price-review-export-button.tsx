@@ -30,7 +30,7 @@ export function OperatorPriceReviewExportButton({
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error ?? "Export failed");
-      setMessage(locale === "zh" ? "导出任务已创建，请在顶部 Exports 中查看进度并下载。" : "Export task created. Open Exports to check progress and download.");
+      setMessage(locale === "zh" ? "导出任务已创建，请在顶部导出中查看进度并下载。" : "Export task created. Open Exports to check progress and download.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Export failed");
     } finally {

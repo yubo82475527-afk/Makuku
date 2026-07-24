@@ -31,7 +31,25 @@ test("PC navigation exposes app user management", () => {
   assert.match(usersPage, /searchParams:/);
   assert.match(usersPage, /name="q"/);
   assert.match(usersPage, /name="role"/);
+  assert.match(usersPage, /name="per_page"/);
+  assert.match(usersPage, /per_page/);
+  assert.match(usersPage, /pagedUsers/);
   assert.match(usersPage, /Button type="submit"/);
+});
+
+test("app user management list supports pagination like price review", () => {
+  assert.match(usersPage, /getFilter\("page"\)/);
+  assert.match(usersPage, /getFilter\("per_page"\)/);
+  assert.match(usersPage, /Math\.min\(100, Math\.max\(10,/);
+  assert.match(usersPage, /total=\{total\}/);
+  assert.match(usersPage, /page=\{currentPage\}/);
+  assert.match(usersPage, /perPage=\{perPage\}/);
+  assert.match(userTable, /PaginationLink/);
+  assert.match(userTable, /上一页|Previous/);
+  assert.match(userTable, /下一页|Next/);
+  assert.match(userTable, /\$\{from\}-\$\{to\} \/ \$\{total\}/);
+  assert.match(userTable, /buildHref/);
+  assert.match(userTable, /\/users/);
 });
 
 test("app user management API hashes passwords and supports account status", () => {

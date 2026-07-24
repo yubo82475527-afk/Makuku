@@ -24,6 +24,8 @@ export async function GET(request: Request) {
       promoter: url.searchParams.get("promoter") || undefined,
       analysisStatus: url.searchParams.get("analysis_status") || undefined,
       includeQuality: url.searchParams.get("include_quality") === "1",
+      includePromoterSummary: url.searchParams.get("promoter_summary") === "1",
+      includeStoreSummary: url.searchParams.get("store_summary") === "1",
       page: readPositiveInt(url.searchParams.get("page"), 1),
       pageSize: readPositiveInt(url.searchParams.get("page_size"), 50),
       dataScope,

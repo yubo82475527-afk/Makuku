@@ -87,6 +87,8 @@ export type StoreVisitMonitorFilters = {
   promoter?: string;
   analysisStatus?: string;
   includeQuality?: boolean;
+  includePromoterSummary?: boolean;
+  includeStoreSummary?: boolean;
   limit?: number;
   page?: number;
   pageSize?: number;
@@ -115,6 +117,26 @@ export type StoreVisitMonitorItem = {
   updatedAt: string | null;
 };
 
+export type StoreVisitMonitorPromoterRow = {
+  promoter: string;
+  storeCount: number;
+  parsedProductCount: number;
+  approvedProductCount: number;
+  passRate: number | null;
+};
+
+export type StoreVisitMonitorStoreRow = {
+  storeKey: string;
+  storeName: string;
+  organizationName: string | null;
+  province: string | null;
+  city: string | null;
+  district: string | null;
+  parsedProductCount: number;
+  approvedProductCount: number;
+  passRate: number | null;
+};
+
 export type StoreVisitMonitorSummary = {
   visitsAnalyzed: number;
   p50: number | null;
@@ -135,6 +157,8 @@ export type StoreVisitMonitorResult = {
   summary: StoreVisitMonitorSummary;
   quality: StoreVisitMonitorQuality;
   visits: StoreVisitMonitorItem[];
+  promoterSummary: StoreVisitMonitorPromoterRow[];
+  storeSummary: StoreVisitMonitorStoreRow[];
   pagination: {
     page: number;
     pageSize: number;
@@ -4041,6 +4065,19 @@ function toMonitorItem(visit: OfflineStoreVisit): StoreVisitMonitorItem {
   const imageCount = isFiniteNumber(analysisMetrics.price_image_count)
     ? analysisMetrics.price_image_count
     : (visit.offline_visit_images?.length ?? visit.image_urls?.length ?? 0);
+  const startedAt = typeof analysisMetrics.visit_analysis_started_at === "string"
+    ? analysisMetrics.visit_analysis_started_at
+    : null;
+  const completedAt = typeof analysisMetrics.visit_analysis_completed_at === "string"
+    ? analysisMetrics.visit_analysis_completed_at
+    : null;
+  const storedDurationMs = isFiniteNumber(analysisMetrics.visit_analysis_duration_ms)
+    ? analysisMetrics.visit_analysis_duration_ms
+    : null;
+  // Prefer wall-clock from stored start/end when both exist; avoids the old "freeze on first image" duration.
+  const recomputedDurationMs = startedAt && completedAt
+    ? Math.max(0, new Date(completedAt).getTime() - new Date(startedAt).getTime())
+    : null;
   return {
     visitId: visit.id,
     visitCode: visit.visit_code ?? null,
@@ -4049,9 +4086,7 @@ function toMonitorItem(visit: OfflineStoreVisit): StoreVisitMonitorItem {
     promoter: visit.promoter ?? visit.uploader_name,
     analysisStatus: visit.analysis_status ?? null,
     visitStatus: visit.visit_status,
-    fullAnalysisTimeMs: isFiniteNumber(analysisMetrics.visit_analysis_duration_ms)
-      ? analysisMetrics.visit_analysis_duration_ms
-      : null,
+    fullAnalysisTimeMs: recomputedDurationMs ?? storedDurationMs,
     imageCount,
     successCount: isFiniteNumber(analysisMetrics.price_image_success_count)
       ? analysisMetrics.price_image_success_count
@@ -4065,15 +4100,69 @@ function toMonitorItem(visit: OfflineStoreVisit): StoreVisitMonitorItem {
     accuracy: null,
     autoApprovalRate: null,
     avgPriceDeviationRate: null,
-    startedAt: typeof analysisMetrics.visit_analysis_started_at === "string"
-      ? analysisMetrics.visit_analysis_started_at
-      : null,
-    completedAt: typeof analysisMetrics.visit_analysis_completed_at === "string"
-      ? analysisMetrics.visit_analysis_completed_at
-      : null,
+    startedAt,
+    completedAt,
     createdAt: visit.created_at,
     updatedAt: (visit as OfflineStoreVisit & { updated_at?: string | null }).updated_at ?? null,
   };
+}
+
+type VisitAnalysisJobTiming = {
+  startedAt: string;
+  completedAt: string | null;
+  fullAnalysisTimeMs: number | null;
+};
+
+async function loadInitialAnalysisTimingByVisitId(visitIds: string[]): Promise<Map<string, VisitAnalysisJobTiming>> {
+  const uniqueIds = Array.from(new Set(visitIds.map((id) => id.trim()).filter(Boolean)));
+  const timings = new Map<string, VisitAnalysisJobTiming>();
+  if (uniqueIds.length === 0 || !hasSupabaseServiceConfig()) return timings;
+
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("store_visit_ai_jobs")
+    .select("visit_id, created_at, completed_at, status")
+    .eq("job_type", "initial_analysis")
+    .in("visit_id", uniqueIds)
+    .order("created_at", { ascending: true });
+  if (error || !data) return timings;
+
+  for (const row of data as Array<{ visit_id?: string; created_at?: string; completed_at?: string | null; status?: string }>) {
+    const visitId = typeof row.visit_id === "string" ? row.visit_id : "";
+    const createdAt = typeof row.created_at === "string" ? row.created_at : null;
+    if (!visitId || !createdAt || timings.has(visitId)) continue;
+    const completedAt = typeof row.completed_at === "string" ? row.completed_at : null;
+    const terminal = (row.status === "completed" || row.status === "failed") && Boolean(completedAt);
+    timings.set(visitId, {
+      startedAt: createdAt,
+      completedAt: terminal ? completedAt : null,
+      fullAnalysisTimeMs: terminal && completedAt
+        ? Math.max(0, new Date(completedAt).getTime() - new Date(createdAt).getTime())
+        : null,
+    });
+  }
+  return timings;
+}
+
+function applyInitialAnalysisTiming(
+  items: StoreVisitMonitorItem[],
+  timings: Map<string, VisitAnalysisJobTiming>,
+): StoreVisitMonitorItem[] {
+  if (timings.size === 0) return items;
+  return items.map((item) => {
+    const timing = timings.get(item.visitId);
+    if (!timing) return item;
+    return {
+      ...item,
+      startedAt: timing.startedAt,
+      completedAt: timing.completedAt ?? item.completedAt,
+      fullAnalysisTimeMs: timing.fullAnalysisTimeMs ?? (
+        timing.startedAt && (timing.completedAt ?? item.completedAt)
+          ? Math.max(0, new Date((timing.completedAt ?? item.completedAt)!).getTime() - new Date(timing.startedAt).getTime())
+          : item.fullAnalysisTimeMs
+      ),
+    };
+  });
 }
 
 function emptyStoreVisitMonitorQuality(): StoreVisitMonitorQuality {
@@ -4193,24 +4282,30 @@ function buildStoreVisitMonitorVisitQuality(rows: StoreVisitMonitorQualityRow[])
 async function loadStoreVisitMonitorQualityRows(visitIds: string[]) {
   const supabase = createSupabaseServiceClient();
   const pageSize = 1000;
+  const visitIdChunkSize = 200;
   const rows: StoreVisitMonitorQualityRow[] = [];
 
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
-      // Keep the SQL view for downstream consumers; the monitor reads ai_price_candidates directly
-      // so the metrics reflect current row edits immediately without requiring snapshot approval.
-      .from("ai_price_candidates")
-      .select("id,visit_id,status,review_method,candidate_type,h5_lifecycle_status,ai_matched_entity_type,ai_matched_entity_id,ai_net_price_idr,matched_entity_type,matched_entity_id,net_price_idr,created_at")
-      .in("visit_id", visitIds)
-      .order("created_at", { ascending: true })
-      .order("id", { ascending: true })
-      .range(from, from + pageSize - 1);
+  for (let visitOffset = 0; visitOffset < visitIds.length; visitOffset += visitIdChunkSize) {
+    const visitChunk = visitIds.slice(visitOffset, visitOffset + visitIdChunkSize);
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supabase
+        // Keep the SQL view for downstream consumers; the monitor reads ai_price_candidates directly
+        // so the metrics reflect current row edits immediately without requiring snapshot approval.
+        .from("ai_price_candidates")
+        .select("id,visit_id,status,review_method,candidate_type,h5_lifecycle_status,ai_matched_entity_type,ai_matched_entity_id,ai_net_price_idr,matched_entity_type,matched_entity_id,net_price_idr,created_at")
+        .in("visit_id", visitChunk)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, from + pageSize - 1);
 
-    if (error) return { rows: [] as StoreVisitMonitorQualityRow[], error };
-    const pageRows = (data ?? []) as StoreVisitMonitorQualityRow[];
-    rows.push(...pageRows);
-    if (pageRows.length < pageSize) return { rows, error: null };
+      if (error) return { rows: [] as StoreVisitMonitorQualityRow[], error };
+      const pageRows = (data ?? []) as StoreVisitMonitorQualityRow[];
+      rows.push(...pageRows);
+      if (pageRows.length < pageSize) break;
+    }
   }
+
+  return { rows, error: null };
 }
 
 async function getStoreVisitMonitorVisitQuality(visitIds: string[]): Promise<QueryResult<Record<string, StoreVisitMonitorQuality>>> {
@@ -4316,7 +4411,9 @@ async function getStoreVisitMonitorRows(filters: StoreVisitMonitorFilters, dateF
   if (pageResult.error) return { rows: [], total: 0, error: pageResult.error.message, isDemo: false };
   const fetchedRows = ((pageResult.data ?? []) as unknown as OfflineStoreVisit[]).map(toMonitorItem);
   const hasMoreRows = !includeExactCount && fetchedRows.length > pageSize;
-  const rows = hasMoreRows ? fetchedRows.slice(0, pageSize) : fetchedRows;
+  const pageRows = hasMoreRows ? fetchedRows.slice(0, pageSize) : fetchedRows;
+  const timings = await loadInitialAnalysisTimingByVisitId(pageRows.map((row) => row.visitId));
+  const rows = applyInitialAnalysisTiming(pageRows, timings);
 
   return {
     rows,
@@ -4427,19 +4524,21 @@ export async function getStoreVisitMonitorExportBatch(
     exportResult = await runBatch(legacyStoreVisitMonitorSelect);
   }
   if (exportResult.error) return { data: [], error: exportResult.error, isDemo: exportResult.isDemo };
+  const timings = await loadInitialAnalysisTimingByVisitId(exportResult.rows.map((row) => row.visitId));
+  const timedRows = applyInitialAnalysisTiming(exportResult.rows, timings);
   if (options.includeQuality === false) {
     return {
-      data: exportResult.rows,
+      data: timedRows,
       error: null,
       isDemo: exportResult.isDemo,
     };
   }
 
-  const visitIds = exportResult.rows.map((visit) => visit.visitId);
+  const visitIds = timedRows.map((visit) => visit.visitId);
   const visitQualityResult = await getStoreVisitMonitorVisitQuality(visitIds);
   const visitQualityById = visitQualityResult.data;
   return {
-    data: exportResult.rows.map((visit) => ({
+    data: timedRows.map((visit) => ({
       ...visit,
       accuracy: visitQualityById[visit.visitId]?.accuracy ?? null,
       autoApprovalRate: visitQualityById[visit.visitId]?.autoApprovalRate ?? null,
@@ -4447,6 +4546,358 @@ export async function getStoreVisitMonitorExportBatch(
     })),
     error: visitQualityResult.error,
     isDemo: exportResult.isDemo || visitQualityResult.isDemo,
+  };
+}
+
+const storeVisitMonitorAggregateSelect = "id,store_id,store_name,visit_date,promoter,uploader_name,analysis_status,visit_status,visit_code,province,city,city_name,district";
+
+type StoreVisitMonitorAggregateVisitLite = {
+  visitId: string;
+  storeId: string | null;
+  storeName: string;
+  promoter: string;
+  visitDate: string;
+  visitCode: string | null;
+  analysisStatus: string | null;
+  province: string | null;
+  city: string | null;
+  district: string | null;
+};
+
+function toAggregateVisitLite(visit: OfflineStoreVisit): StoreVisitMonitorAggregateVisitLite {
+  return {
+    visitId: visit.id,
+    storeId: String(visit.store_id ?? "").trim() || null,
+    storeName: String(visit.store_name ?? "").trim(),
+    promoter: String(visit.promoter ?? visit.uploader_name ?? "").trim() || "Unnamed promoter",
+    visitDate: visit.visit_date,
+    visitCode: visit.visit_code ?? null,
+    analysisStatus: visit.analysis_status ?? null,
+    province: String(visit.province ?? "").trim() || null,
+    city: String(visit.city_name ?? visit.city ?? "").trim() || null,
+    district: String(visit.district ?? "").trim() || null,
+  };
+}
+
+function filterAggregateVisitLites(
+  items: StoreVisitMonitorAggregateVisitLite[],
+  filters: StoreVisitMonitorFilters,
+  dateFrom: string,
+  dateTo: string,
+) {
+  return items.filter((visit) => {
+    if (visit.visitDate < dateFrom || visit.visitDate > dateTo) return false;
+    if (filters.visitCode && !(visit.visitCode ?? "").toLowerCase().includes(filters.visitCode.toLowerCase())) return false;
+    if (filters.storeName && !visit.storeName.toLowerCase().includes(filters.storeName.toLowerCase())) return false;
+    if (filters.promoter && !visit.promoter.toLowerCase().includes(filters.promoter.toLowerCase())) return false;
+    if (filters.analysisStatus && visit.analysisStatus !== filters.analysisStatus) return false;
+    return true;
+  });
+}
+
+function buildStoreVisitMonitorPromoterSummary(
+  visits: StoreVisitMonitorAggregateVisitLite[],
+  qualityRows: StoreVisitMonitorQualityRow[],
+) {
+  const visitPromoterById = new Map(visits.map((visit) => [visit.visitId, visit]));
+  const buckets = new Map<string, {
+    promoter: string;
+    storeKeys: Set<string>;
+    parsedProductCount: number;
+    approvedProductCount: number;
+  }>();
+
+  for (const visit of visits) {
+    const bucket = buckets.get(visit.promoter) ?? {
+      promoter: visit.promoter,
+      storeKeys: new Set<string>(),
+      parsedProductCount: 0,
+      approvedProductCount: 0,
+    };
+    bucket.storeKeys.add(visit.storeId || visit.storeName || visit.visitId);
+    buckets.set(visit.promoter, bucket);
+  }
+
+  for (const row of qualityRows) {
+    if (!row.visit_id || !candidateContributesToQuality(row)) continue;
+    const visit = visitPromoterById.get(row.visit_id);
+    if (!visit) continue;
+    const bucket = buckets.get(visit.promoter) ?? {
+      promoter: visit.promoter,
+      storeKeys: new Set<string>(),
+      parsedProductCount: 0,
+      approvedProductCount: 0,
+    };
+    bucket.parsedProductCount += 1;
+    if (row.status === "approved") bucket.approvedProductCount += 1;
+    buckets.set(visit.promoter, bucket);
+  }
+
+  return [...buckets.values()]
+    .map((bucket) => {
+      const storeCount = bucket.storeKeys.size;
+      const parsedProductCount = bucket.parsedProductCount;
+      const approvedProductCount = bucket.approvedProductCount;
+      return {
+        promoter: bucket.promoter,
+        storeCount,
+        parsedProductCount,
+        approvedProductCount,
+        passRate: parsedProductCount > 0 ? approvedProductCount / parsedProductCount : null,
+      } satisfies StoreVisitMonitorPromoterRow;
+    })
+    .sort((a, b) => b.storeCount - a.storeCount || b.parsedProductCount - a.parsedProductCount || a.promoter.localeCompare(b.promoter));
+}
+
+function buildStoreVisitMonitorStoreSummary(
+  visits: StoreVisitMonitorAggregateVisitLite[],
+  qualityRows: StoreVisitMonitorQualityRow[],
+  storeMasterById: Map<string, {
+    organizationName: string | null;
+    province: string | null;
+    city: string | null;
+    district: string | null;
+    storeName: string | null;
+  }>,
+) {
+  const visitById = new Map(visits.map((visit) => [visit.visitId, visit]));
+  const buckets = new Map<string, {
+    storeKey: string;
+    storeName: string;
+    organizationName: string | null;
+    province: string | null;
+    city: string | null;
+    district: string | null;
+    parsedProductCount: number;
+    approvedProductCount: number;
+  }>();
+
+  function masterFor(storeId: string | null) {
+    return storeId ? storeMasterById.get(storeId) : undefined;
+  }
+
+  for (const visit of visits) {
+    const storeKey = visit.storeId || visit.storeName || visit.visitId;
+    const master = masterFor(visit.storeId);
+    const bucket = buckets.get(storeKey) ?? {
+      storeKey,
+      storeName: master?.storeName || visit.storeName || storeKey,
+      organizationName: master?.organizationName ?? null,
+      province: master?.province ?? visit.province ?? null,
+      city: master?.city ?? visit.city ?? null,
+      district: master?.district ?? visit.district ?? null,
+      parsedProductCount: 0,
+      approvedProductCount: 0,
+    };
+    if (!bucket.storeName && (master?.storeName || visit.storeName)) {
+      bucket.storeName = master?.storeName || visit.storeName;
+    }
+    if (!bucket.organizationName && master?.organizationName) bucket.organizationName = master.organizationName;
+    if (!bucket.province && (master?.province || visit.province)) bucket.province = master?.province ?? visit.province;
+    if (!bucket.city && (master?.city || visit.city)) bucket.city = master?.city ?? visit.city;
+    if (!bucket.district && (master?.district || visit.district)) bucket.district = master?.district ?? visit.district;
+    buckets.set(storeKey, bucket);
+  }
+
+  for (const row of qualityRows) {
+    if (!row.visit_id || !candidateContributesToQuality(row)) continue;
+    const visit = visitById.get(row.visit_id);
+    if (!visit) continue;
+    const storeKey = visit.storeId || visit.storeName || visit.visitId;
+    const master = masterFor(visit.storeId);
+    const bucket = buckets.get(storeKey) ?? {
+      storeKey,
+      storeName: master?.storeName || visit.storeName || storeKey,
+      organizationName: master?.organizationName ?? null,
+      province: master?.province ?? visit.province ?? null,
+      city: master?.city ?? visit.city ?? null,
+      district: master?.district ?? visit.district ?? null,
+      parsedProductCount: 0,
+      approvedProductCount: 0,
+    };
+    bucket.parsedProductCount += 1;
+    if (row.status === "approved") bucket.approvedProductCount += 1;
+    buckets.set(storeKey, bucket);
+  }
+
+  return [...buckets.values()]
+    .map((bucket) => ({
+      storeKey: bucket.storeKey,
+      storeName: bucket.storeName,
+      organizationName: bucket.organizationName,
+      province: bucket.province,
+      city: bucket.city,
+      district: bucket.district,
+      parsedProductCount: bucket.parsedProductCount,
+      approvedProductCount: bucket.approvedProductCount,
+      passRate: bucket.parsedProductCount > 0 ? bucket.approvedProductCount / bucket.parsedProductCount : null,
+    } satisfies StoreVisitMonitorStoreRow))
+    .sort((a, b) => b.parsedProductCount - a.parsedProductCount || a.storeName.localeCompare(b.storeName));
+}
+
+async function loadStoreMasterByIds(storeIds: string[]) {
+  const uniqueIds = [...new Set(storeIds.filter(Boolean))];
+  const storeMasterById = new Map<string, {
+    organizationName: string | null;
+    province: string | null;
+    city: string | null;
+    district: string | null;
+    storeName: string | null;
+  }>();
+  if (!hasSupabaseServiceConfig() || uniqueIds.length === 0) return storeMasterById;
+
+  const supabase = createSupabaseServiceClient();
+  const chunkSize = 200;
+  for (let offset = 0; offset < uniqueIds.length; offset += chunkSize) {
+    const chunk = uniqueIds.slice(offset, offset + chunkSize);
+    const { data, error } = await supabase
+      .from("offline_stores")
+      .select("id,name,province,city,city_name,district,organization_id,organizations(id,name)")
+      .in("id", chunk);
+    if (error) return storeMasterById;
+    for (const row of data ?? []) {
+      const store = row as {
+        id?: string;
+        name?: string | null;
+        province?: string | null;
+        city?: string | null;
+        city_name?: string | null;
+        district?: string | null;
+        organizations?: { name?: string | null } | { name?: string | null }[] | null;
+      };
+      const storeId = String(store.id ?? "").trim();
+      if (!storeId) continue;
+      const org = Array.isArray(store.organizations) ? store.organizations[0] : store.organizations;
+      storeMasterById.set(storeId, {
+        organizationName: String(org?.name ?? "").trim() || null,
+        province: String(store.province ?? "").trim() || null,
+        city: String(store.city_name ?? store.city ?? "").trim() || null,
+        district: String(store.district ?? "").trim() || null,
+        storeName: String(store.name ?? "").trim() || null,
+      });
+    }
+  }
+  return storeMasterById;
+}
+
+async function loadStoreVisitMonitorAggregateVisits(
+  filters: StoreVisitMonitorFilters,
+  dateFrom: string,
+  dateTo: string,
+): Promise<QueryResult<StoreVisitMonitorAggregateVisitLite[]>> {
+  if (filters.dataScope?.mode === "empty") return { data: [], error: null, isDemo: false };
+  const scopedStoreIds = filters.dataScope ? await resolveScopedStoreIds(filters.dataScope) : null;
+  if (scopedStoreIds?.length === 0) return { data: [], error: null, isDemo: false };
+
+  if (!hasSupabaseServiceConfig()) {
+    const rows = filterAggregateVisitLites(
+      demoOfflineStoreVisits.map(toAggregateVisitLite),
+      filters,
+      dateFrom,
+      dateTo,
+    );
+    return { data: rows, error: null, isDemo: true };
+  }
+
+  const supabase = createSupabaseServiceClient();
+  const rows: StoreVisitMonitorAggregateVisitLite[] = [];
+
+  for (let offset = 0; ; offset += storeVisitMonitorExportBatchSize) {
+    let query = supabase
+      .from("offline_store_visits")
+      .select(storeVisitMonitorAggregateSelect)
+      .neq("visit_status", "draft")
+      .gte("visit_date", dateFrom)
+      .lte("visit_date", dateTo)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(offset, offset + storeVisitMonitorExportBatchSize - 1);
+    if (scopedStoreIds) query = query.in("store_id", scopedStoreIds);
+    const { data, error } = await applyStoreVisitMonitorRowFilters(query, filters);
+    if (error) return { data: rows, error: error.message, isDemo: false };
+    const pageRows = ((data ?? []) as unknown as OfflineStoreVisit[]).map(toAggregateVisitLite);
+    rows.push(...pageRows);
+    if (pageRows.length < storeVisitMonitorExportBatchSize) break;
+  }
+
+  return { data: rows, error: null, isDemo: false };
+}
+
+export async function getStoreVisitMonitorPromoterSummary(
+  filters: StoreVisitMonitorFilters = {},
+): Promise<QueryResult<StoreVisitMonitorPromoterRow[]>> {
+  const recent24Hours = defaultRecent24HoursRange();
+  const dateFrom = filters.dateFrom || recent24Hours.dateFrom;
+  const dateTo = filters.dateTo || recent24Hours.dateTo;
+  const visitsResult = await loadStoreVisitMonitorAggregateVisits(filters, dateFrom, dateTo);
+  if (visitsResult.error) return { data: [], error: visitsResult.error, isDemo: visitsResult.isDemo };
+
+  const visitIds = visitsResult.data.map((visit) => visit.visitId);
+  if (visitIds.length === 0) return { data: [], error: null, isDemo: visitsResult.isDemo };
+
+  if (!hasSupabaseServiceConfig()) {
+    return {
+      data: buildStoreVisitMonitorPromoterSummary(visitsResult.data, []),
+      error: null,
+      isDemo: true,
+    };
+  }
+
+  const { rows, error } = await loadStoreVisitMonitorQualityRows(visitIds);
+  if (isMissingStoreVisitQualityViewError(error) || (error?.message ?? "").includes("ai_matched_entity_type")) {
+    return {
+      data: buildStoreVisitMonitorPromoterSummary(visitsResult.data, []),
+      error: null,
+      isDemo: false,
+    };
+  }
+  if (error) return { data: [], error: error.message, isDemo: false };
+
+  return {
+    data: buildStoreVisitMonitorPromoterSummary(visitsResult.data, rows),
+    error: null,
+    isDemo: false,
+  };
+}
+
+export async function getStoreVisitMonitorStoreSummary(
+  filters: StoreVisitMonitorFilters = {},
+): Promise<QueryResult<StoreVisitMonitorStoreRow[]>> {
+  const recent24Hours = defaultRecent24HoursRange();
+  const dateFrom = filters.dateFrom || recent24Hours.dateFrom;
+  const dateTo = filters.dateTo || recent24Hours.dateTo;
+  const visitsResult = await loadStoreVisitMonitorAggregateVisits(filters, dateFrom, dateTo);
+  if (visitsResult.error) return { data: [], error: visitsResult.error, isDemo: visitsResult.isDemo };
+
+  const visitIds = visitsResult.data.map((visit) => visit.visitId);
+  if (visitIds.length === 0) return { data: [], error: null, isDemo: visitsResult.isDemo };
+
+  const storeMasterById = await loadStoreMasterByIds(
+    visitsResult.data.map((visit) => visit.storeId).filter((value): value is string => Boolean(value)),
+  );
+
+  if (!hasSupabaseServiceConfig()) {
+    return {
+      data: buildStoreVisitMonitorStoreSummary(visitsResult.data, [], storeMasterById),
+      error: null,
+      isDemo: true,
+    };
+  }
+
+  const { rows, error } = await loadStoreVisitMonitorQualityRows(visitIds);
+  if (isMissingStoreVisitQualityViewError(error) || (error?.message ?? "").includes("ai_matched_entity_type")) {
+    return {
+      data: buildStoreVisitMonitorStoreSummary(visitsResult.data, [], storeMasterById),
+      error: null,
+      isDemo: false,
+    };
+  }
+  if (error) return { data: [], error: error.message, isDemo: false };
+
+  return {
+    data: buildStoreVisitMonitorStoreSummary(visitsResult.data, rows, storeMasterById),
+    error: null,
+    isDemo: false,
   };
 }
 
@@ -4497,6 +4948,43 @@ export async function getStoreVisitMonitor(
     avgPriceDeviationRate: visitQualityById[visit.visitId]?.avgPriceDeviationRate ?? null,
   }));
 
+  const promoterSummaryResult = { data: [] as StoreVisitMonitorPromoterRow[], error: null as string | null, isDemo: false };
+  const storeSummaryResult = { data: [] as StoreVisitMonitorStoreRow[], error: null as string | null, isDemo: false };
+  if (filters.includePromoterSummary || filters.includeStoreSummary) {
+    const aggregateVisitsResult = await loadStoreVisitMonitorAggregateVisits(filters, dateFrom, dateTo);
+    if (aggregateVisitsResult.error) {
+      if (filters.includePromoterSummary) promoterSummaryResult.error = aggregateVisitsResult.error;
+      if (filters.includeStoreSummary) storeSummaryResult.error = aggregateVisitsResult.error;
+    } else {
+      const aggregateVisitIds = aggregateVisitsResult.data.map((visit) => visit.visitId);
+      let qualityRows: StoreVisitMonitorQualityRow[] = [];
+      if (aggregateVisitIds.length > 0 && hasSupabaseServiceConfig()) {
+        const loaded = await loadStoreVisitMonitorQualityRows(aggregateVisitIds);
+        if (!(isMissingStoreVisitQualityViewError(loaded.error) || (loaded.error?.message ?? "").includes("ai_matched_entity_type"))) {
+          if (loaded.error) {
+            if (filters.includePromoterSummary) promoterSummaryResult.error = loaded.error.message;
+            if (filters.includeStoreSummary) storeSummaryResult.error = loaded.error.message;
+          } else {
+            qualityRows = loaded.rows;
+          }
+        }
+      }
+      if (!promoterSummaryResult.error && !storeSummaryResult.error) {
+        if (filters.includePromoterSummary) {
+          promoterSummaryResult.data = buildStoreVisitMonitorPromoterSummary(aggregateVisitsResult.data, qualityRows);
+          promoterSummaryResult.isDemo = aggregateVisitsResult.isDemo;
+        }
+        if (filters.includeStoreSummary) {
+          const storeMasterById = await loadStoreMasterByIds(
+            aggregateVisitsResult.data.map((visit) => visit.storeId).filter((value): value is string => Boolean(value)),
+          );
+          storeSummaryResult.data = buildStoreVisitMonitorStoreSummary(aggregateVisitsResult.data, qualityRows, storeMasterById);
+          storeSummaryResult.isDemo = aggregateVisitsResult.isDemo;
+        }
+      }
+    }
+  }
+
   return {
     data: {
       summary,
@@ -4506,6 +4994,8 @@ export async function getStoreVisitMonitor(
         avgPriceDeviationRate: quality.avgPriceDeviationRate,
       },
       visits: visitsWithQuality,
+      promoterSummary: promoterSummaryResult.data,
+      storeSummary: storeSummaryResult.data,
       pagination: storeVisitMonitorPagination(page, pageSize, visitsResult.total, visitsWithQuality.length),
       filters: {
         dateFrom,
@@ -4513,8 +5003,8 @@ export async function getStoreVisitMonitor(
         isDefaultRecent24Hours,
       },
     },
-    error: visitsResult.error ?? qualityResult.error,
-    isDemo: visitsResult.isDemo || qualityResult.isDemo,
+    error: visitsResult.error ?? qualityResult.error ?? promoterSummaryResult.error ?? storeSummaryResult.error,
+    isDemo: visitsResult.isDemo || qualityResult.isDemo || promoterSummaryResult.isDemo || storeSummaryResult.isDemo,
   };
 }
 

@@ -4,6 +4,7 @@ import { Loader2, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { PriceSnapshotExportButton } from "@/components/price-snapshot-export-button";
 import { priceBrandSeriesLabel } from "@/lib/brand-series";
 import { formatIdr, formatJakartaDateTimeSeconds, formatPricePerPiece, formatShortImageId } from "@/lib/format";
 import { priceSnapshotBenchmarkMaterial } from "@/lib/price-snapshot-business";
@@ -55,9 +56,11 @@ type PriceSnapshotForStoreRegion = {
 export function PriceSnapshotsTable({
   snapshots,
   locale,
+  exportFilters,
 }: {
   snapshots: PriceSnapshot[];
   locale: string;
+  exportFilters: Record<string, string | undefined>;
 }) {
   const router = useRouter();
   const isZh = locale === "zh";
@@ -121,15 +124,18 @@ export function PriceSnapshotsTable({
             ? (isZh ? `已选 ${selectedVisibleIds.length} 条价格快照` : `${selectedVisibleIds.length} price snapshots selected`)
             : (isZh ? "勾选测试数据后可批量删除；只删除价格快照，不删除门店或商品主数据。" : "Select test rows to bulk delete. Stores and product master data are not deleted.")}
         </div>
-        <button
-          type="button"
-          onClick={() => setConfirmOpen(true)}
-          disabled={selectedVisibleIds.length === 0 || loading}
-          className="inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-md border border-red-200 bg-white px-3 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <Trash2 className="h-4 w-4" />
-          {isZh ? "批量删除" : "Bulk Delete"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <PriceSnapshotExportButton locale={locale} filters={exportFilters} />
+          <button
+            type="button"
+            onClick={() => setConfirmOpen(true)}
+            disabled={selectedVisibleIds.length === 0 || loading}
+            className="inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-md border border-red-200 bg-white px-3 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Trash2 className="h-4 w-4" />
+            {isZh ? "批量删除" : "Bulk Delete"}
+          </button>
+        </div>
       </div>
 
       {confirmOpen ? (

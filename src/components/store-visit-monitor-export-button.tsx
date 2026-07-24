@@ -1,5 +1,6 @@
 "use client";
 
+import { Download } from "lucide-react";
 import { useState } from "react";
 
 type ExportFilters = {
@@ -11,68 +12,61 @@ type ExportFilters = {
   date_to?: string;
 };
 
-function messages(locale: string) {
-  if (locale === "en") {
-    return {
-      idle: "Export Visit analysis list",
-      loading: "Creating task...",
-      success: "Export task created. Open Exports in the header to check progress and download.",
-      errorFallback: "Failed to create export task",
-    };
-  }
-  return {
-    idle: "Export Visit analysis list",
-    loading: "创建任务中...",
-    success: "导出任务已创建，请在顶部 Exports 中查看进度并下载。",
-    errorFallback: "创建导出任务失败",
-  };
-}
+type ExportView = "visit" | "promoter" | "store";
 
 export function StoreVisitMonitorExportButton({
   locale,
   filters,
+  exportView = "visit",
 }: {
   locale: string;
   filters: ExportFilters;
+  exportView?: ExportView;
 }) {
-  const text = messages(locale);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
-  async function handleExportClick() {
-    setIsSubmitting(true);
-    setNotice(null);
-    setError(null);
-
+  async function createExportJob() {
+    setLoading(true);
+    setMessage(null);
     try {
       const response = await fetch("/api/store-visit-monitor/export-jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ locale, filters }),
+        body: JSON.stringify({
+          locale,
+          filters: {
+            ...filters,
+            export_view: exportView,
+          },
+        }),
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error ?? text.errorFallback);
-      setNotice(text.success);
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : text.errorFallback);
+      if (!response.ok) throw new Error(payload.error ?? "Export failed");
+      setMessage(
+        locale === "zh"
+          ? "导出任务已创建，请在顶部导出中查看进度并下载。"
+          : "Export task created. Open Exports to check progress and download.",
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Export failed");
     } finally {
-      setIsSubmitting(false);
+      setLoading(false);
     }
   }
 
   return (
-    <div className="flex flex-col items-end gap-2">
+    <div className="text-right">
       <button
         type="button"
-        onClick={handleExportClick}
-        disabled={isSubmitting}
-        className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+        disabled={loading}
+        onClick={createExportJob}
+        className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
       >
-        {isSubmitting ? text.loading : text.idle}
+        <Download className="h-4 w-4" />
+        {loading ? (locale === "zh" ? "创建中..." : "Creating...") : (locale === "zh" ? "导出数据" : "Export data")}
       </button>
-      {notice ? <div className="max-w-xs text-right text-xs text-emerald-600">{notice}</div> : null}
-      {error ? <div className="max-w-xs text-right text-xs text-rose-600">{error}</div> : null}
+      {message ? <p className="mt-1 max-w-xs text-xs text-slate-500">{message}</p> : null}
     </div>
   );
 }

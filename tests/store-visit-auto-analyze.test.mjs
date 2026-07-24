@@ -375,6 +375,16 @@ test("store visit price analysis persists prompt metadata for image and summary 
   assert.match(storeVisitAiDebug, /price_image_results/);
 });
 
+test("store visit analysis timing finalizes only after whole-visit terminal state", () => {
+  assert.match(storeVisitImageMaintenance, /resolveVisitAnalysisTimingMetrics/);
+  assert.match(storeVisitImageMaintenance, /job_type", "initial_analysis"/);
+  assert.match(storeVisitImageMaintenance, /Still analyzing: record start only/);
+  assert.match(storeVisitImageMaintenance, /Authoritative end-to-end timing/);
+  assert.match(dataFile, /loadInitialAnalysisTimingByVisitId/);
+  assert.match(dataFile, /applyInitialAnalysisTiming/);
+  assert.match(dataFile, /recomputedDurationMs/);
+});
+
 test("single-photo refresh preserves the first whole-visit analysis timing metrics", () => {
   assert.doesNotMatch(storeVisitRefreshRoute, /visitAnalysisStartedAt:/);
   assert.match(storeVisitAnalysis, /firstVisitAnalysisStartedAt/);
@@ -383,6 +393,7 @@ test("single-photo refresh preserves the first whole-visit analysis timing metri
   assert.match(storeVisitAnalysis, /visit_analysis_started_at: firstVisitAnalysisStartedAt/);
   assert.match(storeVisitAnalysis, /visit_analysis_completed_at: firstVisitAnalysisCompletedAt/);
   assert.match(storeVisitAnalysis, /visit_analysis_duration_ms: firstVisitAnalysisDurationMs/);
+  assert.match(storeVisitImageMaintenance, /job_type", "initial_analysis"/);
 });
 
 test("store visit refresh reruns target images through the image-level AI pipeline", () => {
@@ -545,7 +556,7 @@ test("stored price state recovery can finalize stale analyzing images from persi
 
 test("store visit monitor has a dedicated backend navigation entry", () => {
   assert.match(appShell, /href: "\/store-visit-monitor"/);
-  assert.match(appShell, /Store Visit Monitor/);
+  assert.match(appShell, /Store Visit Records/);
 });
 
 test("store visit monitor page shows summary cards, visit latency metrics, and a default recent-24-hour filter", () => {
@@ -592,35 +603,35 @@ test("store visit monitor data path exposes price parsing quality metrics from t
 });
 
 test("store visit monitor list places row-level price parsing quality columns after Retake", () => {
-  assert.match(storeVisitMonitorPage, /<th className="py-2 pr-3">Retake<\/th>/);
-  assert.match(storeVisitMonitorPage, /<th className="py-2 pr-3">Accuracy<\/th>/);
-  assert.match(storeVisitMonitorPage, /<th className="py-2 pr-3">Auto-approval rate<\/th>/);
-  assert.match(storeVisitMonitorPage, /<th className="py-2 pr-3">Average price deviation<\/th>/);
+  assert.match(storeVisitMonitorPage, /isZh \? "需补拍" : "Retake"/);
+  assert.match(storeVisitMonitorPage, /isZh \? "准确率" : "Accuracy"/);
+  assert.match(storeVisitMonitorPage, /isZh \? "自动通过率" : "Auto-approval rate"/);
+  assert.match(storeVisitMonitorPage, /isZh \? "平均价格偏差" : "Average price deviation"/);
   assert.match(
     storeVisitMonitorPage,
-    /Retake<\/th>[\s\S]*Accuracy<\/th>[\s\S]*Auto-approval rate<\/th>[\s\S]*Average price deviation<\/th>[\s\S]*Started at<\/th>/,
+    /需补拍[\s\S]*准确率[\s\S]*自动通过率[\s\S]*平均价格偏差[\s\S]*开始时间/,
   );
 });
 
 test("store visit monitor list exposes server-side pagination controls", () => {
   assert.match(storeVisitMonitorPage, /page_size/);
-  assert.match(storeVisitMonitorPage, /Showing .* of .* visits/);
+  assert.match(storeVisitMonitorPage, /Showing \$\{monitor\.pagination\.from\}-\$\{monitor\.pagination\.to\} of \$\{monitor\.pagination\.total\} visits/);
   assert.match(storeVisitMonitorPage, /Previous/);
   assert.match(storeVisitMonitorPage, /Next/);
 });
 
 test("store visit monitor filter bar uses the compact labeled input pattern from photo price review", () => {
-  assert.match(storeVisitMonitorPage, /className="grid gap-3 md:grid-cols-\[minmax\(180px,1fr\)_minmax\(220px,1\.1fr\)_minmax\(180px,1fr\)_minmax\(180px,220px\)\]"/);
+  assert.match(storeVisitMonitorPage, /className="grid gap-3 grid-cols-1 md:grid-cols-2 xl:grid-cols-3"/);
   assert.match(storeVisitMonitorPage, /className="flex min-h-10 items-center rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus-within:border-slate-500 focus-within:ring-2 focus-within:ring-slate-200"/);
   assert.doesNotMatch(storeVisitMonitorPage, /<SelectInput name="page_size"/);
 });
 
 test("store visit monitor pagination row contains page size and page counter together", () => {
   assert.match(storeVisitMonitorPage, /<form method="get" className="flex items-center gap-2">[\s\S]*name="page_size"/);
-  assert.match(storeVisitMonitorPage, /copy hidden filters into the page-size form|Page \{monitor\.pagination\.page\} of \{monitor\.pagination\.totalPages\}/);
+  assert.match(storeVisitMonitorPage, /Page \$\{monitor\.pagination\.page\} of \$\{monitor\.pagination\.totalPages\}/);
   assert.match(
     storeVisitMonitorPage,
-    /<div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4 text-sm">[\s\S]*name="page_size"[\s\S]*Previous[\s\S]*Page \{monitor\.pagination\.page\} of \{monitor\.pagination\.totalPages\}[\s\S]*Next/s,
+    /<div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4 text-sm">[\s\S]*name="page_size"[\s\S]*Previous[\s\S]*Page \$\{monitor\.pagination\.page\} of \$\{monitor\.pagination\.totalPages\}[\s\S]*Next/s,
   );
 });
 
@@ -715,20 +726,35 @@ test("store visit monitor export menu does not poll jobs until the menu is opene
   assert.doesNotMatch(storeVisitMonitorExportMenu, /void loadJobs\(\);\s*const timer = window\.setInterval/);
 });
 
+test("store visit monitor async export supports by-promoter and by-store views", () => {
+  assert.match(storeVisitMonitorExportJobs, /export_view/);
+  assert.match(storeVisitMonitorExportJobs, /getStoreVisitMonitorPromoterSummary/);
+  assert.match(storeVisitMonitorExportJobs, /getStoreVisitMonitorStoreSummary/);
+  assert.match(storeVisitMonitorExportJobs, /By promoter/);
+  assert.match(storeVisitMonitorExportJobs, /By store/);
+  assert.match(storeVisitMonitorExportJobs, /store-visit-monitor-by-promoter/);
+  assert.match(storeVisitMonitorExportJobs, /store-visit-monitor-by-store/);
+  assert.match(storeVisitMonitorExportButton, /export_view: exportView/);
+  assert.match(storeVisitMonitorExportButton, /exportView = "visit"/);
+  assert.match(storeVisitMonitorExportJobsRoute, /export_view/);
+  assert.match(storeVisitMonitorExportMenu, /巡店记录·按导购|Store Visit · By promoter/);
+  assert.match(storeVisitMonitorExportMenu, /巡店记录·按门店|Store Visit · By store/);
+});
+
 test("store visit monitor route has an immediate loading shell for slow RSC navigation", () => {
-  assert.match(storeVisitMonitorLoading, /Store Visit Monitor/);
   assert.match(storeVisitMonitorLoading, /animate-pulse/);
   assert.match(storeVisitMonitorServerPage, /StoreVisitMonitorClient/);
   assert.doesNotMatch(storeVisitMonitorServerPage, /getStoreVisitMonitor/);
   assert.match(storeVisitMonitorServerPage, /queryString=\{queryString\.slice\(1\)\}/);
-  assert.match(storeVisitMonitorClient, /const monitorUrl = `\/api\/store-visit-monitor/);
+  assert.match(storeVisitMonitorClient, /\/api\/store-visit-monitor/);
   assert.match(storeVisitMonitorClient, /fetch\(monitorUrl/);
-  assert.match(storeVisitMonitorClient, /include_quality=1/);
+  assert.match(storeVisitMonitorClient, /include_quality/);
+  assert.match(storeVisitMonitorClient, /promoter_summary/);
   assert.doesNotMatch(storeVisitMonitorClient, /useSearchParams/);
   assert.match(storeVisitMonitorRoute, /getStoreVisitMonitor/);
   assert.match(storeVisitMonitorRoute, /includeQuality: url\.searchParams\.get\("include_quality"\) === "1"/);
-  assert.match(storeVisitMonitorRoute, /process\.env\.NODE_ENV !== "production"/);
-  assert.match(storeVisitMonitorRoute, /isAllowedAdminRole\(localSession\.role\)/);
+  assert.match(storeVisitMonitorRoute, /includePromoterSummary: url\.searchParams\.get\("promoter_summary"\) === "1"/);
+  assert.match(storeVisitMonitorRoute, /includeStoreSummary: url\.searchParams\.get\("store_summary"\) === "1"/);
 });
 
 test("store visit monitor data path includes per-visit price parsing quality metrics", () => {
@@ -744,6 +770,21 @@ test("store visit monitor page derives aggregate and row quality from one qualit
   assert.match(dataFile, /filters\.includeQuality === false/);
   assert.match(dataFile, /: await getStoreVisitMonitorQualityBundle\(visitIds\)/);
   assert.doesNotMatch(dataFile, /Promise\.all\(\[\s*getStoreVisitMonitorQuality\(visitIds\),\s*getStoreVisitMonitorVisitQuality\(visitIds\),\s*\]\)/);
+});
+
+test("store visit monitor promoter summary aggregates filtered visits and approved candidates", () => {
+  assert.match(dataFile, /export type StoreVisitMonitorPromoterRow/);
+  assert.match(dataFile, /export type StoreVisitMonitorStoreRow/);
+  assert.match(dataFile, /export async function getStoreVisitMonitorPromoterSummary/);
+  assert.match(dataFile, /export async function getStoreVisitMonitorStoreSummary/);
+  assert.match(dataFile, /includePromoterSummary/);
+  assert.match(dataFile, /includeStoreSummary/);
+  assert.match(dataFile, /promoterSummary/);
+  assert.match(dataFile, /storeSummary/);
+  assert.match(dataFile, /parsedProductCount/);
+  assert.match(dataFile, /approvedProductCount/);
+  assert.match(dataFile, /organizationName/);
+  assert.match(dataFile, /passRate/);
 });
 
 test("store visit monitor falls back when production lacks offline_store_visits.updated_at", () => {

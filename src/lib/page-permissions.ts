@@ -1,9 +1,11 @@
 /** Pages shown in role management and assignable to non-admin roles. */
 export const ROLE_PAGE_KEYS = [
   "dashboard",
+  "standard-store",
   "prices",
-  "offline-price-candidates",
+  "goal-execution",
   "store-visit-monitor",
+  "offline-price-candidates",
   "competitor-mappings",
   "sku-master",
   "competitor-products",
@@ -78,7 +80,9 @@ export type PageKeyLabel = { zh: string; en: string };
 
 export const PAGE_KEY_LABELS: Record<PageKey, PageKeyLabel> = {
   dashboard: { zh: "价格指数", en: "Price Index" },
-  prices: { zh: "确认价格", en: "Confirmed Prices" },
+  "standard-store": { zh: "完美终端2.0", en: "Perfect Store 2.0" },
+  prices: { zh: "真实价格", en: "Real Prices" },
+  "goal-execution": { zh: "目标执行2.0", en: "Goal Execution 2.0" },
   "offline-price-candidates": { zh: "价格审核", en: "Price Review" },
   "store-visit-monitor": { zh: "巡店记录", en: "Store Visit Records" },
   "competitor-mappings": { zh: "竞品对标", en: "Competitor Benchmarking" },

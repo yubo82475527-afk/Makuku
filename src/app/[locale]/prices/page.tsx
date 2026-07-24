@@ -5,7 +5,6 @@ import type { ReactNode } from "react";
 import { PageShellState } from "@/components/page-shell-state";
 import { PriceSnapshotLinkedFilters } from "@/components/price-snapshot-linked-filters";
 import { PriceSnapshotsTable } from "@/components/price-snapshots-table";
-import { PriceSnapshotExportButton } from "@/components/price-snapshot-export-button";
 import { Button, Card, DataNotice } from "@/components/ui";
 import { priceBrandSeriesLabel } from "@/lib/brand-series";
 import { getPriceSnapshotFilterOptions, getPriceSnapshotsPage, type PriceSnapshotOwnerFilter } from "@/lib/data";
@@ -185,32 +184,32 @@ async function PricesContent({
       </Card>
 
       <Card>
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="mb-3">
           <h2 className="font-semibold">{dict.prices.title}</h2>
-          <PriceSnapshotExportButton
-            locale={locale}
-            filters={{
-              owner: params.owner,
-              brand: params.brand,
-              series: params.series,
-              ownSeries: params.ownSeries,
-              sku: params.sku,
-              line: params.line,
-              size: params.size,
-              shape: params.shape,
-              organization: params.organization,
-              priceIndexDrill: params.priceIndexDrill,
-              province: params.province,
-              cityName: params.cityName,
-              district: params.district,
-              store: params.store,
-              visitCode: params.visitCode,
-              createdFrom: params.createdFrom,
-              createdTo: params.createdTo,
-            }}
-          />
         </div>
-        <PriceSnapshotsTable snapshots={pricesResult.data} locale={locale} />
+        <PriceSnapshotsTable
+          snapshots={pricesResult.data}
+          locale={locale}
+          exportFilters={{
+            owner: params.owner,
+            brand: params.brand,
+            series: params.series,
+            ownSeries: params.ownSeries,
+            sku: params.sku,
+            line: params.line,
+            size: params.size,
+            shape: params.shape,
+            organization: params.organization,
+            priceIndexDrill: params.priceIndexDrill,
+            province: params.province,
+            cityName: params.cityName,
+            district: params.district,
+            store: params.store,
+            visitCode: params.visitCode,
+            createdFrom: params.createdFrom,
+            createdTo: params.createdTo,
+          }}
+        />
         <PricesPagination
           locale={locale}
           page={pricesResult.page}
@@ -350,9 +349,15 @@ function PricesPageSkeleton({ locale, title }: { locale: string; title: string }
         </div>
       </Card>
       <Card>
-        <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="mb-4">
           <h2 className="font-semibold">{title}</h2>
-          <div className="h-9 w-28 rounded-md bg-slate-100" />
+        </div>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="h-4 w-80 rounded bg-slate-100" />
+          <div className="flex gap-2">
+            <div className="h-9 w-28 rounded-md bg-slate-100" />
+            <div className="h-9 w-28 rounded-md bg-slate-100" />
+          </div>
         </div>
         <div className="space-y-2">
           {Array.from({ length: 8 }).map((_, index) => (

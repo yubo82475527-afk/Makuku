@@ -1,10 +1,16 @@
 ﻿"use client";
 
 import { AlertCircle, CheckCircle2, KeyRound, Loader2, MessageCircle, UserX, X } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Badge, Button, EmptyState, SelectInput, TextInput } from "@/components/ui";
 import type { AppUser } from "@/lib/types";
+
+type UserListFilters = {
+  q: string;
+  role: string;
+};
 
 function isDisabled(user: AppUser) {
   return user.status === "disabled" || Boolean(user.disabled_at);
@@ -63,12 +69,20 @@ const zh = {
 
 export function AppUserManagementTable({
   users,
+  total,
+  page,
+  perPage,
   locale,
   roles = [],
+  filters,
 }: {
   users: AppUser[];
+  total: number;
+  page: number;
+  perPage: number;
   locale: string;
   roles?: Array<{ code: string; name: string }>;
+  filters: UserListFilters;
 }) {
   const roleOptions = roles.length > 0
     ? roles
@@ -79,6 +93,9 @@ export function AppUserManagementTable({
     ];
   const router = useRouter();
   const isZh = locale === "zh";
+  const pageCount = Math.max(1, Math.ceil(total / perPage));
+  const from = total === 0 ? 0 : (page - 1) * perPage + 1;
+  const to = Math.min(total, page * perPage);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [resetUser, setResetUser] = useState<AppUser | null>(null);
   const [feishuUser, setFeishuUser] = useState<AppUser | null>(null);
@@ -193,7 +210,7 @@ export function AppUserManagementTable({
     }
   }
 
-  if (users.length === 0) {
+  if (total === 0) {
     return <EmptyState text={isZh ? zh.empty : "No H5 login users yet."} />;
   }
 
@@ -319,6 +336,15 @@ export function AppUserManagementTable({
         </table>
       </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3 text-sm text-slate-500">
+        <span>{isZh ? `${from}-${to} / ${total}` : `${from}-${to} of ${total}`}</span>
+        <div className="flex gap-2">
+          <PaginationLink locale={locale} filters={filters} page={page - 1} perPage={perPage} disabled={page <= 1} label={isZh ? "上一页" : "Previous"} />
+          <span className="inline-flex h-9 items-center px-2">{page} / {pageCount}</span>
+          <PaginationLink locale={locale} filters={filters} page={page + 1} perPage={perPage} disabled={page >= pageCount} label={isZh ? "下一页" : "Next"} />
+        </div>
+      </div>
+
       {resetUser ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4 py-6">
           <div className="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
@@ -402,4 +428,32 @@ export function AppUserManagementTable({
       ) : null}
     </div>
   );
+}
+
+function PaginationLink({
+  locale,
+  filters,
+  page,
+  perPage,
+  disabled,
+  label,
+}: {
+  locale: string;
+  filters: UserListFilters;
+  page: number;
+  perPage: number;
+  disabled: boolean;
+  label: string;
+}) {
+  if (disabled) return <span className="inline-flex h-9 items-center rounded-md border border-slate-200 px-3 text-slate-300">{label}</span>;
+  return <Link href={buildHref(locale, filters, { page, per_page: perPage })} className="inline-flex h-9 items-center rounded-md border border-slate-300 px-3 text-slate-700 hover:bg-slate-50">{label}</Link>;
+}
+
+function buildHref(locale: string, filters: UserListFilters, overrides: Record<string, string | number>) {
+  const params = new URLSearchParams();
+  if (filters.q) params.set("q", filters.q);
+  if (filters.role !== "all") params.set("role", filters.role);
+  for (const [key, value] of Object.entries(overrides)) params.set(key, String(value));
+  const query = params.toString();
+  return `/${locale}/users${query ? `?${query}` : ""}`;
 }

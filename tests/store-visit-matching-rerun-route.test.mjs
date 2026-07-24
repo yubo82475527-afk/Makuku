@@ -29,10 +29,15 @@ test("match-only rerun route reuses stored vision rows without image AI", () => 
 test("store visit monitor exposes rerun controls without adding a page", () => {
   const page = readFileSync("src/app/[locale]/store-visit-monitor/page.tsx", "utf8");
   const client = readFileSync("src/components/store-visit-monitor-client.tsx", "utf8");
+  const exportButton = readFileSync("src/components/store-visit-monitor-export-button.tsx", "utf8");
   const dialog = readFileSync("src/components/store-visit-matching-rerun-dialog.tsx", "utf8");
   assert.match(page, /canRerunMatching/);
   assert.match(client, /StoreVisitMatchingRerunDialog/);
   assert.match(client, /Rerun matching/);
+  assert.match(client, /重跑匹配/);
+  assert.match(client, /StoreVisitMonitorExportButton/);
+  assert.match(exportButton, /导出数据/);
+  assert.match(exportButton, /Download/);
   assert.match(dialog, /Run image AI again/i);
   assert.match(dialog, /rerun-jobs/);
   assert.doesNotMatch(dialog, /rerun-matching/);

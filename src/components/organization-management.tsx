@@ -3,7 +3,9 @@
 import { Link2, Loader2, Plus, Tags, Trash2, UserPlus, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
-import { Badge, Button, SelectInput, TextInput } from "@/components/ui";
+import { clsx } from "clsx";
+import { Badge, Button, TextInput } from "@/components/ui";
+import { AppUserSearchSelect } from "@/components/app-user-search-select";
 import type { AppUser, Organization } from "@/lib/types";
 
 type RegionDraft = {
@@ -37,7 +39,6 @@ const zh = {
   close: "\u5173\u95ed",
   existingRegions: "\u5df2\u5173\u8054\u533a\u57df",
   existingUsers: "\u5df2\u5173\u8054\u7528\u6237",
-  selectUser: "\u9009\u62e9\u7528\u6237",
   addUser: "\u6dfb\u52a0\u7528\u6237",
   noRegions: "\u6682\u65e0\u533a\u57df",
   noUsers: "\u6682\u65e0\u7528\u6237",
@@ -54,6 +55,7 @@ export function OrganizationManagement({ organizations, users, locale }: { organ
   const [externalOrgOrganization, setExternalOrgOrganization] = useState<Organization | null>(null);
   const [regionDrafts, setRegionDrafts] = useState<RegionDraft[]>(() => [newRegionDraft()]);
   const [externalOrgDraft, setExternalOrgDraft] = useState("");
+  const [selectedMemberId, setSelectedMemberId] = useState("");
 
   async function submitJson(url: string, method: string, body: Record<string, unknown>) {
     setBusyKey(`${method}:${url}:${String(body.id ?? body.organization_id ?? body.name ?? "")}`);
@@ -148,8 +150,8 @@ export function OrganizationManagement({ organizations, users, locale }: { organ
   }
 
   async function addMember(formData: FormData) {
-    if (!userOrganization) return;
-    await submitJson("/api/organizations/members", "POST", {
+    if (!userOrganization) return false;
+    return submitJson("/api/organizations/members", "POST", {
       organization_id: userOrganization.id,
       app_user_id: String(formData.get("app_user_id") ?? ""),
     });
@@ -199,7 +201,11 @@ export function OrganizationManagement({ organizations, users, locale }: { organ
                       <Link2 className="h-3.5 w-3.5" />
                       {isZh ? zh.linkRegion : "Link regions"}
                     </button>
-                    <button type="button" onClick={() => setUserOrganization(organization)} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                    <button type="button" onClick={() => {
+                      setSelectedMemberId("");
+                      setUserOrganization(organization);
+                      setError(null);
+                    }} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">
                       <UserPlus className="h-3.5 w-3.5" />
                       {isZh ? zh.linkUser : "Link users"}
                     </button>
@@ -273,7 +279,15 @@ export function OrganizationManagement({ organizations, users, locale }: { organ
       ) : null}
 
       {userOrganization ? (
-        <Dialog title={`${isZh ? zh.userTitle : "Link users"} - ${userOrganization.name}`} closeLabel={isZh ? zh.close : "Close"} onClose={() => setUserOrganization(null)}>
+        <Dialog
+          title={`${isZh ? zh.userTitle : "Link users"} - ${userOrganization.name}`}
+          closeLabel={isZh ? zh.close : "Close"}
+          onClose={() => {
+            setUserOrganization(null);
+            setSelectedMemberId("");
+          }}
+          panelClassName="max-w-lg"
+        >
           <div className="mb-4">
             <div className="mb-2 text-sm font-semibold">{isZh ? zh.existingUsers : "Linked users"}</div>
             <div className="flex flex-wrap gap-2">
@@ -287,16 +301,36 @@ export function OrganizationManagement({ organizations, users, locale }: { organ
               )) : <span className="text-sm text-slate-500">{isZh ? zh.noUsers : "No users"}</span>}
             </div>
           </div>
-          <form action={addMember} className="grid gap-2 sm:grid-cols-[1fr_auto]">
-            <SelectInput name="app_user_id" required>
-              <option value="">{isZh ? zh.selectUser : "Select user"}</option>
-              {users.map((user) => (
-                <option key={user.id} value={user.id}>{user.display_name} / {user.username}</option>
-              ))}
-            </SelectInput>
-            <Button type="submit" disabled={Boolean(busyKey)}>
-              {isZh ? zh.addUser : "Add user"}
-            </Button>
+
+          <form
+            action={async (formData) => {
+              const ok = await addMember(formData);
+              if (ok) setSelectedMemberId("");
+            }}
+            className="space-y-4"
+          >
+            <AppUserSearchSelect
+              key={`${userOrganization.id}:${userOrganization.organization_members?.length ?? 0}`}
+              users={users}
+              locale={locale}
+              excludeIds={(userOrganization.organization_members ?? []).map((member) => member.app_user_id)}
+              onSelectedChange={(user) => setSelectedMemberId(user?.id ?? "")}
+            />
+            <div className="flex justify-end gap-2 border-t border-slate-100 pt-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setUserOrganization(null);
+                  setSelectedMemberId("");
+                }}
+                className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                {isZh ? zh.cancel : "Cancel"}
+              </button>
+              <Button type="submit" disabled={Boolean(busyKey) || !selectedMemberId}>
+                {isZh ? zh.addUser : "Add user"}
+              </Button>
+            </div>
           </form>
         </Dialog>
       ) : null}
@@ -304,10 +338,22 @@ export function OrganizationManagement({ organizations, users, locale }: { organ
   );
 }
 
-function Dialog({ title, closeLabel, onClose, children }: { title: string; closeLabel: string; onClose: () => void; children: ReactNode }) {
+function Dialog({
+  title,
+  closeLabel,
+  onClose,
+  children,
+  panelClassName,
+}: {
+  title: string;
+  closeLabel: string;
+  onClose: () => void;
+  children: ReactNode;
+  panelClassName?: string;
+}) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4 py-6">
-      <div className="max-h-[88vh] w-full max-w-4xl overflow-y-auto rounded-lg bg-white p-4 shadow-xl">
+      <div className={clsx("max-h-[88vh] w-full overflow-y-auto rounded-lg bg-white p-5 shadow-xl", panelClassName ?? "max-w-4xl")}>
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="font-semibold">{title}</h2>
           <button type="button" aria-label={closeLabel} onClick={onClose} className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">

@@ -97,7 +97,7 @@ export function StoreVisitRerunJobMenu({
   return (
     <details className="relative shrink-0" onToggle={handleToggle}>
       <summary className="inline-flex h-8 cursor-pointer list-none items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
-        Tasks
+        {isZh ? "任务" : "Tasks"}
         {activeCount > 0 ? <span className="rounded-full bg-slate-900 px-1.5 py-0.5 text-[11px] text-white">{activeCount}</span> : null}
       </summary>
 
@@ -105,7 +105,7 @@ export function StoreVisitRerunJobMenu({
         <div className="absolute right-0 z-40 mt-2 w-[420px] rounded-xl border border-slate-200 bg-white p-3 text-sm shadow-xl">
           <div className="mb-3 flex items-center justify-between gap-2">
             <div>
-              <div className="font-semibold text-slate-950">Tasks</div>
+              <div className="font-semibold text-slate-950">{isZh ? "任务" : "Tasks"}</div>
               <div className="text-xs text-slate-500">{isZh ? "最近 10 个匹配/AI 重解析任务" : "Latest 10 matching / AI reanalysis jobs"}</div>
             </div>
             <button type="button" onClick={() => void loadJobs()} className="text-xs font-medium text-blue-700 hover:underline" disabled={loading}>

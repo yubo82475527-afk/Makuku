@@ -60,7 +60,7 @@ export function StoreVisitMatchingRerunDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" role="dialog" aria-modal="true" aria-labelledby="matching-rerun-title">
       <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-2xl">
         <h2 id="matching-rerun-title" className="text-lg font-semibold text-slate-950">
-          {isZh ? "重新处理 Visit" : "Rerun Visit processing"}
+          {isZh ? "重新处理巡店" : "Rerun Visit processing"}
         </h2>
         <p className="mt-2 text-sm text-slate-600">
           {isZh
@@ -70,7 +70,7 @@ export function StoreVisitMatchingRerunDialog({
 
         {target.kind === "visit" ? (
           <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-            Visit: <span className="font-medium">{target.visitCode ?? target.visitId}</span>
+            {isZh ? "巡店" : "Visit"}: <span className="font-medium">{target.visitCode ?? target.visitId}</span>
           </div>
         ) : (
           <div className="mt-4 grid grid-cols-2 gap-3">

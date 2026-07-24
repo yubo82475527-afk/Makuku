@@ -140,6 +140,93 @@ function recoverStaleImageStatus(image: OfflineVisitImage, hasCompletedAnalysisM
   return asPriceImageAnalysis(image.vision_result) ? "analyzed" : "failed";
 }
 
+const terminalVisitAnalysisStatuses = new Set<StoreVisitAnalysisStatus>([
+  "completed",
+  "partial",
+  "action_required",
+  "failed",
+]);
+
+function isTerminalVisitAnalysisStatus(status: StoreVisitAnalysisStatus | null | undefined) {
+  return Boolean(status && terminalVisitAnalysisStatuses.has(status));
+}
+
+async function resolveVisitAnalysisTimingMetrics(input: {
+  visitId: string;
+  analysisStatus: StoreVisitAnalysisStatus;
+  analysisMetrics: Record<string, unknown> | null;
+  now: string;
+  supabase: SupabaseServiceClient;
+}) {
+  const priorStartedAt = typeof input.analysisMetrics?.visit_analysis_started_at === "string"
+    ? input.analysisMetrics.visit_analysis_started_at
+    : null;
+  const priorCompletedAt = typeof input.analysisMetrics?.visit_analysis_completed_at === "string"
+    ? input.analysisMetrics.visit_analysis_completed_at
+    : null;
+  const priorDurationMs = typeof input.analysisMetrics?.visit_analysis_duration_ms === "number"
+    && Number.isFinite(input.analysisMetrics.visit_analysis_duration_ms)
+    ? input.analysisMetrics.visit_analysis_duration_ms
+    : null;
+
+  const { data: aiJob } = await input.supabase
+    .from("store_visit_ai_jobs")
+    .select("created_at, completed_at, status")
+    .eq("visit_id", input.visitId)
+    .eq("job_type", "initial_analysis")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  const jobCreatedAt = typeof (aiJob as { created_at?: string } | null)?.created_at === "string"
+    ? (aiJob as { created_at: string }).created_at
+    : null;
+  const jobCompletedAt = typeof (aiJob as { completed_at?: string | null } | null)?.completed_at === "string"
+    ? (aiJob as { completed_at: string }).completed_at
+    : null;
+  const jobStatus = typeof (aiJob as { status?: string } | null)?.status === "string"
+    ? (aiJob as { status: string }).status
+    : null;
+  const jobTerminal = (jobStatus === "completed" || jobStatus === "failed") && Boolean(jobCompletedAt);
+
+  // Authoritative end-to-end timing: initial_analysis job create → all images matched/finalized.
+  if (jobCreatedAt && jobTerminal && jobCompletedAt) {
+    return {
+      startedAt: jobCreatedAt,
+      completedAt: jobCompletedAt,
+      durationMs: Math.max(0, new Date(jobCompletedAt).getTime() - new Date(jobCreatedAt).getTime()),
+    };
+  }
+
+  const startedAt = priorStartedAt ?? jobCreatedAt ?? input.now;
+  const visitTerminal = isTerminalVisitAnalysisStatus(input.analysisStatus);
+
+  // Still analyzing: record start only; do not freeze duration on the first finished image.
+  if (!visitTerminal) {
+    return {
+      startedAt,
+      completedAt: null,
+      durationMs: null,
+    };
+  }
+
+  // Terminal visit without a completed AI job (legacy sync path): finalize once and keep.
+  if (priorStartedAt && priorCompletedAt && priorDurationMs !== null) {
+    return {
+      startedAt: priorStartedAt,
+      completedAt: priorCompletedAt,
+      durationMs: Math.max(0, new Date(priorCompletedAt).getTime() - new Date(priorStartedAt).getTime()),
+    };
+  }
+
+  const completedAt = input.now;
+  return {
+    startedAt,
+    completedAt,
+    durationMs: Math.max(0, new Date(completedAt).getTime() - new Date(startedAt).getTime()),
+  };
+}
+
 function deriveStoredAnalysisState(images: OfflineVisitImage[], currentVisitStatus?: OfflineStoreVisit["visit_status"]) {
   const priceImages = images.filter((image) => isPriceCategory(toImageCategory(image)));
   const analyzedResults = priceImages
@@ -553,34 +640,13 @@ export async function refreshStoreVisitStoredPriceState(input: {
 
   const retakeRequiredImages = derived.analyzedResults.filter((entry) => isRetakeRequiredResult(entry.result));
   const now = new Date().toISOString();
-  const priorStartedAt = typeof analysisMetrics?.visit_analysis_started_at === "string"
-    ? analysisMetrics.visit_analysis_started_at
-    : null;
-  const priorDurationMs = typeof analysisMetrics?.visit_analysis_duration_ms === "number"
-    ? analysisMetrics.visit_analysis_duration_ms
-    : null;
-  const isFirstAnalysis = !priorStartedAt;
-
-  let visitAnalysisStartedAt = priorStartedAt ?? now;
-  let visitAnalysisDurationMs = priorDurationMs ?? 0;
-
-  if (isFirstAnalysis) {
-    const { data: aiJob } = await supabase
-      .from("store_visit_ai_jobs")
-      .select("created_at")
-      .eq("visit_id", input.visitId)
-      .eq("job_type", "initial_analysis")
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .single();
-
-    if (aiJob && typeof (aiJob as { created_at?: string }).created_at === "string") {
-      visitAnalysisStartedAt = (aiJob as { created_at: string }).created_at;
-      visitAnalysisDurationMs = Math.max(0, new Date(now).getTime() - new Date(visitAnalysisStartedAt).getTime());
-    }
-  }
-
-  const visitAnalysisCompletedAt = now;
+  const timing = await resolveVisitAnalysisTimingMetrics({
+    visitId: input.visitId,
+    analysisStatus: nextAnalysisStatus,
+    analysisMetrics,
+    now,
+    supabase,
+  });
 
   const summaryResult = {
     ...summaryBase,
@@ -592,9 +658,9 @@ export async function refreshStoreVisitStoredPriceState(input: {
     signed_image_count: activeImages.length,
     analysis_metrics: {
       ...(analysisMetrics ?? {}),
-      visit_analysis_started_at: visitAnalysisStartedAt,
-      visit_analysis_completed_at: visitAnalysisCompletedAt,
-      visit_analysis_duration_ms: visitAnalysisDurationMs,
+      visit_analysis_started_at: timing.startedAt,
+      visit_analysis_completed_at: timing.completedAt,
+      visit_analysis_duration_ms: timing.durationMs,
       price_image_count: derived.priceImages.length,
       price_image_success_count: derived.analyzedResults.length - retakeRequiredImages.length,
       price_image_failure_count: derived.failedImages.length,

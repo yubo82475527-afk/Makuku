@@ -21,20 +21,32 @@ export default async function UsersPage({
   searchParams,
 }: {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ q?: string | string[] | undefined; role?: string | string[] | undefined }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { locale, dict } = await getPageI18n(params);
   const query = await searchParams;
-  const rawQ = Array.isArray(query.q) ? query.q[0] : query.q;
-  const rawRole = Array.isArray(query.role) ? query.role[0] : query.role;
-  const q = rawQ?.trim() || "";
+  const getFilter = (key: string) => {
+    const value = query[key];
+    return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+  };
+  const q = getFilter("q").trim();
+  const rawRole = getFilter("role");
   const roles = await listActiveRoles();
   const roleCodes = new Set(roles.map((role) => role.code));
   const role = rawRole && roleCodes.has(rawRole) ? rawRole : "all";
+  const pageParam = Number.parseInt(getFilter("page") || "1", 10);
+  const perPageParam = Number.parseInt(getFilter("per_page") || "25", 10);
+  const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
+  const perPage = Number.isFinite(perPageParam) && perPageParam > 0 ? Math.min(100, Math.max(10, perPageParam)) : 25;
   const result = await getFilteredAppUsers({
     q,
     role: role === "all" ? "" : role,
   });
+  const total = result.data.length;
+  const pageCount = Math.max(1, Math.ceil(total / perPage));
+  const currentPage = Math.min(page, pageCount);
+  const from = (currentPage - 1) * perPage;
+  const pagedUsers = result.data.slice(from, from + perPage);
   const isZh = locale === "zh";
   const queryParts = [
     q ? `q=${encodeURIComponent(q)}` : "",
@@ -50,6 +62,7 @@ export default async function UsersPage({
 
       <Card className="mb-4">
         <form className="grid gap-3 md:grid-cols-[minmax(280px,1fr)_180px_120px]">
+          <input type="hidden" name="per_page" value={perPage} />
           <TextInput
             name="q"
             defaultValue={q}
@@ -70,7 +83,18 @@ export default async function UsersPage({
           <h2 className="font-semibold">{isZh ? zh.list : "Users"}</h2>
           <AppUserCreateDialog locale={locale} isZh={isZh} roles={roleOptions} />
         </div>
-        <AppUserManagementTable users={result.data} locale={locale} roles={roleOptions} />
+        <AppUserManagementTable
+          users={pagedUsers}
+          total={total}
+          page={currentPage}
+          perPage={perPage}
+          locale={locale}
+          roles={roleOptions}
+          filters={{
+            q,
+            role,
+          }}
+        />
       </Card>
     </>
   );
