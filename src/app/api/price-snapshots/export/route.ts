@@ -6,6 +6,8 @@ const priceSnapshotExportFilterKeys = [
   "brand",
   "series",
   "ownSeries",
+  "ownPackage",
+  "competitorPackage",
   "sku",
   "line",
   "priceBand",

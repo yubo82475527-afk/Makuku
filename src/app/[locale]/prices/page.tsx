@@ -28,6 +28,8 @@ type PricesSearchParams = {
   size?: string;
   shape?: string;
   ownSeries?: string;
+  ownPackage?: string;
+  competitorPackage?: string;
   organization?: string;
   priceIndexDrill?: string;
   province?: string;
@@ -58,7 +60,7 @@ export default async function PricesPage({
   // Legacy reference for regression tests: brand: resolvedBrand ?? params.brand
   const currentParams = new URLSearchParams();
 
-  for (const key of ["owner", "brand", "series", "sku", "visitCode", "line", "size", "shape", "ownSeries", "organization", "priceIndexDrill", "province", "cityName", "district", "store", "createdFrom", "createdTo"] as const) {
+  for (const key of ["owner", "brand", "series", "sku", "visitCode", "line", "size", "shape", "ownSeries", "ownPackage", "competitorPackage", "organization", "priceIndexDrill", "province", "cityName", "district", "store", "createdFrom", "createdTo"] as const) {
     if (params[key]) currentParams.set(key, params[key] as string);
   }
 
@@ -114,6 +116,8 @@ async function PricesContent({
       brand: params.brand || undefined,
       series: params.series || undefined,
       ownSeries: params.ownSeries || undefined,
+      ownPackage: params.ownPackage || undefined,
+      competitorPackage: params.competitorPackage || undefined,
       sku: params.sku || undefined,
       visitCode: params.visitCode || undefined,
       line: params.line || undefined,
@@ -195,6 +199,8 @@ async function PricesContent({
             brand: params.brand,
             series: params.series,
             ownSeries: params.ownSeries,
+            ownPackage: params.ownPackage,
+            competitorPackage: params.competitorPackage,
             sku: params.sku,
             line: params.line,
             size: params.size,

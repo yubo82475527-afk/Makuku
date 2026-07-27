@@ -36,6 +36,7 @@ import { localeLabels, replacePathLocale, type Locale } from "@/lib/i18n/config"
 import type { Dictionary } from "@/lib/i18n/get-dictionary";
 import { writeLocalePreferenceCookie } from "@/lib/locale-preference";
 import { StoreVisitMonitorExportMenu } from "@/components/store-visit-monitor-export-menu";
+import { ExportCreatedGuideLayer } from "@/components/export-created-guide";
 import { StoreVisitRerunJobMenu } from "@/components/store-visit-rerun-job-menu";
 import type { PageKey } from "@/lib/page-permissions";
 
@@ -362,6 +363,7 @@ function AppShellFrame({
         </header>
         <div className="px-4 py-6 lg:px-8">{children}</div>
       </main>
+      <ExportCreatedGuideLayer />
     </div>
   );
 }

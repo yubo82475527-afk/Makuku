@@ -2,7 +2,7 @@
 
 import { AsyncExportJobButton, postExportJob } from "@/components/async-export-job-button";
 
-export function PriceSnapshotExportButton({
+export function PriceIndexExportButton({
   locale,
   filters,
 }: {
@@ -12,7 +12,7 @@ export function PriceSnapshotExportButton({
   return (
     <AsyncExportJobButton
       locale={locale}
-      createJob={() => postExportJob("/api/price-snapshots/export-jobs", { locale, filters })}
+      createJob={() => postExportJob("/api/price-index/export-jobs", { locale, filters })}
     />
   );
 }

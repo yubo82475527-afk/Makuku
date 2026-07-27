@@ -1,5 +1,6 @@
 import { requirePagePermission } from "@/lib/auth-session";
 import {
+  getDashboardPackageOptionsData,
   getDashboardPriceData,
   type DashboardSearchParams,
 } from "@/lib/dashboard-data";
@@ -10,6 +11,8 @@ export const dynamic = "force-dynamic";
 const dashboardSearchKeys = [
   "month",
   "ownSeries",
+  "ownPackage",
+  "competitorPackage",
   "organization",
   "dimensions",
 ] as const;
@@ -27,8 +30,15 @@ export async function GET(request: Request) {
       if (value) query[key] = value;
     }
 
-    const dataScope = await resolveDataScopeForSession(auth.session);
     const section = url.searchParams.get("section");
+    if (section === "price-package-options") {
+      return Response.json(await getDashboardPackageOptionsData({
+        ownSeries: query.ownSeries,
+        ownPackage: query.ownPackage,
+      }));
+    }
+
+    const dataScope = await resolveDataScopeForSession(auth.session);
     if (section === "price") return Response.json(await getDashboardPriceData(locale, query, dataScope));
     return Response.json(
       { error: "Unsupported dashboard section" },

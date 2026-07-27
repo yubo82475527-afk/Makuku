@@ -405,7 +405,7 @@ test("dashboard price index avoids loading unrelated snapshot relationships", ()
     dataFile.indexOf("async function getWeeklyBoardSnapshotsForPeriod"),
     dataFile.indexOf("export async function getProductSegmentPriceIndexBattles"),
   );
-  assert.match(boardQuerySource, /competitor_products\(id,brand_id,product_series,raw_title,normalized_name,size,piece_count,pack_type,brands\(id,name\)\)/);
+  assert.match(boardQuerySource, /competitor_products\(id,brand_id,product_series,raw_title,normalized_name,size,piece_count,pack_type,package_type,brands\(id,name\)\)/);
   assert.doesNotMatch(boardQuerySource, /ai_price_candidates\(/);
   assert.doesNotMatch(boardQuerySource, /sku_master\(material_sku_code\)/);
   assert.equal(existsSync("supabase/migrations/202607200002_dashboard_price_index_query_indexes.sql"), true);
@@ -501,9 +501,7 @@ test("dashboard price index removes the competitor mapping quick entry", () => {
 });
 
 test("dashboard price index filters follow the price review filter shell and place column setup after query", () => {
-  const formStart = dashboardContent.indexOf(
-    '<QueryForm className="mb-4 grid items-stretch gap-3 md:grid-cols-2 xl:grid-cols-[minmax(180px,220px)_minmax(220px,1fr)_minmax(240px,1fr)_auto_auto]">',
-  );
+  const formStart = dashboardContent.indexOf("<QueryForm className=\"mb-4 space-y-3\">");
   assert.notEqual(formStart, -1);
   const formEnd = dashboardContent.indexOf("</QueryForm>", formStart);
   assert.notEqual(formEnd, -1);
@@ -516,9 +514,69 @@ test("dashboard price index filters follow the price review filter shell and pla
   assert.match(filterForm, /<MonthFilter/);
   assert.match(filterForm, /<OrganizationFilter/);
   assert.match(filterForm, /<OwnSeriesFilter/);
+  assert.match(filterForm, /<PackageMultiSelect/);
   assert.match(filterForm, /<QuerySubmitButton[\s\S]*className="h-10 whitespace-nowrap"/);
   assert.match(filterForm, /<PriceIndexLayoutDialog[\s\S]*dimensions=\{dimensions\}/);
+  assert.match(filterForm, /<PriceIndexExportButton/);
+  assert.match(filterForm, /flex flex-wrap items-center gap-3/);
+  assert.ok(filterForm.indexOf("<OwnSeriesFilter") < filterForm.indexOf("<PackageMultiSelect"));
   assert.ok(filterForm.indexOf("<QuerySubmitButton") < filterForm.indexOf("<PriceIndexLayoutDialog"));
+});
+
+test("dashboard package filters cascade ownSeries then material_group2 then competitor package_type", () => {
+  assert.match(typesFile, /ownPackageOptions: string\[\]/);
+  assert.match(typesFile, /selectedOwnPackage: string\[\]/);
+  assert.match(typesFile, /competitorPackageOptions: string\[\]/);
+  assert.match(typesFile, /selectedCompetitorPackage: string\[\]/);
+  assert.match(dashboardRoute, /"ownPackage"/);
+  assert.match(dashboardRoute, /"competitorPackage"/);
+  assert.match(dashboardRoute, /price-package-options/);
+  assert.match(dashboardData, /ownPackage: query\.ownPackage/);
+  assert.match(dashboardData, /competitorPackage: query\.competitorPackage/);
+  assert.match(dashboardData, /getDashboardPackageOptionsData/);
+  assert.match(dataFile, /ownPackage\?: string/);
+  assert.match(dataFile, /competitorPackage\?: string/);
+  assert.match(dataFile, /getPriceIndexPackageFilterOptions/);
+  assert.match(dataFile, /material_group2/);
+  assert.match(dataFile, /package_type/);
+  assert.match(dataFile, /selectedOwnPackage/);
+  assert.match(dataFile, /selectedCompetitorPackage/);
+  assert.match(dataFile, /ignore ownPackage when series is missing/);
+  assert.match(dataFile, /ignore competitorPackage when ownPackage is missing/);
+  assert.match(dataFile, /joinPackageFilterList/);
+  assert.match(dataFile, /normalizePackageFilterList/);
+  assert.match(dashboardContent, /请先选择自有系列/);
+  assert.match(dashboardContent, /请先选择自有包装/);
+  assert.match(dashboardContent, /setOwnPackages\(\[\]\)/);
+  assert.match(dashboardContent, /setCompetitorPackages\(\[\]\)/);
+  assert.match(dashboardContent, /PackageMultiSelect/);
+  assert.match(dashboardContent, /type="checkbox"/);
+  assert.match(dashboardContent, /section: "price-package-options"/);
+  assert.match(dashboardContent, /setOwnPackageOptions/);
+  assert.match(dashboardContent, /setCompetitorPackageOptions/);
+  assert.match(pricesPage, /ownPackage\?: string/);
+  assert.match(pricesPage, /competitorPackage\?: string/);
+  assert.match(pricesPage, /ownPackage: params\.ownPackage/);
+  assert.match(pricesPage, /competitorPackage: params\.competitorPackage/);
+  assert.match(dataFile, /priceSnapshotMatchesOwnPackage/);
+  assert.match(dataFile, /priceSnapshotMatchesCompetitorPackage/);
+  assert.match(dataFile, /Cascade: ownPackage requires ownSeries/);
+  assert.match(dataFile, /seriesMaterialCodes/);
+  assert.match(dataFile, /Own package only narrows own samples/);
+  assert.match(dataFile, /seriesMaterialCodes\.has\(benchmarkMaterialCode\)/);
+  assert.doesNotMatch(dataFile, /scopedMaterialCodes\.has\(benchmarkMaterialCode\)/);
+});
+
+test("price index board keeps own and competitor package sample scopes independent", () => {
+  const boardFn = dataFile.slice(
+    dataFile.indexOf("function buildWeeklyPriceCoefficientBoard"),
+    dataFile.indexOf("function buildWeeklyCoefficientTree"),
+  );
+  assert.match(boardFn, /scopedMaterialCodes\.has\(code\)/);
+  assert.match(boardFn, /seriesMaterialCodes\.has\(benchmarkMaterialCode\)/);
+  assert.doesNotMatch(boardFn, /scopedMaterialCodes\.has\(benchmarkMaterialCode\)/);
+  assert.ok(boardFn.indexOf("seriesMaterialCodes") < boardFn.indexOf("scopedMaterialCodes"));
+  assert.ok(boardFn.indexOf("ownSnapshots") < boardFn.indexOf("benchmarkSnapshots"));
 });
 
 test("photo price review uses the same client-side shell navigation path as the other backend pages", () => {

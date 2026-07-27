@@ -1,10 +1,13 @@
 "use client";
 
 import { Download, Loader2 } from "lucide-react";
-import { useCallback, useEffect, useState, type ToggleEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type ToggleEvent } from "react";
+import {
+  EXPORT_CREATED_GUIDE_EVENT,
+} from "@/lib/export-created-guide";
 
 type ExportJob = {
-  kind: "store_visit" | "price_snapshot" | "operator_price_review";
+  kind: "store_visit" | "price_snapshot" | "operator_price_review" | "price_index";
   id: string;
   status: "queued" | "running" | "completed" | "failed";
   total_rows: number;
@@ -22,6 +25,7 @@ function formatTime(value: string) {
 }
 
 function taskLabel(job: ExportJob, locale: string) {
+  if (job.kind === "price_index") return locale === "zh" ? "价格指数" : "Price Index";
   if (job.kind === "price_snapshot") return locale === "zh" ? "市场价格" : "Market Price";
   if (job.kind === "operator_price_review") return locale === "zh" ? "价格审核" : "Price Review";
   if (job.export_view === "promoter") return locale === "zh" ? "巡店记录·按导购" : "Store Visit · By promoter";
@@ -30,23 +34,27 @@ function taskLabel(job: ExportJob, locale: string) {
 }
 
 export function StoreVisitMonitorExportMenu({ locale }: { locale: string }) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
   const [jobs, setJobs] = useState<ExportJob[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [spotlight, setSpotlight] = useState(false);
 
   const loadJobs = useCallback(async (isDisposed: () => boolean) => {
     setLoading(true);
     try {
-      const [visitResponse, priceResponse, reviewResponse] = await Promise.all([
+      const [visitResponse, priceResponse, reviewResponse, priceIndexResponse] = await Promise.all([
         fetch("/api/store-visit-monitor/export-jobs", { cache: "no-store" }),
         fetch("/api/price-snapshots/export-jobs", { cache: "no-store" }),
         fetch("/api/operator-price-reviews/export-jobs", { cache: "no-store" }),
+        fetch("/api/price-index/export-jobs", { cache: "no-store" }),
       ]);
-      const [visitPayload, pricePayload, reviewPayload] = await Promise.all([
+      const [visitPayload, pricePayload, reviewPayload, priceIndexPayload] = await Promise.all([
         visitResponse.json().catch(() => ({})),
         priceResponse.json().catch(() => ({})),
         reviewResponse.json().catch(() => ({})),
+        priceIndexResponse.json().catch(() => ({})),
       ]);
       if (isDisposed()) return;
 
@@ -65,12 +73,18 @@ export function StoreVisitMonitorExportMenu({ locale }: { locale: string }) {
           ? reviewPayload.jobs.map((job: Omit<ExportJob, "kind">) => ({ ...job, kind: "operator_price_review" as const }))
           : []
         : [];
+      const priceIndexJobs = priceIndexResponse.ok
+        ? Array.isArray(priceIndexPayload.jobs)
+          ? priceIndexPayload.jobs.map((job: Omit<ExportJob, "kind">) => ({ ...job, kind: "price_index" as const }))
+          : []
+        : [];
       const nextError = [
         visitResponse.ok ? null : (visitPayload.error ?? "Failed to load visit export tasks"),
         priceResponse.ok ? null : (pricePayload.error ?? "Failed to load price export tasks"),
         reviewResponse.ok ? null : (reviewPayload.error ?? "Failed to load price review export tasks"),
+        priceIndexResponse.ok ? null : (priceIndexPayload.error ?? "Failed to load price index export tasks"),
       ].filter(Boolean).join("; ");
-      setJobs([...visitJobs, ...priceJobs, ...reviewJobs].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)));
+      setJobs([...visitJobs, ...priceJobs, ...reviewJobs, ...priceIndexJobs].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)));
       setError(nextError || null);
     } catch (nextError) {
       if (!isDisposed()) setError(nextError instanceof Error ? nextError.message : "Failed to load export tasks");
@@ -104,6 +118,38 @@ export function StoreVisitMonitorExportMenu({ locale }: { locale: string }) {
     };
   }, [jobs, loadJobs, open]);
 
+  useEffect(() => {
+    let openTimer = 0;
+    let clearSpotlightTimer = 0;
+
+    function onGuide() {
+      // Wait for the flying chip to arrive, then open + pulse the Exports control.
+      const reduceMotion =
+        typeof window !== "undefined" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const delayMs = reduceMotion ? 0 : 720;
+
+      window.clearTimeout(openTimer);
+      window.clearTimeout(clearSpotlightTimer);
+      openTimer = window.setTimeout(() => {
+        const details = detailsRef.current;
+        if (!details) return;
+        details.open = true;
+        setOpen(true);
+        setSpotlight(true);
+        void loadJobs(() => false);
+        clearSpotlightTimer = window.setTimeout(() => setSpotlight(false), 2200);
+      }, delayMs);
+    }
+
+    window.addEventListener(EXPORT_CREATED_GUIDE_EVENT, onGuide);
+    return () => {
+      window.removeEventListener(EXPORT_CREATED_GUIDE_EVENT, onGuide);
+      window.clearTimeout(openTimer);
+      window.clearTimeout(clearSpotlightTimer);
+    };
+  }, [loadJobs]);
+
   function handleToggle(event: ToggleEvent<HTMLDetailsElement>) {
     setOpen(event.currentTarget.open);
   }
@@ -112,11 +158,20 @@ export function StoreVisitMonitorExportMenu({ locale }: { locale: string }) {
   const emptyText = locale === "zh" ? "暂无导出任务" : "No export tasks yet";
 
   return (
-    <details className="relative shrink-0" onToggle={handleToggle}>
-      <summary className="inline-flex h-8 cursor-pointer list-none items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
+    <details ref={detailsRef} className="relative shrink-0" onToggle={handleToggle}>
+      <summary
+        data-makuku-exports-trigger="true"
+        className={`inline-flex h-8 cursor-pointer list-none items-center gap-2 whitespace-nowrap rounded-md border bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50 [&::-webkit-details-marker]:hidden ${
+          spotlight
+            ? "border-slate-900 ring-2 ring-slate-900/25 shadow-md animate-pulse"
+            : "border-slate-300"
+        }`}
+      >
         <span>{locale === "zh" ? "导出" : "Exports"}</span>
-        {runningCount > 0 ? (
-          <span className="rounded-full bg-slate-900 px-1.5 py-0.5 text-[11px] text-white">{runningCount}</span>
+        {runningCount > 0 || spotlight ? (
+          <span className="rounded-full bg-slate-900 px-1.5 py-0.5 text-[11px] text-white">
+            {Math.max(runningCount, spotlight ? 1 : 0)}
+          </span>
         ) : null}
       </summary>
       <div className="absolute right-0 top-10 z-30 w-[360px] rounded-xl border border-slate-200 bg-white p-3 shadow-xl">

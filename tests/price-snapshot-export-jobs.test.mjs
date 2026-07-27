@@ -85,8 +85,11 @@ test("price export types and header menu expose both export domains", () => {
   assert.match(types, /export type PriceSnapshotExportJob =/);
   assert.match(menu, /fetch\("\/api\/store-visit-monitor\/export-jobs"/);
   assert.match(menu, /fetch\("\/api\/price-snapshots\/export-jobs"/);
+  assert.match(menu, /fetch\("\/api\/price-index\/export-jobs"/);
   assert.match(menu, /Market Price/);
   assert.match(menu, /市场价格/);
+  assert.match(menu, /Price Index/);
+  assert.match(menu, /价格指数/);
   assert.match(menu, /Price Review/);
   assert.match(menu, /价格审核/);
   assert.match(menu, /Store Visit Records/);
@@ -95,8 +98,10 @@ test("price export types and header menu expose both export domains", () => {
   assert.match(menu, /setInterval\([\s\S]*10000/);
   assert.match(menu, /visitResponse\.ok \?/);
   assert.match(menu, /priceResponse\.ok \?/);
+  assert.match(menu, /priceIndexResponse\.ok \?/);
   assert.doesNotMatch(menu, /if \(!visitResponse\.ok \|\| !priceResponse\.ok\)/);
-  assert.match(button, /fetch\("\/api\/price-snapshots\/export-jobs"/);
+  assert.match(button, /postExportJob\("\/api\/price-snapshots\/export-jobs"/);
+  assert.match(button, /AsyncExportJobButton/);
   assert.match(table, /PriceSnapshotExportButton/);
   assert.match(page, /exportFilters=\{\{/);
   assert.match(page, /series:\s*params\.series/);

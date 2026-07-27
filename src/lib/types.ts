@@ -1498,6 +1498,10 @@ export type WeeklyPriceCoefficientBoard = {
   title: string;
   ownSeriesOptions: string[];
   selectedOwnSeries: string | null;
+  ownPackageOptions: string[];
+  selectedOwnPackage: string[];
+  competitorPackageOptions: string[];
+  selectedCompetitorPackage: string[];
   skuOptions: Array<{ code: string; name: string }>;
   selectedSku: string | null;
   organizationOptions: string[];
@@ -1505,6 +1509,25 @@ export type WeeklyPriceCoefficientBoard = {
   weeks: Array<{ key: string; label: string; startDate: string; endDate: string }>;
   competitorSeries: WeeklyPriceCoefficientCompetitorSeries[];
   rows: WeeklyPriceCoefficientNode[];
+};
+
+export type PriceIndexExportJobStatus = "queued" | "running" | "completed" | "failed";
+
+export type PriceIndexExportJob = {
+  id: string;
+  status: PriceIndexExportJobStatus;
+  filters: Record<string, unknown>;
+  locale: string;
+  requested_by: string | null;
+  total_rows: number;
+  exported_rows: number;
+  file_path: string | null;
+  file_size_bytes: number | null;
+  error_message: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string | null;
 };
 
 export type OpportunityActionType =

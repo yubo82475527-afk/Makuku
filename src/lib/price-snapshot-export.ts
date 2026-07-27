@@ -1,3 +1,4 @@
+import type { DataScope } from "@/lib/data-scope";
 import { priceBrandSeriesLabel } from "@/lib/brand-series";
 import { getPriceSnapshotsPage, type PriceSnapshotOwnerFilter } from "@/lib/data";
 import { formatIdr, formatJakartaDateTimeSeconds, formatPricePerPiece, formatShortImageId } from "@/lib/format";
@@ -9,6 +10,10 @@ import {
   priceSnapshotBusinessSize,
   priceSnapshotMakukuMaterialCode,
 } from "@/lib/price-snapshot-business";
+import {
+  joinPackageFilterList,
+  normalizePackageFilterList,
+} from "@/lib/price-index-package-filters";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import type { PriceSnapshot } from "@/lib/types";
 
@@ -21,6 +26,8 @@ export type PriceSnapshotExportFilters = {
   brand?: string;
   series?: string;
   ownSeries?: string;
+  ownPackage?: string;
+  competitorPackage?: string;
   sku?: string;
   line?: string;
   priceBand?: string;
@@ -37,6 +44,8 @@ export type PriceSnapshotExportFilters = {
   createdTo?: string;
   dashboardDateFrom?: string;
   dashboardDateTo?: string;
+  /** Server-resolved only; never trust client-supplied scope. */
+  dataScope?: DataScope;
 };
 
 export const PRICE_SNAPSHOT_EXPORT_SELECT =
@@ -124,6 +133,8 @@ export function normalizePriceSnapshotExportFilters(input: Record<string, unknow
   const brand = normalizeFilterValue(input.brand);
   const series = normalizeFilterValue(input.series);
   const ownSeries = normalizeFilterValue(input.ownSeries);
+  const ownPackage = ownSeries ? joinPackageFilterList(normalizePackageFilterList(input.ownPackage)) : undefined;
+  const competitorPackage = ownPackage ? joinPackageFilterList(normalizePackageFilterList(input.competitorPackage)) : undefined;
   const sku = normalizeFilterValue(input.sku);
   const line = normalizeFilterValue(input.line);
   const priceBand = normalizeFilterValue(input.priceBand);
@@ -144,6 +155,8 @@ export function normalizePriceSnapshotExportFilters(input: Record<string, unknow
   if (brand) filters.brand = brand;
   if (series) filters.series = series;
   if (ownSeries) filters.ownSeries = ownSeries;
+  if (ownPackage) filters.ownPackage = ownPackage;
+  if (competitorPackage) filters.competitorPackage = competitorPackage;
   if (sku) filters.sku = sku;
   if (line) filters.line = line;
   if (priceBand) filters.priceBand = priceBand;
@@ -160,8 +173,17 @@ export function normalizePriceSnapshotExportFilters(input: Record<string, unknow
   if (createdTo) filters.createdTo = createdTo;
   if (dashboardDateFrom) filters.dashboardDateFrom = dashboardDateFrom;
   if (dashboardDateTo) filters.dashboardDateTo = dashboardDateTo;
+  // dataScope is attached by callers after auth resolution; never read from client input here.
 
   return filters;
+}
+
+export function withPriceSnapshotExportDataScope(
+  filters: PriceSnapshotExportFilters,
+  dataScope: DataScope | null | undefined,
+): PriceSnapshotExportFilters {
+  if (!dataScope) return filters;
+  return { ...filters, dataScope };
 }
 
 export function buildPriceSnapshotExportDownloadName(input?: { createdAt?: string | null }) {
@@ -186,6 +208,8 @@ export async function buildPriceSnapshotExport(input: {
       brand: filters.brand,
       series: filters.series,
       ownSeries: filters.ownSeries,
+      ownPackage: filters.ownPackage,
+      competitorPackage: filters.competitorPackage,
       sku: filters.sku,
       line: filters.line,
       size: filters.size,
@@ -203,6 +227,7 @@ export async function buildPriceSnapshotExport(input: {
       capturedTo: toExclusiveCapturedTo(filters.createdTo) ?? undefined,
       page,
       perPage: priceSnapshotExportBatchSize,
+      dataScope: filters.dataScope,
     });
     if (result.error) throw new Error(result.error);
 
@@ -212,12 +237,17 @@ export async function buildPriceSnapshotExport(input: {
     if (snapshots.length >= totalRows || result.data.length === 0) break;
   }
 
-  const rows = snapshots.map((snapshot) => buildPriceSnapshotCsvRow(snapshot, locale));
-  const csv = [csvColumns[locale].map(csvEscape).join(","), ...rows].join("\r\n");
+  const rowCells = snapshots.map((snapshot) => buildPriceSnapshotCsvCells(snapshot, locale));
+  const header = csvColumns[locale];
+  const csv = [
+    header.map(csvEscape).join(","),
+    ...rowCells.map((cells) => cells.map(csvEscape).join(",")),
+  ].join("\r\n");
 
   return {
     csv: `\uFEFF${csv}`,
-    rowCount: rows.length,
+    rows: [header, ...rowCells.map((cells) => cells.map((cell) => String(cell ?? "")))],
+    rowCount: rowCells.length,
     downloadName: buildPriceSnapshotExportDownloadName(),
   };
 }
@@ -262,7 +292,7 @@ export function applyPriceSnapshotExportFilters(snapshots: PriceSnapshot[], filt
   });
 }
 
-function buildPriceSnapshotCsvRow(snapshot: PriceSnapshot, locale: PriceSnapshotExportLocale) {
+function buildPriceSnapshotCsvCells(snapshot: PriceSnapshot, locale: PriceSnapshotExportLocale) {
   const region = storeRegionForSnapshot(snapshot);
   return [
     formatSnapshotCapturedAt(snapshot),
@@ -286,9 +316,11 @@ function buildPriceSnapshotCsvRow(snapshot: PriceSnapshot, locale: PriceSnapshot
     formatSnapshotCreatedAt(snapshot),
     visitCodeForSnapshot(snapshot),
     imageIdForSnapshot(snapshot),
-  ]
-    .map(csvEscape)
-    .join(",");
+  ];
+}
+
+function buildPriceSnapshotCsvRow(snapshot: PriceSnapshot, locale: PriceSnapshotExportLocale) {
+  return buildPriceSnapshotCsvCells(snapshot, locale).map(csvEscape).join(",");
 }
 
 function csvEscape(value: string | number | null | undefined) {
