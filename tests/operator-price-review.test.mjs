@@ -10,6 +10,8 @@ const exportRoute = read("src/app/api/operator-price-reviews/export/route.ts");
 const detailRoute = read("src/app/api/operator-price-reviews/[id]/route.ts");
 const page = read("src/app/[locale]/offline-price-candidates/page.tsx");
 const appShell = read("src/components/app-shell.tsx");
+const navConfig = read("src/lib/nav-config.ts");
+const navSurface = `${appShell}\n${navConfig}`;
 const workbench = read("src/components/operator-price-review-workbench.tsx");
 const drawer = read("src/components/operator-price-review-drawer.tsx");
 const reviewService = read("src/lib/ai-price-review.ts");
@@ -343,8 +345,8 @@ test("the existing photo-review route renders the operator workbench", () => {
   assert.doesNotMatch(page, /getAiPriceReviewRule/);
   assert.match(page, /价格审核/);
   assert.match(page, /Price Review/);
-  assert.match(appShell, /价格审核/);
-  assert.match(appShell, /Price Review/);
+  assert.match(navSurface, /价格审核/);
+  assert.match(navSurface, /Price Review/);
 });
 
 test("operator list exposes only two states and no technical bulk workflow", () => {

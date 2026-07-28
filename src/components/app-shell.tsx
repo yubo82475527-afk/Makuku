@@ -3,6 +3,7 @@
 import {
   BadgeCheck,
   BarChart3,
+  BookOpen,
   Building2,
   ChevronDown,
   ClipboardCheck,
@@ -21,6 +22,7 @@ import {
   Tags,
   Target,
   Users,
+  type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -38,6 +40,8 @@ import { writeLocalePreferenceCookie } from "@/lib/locale-preference";
 import { StoreVisitMonitorExportMenu } from "@/components/store-visit-monitor-export-menu";
 import { ExportCreatedGuideLayer } from "@/components/export-created-guide";
 import { StoreVisitRerunJobMenu } from "@/components/store-visit-rerun-job-menu";
+import { UsageAssistantDrawer } from "@/components/usage-assistant-drawer";
+import { NAV_GROUP_CONFIGS } from "@/lib/nav-config";
 import type { PageKey } from "@/lib/page-permissions";
 
 const sidebarStorageKey = "makuku_sidebar_collapsed";
@@ -80,58 +84,32 @@ function isSameShellState(a: ShellState, b: ShellState) {
   );
 }
 
-const navGroups = [
-  {
-    label: { zh: "经营看板", en: "Command" },
-    items: [
-      { href: "/dashboard", pageKey: "dashboard" as PageKey, label: { zh: "价格指数", en: "Price Index" }, icon: Gauge },
-      { href: "/standard-store", pageKey: "standard-store" as PageKey, label: { zh: "完美终端2.0", en: "Perfect Store 2.0" }, icon: BadgeCheck },
-      { href: "/prices", pageKey: "prices" as PageKey, label: { zh: "真实价格", en: "Real Prices" }, icon: BarChart3 },
-    ],
-  },
-  {
-    label: { zh: "执行跟进", en: "Execution" },
-    items: [
-      { href: "/goal-execution", pageKey: "goal-execution" as PageKey, label: { zh: "目标执行2.0", en: "Goal Execution 2.0" }, icon: Target },
-      { href: "/store-visit-monitor", pageKey: "store-visit-monitor" as PageKey, label: { zh: "巡店记录", en: "Store Visit Records" }, icon: ClipboardList },
-    ],
-  },
-  {
-    label: { zh: "价格治理", en: "Price Governance" },
-    items: [
-      { href: "/offline-price-candidates", pageKey: "offline-price-candidates" as PageKey, label: { zh: "价格审核", en: "Price Review" }, icon: ClipboardCheck },
-    ],
-  },
-  {
-    label: { zh: "对标与匹配", en: "Matching & Rules" },
-    items: [
-      { href: "/competitor-mappings", pageKey: "competitor-mappings" as PageKey, label: { zh: "竞品对标", en: "Competitor Benchmarking" }, icon: Tags },
-      { href: "/product-match-normalizations", pageKey: "product-match-normalizations" as PageKey, label: { zh: "商品匹配规则", en: "Product Match Rules" }, icon: Link2 },
-    ],
-  },
-  {
-    label: { zh: "主数据", en: "Master Data" },
-    items: [
-      { href: "/sku-master", pageKey: "sku-master" as PageKey, label: { zh: "自有产品", en: "Own Products" }, icon: Database },
-      { href: "/competitor-products", pageKey: "competitor-products" as PageKey, label: { zh: "竞品产品", en: "Competitor Products" }, icon: Tags },
-      { href: "/offline-stores", pageKey: "offline-stores" as PageKey, label: { zh: "门店", en: "Stores" }, icon: Store },
-    ],
-  },
-  {
-    label: { zh: "报表", en: "Reports" },
-    items: [
-      { href: "/report-center", pageKey: "report-center" as PageKey, label: { zh: "报表中心", en: "Report Center" }, icon: FileSpreadsheet },
-    ],
-  },
-  {
-    label: { zh: "系统管理", en: "System Admin" },
-    items: [
-      { href: "/organizations", pageKey: "organizations" as PageKey, label: { zh: "组织", en: "Organizations" }, icon: Building2 },
-      { href: "/users", pageKey: "users" as PageKey, label: { zh: "用户", en: "Users" }, icon: Users },
-      { href: "/roles", pageKey: "roles" as PageKey, label: { zh: "角色权限", en: "Roles & Permissions" }, icon: Shield },
-    ],
-  },
-] as const;
+const navIconByPageKey: Partial<Record<PageKey, LucideIcon>> = {
+  dashboard: Gauge,
+  "standard-store": BadgeCheck,
+  prices: BarChart3,
+  "goal-execution": Target,
+  "store-visit-monitor": ClipboardList,
+  "offline-price-candidates": ClipboardCheck,
+  "competitor-mappings": Tags,
+  "product-match-normalizations": Link2,
+  "sku-master": Database,
+  "competitor-products": Tags,
+  "offline-stores": Store,
+  "report-center": FileSpreadsheet,
+  organizations: Building2,
+  users: Users,
+  roles: Shield,
+  "usage-assistant-knowledge": BookOpen,
+};
+
+const navGroups = NAV_GROUP_CONFIGS.map((group) => ({
+  label: group.label,
+  items: group.items.map((item) => ({
+    ...item,
+    icon: navIconByPageKey[item.pageKey] ?? BookOpen,
+  })),
+}));
 
 function NavLinks({
   locale,
@@ -293,6 +271,7 @@ function AppShellFrame({
           <div className="flex shrink-0 items-center gap-3">
             {/* 作业工具：后台任务 / 导出，与账号会话分离 */}
             <div className="flex items-center gap-2">
+              <UsageAssistantDrawer locale={locale} currentPath={state.currentPath} />
               <StoreVisitRerunJobMenu locale={locale} />
               <StoreVisitMonitorExportMenu locale={locale} />
               {state.isDemo ? (

@@ -8,6 +8,8 @@ const dashboardPriceIndexQueryIndexes = existsSync("supabase/migrations/20260720
   ? readFileSync("supabase/migrations/202607200002_dashboard_price_index_query_indexes.sql", "utf8")
   : "";
 const appShell = readFileSync("src/components/app-shell.tsx", "utf8");
+const navConfig = readFileSync("src/lib/nav-config.ts", "utf8");
+const navSurface = `${appShell}\n${navConfig}`;
 const localeShellLayout = readFileSync("src/components/locale-shell-layout.tsx", "utf8");
 const dashboardPage = readFileSync("src/app/[locale]/dashboard/page.tsx", "utf8");
 const dashboardClient = existsSync("src/components/dashboard-client.tsx")
@@ -42,29 +44,29 @@ const priceSnapshotsTable = readFileSync("src/components/price-snapshots-table.t
 const storeMasterTable = readFileSync("src/components/store-master-table.tsx", "utf8");
 
 test("app shell groups the backend navigation for price positioning and master data", () => {
-  assert.match(appShell, /Price Index/);
-  assert.match(appShell, /Price Governance/);
-  assert.match(appShell, /Real Prices/);
-  assert.match(appShell, /Price Review/);
-  assert.match(appShell, /Competitor Benchmarking/);
-  assert.doesNotMatch(appShell, /Market Benchmarks/);
-  assert.doesNotMatch(appShell, /\/market-benchmarks/);
-  assert.match(appShell, /Master Data/);
-  assert.match(appShell, /Own Products/);
-  assert.match(appShell, /Stores/);
-  assert.match(appShell, /System Admin/);
-  assert.match(appShell, /Users/);
-  assert.doesNotMatch(appShell, /SKU Price Monitor/);
-  assert.doesNotMatch(appShell, /Executive Board/);
-  assert.doesNotMatch(appShell, /Price Monitoring/);
-  assert.doesNotMatch(appShell, /Price Positioning/);
+  assert.match(navSurface, /Price Index/);
+  assert.match(navSurface, /Price Governance/);
+  assert.match(navSurface, /Real Prices/);
+  assert.match(navSurface, /Price Review/);
+  assert.match(navSurface, /Competitor Benchmarking/);
+  assert.doesNotMatch(navSurface, /Market Benchmarks/);
+  assert.doesNotMatch(navSurface, /\/market-benchmarks/);
+  assert.match(navSurface, /Master Data/);
+  assert.match(navSurface, /Own Products/);
+  assert.match(navSurface, /Stores/);
+  assert.match(navSurface, /System Admin/);
+  assert.match(navSurface, /Users/);
+  assert.doesNotMatch(navSurface, /SKU Price Monitor/);
+  assert.doesNotMatch(navSurface, /Executive Board/);
+  assert.doesNotMatch(navSurface, /Price Monitoring/);
+  assert.doesNotMatch(navSurface, /Price Positioning/);
 });
 
 test("market benchmark management moved into competitor mapping", () => {
   assert.equal(existsSync("src/app/[locale]/market-benchmarks/page.tsx"), false);
   assert.equal(existsSync("src/app/api/market-benchmarks/route.ts"), false);
-  assert.match(appShell, /Competitor Benchmarking/);
-  assert.match(appShell, /\/competitor-mappings/);
+  assert.match(navSurface, /Competitor Benchmarking/);
+  assert.match(navSurface, /\/competitor-mappings/);
   assert.match(typesFile, /export type MarketBenchmark/);
   assert.match(dataFile, /getMarketBenchmarks/);
   assert.match(dataFile, /market_benchmarks/);

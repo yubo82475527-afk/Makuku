@@ -14,6 +14,8 @@ const drawerPath = "src/components/product-match-normalization-drawer.tsx";
 const drawer = existsSync(drawerPath) ? readFileSync(drawerPath, "utf8") : "";
 const types = readFileSync("src/lib/types.ts", "utf8");
 const shell = readFileSync("src/components/app-shell.tsx", "utf8");
+const navConfig = readFileSync("src/lib/nav-config.ts", "utf8");
+const navSurface = `${shell}\n${navConfig}`;
 
 test("product-match normalization migration stores one active alias source and seeds legacy rules", () => {
   assert.match(migration, /create table if not exists public\.product_match_normalizations/);
@@ -38,7 +40,7 @@ test("normalization admin is manager-only and rendered as master data", () => {
   assert.match(panel, /ProductMatchNormalizationDrawer/);
   assert.match(panel, /intent: "deactivate"/);
   assert.match(types, /ProductMatchNormalization/);
-  assert.match(shell, /product-match-normalizations/);
+  assert.match(navSurface, /product-match-normalizations/);
 });
 
 test("normalization admin keeps validation failures in the editor and shows an alert", () => {

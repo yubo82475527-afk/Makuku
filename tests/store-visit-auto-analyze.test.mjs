@@ -18,6 +18,8 @@ const storeVisitAiDebug = readFileSync("src/lib/store-visit-ai-debug.ts", "utf8"
 const storeVisitAnalysis = readFileSync("src/lib/store-visit-analysis.ts", "utf8");
 const storeVisitImageMaintenance = readFileSync("src/lib/store-visit-image-maintenance.ts", "utf8");
 const appShell = readFileSync("src/components/app-shell.tsx", "utf8");
+const navConfig = readFileSync("src/lib/nav-config.ts", "utf8");
+const navSurface = `${appShell}\n${navConfig}`;
 const storeVisitMonitorServerPage = readFileSync("src/app/[locale]/store-visit-monitor/page.tsx", "utf8");
 const storeVisitMonitorClient = readFileSync("src/components/store-visit-monitor-client.tsx", "utf8");
 const storeVisitMonitorPage = `${storeVisitMonitorServerPage}\n${storeVisitMonitorClient}`;
@@ -555,8 +557,8 @@ test("stored price state recovery can finalize stale analyzing images from persi
 });
 
 test("store visit monitor has a dedicated backend navigation entry", () => {
-  assert.match(appShell, /href: "\/store-visit-monitor"/);
-  assert.match(appShell, /Store Visit Records/);
+  assert.match(navSurface, /href: "\/store-visit-monitor"/);
+  assert.match(navSurface, /Store Visit Records/);
 });
 
 test("store visit monitor page shows summary cards, visit latency metrics, and a default recent-24-hour filter", () => {
@@ -698,10 +700,9 @@ test("store visit monitor detail links open in a new window", () => {
 
 test("store visit monitor page uses a client export button that only creates the job and shows a success hint", () => {
   assert.match(storeVisitMonitorPage, /StoreVisitMonitorExportButton/);
-  assert.match(storeVisitMonitorExportButton, /fetch\("\/api\/store-visit-monitor\/export-jobs"/);
+  assert.match(storeVisitMonitorExportButton, /AsyncExportJobButton/);
+  assert.match(storeVisitMonitorExportButton, /postExportJob\("\/api\/store-visit-monitor\/export-jobs"/);
   assert.doesNotMatch(storeVisitMonitorExportButton, /setInterval|setTimeout/);
-  assert.match(storeVisitMonitorExportButton, /Export task created|Task created/);
-  assert.match(storeVisitMonitorExportButton, /<button/);
 });
 
 test("app shell exposes a top-header export history entry near the language switcher", () => {

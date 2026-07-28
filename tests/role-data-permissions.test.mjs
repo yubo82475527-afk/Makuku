@@ -13,6 +13,8 @@ const dataScope = readIfExists("src/lib/data-scope.ts");
 const authSession = readIfExists("src/lib/auth-session.ts");
 const proxyFile = readIfExists("proxy.ts");
 const appShell = readIfExists("src/components/app-shell.tsx");
+const navConfig = readIfExists("src/lib/nav-config.ts");
+const navSurface = `${appShell}\n${navConfig}`;
 const rolesPage = readIfExists("src/app/[locale]/roles/page.tsx");
 const rolesApi = readIfExists("src/app/api/app-roles/route.ts");
 const roleManagement = readIfExists("src/components/role-management.tsx");
@@ -81,8 +83,8 @@ test("proxy enforces page permissions and includes roles route", () => {
 
 test("app shell filters nav by page permissions and exposes roles", () => {
   assert.match(appShell, /allowedPages/);
-  assert.match(appShell, /pageKey:\s*"roles"/);
-  assert.match(appShell, /Roles & Permissions/);
+  assert.match(navSurface, /pageKey:\s*"roles"/);
+  assert.match(navSurface, /Roles & Permissions/);
   assert.match(appShell, /pages\?: PageKey\[]/);
 });
 

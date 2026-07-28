@@ -10,7 +10,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --experimental-strip-types --test tests/*.test.mjs tests/*.test.ts"
+    "test": "node --experimental-strip-types --test tests/*.test.mjs tests/*.test.ts",
+    "generate:usage-assistant-kb": "node scripts/generate-usage-assistant-kb.mjs"
   },
   "dependencies": {
     "@sparticuz/chromium": "^149.0.0",

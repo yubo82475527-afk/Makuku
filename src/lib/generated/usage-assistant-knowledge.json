@@ -1,0 +1,443 @@
+{
+  "version": "seed-5bfdb646386a758b",
+  "generatedAt": "2026-07-28T06:59:38.620Z",
+  "contentHash": "5bfdb646386a758b",
+  "factsSourceHash": "624313e3d872f28c",
+  "facts": {
+    "menus": [
+      {
+        "groupZh": "经营看板",
+        "groupEn": "Command",
+        "href": "/dashboard",
+        "pageKey": "dashboard",
+        "zh": "价格指数",
+        "en": "Price Index",
+        "placeholder": false
+      },
+      {
+        "groupZh": "经营看板",
+        "groupEn": "Command",
+        "href": "/standard-store",
+        "pageKey": "standard-store",
+        "zh": "完美终端2.0",
+        "en": "Perfect Store 2.0",
+        "placeholder": true
+      },
+      {
+        "groupZh": "经营看板",
+        "groupEn": "Command",
+        "href": "/prices",
+        "pageKey": "prices",
+        "zh": "真实价格",
+        "en": "Real Prices",
+        "placeholder": false
+      },
+      {
+        "groupZh": "执行跟进",
+        "groupEn": "Execution",
+        "href": "/goal-execution",
+        "pageKey": "goal-execution",
+        "zh": "目标执行2.0",
+        "en": "Goal Execution 2.0",
+        "placeholder": true
+      },
+      {
+        "groupZh": "执行跟进",
+        "groupEn": "Execution",
+        "href": "/store-visit-monitor",
+        "pageKey": "store-visit-monitor",
+        "zh": "巡店记录",
+        "en": "Store Visit Records",
+        "placeholder": false
+      },
+      {
+        "groupZh": "价格治理",
+        "groupEn": "Price Governance",
+        "href": "/offline-price-candidates",
+        "pageKey": "offline-price-candidates",
+        "zh": "价格审核",
+        "en": "Price Review",
+        "placeholder": false
+      },
+      {
+        "groupZh": "对标与匹配",
+        "groupEn": "Matching & Rules",
+        "href": "/competitor-mappings",
+        "pageKey": "competitor-mappings",
+        "zh": "竞品对标",
+        "en": "Competitor Benchmarking",
+        "placeholder": false
+      },
+      {
+        "groupZh": "对标与匹配",
+        "groupEn": "Matching & Rules",
+        "href": "/product-match-normalizations",
+        "pageKey": "product-match-normalizations",
+        "zh": "商品匹配规则",
+        "en": "Product Match Rules",
+        "placeholder": false
+      },
+      {
+        "groupZh": "主数据",
+        "groupEn": "Master Data",
+        "href": "/sku-master",
+        "pageKey": "sku-master",
+        "zh": "自有产品",
+        "en": "Own Products",
+        "placeholder": false
+      },
+      {
+        "groupZh": "主数据",
+        "groupEn": "Master Data",
+        "href": "/competitor-products",
+        "pageKey": "competitor-products",
+        "zh": "竞品产品",
+        "en": "Competitor Products",
+        "placeholder": false
+      },
+      {
+        "groupZh": "主数据",
+        "groupEn": "Master Data",
+        "href": "/offline-stores",
+        "pageKey": "offline-stores",
+        "zh": "门店",
+        "en": "Stores",
+        "placeholder": false
+      },
+      {
+        "groupZh": "报表",
+        "groupEn": "Reports",
+        "href": "/report-center",
+        "pageKey": "report-center",
+        "zh": "报表中心",
+        "en": "Report Center",
+        "placeholder": false
+      },
+      {
+        "groupZh": "系统管理",
+        "groupEn": "System Admin",
+        "href": "/organizations",
+        "pageKey": "organizations",
+        "zh": "组织",
+        "en": "Organizations",
+        "placeholder": false
+      },
+      {
+        "groupZh": "系统管理",
+        "groupEn": "System Admin",
+        "href": "/users",
+        "pageKey": "users",
+        "zh": "用户",
+        "en": "Users",
+        "placeholder": false
+      },
+      {
+        "groupZh": "系统管理",
+        "groupEn": "System Admin",
+        "href": "/roles",
+        "pageKey": "roles",
+        "zh": "角色权限",
+        "en": "Roles & Permissions",
+        "placeholder": false
+      },
+      {
+        "groupZh": "系统管理",
+        "groupEn": "System Admin",
+        "href": "/usage-assistant-knowledge",
+        "pageKey": "usage-assistant-knowledge",
+        "zh": "使用助手知识库",
+        "en": "Usage Assistant KB",
+        "placeholder": false
+      }
+    ],
+    "pageKeys": [
+      {
+        "pageKey": "dashboard",
+        "zh": "价格指数",
+        "en": "Price Index",
+        "assignable": true,
+        "legacy": false
+      },
+      {
+        "pageKey": "standard-store",
+        "zh": "完美终端2.0",
+        "en": "Perfect Store 2.0",
+        "assignable": true,
+        "legacy": false
+      },
+      {
+        "pageKey": "prices",
+        "zh": "真实价格",
+        "en": "Real Prices",
+        "assignable": true,
+        "legacy": false
+      },
+      {
+        "pageKey": "goal-execution",
+        "zh": "目标执行2.0",
+        "en": "Goal Execution 2.0",
+        "assignable": true,
+        "legacy": false
+      },
+      {
+        "pageKey": "offline-price-candidates",
+        "zh": "价格审核",
+        "en": "Price Review",
+        "assignable": true,
+        "legacy": false
+      },
+      {
+        "pageKey": "store-visit-monitor",
+        "zh": "巡店记录",
+        "en": "Store Visit Records",
+        "assignable": true,
+        "legacy": false
+      },
+      {
+        "pageKey": "competitor-mappings",
+        "zh": "竞品对标",
+        "en": "Competitor Benchmarking",
+        "assignable": true,
+        "legacy": false
+      },
+      {
+        "pageKey": "sku-master",
+        "zh": "自有产品",
+        "en": "Own Products",
+        "assignable": true,
+        "legacy": false
+      },
+      {
+        "pageKey": "competitor-products",
+        "zh": "竞品产品",
+        "en": "Competitor Products",
+        "assignable": true,
+        "legacy": false
+      },
+      {
+        "pageKey": "product-match-normalizations",
+        "zh": "商品匹配规则",
+        "en": "Product Match Rules",
+        "assignable": true,
+        "legacy": false
+      },
+      {
+        "pageKey": "offline-stores",
+        "zh": "门店",
+        "en": "Stores",
+        "assignable": true,
+        "legacy": false
+      },
+      {
+        "pageKey": "organizations",
+        "zh": "组织",
+        "en": "Organizations",
+        "assignable": true,
+        "legacy": false
+      },
+      {
+        "pageKey": "users",
+        "zh": "用户",
+        "en": "Users",
+        "assignable": true,
+        "legacy": false
+      },
+      {
+        "pageKey": "roles",
+        "zh": "角色权限",
+        "en": "Roles & Permissions",
+        "assignable": true,
+        "legacy": false
+      },
+      {
+        "pageKey": "report-center",
+        "zh": "报表中心",
+        "en": "Report Center",
+        "assignable": true,
+        "legacy": false
+      },
+      {
+        "pageKey": "usage-assistant-knowledge",
+        "zh": "使用助手知识库",
+        "en": "Usage Assistant KB",
+        "assignable": true,
+        "legacy": false
+      },
+      {
+        "pageKey": "store-visit-ai-debug",
+        "zh": "巡店 AI 调试",
+        "en": "Store Visit AI Debug",
+        "assignable": true,
+        "legacy": false
+      },
+      {
+        "pageKey": "offline-uploads",
+        "zh": "离线上传（遗留）",
+        "en": "Offline Uploads (legacy)",
+        "assignable": false,
+        "legacy": true
+      },
+      {
+        "pageKey": "channels",
+        "zh": "渠道（遗留）",
+        "en": "Channels (legacy)",
+        "assignable": false,
+        "legacy": true
+      },
+      {
+        "pageKey": "promo-events",
+        "zh": "促销活动（遗留）",
+        "en": "Promo Events (legacy)",
+        "assignable": false,
+        "legacy": true
+      },
+      {
+        "pageKey": "alerts",
+        "zh": "告警（遗留）",
+        "en": "Alerts (legacy)",
+        "assignable": false,
+        "legacy": true
+      },
+      {
+        "pageKey": "competitors",
+        "zh": "竞品（遗留）",
+        "en": "Competitors (legacy)",
+        "assignable": false,
+        "legacy": true
+      }
+    ],
+    "reviewReasons": [
+      {
+        "value": "SKU_MATCH_UNCERTAIN",
+        "zh": "无法确认是哪款商品",
+        "en": "Which product is unclear"
+      },
+      {
+        "value": "DUPLICATE_MASTER_SKU",
+        "zh": "同规格有多个 SKU",
+        "en": "Multiple SKUs for same spec"
+      },
+      {
+        "value": "PRODUCT_PRICE_BINDING_UNCLEAR",
+        "zh": "商品和价格对不上",
+        "en": "Product and price don't match"
+      },
+      {
+        "value": "PRICE_TAG_UNCLEAR",
+        "zh": "价格看不清",
+        "en": "Price hard to read"
+      },
+      {
+        "value": "PIECE_COUNT_UNCLEAR",
+        "zh": "片数看不清",
+        "en": "Piece count hard to read"
+      },
+      {
+        "value": "PRICE_MATH_CONFLICT",
+        "zh": "包价/片数/片单价不一致",
+        "en": "Pack price, pcs, and unit price conflict"
+      },
+      {
+        "value": "PRICE_DERIVED",
+        "zh": "单片价为换算，需确认",
+        "en": "Unit price is calculated - confirm"
+      },
+      {
+        "value": "LEGACY_EVIDENCE_UNAVAILABLE",
+        "zh": "缺少原始识别依据",
+        "en": "Original evidence missing"
+      },
+      {
+        "value": "OTHER_EVIDENCE_REVIEW_REQUIRED",
+        "zh": "图片证据需确认",
+        "en": "Image evidence needs review"
+      },
+      {
+        "value": "AMOUNT_SCALE_SUSPECTED",
+        "zh": "金额位数可能多了",
+        "en": "Amount may have extra digits"
+      },
+      {
+        "value": "PRICE_DEVIATION_CRITICAL",
+        "zh": "价格偏差超过 50%",
+        "en": "Price off by over 50%"
+      },
+      {
+        "value": "PRICE_DEVIATION_HIGH",
+        "zh": "价格偏差 30%–50%",
+        "en": "Price off by 30%–50%"
+      },
+      {
+        "value": "PROMOTION_EVIDENCE",
+        "zh": "促销价需确认",
+        "en": "Promo price needs review"
+      },
+      {
+        "value": "INSUFFICIENT_BENCHMARK",
+        "zh": "历史价格不足",
+        "en": "Not enough price history"
+      },
+      {
+        "value": "QUALITY_CHECK_FAILED",
+        "zh": "系统校验失败",
+        "en": "System check failed"
+      },
+      {
+        "value": "OTHER_REVIEW_REQUIRED",
+        "zh": "其他原因",
+        "en": "Other reason"
+      }
+    ],
+    "visitAnalysisStatuses": [
+      {
+        "value": "pending",
+        "zh": "待处理",
+        "en": "Pending"
+      },
+      {
+        "value": "analyzing",
+        "zh": "分析中",
+        "en": "Analyzing"
+      },
+      {
+        "value": "completed",
+        "zh": "已完成",
+        "en": "Completed"
+      },
+      {
+        "value": "partial",
+        "zh": "部分完成",
+        "en": "Partial"
+      },
+      {
+        "value": "action_required",
+        "zh": "需处理",
+        "en": "Action required"
+      },
+      {
+        "value": "failed",
+        "zh": "失败",
+        "en": "Failed"
+      }
+    ],
+    "systemRoles": [
+      {
+        "code": "admin",
+        "zh": "系统管理员（页面权限完整）",
+        "en": "System admin (full page access)"
+      },
+      {
+        "code": "field_agent",
+        "zh": "巡店人员（主要使用移动端采价）",
+        "en": "Field agent (mainly mobile capture)"
+      }
+    ],
+    "environment": {
+      "timezone": "Asia/Jakarta",
+      "currency": "IDR"
+    }
+  },
+  "howtoZh": "# Makuku 使用助手指引（中文）\n\n## B1 产品边界\n\nMakuku 1.0 只建设价格智能：终端采价 → AI 识别 → 价格审核 → 真实价格 → 价格指数/报表。\n\n不做：铺货、陈列、货架 OSA、缺货与可见度分析；也不提供查经营条数/金额的数据查询。\n\n示意占位（非生产事实）：完美终端 2.0、目标执行 2.0。\n\n时区 Asia/Jakarta，币种 IDR。\n\n## B2 价格闭环\n\n1. 维护主数据（自有产品、竞品产品、门店）与对标/匹配规则  \n2. 巡店人员在移动端选店并上传价签/货架照片后提交  \n3. AI 分析；巡店记录可看分析状态与质量  \n4. 风险/异常进入「价格审核」；确认后进入「真实价格」  \n5. 「价格指数」「报表中心」基于已确认价格事实\n\n若指数或真实价格缺少数据：先查巡店是否完成分析，再查价格审核是否积压。\n\n## B3 角色日常任务\n\n- 内部运营：主数据与匹配、巡店监控、价格审核、系统管理  \n- 区域负责人：价格指数、真实价格、巡店记录、报表订阅  \n- 经营分析：真实价格导出、价格指数口径核对、巡店质量指标  \n\n侧栏按角色页面权限显示；数据范围可为全部或按组织。\n\n## B4 模块操作卡\n\n### 价格指数 `/dashboard`\n\n- 用途：按周看自有与竞品价格系数  \n- 读者：区域负责人、分析  \n- 筛选：月份、组织、自有系列/包装、竞品包装；可配置展开维度  \n- 动作：导出  \n- 去向：经营看盘；异常时到真实价格核对  \n- 卡点：组织/系列筛错、对标规则不合理、审核积压导致样本不足  \n\n### 真实价格 `/prices`\n\n- 用途：已确认价格快照明细  \n- 读者：分析、区域、运营  \n- 筛选：归属/品牌/系列/尺码/日期；省市区/门店/SKU/巡店编号/组织  \n- 动作：导出；批量删除仅用于测试清理（生产慎用）  \n- 去向：支撑指数与分析  \n- 卡点：数据范围限制、筛选过窄、删除误伤  \n\n### 巡店记录 `/store-visit-monitor`\n\n- 用途：监控上传、AI 状态、耗时与解析质量  \n- 读者：运营、区域  \n- 视图：按拜访 / 导购 / 门店  \n- 动作：详情、导出；管理员可重跑匹配  \n- 去向：问题单进入审核或补拍  \n- 卡点：需处理/失败积压、重跑权限不足  \n\n### 价格审核 `/offline-price-candidates`\n\n- 用途：人工确认 AI 价格候选  \n- 读者：运营  \n- Tab：待处理 / 已处理；筛日期、巡店编号、异常原因  \n- 动作：确认、改包装价与片数、改匹配、判错；导出/导入未匹配  \n- 去向：通过后进真实价格  \n- 卡点：原因码不清、主数据缺失、重复改价未先保存校验  \n\n### 竞品对标 `/competitor-mappings`\n\n- 用途：竞品系列 → Makuku 系列映射与默认标杆  \n- 读者：运营  \n- 动作：保存应用、删除、设/取消标杆  \n- 卡点：对标错误导致指数对比不合理  \n\n### 商品匹配规则 `/product-match-normalizations`\n\n- 用途：原始写法 → 规范值（品牌/系列/尺码/片数）  \n- 读者：运营  \n- 动作：新增/编辑/删除（停用保留历史）  \n- 卡点：规范值不在启用主档、重复人工改同一错写未沉淀规则  \n\n### 自有产品 `/sku-master`\n\n- 用途：物料导入与商品等级维护  \n- 读者：运营  \n- 动作：Excel/CSV 导入、行内保存等级  \n- 卡点：列顺序错误、等级未维护影响展示  \n\n### 竞品产品 `/competitor-products`\n\n- 用途：竞品 SKU 主数据  \n- 读者：运营  \n- 动作：筛选、导出、导入、抽屉编辑  \n- 卡点：编码锁定、脏品牌系列数据  \n\n### 门店 `/offline-stores`\n\n- 用途：门店查询、改组织、启停  \n- 读者：运营  \n- 动作：批量改组织、启停；停用后不出现在移动端选店  \n- 卡点：组织未分配、数据范围限制  \n\n### 报表中心 `/report-center`\n\n- 用途：订阅与发送记录  \n- 读者：运营/区域/分析  \n- 当前启用：国家日价格报表（Daily Price Country）  \n- 动作：订阅、预览、重新生成/投递  \n- 卡点：未启用的报表定义不可用  \n\n### 系统管理\n\n- 组织 `/organizations`：区域规则与用户关联；新门店可按省市区匹配组织  \n- 用户 `/users`：账号、角色、启停、重置密码、飞书 Open ID  \n- 角色权限 `/roles`：页面权限与数据范围  \n- 使用助手知识库 `/usage-assistant-knowledge`：查看/维护助手知识（管理员）  \n\n### 示意页\n\n- 完美终端 2.0、目标执行 2.0：示意数据，非生产事实，勿当经营结论。\n\n## B5 主数据与匹配\n\n匹配不准时：补竞品/自有主数据 → 加匹配规则 → 必要时重跑匹配 → 再审价格。对标影响价格指数对比口径。\n\n## B6 移动采价要点\n\n选组织/门店 → 上传照片（自有货架/竞品货架/店头）→ 提交。要求：正对价签、靠近、一小区域、数字清晰；禁止整排斜拍。提交后 PC 在巡店记录与价格审核跟进。\n\n## B7 权限与数据范围\n\n看不见菜单：检查角色页面权限。看不见部分组织/门店/价格：检查数据范围是否「按组织」及门店组织归属。\n\n## B8 FAQ\n\n- Q: 巡店完成但真实价格没有？A: 看分析状态；再看价格审核是否待处理。  \n- Q: 异常原因是什么？A: 以价格审核筛选项文案为准（知识事实层原因码）。  \n- Q: 完美终端有数据吗？A: 示意页，非生产。  \n- Q: 报表只有国家日价？A: 当前仅启用该项。  \n- Q: 能帮我查今天待审多少条吗？A: 助手不查数；请到价格审核自行查看，或联系 IT。  \n\n## B9 助手边界\n\n只回答系统怎么用。不查经营数据、不改价、不代审。知识不足时会提示联系 IT 补充。\n",
+  "howtoEn": "# Makuku Usage Assistant Guide (English)\n\n## B1 Product scope\n\nMakuku 1.0 focuses on price intelligence only: field capture → AI recognition → price review → real prices → price index / reports.\n\nOut of scope: distribution, display, shelf OSA, stockout/visibility analytics; and live business metric lookups (counts/amounts).\n\nPlaceholder (not production facts): Perfect Store 2.0, Goal Execution 2.0.\n\nTimezone Asia/Jakarta, currency IDR.\n\n## B2 Price flow\n\n1. Maintain master data (own SKUs, competitor SKUs, stores) plus benchmarking/match rules  \n2. Field agents pick a store on mobile, upload price-tag/shelf photos, submit  \n3. AI analyzes; Store Visit Records shows status and quality  \n4. Risky/exception candidates go to Price Review; approvals become Real Prices  \n5. Price Index and Report Center use confirmed price facts  \n\nIf index/real prices look empty: check visit analysis first, then Price Review backlog.\n\n## B3 Role tasks\n\n- Ops: master data & matching, visit monitor, price review, admin  \n- Regional managers: price index, real prices, visit records, report subscriptions  \n- Analysts: real-price export, index validation, visit quality metrics  \n\nSidebar follows page permissions; data scope may be all or by organization.\n\n## B4 Module cards\n\n### Price Index `/dashboard`\n\n- Purpose: weekly own vs competitor price coefficients  \n- Audience: regional managers, analysts  \n- Filters: month, org, own series/pack, competitor pack; configurable expand dimensions  \n- Actions: export  \n- Outcome: management view; drill to Real Prices when suspicious  \n- Pitfalls: wrong filters, bad benchmark mapping, review backlog  \n\n### Real Prices `/prices`\n\n- Purpose: confirmed price snapshot details  \n- Audience: analysts, regional, ops  \n- Filters: ownership/brand/series/size/date; region/store/SKU/visit code/org  \n- Actions: export; bulk delete for test cleanup only  \n- Outcome: feeds index and analysis  \n- Pitfalls: data scope, over-filtering, accidental deletes  \n\n### Store Visit Records `/store-visit-monitor`\n\n- Purpose: monitor uploads, AI status, latency, parse quality  \n- Audience: ops, regional  \n- Views: by visit / promoter / store  \n- Actions: detail, export; admins may rerun matching  \n- Outcome: retake or price review follow-up  \n- Pitfalls: action_required/failed backlog, missing rerun permission  \n\n### Price Review `/offline-price-candidates`\n\n- Purpose: human confirm AI price candidates  \n- Audience: ops  \n- Tabs: pending / done; filter date, visit code, reason  \n- Actions: confirm, edit pack price & pcs, rematch, mark wrong; export/import unmatched  \n- Outcome: approved rows become real prices  \n- Pitfalls: unclear reasons, missing master data, editing without re-validate  \n\n### Competitor Benchmarking `/competitor-mappings`\n\n- Purpose: competitor series → Makuku series and default benchmarks  \n- Audience: ops  \n- Actions: save/apply, delete, set/clear benchmark  \n- Pitfalls: wrong mapping breaks index comparison  \n\n### Product Match Rules `/product-match-normalizations`\n\n- Purpose: raw text → normalized brand/series/size/pcs  \n- Audience: ops  \n- Actions: add/edit/delete (history kept)  \n- Pitfalls: normalized value not in active master; repeating manual fixes  \n\n### Own Products `/sku-master`\n\n- Purpose: material import and segment grade  \n- Audience: ops  \n- Actions: Excel/CSV import, inline grade save  \n- Pitfalls: wrong column order, missing grades  \n\n### Competitor Products `/competitor-products`\n\n- Purpose: competitor SKU master  \n- Audience: ops  \n- Actions: filter, export, import, drawer edit  \n- Pitfalls: locked code, dirty brand/series rows  \n\n### Stores `/offline-stores`\n\n- Purpose: store lookup, org assignment, enable/disable  \n- Audience: ops  \n- Actions: batch org change, enable/disable; disabled stores hidden on mobile  \n- Pitfalls: unassigned org, data-scope limits  \n\n### Report Center `/report-center`\n\n- Purpose: subscriptions and delivery history  \n- Audience: ops / regional / analysts  \n- Enabled now: Daily Price Country report  \n- Actions: subscribe, preview, regenerate/resend  \n- Pitfalls: disabled report definitions are unavailable  \n\n### System admin\n\n- Organizations `/organizations`: region rules and user links  \n- Users `/users`: accounts, roles, status, password reset, Feishu Open ID  \n- Roles `/roles`: page permissions and data scope  \n- Usage Assistant KB `/usage-assistant-knowledge`: view/maintain assistant knowledge (admin)  \n\n### Placeholders\n\nPerfect Store 2.0 and Goal Execution 2.0 are mock pages — not production facts.\n\n## B5 Master data & matching\n\nWhen matching fails: fix competitor/own masters → add normalization rules → rerun matching if needed → review prices again. Benchmark mapping affects Price Index comparisons.\n\n## B6 Mobile capture\n\nPick org/store → upload photos (own shelf / competitor shelf / storefront) → submit. Shoot face-on, close, small area, clear digits; avoid angled whole-shelf shots. Follow up on PC in Store Visit Records and Price Review.\n\n## B7 Permissions & data scope\n\nMissing menu: check role page permissions. Missing orgs/stores/prices: check organization data scope and store org assignment.\n\n## B8 FAQ\n\n- Q: Visit done but no real price? A: Check analysis status, then Price Review backlog.  \n- Q: What does a review reason mean? A: Use Price Review filter labels (facts layer).  \n- Q: Does Perfect Store have real data? A: Placeholder only.  \n- Q: Only country daily report? A: That is the currently enabled report.  \n- Q: How many pending reviews today? A: Assistant does not query counts; open Price Review or contact IT.  \n\n## B9 Assistant boundaries\n\nAnswers how to use the system only. No live metrics, no price edits, no proxy approvals. If knowledge is missing, asks you to contact IT to add it.\n",
+  "source": "seed"
+}

@@ -15,6 +15,7 @@ export const ROLE_PAGE_KEYS = [
   "users",
   "roles",
   "report-center",
+  "usage-assistant-knowledge",
   "store-visit-ai-debug",
 ] as const;
 
@@ -94,6 +95,7 @@ export const PAGE_KEY_LABELS: Record<PageKey, PageKeyLabel> = {
   users: { zh: "用户", en: "Users" },
   roles: { zh: "角色权限", en: "Roles & Permissions" },
   "report-center": { zh: "报表中心", en: "Report Center" },
+  "usage-assistant-knowledge": { zh: "使用助手知识库", en: "Usage Assistant KB" },
   "store-visit-ai-debug": { zh: "巡店 AI 调试", en: "Store Visit AI Debug" },
   "offline-uploads": { zh: "离线上传（遗留）", en: "Offline Uploads (legacy)" },
   channels: { zh: "渠道（遗留）", en: "Channels (legacy)" },

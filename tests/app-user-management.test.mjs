@@ -7,6 +7,8 @@ function readIfExists(path) {
 }
 
 const appShell = readFileSync("src/components/app-shell.tsx", "utf8");
+const navConfig = readFileSync("src/lib/nav-config.ts", "utf8");
+const navSurface = `${appShell}\n${navConfig}`;
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const loginRoute = readFileSync("src/app/api/auth/login/route.ts", "utf8");
 const usersPage = readIfExists("src/app/[locale]/users/page.tsx");
@@ -22,8 +24,8 @@ const feishuOrgMismatchMigration = readIfExists("supabase/migrations/20260625000
 const feishuOrgSnapshotMigration = readIfExists("supabase/migrations/202607230001_app_user_feishu_org_snapshot.sql");
 
 test("PC navigation exposes app user management", () => {
-  assert.match(appShell, /href:\s*"\/users"/);
-  assert.match(appShell, /Users/);
+  assert.match(navSurface, /href:\s*"\/users"/);
+  assert.match(navSurface, /Users/);
   assert.match(usersPage, /PageShellState/);
   assert.match(usersPage, /currentPath=\{currentPath\}/);
   assert.match(usersPage, /getFilteredAppUsers/);

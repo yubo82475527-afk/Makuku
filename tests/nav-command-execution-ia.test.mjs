@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const appShell = readFileSync("src/components/app-shell.tsx", "utf8");
+const navConfig = readFileSync("src/lib/nav-config.ts", "utf8");
 const pagePermissions = readFileSync("src/lib/page-permissions.ts", "utf8");
 const storeVisitMonitorClient = readFileSync("src/components/store-visit-monitor-client.tsx", "utf8");
 const navPlaceholder = readFileSync("src/components/nav-placeholder-page.tsx", "utf8");
@@ -10,22 +11,23 @@ const standardStorePage = readFileSync("src/app/[locale]/standard-store/page.tsx
 const goalExecutionPage = readFileSync("src/app/[locale]/goal-execution/page.tsx", "utf8");
 
 test("nav groups follow command / execution / governance IA", () => {
-  assert.match(appShell, /zh: "经营看板"/);
-  assert.match(appShell, /zh: "执行跟进"/);
-  assert.match(appShell, /zh: "价格治理"/);
-  assert.match(appShell, /zh: "对标与匹配"/);
-  assert.doesNotMatch(appShell, /zh: "市场价格"/);
-  assert.doesNotMatch(appShell, /zh: "价格标准"/);
+  assert.match(appShell, /NAV_GROUP_CONFIGS/);
+  assert.match(navConfig, /zh: "经营看板"/);
+  assert.match(navConfig, /zh: "执行跟进"/);
+  assert.match(navConfig, /zh: "价格治理"/);
+  assert.match(navConfig, /zh: "对标与匹配"/);
+  assert.doesNotMatch(navConfig, /zh: "市场价格"/);
+  assert.doesNotMatch(navConfig, /zh: "价格标准"/);
 
-  assert.match(appShell, /href: "\/dashboard"/);
-  assert.match(appShell, /href: "\/standard-store"/);
-  assert.match(appShell, /href: "\/prices"/);
-  assert.match(appShell, /href: "\/goal-execution"/);
-  assert.match(appShell, /href: "\/store-visit-monitor"/);
-  assert.match(appShell, /href: "\/offline-price-candidates"/);
-  assert.doesNotMatch(appShell, /promoter-photos/);
-  assert.doesNotMatch(appShell, /goal-breakdown/);
-  assert.doesNotMatch(appShell, /execution-progress/);
+  assert.match(navConfig, /href: "\/dashboard"/);
+  assert.match(navConfig, /href: "\/standard-store"/);
+  assert.match(navConfig, /href: "\/prices"/);
+  assert.match(navConfig, /href: "\/goal-execution"/);
+  assert.match(navConfig, /href: "\/store-visit-monitor"/);
+  assert.match(navConfig, /href: "\/offline-price-candidates"/);
+  assert.doesNotMatch(navConfig, /promoter-photos/);
+  assert.doesNotMatch(navConfig, /goal-breakdown/);
+  assert.doesNotMatch(navConfig, /execution-progress/);
 });
 
 test("page permissions register standard-store and goal-execution only for new menus", () => {

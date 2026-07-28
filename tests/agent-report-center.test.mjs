@@ -23,6 +23,8 @@ const reportCenterComponentFile = readIfExists("src/components/report-center.tsx
 const reportTemplatePreviewComponentFile = readIfExists("src/components/report-template-preview.tsx");
 const reportTemplatePreviewActionsFile = readIfExists("src/components/report-template-preview-actions.tsx");
 const appShellFile = readIfExists("src/components/app-shell.tsx");
+const navConfigFile = readIfExists("src/lib/nav-config.ts");
+const navSurfaceFile = `${appShellFile}\n${navConfigFile}`;
 const packageJsonFile = readIfExists("package.json");
 const nextConfigFile = readIfExists("next.config.ts");
 const typesFile = readIfExists("src/lib/types.ts");
@@ -166,7 +168,7 @@ test("reports page shows reports primary table with send-history second layer", 
   assert.doesNotMatch(reportCenterComponentFile, /Subscription Config/);
   assert.doesNotMatch(reportCenterComponentFile, /Generation Records/);
   assert.doesNotMatch(reportCenterComponentFile, /Run due subscriptions/);
-  assert.match(appShellFile, /\/report-center/);
+  assert.match(navSurfaceFile, /\/report-center/);
   assert.match(reportTemplatePreviewPageFile, /Template Preview|模板预览/);
   assert.match(reportTemplatePreviewPageFile, /getAgentReportById/);
   assert.match(reportTemplatePreviewPageFile, /daily_price_country/);

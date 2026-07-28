@@ -15,6 +15,8 @@ const dataFile = readIfExists("src/lib/data.ts");
 const helper = readIfExists("src/lib/organizations.ts");
 const assignmentHelper = readIfExists("src/lib/store-organization-assignment.ts");
 const appShell = readIfExists("src/components/app-shell.tsx");
+const navConfig = readIfExists("src/lib/nav-config.ts");
+const navSurface = `${appShell}\n${navConfig}`;
 const organizationsPage = readIfExists("src/app/[locale]/organizations/page.tsx");
 const organizationsComponent = readIfExists("src/components/organization-management.tsx");
 const organizationsApi = readIfExists("src/app/api/organizations/route.ts");
@@ -80,8 +82,8 @@ test("organization types, data queries, and matching helper exist", () => {
 });
 
 test("organization management UI and APIs are wired", () => {
-  assert.match(appShell, /\/organizations/);
-  assert.match(appShell, /Organizations/);
+  assert.match(navSurface, /\/organizations/);
+  assert.match(navSurface, /Organizations/);
   assert.match(organizationsPage, /getOrganizations/);
   assert.match(organizationsPage, /OrganizationManagement/);
   assert.match(organizationsComponent, /\/api\/organizations/);

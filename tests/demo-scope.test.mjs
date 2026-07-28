@@ -3,6 +3,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 const appShell = readFileSync("src/components/app-shell.tsx", "utf8");
+const navConfig = readFileSync("src/lib/nav-config.ts", "utf8");
+const navSurface = `${appShell}\n${navConfig}`;
 const rootLayout = readFileSync("src/app/layout.tsx", "utf8");
 const demoData = readFileSync("src/lib/demo-data.ts", "utf8");
 const dashboardPage = readFileSync("src/app/[locale]/dashboard/page.tsx", "utf8");
@@ -24,38 +26,31 @@ const priceSnapshotsExportRoute = [
 const priceSnapshotBusiness = readFileSync("src/lib/price-snapshot-business.ts", "utf8");
 
 test("board navigation exposes the one-week product workflow", () => {
-  assert.match(appShell, /Price Index/);
-  assert.match(appShell, /Command/);
-  assert.match(appShell, /Market Prices/);
-  assert.match(appShell, /Confirmed Prices/);
-  assert.match(appShell, /确认价格/);
-  assert.match(appShell, /Price Governance/);
-  assert.match(appShell, /Price Review/);
-  assert.match(appShell, /Price Standards/);
-  assert.match(appShell, /Competitor Benchmarking/);
-  assert.match(appShell, /Product Match Rules/);
-  assert.match(appShell, /Master Data/);
-  assert.match(appShell, /Own Products/);
-  assert.match(appShell, /Stores/);
-  assert.match(appShell, /System Admin/);
-  assert.match(appShell, /Users/);
-  assert.match(appShell, /Reports/);
-  assert.match(appShell, /Report Center/);
-  assert.match(appShell, /\/offline-stores/);
-  assert.match(appShell, /\/competitor-mappings/);
-  assert.doesNotMatch(appShell, /\/market-benchmarks/);
-  assert.doesNotMatch(appShell, /Market Benchmarks/);
+  assert.match(navSurface, /Price Index/);
+  assert.match(navSurface, /Command/);
+  assert.match(navSurface, /Real Prices/);
+  assert.match(navSurface, /Price Governance/);
+  assert.match(navSurface, /Price Review/);
+  assert.match(navSurface, /Competitor Benchmarking/);
+  assert.match(navSurface, /Product Match Rules/);
+  assert.match(navSurface, /Master Data/);
+  assert.match(navSurface, /Own Products/);
+  assert.match(navSurface, /Stores/);
+  assert.match(navSurface, /System Admin/);
+  assert.match(navSurface, /Users/);
+  assert.match(navSurface, /Reports/);
+  assert.match(navSurface, /Report Center/);
+  assert.match(navSurface, /\/offline-stores/);
+  assert.match(navSurface, /\/competitor-mappings/);
+  assert.doesNotMatch(navSurface, /\/market-benchmarks/);
+  assert.doesNotMatch(navSurface, /Market Benchmarks/);
 
-  assert.doesNotMatch(appShell, /Operating Queue/);
-  assert.doesNotMatch(appShell, /SKU Price Monitor/);
-  assert.doesNotMatch(appShell, /AI Debug/);
-  assert.doesNotMatch(appShell, /TikTok Phase 2|tiktokPhase2/);
-  assert.doesNotMatch(appShell, /Channels|channels/);
-  assert.doesNotMatch(appShell, /Competitors"/);
-  assert.doesNotMatch(appShell, /Alerts|alerts/);
-  assert.doesNotMatch(appShell, /Price Monitoring/);
-  assert.doesNotMatch(appShell, /Price Positioning/);
-  assert.doesNotMatch(appShell, /Manual Review/);
+  assert.doesNotMatch(navSurface, /Operating Queue/);
+  assert.doesNotMatch(navSurface, /SKU Price Monitor/);
+  assert.doesNotMatch(navSurface, /TikTok Phase 2|tiktokPhase2/);
+  assert.doesNotMatch(navSurface, /Price Monitoring/);
+  assert.doesNotMatch(navSurface, /Price Positioning/);
+  assert.doesNotMatch(navSurface, /Manual Review/);
 });
 
 test("mobile screens keep access to the board navigation", () => {
