@@ -99,4 +99,7 @@ test("parses competitor series shape and variants from product names", () => {
     variant: null,
     packageLevel: null,
   });
+
+  assert.equal(parseSkuSignatureFromText("PARENTY POPOK DEWASA GELANA M8").shape, "PANTS");
+  assert.equal(parseSkuSignatureFromText("PARENTY POPOK DEWASA CELANA M8").shape, "PANTS");
 });

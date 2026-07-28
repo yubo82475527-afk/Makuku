@@ -93,7 +93,7 @@ function parseSeries(text: string) {
   if (compact.includes("MEDIUMFLOW")) return "Medium Flow";
   // Ladis 系列 - Dream 系列需要区分 Panties 和 Pads
   if (compact.includes("DREAMPADS")) return "Dream Pads";
-  if (compact.includes("DREAMPANTIES") || (compact.includes("DREAM") && (compact.includes("PANTS") || compact.includes("CELANA") || compact.includes("MENSTRUATION")))) return "Dream Panties";
+  if (compact.includes("DREAMPANTIES") || (compact.includes("DREAM") && (compact.includes("PANTS") || compact.includes("CELANA") || compact.includes("GELANA") || compact.includes("MENSTRUATION")))) return "Dream Panties";
   if (compact.includes("PRINCESSLINER")) return "Princess Liner";
   if (compact.includes("PRINCESS")) return "Princess pads";
   if (compact.includes("MATERNITY")) return "Maternity";
@@ -104,7 +104,7 @@ function parseSeries(text: string) {
 }
 
 function parseShape(text: string): SkuShape {
-  if (/\b(?:PANTS?|CELANA)\b/.test(text)) return "PANTS";
+  if (/\b(?:PANTS?|CELANA|GELANA)\b/.test(text)) return "PANTS";
   if (/\b(?:TAPE|PEREKAT|POPOK PEREKAT)\b/.test(text)) return "TAPE";
   return null;
 }

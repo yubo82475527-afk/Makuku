@@ -188,3 +188,54 @@ test("a unique core signature is not rejected by shape or package wording", () =
 
   assert.equal(result.product?.id, "pro-pants-l32");
 });
+
+test("master size stays on sub_type so Makuku NB-S evidence can hit NB/NB-S", () => {
+  const sizeAwareRules = createProductMatchRulesV2(compileProductMatchNormalizations([
+    { id: "slim-care", field: "series", brand_scope: null, source_value: "SLIMCARE", canonical_value: "Slim Care", active: true },
+    { id: "nb-nb-s-collapse", field: "size", brand_scope: null, source_value: "NB NB S", canonical_value: "NB", active: true },
+    { id: "makuku-nbs", field: "size", brand_scope: "MAKUKU", source_value: "NB-S", canonical_value: "NB/NB-S", active: true },
+  ], {
+    brand: ["MAKUKU"],
+    series: ["Dry Care"],
+    size: ["NB", "NB-S", "NB/NB-S"],
+    piece_count: [38],
+  }));
+
+  const index = compileProductMatchIndex([{
+    id: "0202001000022",
+    entityType: "material_master",
+    code: "0202001000022",
+    active: true,
+    signature: { brand: "MAKUKU", series: "Dry Care", packageLevel: null, shape: null, size: "NB/NB-S", pieceCount: 38, version: null },
+    raw: { title: "MAKUKU DIAPERS DRY CARE TAPE NB-S38", shape: "Tape", packageLevel: "Big pack" },
+  }], sizeAwareRules);
+
+  const normalizedMaster = sizeAwareRules.normalizeProduct({
+    id: "0202001000022",
+    entityType: "material_master",
+    code: "0202001000022",
+    active: true,
+    signature: { brand: "MAKUKU", series: "Dry Care", packageLevel: null, shape: null, size: "NB/NB-S", pieceCount: 38, version: null },
+    raw: { title: "MAKUKU DIAPERS DRY CARE TAPE NB-S38" },
+  });
+  assert.equal(normalizedMaster.signature.size, "NB/NB-S");
+
+  const result = matchProduct({
+    code: null,
+    entityType: null,
+    signature: { brand: null, series: null, packageLevel: null, shape: null, size: null, pieceCount: 38, version: null },
+    sources: ["brand", "product_family_text", "section_title", "sku", "row_anchor", "piece_count"],
+    raw: {
+      brand: "Unknown",
+      productFamilyText: "MAKUKU Dry Care",
+      sectionTitle: "DRY CARE REGULAR (TAPE)",
+      sku: "MAKUKU Dry Care NB-S",
+      rowAnchor: "NB-S|38",
+      pieceCount: 38,
+    },
+  }, index, sizeAwareRules);
+
+  assert.equal(result.evidence.signature.size, "NB/NB-S");
+  assert.equal(result.product?.id, "0202001000022");
+  assert.equal(result.method, "UNIQUE_SIGNATURE");
+});

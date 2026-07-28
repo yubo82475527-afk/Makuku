@@ -34,7 +34,7 @@ const brandAliases = new Map<string, string>([
   ["swety", "SWEETY"],
 ]);
 
-const brandCategoryTokens = new Set(["PANTS", "PANT", "CELANA", "TAPE", "DIAPER", "DIAPERS", "POPOK"]);
+const brandCategoryTokens = new Set(["PANTS", "PANT", "CELANA", "GELANA", "TAPE", "DIAPER", "DIAPERS", "POPOK"]);
 
 const sizeAliases = new Map<string, string>([
   ["MEDIUM", "M"],
@@ -94,8 +94,8 @@ export function normalizeSizeV2(value: unknown) {
 
 export function normalizeShapeV2(value: unknown): ProductShape {
   const cleaned = cleanTokens(value);
-  if (/\b(?:PANTS?|CELANA)\b/.test(cleaned)) return "PANTS";
-  if (/\b(?:TAPE|POPOK PEREKAT)\b/.test(cleaned)) return "TAPE";
+  if (/\b(?:PANTS?|CELANA|GELANA)\b/.test(cleaned)) return "PANTS";
+  if (/\b(?:TAPE|PEREKAT|POPOK PEREKAT)\b/.test(cleaned)) return "TAPE";
   return null;
 }
 
@@ -302,6 +302,11 @@ function usableSeries(value: string | null, fallback: string | null) {
   return value && !brandCategoryTokens.has(cleanTokens(value)) ? value : fallback;
 }
 
+function masterSize(value: unknown) {
+  const trimmed = String(value ?? "").trim();
+  return trimmed || null;
+}
+
 export function createProductMatchRulesV2(normalizations: ProductMatchNormalizations): MatchRuleSet {
   function normalizeProductWithContext(product: ProductMatchMaster): NormalizedMatchMaster {
     const legacy = normalizedSignature(product.signature, product.raw);
@@ -315,7 +320,9 @@ export function createProductMatchRulesV2(normalizations: ProductMatchNormalizat
         series: firstNormalizedValue(normalizations, "series", [product.signature?.series, product.raw.name, product.raw.title, text], brand),
         packageLevel: legacy.packageLevel,
         shape: legacy.shape,
-        size: firstNormalizedValue(normalizations, "size", [product.signature?.size, product.raw.name, product.raw.title, text], brand),
+        // Master size is already canonical (e.g. material_master.sub_type). Do not re-normalize it,
+        // or NB/NB-S collapses to NB and drifts from evidence that maps NB-S → NB/NB-S.
+        size: masterSize(product.signature?.size),
         pieceCount: normalizedPieceCount(normalizations, product.signature?.pieceCount ?? product.raw.pieceCount, brand),
         version: legacy.version,
       },

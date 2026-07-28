@@ -31,8 +31,10 @@ test("controlled brand aliases normalize common OCR variants", () => {
 
 test("controlled shape aliases normalize category language", () => {
   assert.equal(normalizeShapeV2("CELANA"), "PANTS");
+  assert.equal(normalizeShapeV2("GELANA"), "PANTS");
   assert.equal(normalizeShapeV2("PANTS"), "PANTS");
   assert.equal(normalizeShapeV2("TAPE"), "TAPE");
+  assert.equal(normalizeShapeV2("PEREKAT"), "TAPE");
 });
 
 test("raw brand DRYCARE can resolve the uniquely owned DRY CARE series", () => {
