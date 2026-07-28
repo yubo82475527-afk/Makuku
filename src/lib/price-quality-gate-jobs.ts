@@ -262,12 +262,18 @@ export async function runPriceQualityGate(input: {
   return counters;
 }
 
-export async function runPriorityPriceQualityGate(input: {
-  supabase: SupabaseServiceClient;
-  candidateIds: string[];
-}) {
-  const candidateIds = Array.from(new Set(input.candidateIds.map((value) => value.trim()).filter(Boolean))).slice(0, 50);
-  const empty = {
+export type PriorityPriceQualityGateResult = {
+  priority_claimed: number;
+  priority_passed: number;
+  priority_review_required: number;
+  priority_auto_approved: number;
+  priority_auto_approval_failed: number;
+  quality_elapsed_ms: number;
+  auto_approval_elapsed_ms: number;
+};
+
+function emptyPriorityPriceQualityGateResult(): PriorityPriceQualityGateResult {
+  return {
     priority_claimed: 0,
     priority_passed: 0,
     priority_review_required: 0,
@@ -276,6 +282,27 @@ export async function runPriorityPriceQualityGate(input: {
     quality_elapsed_ms: 0,
     auto_approval_elapsed_ms: 0,
   };
+}
+
+function addPriorityPriceQualityGateResult(
+  target: PriorityPriceQualityGateResult,
+  source: PriorityPriceQualityGateResult,
+) {
+  target.priority_claimed += source.priority_claimed;
+  target.priority_passed += source.priority_passed;
+  target.priority_review_required += source.priority_review_required;
+  target.priority_auto_approved += source.priority_auto_approved;
+  target.priority_auto_approval_failed += source.priority_auto_approval_failed;
+  target.quality_elapsed_ms += source.quality_elapsed_ms;
+  target.auto_approval_elapsed_ms += source.auto_approval_elapsed_ms;
+}
+
+export async function runPriorityPriceQualityGate(input: {
+  supabase: SupabaseServiceClient;
+  candidateIds: string[];
+}): Promise<PriorityPriceQualityGateResult> {
+  const candidateIds = Array.from(new Set(input.candidateIds.map((value) => value.trim()).filter(Boolean))).slice(0, 50);
+  const empty = emptyPriorityPriceQualityGateResult();
   if (candidateIds.length === 0) return empty;
 
   const workerId = `price-priority-${Date.now()}-${randomUUID()}`;
@@ -308,6 +335,25 @@ export async function runPriorityPriceQualityGate(input: {
     quality_elapsed_ms: qualityElapsedMs,
     auto_approval_elapsed_ms: Math.round(performance.now() - autoApprovalStartedAt),
   };
+}
+
+/** Chunks past the single-call 50-id limit so rematch / large visits do not silently drop candidates. */
+export async function runPriorityPriceQualityGateBatched(input: {
+  supabase: SupabaseServiceClient;
+  candidateIds: string[];
+}): Promise<PriorityPriceQualityGateResult & { chunk_count: number }> {
+  const candidateIds = Array.from(new Set(input.candidateIds.map((value) => value.trim()).filter(Boolean)));
+  const totals = emptyPriorityPriceQualityGateResult();
+  let chunkCount = 0;
+  for (let offset = 0; offset < candidateIds.length; offset += PRICE_QUALITY_GATE_BATCH_SIZE) {
+    chunkCount += 1;
+    const chunk = candidateIds.slice(offset, offset + PRICE_QUALITY_GATE_BATCH_SIZE);
+    addPriorityPriceQualityGateResult(totals, await runPriorityPriceQualityGate({
+      supabase: input.supabase,
+      candidateIds: chunk,
+    }));
+  }
+  return { ...totals, chunk_count: chunkCount };
 }
 
 export async function triggerPriceQualityGateRunner(input: { requestUrl: string }) {
