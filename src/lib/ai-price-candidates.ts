@@ -186,14 +186,6 @@ function candidateProductKey(value: string) {
     .trim();
 }
 
-function materialLabel(item: MaterialMaster) {
-  return `${item.tenant_sku_code} ${item.tenant_sku_name}`;
-}
-
-function competitorLabel(item: CompetitorProduct) {
-  return `${item.brands?.name ?? ""} ${item.normalized_name}`.trim();
-}
-
 export type ProductMatchContext = {
   index: CompiledProductMatchIndex;
   rules: MatchRuleSet;
@@ -233,7 +225,26 @@ export const PRODUCT_MATCH_COMPETITOR_FIELDS = [
   "pack_type",
 ] as const;
 
-function materialMatchMaster(item: MaterialMaster): ProductMatchMaster {
+type ProductMatchMaterialRow = Pick<MaterialMaster, (typeof PRODUCT_MATCH_MATERIAL_FIELDS)[number]>;
+type ProductMatchCompetitorRow = Pick<CompetitorProduct, (typeof PRODUCT_MATCH_COMPETITOR_FIELDS)[number]> & {
+  brands?: CompetitorProduct["brands"] | Array<NonNullable<CompetitorProduct["brands"]>> | null;
+};
+
+function materialLabel(item: ProductMatchMaterialRow) {
+  return `${item.tenant_sku_code} ${item.tenant_sku_name}`;
+}
+
+function competitorBrandName(item: ProductMatchCompetitorRow) {
+  const brands = item.brands;
+  if (Array.isArray(brands)) return brands[0]?.name ?? null;
+  return brands?.name ?? null;
+}
+
+function competitorLabel(item: ProductMatchCompetitorRow) {
+  return `${competitorBrandName(item) ?? ""} ${item.normalized_name}`.trim();
+}
+
+function materialMatchMaster(item: ProductMatchMaterialRow): ProductMatchMaster {
   return {
     id: item.tenant_sku_code,
     entityType: "material_master",
@@ -259,14 +270,15 @@ function materialMatchMaster(item: MaterialMaster): ProductMatchMaster {
   };
 }
 
-function competitorMatchMaster(item: CompetitorProduct): ProductMatchMaster {
+function competitorMatchMaster(item: ProductMatchCompetitorRow): ProductMatchMaster {
+  const brandName = competitorBrandName(item);
   return {
     id: item.id,
     entityType: "competitor_product",
     code: item.competitor_sku_code ?? null,
     active: item.status !== "disabled",
     signature: {
-      brand: item.brands?.name ?? null,
+      brand: brandName,
       series: item.product_series ?? null,
       packageLevel: item.package_type ?? null,
       shape: null,
@@ -275,7 +287,7 @@ function competitorMatchMaster(item: CompetitorProduct): ProductMatchMaster {
       version: null,
     },
     raw: {
-      brand: item.brands?.name ?? null,
+      brand: brandName,
       name: item.normalized_name,
       title: item.raw_title,
       shape: item.pack_type,
@@ -296,8 +308,8 @@ export async function loadProductMatchContext(supabase: SupabaseServiceClient = 
   if (productError) throw new Error(productError.message);
   if (normalizationError && !normalizationError.message.includes("product_match_normalizations")) throw new Error(normalizationError.message);
   const masters = [
-    ...(materials ?? []).map((item) => materialMatchMaster(item as MaterialMaster)),
-    ...(products ?? []).map((item) => competitorMatchMaster(item as CompetitorProduct)),
+    ...(materials ?? []).map((item) => materialMatchMaster(item as ProductMatchMaterialRow)),
+    ...(products ?? []).map((item) => competitorMatchMaster(item as ProductMatchCompetitorRow)),
   ];
   const normalizations = compileProductMatchNormalizations(
     (normalizationRows ?? []) as ProductMatchNormalizationRule[],
