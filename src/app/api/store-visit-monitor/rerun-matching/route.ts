@@ -12,7 +12,10 @@ export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
     const supabase = createSupabaseServiceClient();
-    const result = await rerunStoreVisitMatching(body, createStoreVisitMatchingRerunGateway(supabase));
+    const result = await rerunStoreVisitMatching(
+      body,
+      createStoreVisitMatchingRerunGateway(supabase, { requestUrl: request.url }),
+    );
     return Response.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Matching rerun failed";

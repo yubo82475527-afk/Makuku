@@ -64,8 +64,22 @@ test("match-only runner has one atomic owner and only reclaims stale work", () =
   assert.match(serviceFile, /requeueStoreVisitRerunJob/);
 });
 
+test("match-only rerun jobs pass requestUrl into the matching gateway for quality wake", () => {
+  assert.match(
+    serviceFile,
+    /createStoreVisitMatchingRerunGateway\(supabase,\s*\{\s*requestUrl:\s*input\.requestUrl\s*\}\)/,
+  );
+});
+
 test("AI reanalysis rerun jobs refresh existing child jobs instead of creating duplicates", () => {
   assert.match(serviceFile, /job\.mode === "ai_reanalysis"/);
   assert.match(serviceFile, /job\.child_ai_jobs\.length > 0/);
   assert.match(serviceFile, /refreshStoreVisitRerunJobProgress\(\{ job, supabase \}\)/);
+});
+
+test("AI reanalysis wakes multiple child jobs instead of only the first Visit", () => {
+  assert.match(serviceFile, /maxAiReanalysisChildWakeCount = 5/);
+  assert.match(serviceFile, /childAiJobs\.slice\(0,\s*maxAiReanalysisChildWakeCount\)/);
+  assert.match(serviceFile, /Promise\.all\(wakeJobs\.map/);
+  assert.doesNotMatch(serviceFile, /childAiJobs\[0\]\?\.jobId/);
 });

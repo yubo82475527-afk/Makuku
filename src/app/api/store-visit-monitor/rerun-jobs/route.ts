@@ -8,6 +8,7 @@ import {
   STORE_VISIT_RERUN_STALE_MS,
   triggerStoreVisitRerunJobRunner,
 } from "@/lib/store-visit-rerun-jobs";
+import { triggerStoreVisitAiJobRunner } from "@/lib/store-visit-ai-jobs";
 import type { StoreVisitRerunJob } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,13 @@ function shouldWakeRerunJob(job: StoreVisitRerunJob) {
   return Number.isNaN(updatedAt) || Date.now() - updatedAt > STORE_VISIT_RERUN_STALE_MS;
 }
 
+function shouldWakeChildAiJobs(job: StoreVisitRerunJob) {
+  return job.mode === "ai_reanalysis"
+    && job.status === "running"
+    && job.child_ai_jobs.length > 0
+    && job.processed_visits < job.total_visits;
+}
+
 export async function GET(request: Request) {
   const auth = await requireAdminSession(request);
   if (auth.response) return auth.response;
@@ -34,6 +42,14 @@ export async function GET(request: Request) {
         requestUrl: request.url,
         jobId: job.id,
         detached: true,
+      }));
+    }
+    // AI reanalysis parent jobs only finish after child AI workers reclaim expired leases.
+    // Refreshing the task menu should wake those workers; otherwise a dead Vercel invoke can stall forever until cron.
+    for (const job of jobs.filter(shouldWakeChildAiJobs)) {
+      after(() => triggerStoreVisitAiJobRunner({
+        requestUrl: request.url,
+        jobId: job.child_ai_jobs[0]?.jobId ?? null,
       }));
     }
     return Response.json({ jobs });

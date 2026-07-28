@@ -14,6 +14,7 @@ type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceClient>;
 export const STORE_VISIT_RERUN_STALE_MS = 2 * 60 * 1000;
 const maxFailureRecords = 200;
 const maxMatchOnlyVisitsPerRun = 25;
+const maxAiReanalysisChildWakeCount = 5;
 const historyLimit = 10;
 
 function nowIso() {
@@ -318,7 +319,13 @@ async function startAiReanalysisJob(input: {
     failures,
   });
   if (childAiJobs.length > 0) {
-    await triggerStoreVisitAiJobRunner({ requestUrl: input.requestUrl, jobId: null });
+    // Wake multiple concrete child jobs so date-range AI rematch starts in parallel
+    // instead of only the first Visit, while staying within global AI concurrency.
+    const wakeJobs = childAiJobs.slice(0, maxAiReanalysisChildWakeCount);
+    await Promise.all(wakeJobs.map((child) => triggerStoreVisitAiJobRunner({
+      requestUrl: input.requestUrl,
+      jobId: child.jobId,
+    })));
   }
   return refreshStoreVisitRerunJobProgress({ job: updatedJob, supabase: input.supabase });
 }
@@ -390,7 +397,7 @@ export async function runStoreVisitRerunJob(input: {
   }
 
   if (job.mode === "match_only") {
-    const gateway = createStoreVisitMatchingRerunGateway(supabase);
+    const gateway = createStoreVisitMatchingRerunGateway(supabase, { requestUrl: input.requestUrl });
     const result = await rerunStoreVisitMatching(serializeSelector(selectorForRun(job)), gateway, {
       startOffset: job.processed_visits,
       maxVisits: maxMatchOnlyVisitsPerRun,

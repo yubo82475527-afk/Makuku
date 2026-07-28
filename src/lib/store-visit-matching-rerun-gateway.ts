@@ -4,32 +4,49 @@ import {
   loadProductMatchContext,
   type ProductMatchContext,
 } from "@/lib/ai-price-candidates";
-import { runPriceQualityGate } from "@/lib/price-quality-gate-jobs";
+import {
+  runPriorityPriceQualityGateBatched,
+  triggerPriceQualityGateRunner,
+} from "@/lib/price-quality-gate-jobs";
 import {
   type StoreVisitMatchingRerunGateway,
   type StoreVisitMatchingRerunSelector,
   type StoreVisitMatchingRerunVisit,
   type StoredVisionMatchRow,
 } from "@/lib/store-visit-matching-rerun";
-import {
-  invalidateStoreVisitImagePriceImpact,
-  refreshStoreVisitStoredPriceState,
-} from "@/lib/store-visit-image-maintenance";
+import { invalidateStoreVisitImagePriceImpact } from "@/lib/store-visit-image-maintenance";
 import { sourceItemsFromStoredPriceImages } from "@/lib/store-visit-price-candidate-sync";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 
 type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceClient>;
 type StoredPriceImage = Parameters<typeof sourceItemsFromStoredPriceImages>[0][number];
 
-export function createStoreVisitMatchingRerunGateway(supabase: SupabaseServiceClient): StoreVisitMatchingRerunGateway {
-  const insertedCandidatesByVisit = new Map<string, number>();
+export type StoreVisitMatchingRerunGatewayOptions = {
+  requestUrl?: string | null;
+};
+
+export function createStoreVisitMatchingRerunGateway(
+  supabase: SupabaseServiceClient,
+  options: StoreVisitMatchingRerunGatewayOptions = {},
+): StoreVisitMatchingRerunGateway {
+  const insertedCandidateIdsByVisit = new Map<string, string[]>();
+  const performanceMs = {
+    match_context: 0,
+    replace: 0,
+    refresh: 0,
+    priority_quality: 0,
+  };
+  const startedAt = performance.now();
 
   return {
     async selectVisits(selector) {
       return selectVisits(supabase, selector);
     },
     async loadMatchContext() {
-      return loadProductMatchContext(supabase);
+      const matchContextStartedAt = performance.now();
+      const context = await loadProductMatchContext(supabase);
+      performanceMs.match_context = Math.round(performance.now() - matchContextStartedAt);
+      return context;
     },
     async loadStoredVisionRows(visit) {
       const { data, error } = await supabase
@@ -44,6 +61,7 @@ export function createStoreVisitMatchingRerunGateway(supabase: SupabaseServiceCl
         .filter((image) => sourceItemsFromStoredPriceImages([image]).length > 0) as StoredVisionMatchRow[];
     },
     async replaceVisitOutput({ visit, rows, matchContext }) {
+      const replaceStartedAt = performance.now();
       const images = rows as StoredPriceImage[];
       const sourceItems = sourceItemsFromStoredPriceImages(images);
       const imageIds = images.map((image) => image.id);
@@ -68,26 +86,70 @@ export function createStoreVisitMatchingRerunGateway(supabase: SupabaseServiceCl
         affectedImageIds: imageIds,
         supabase,
       });
-      insertedCandidatesByVisit.set(visit.id, inserted.length);
+      insertedCandidateIdsByVisit.set(
+        visit.id,
+        inserted
+          .filter((candidate) => candidate.candidate_type === "SKU")
+          .map((candidate) => candidate.id)
+          .filter(Boolean),
+      );
       const methodCounts: Record<string, number> = {};
       for (const candidate of inserted) {
         const method = candidate.ai_match_method ?? "UNMATCHED";
         methodCounts[method] = (methodCounts[method] ?? 0) + 1;
       }
+      performanceMs.replace += Math.round(performance.now() - replaceStartedAt);
       return {
         insertedCount: inserted.length,
         deletedSnapshotCount: invalidation.deletedSnapshotCount,
         methodCounts,
       };
     },
-    async refreshVisit(visit) {
-      await refreshStoreVisitStoredPriceState({ visitId: visit.id, supabase });
+    async refreshVisit(_visit) {
+      // match-only does not change vision_result; skipping refresh avoids reloading nested
+      // vision JSON and rewriting ai_result / price_image_results from incomplete image rows.
+      void _visit;
+      performanceMs.refresh = 0;
     },
     async triggerReview(visitIds) {
-      if (!visitIds.some((visitId) => (insertedCandidatesByVisit.get(visitId) ?? 0) > 0)) return;
-      for (let round = 0; round < 100; round += 1) {
-        const counters = await runPriceQualityGate({ supabase, maxBatches: 4 });
-        if (counters.claimed < 200) break;
+      const candidateIds = visitIds.flatMap((visitId) => insertedCandidateIdsByVisit.get(visitId) ?? []);
+      if (candidateIds.length === 0) return;
+
+      const priorityStartedAt = performance.now();
+      try {
+        const priority = await runPriorityPriceQualityGateBatched({ supabase, candidateIds });
+        performanceMs.priority_quality = Math.round(performance.now() - priorityStartedAt);
+        console.info("[store-visit-matching-rerun] priority quality completed", {
+          candidate_count: candidateIds.length,
+          chunk_count: priority.chunk_count,
+          priority_claimed: priority.priority_claimed,
+          priority_passed: priority.priority_passed,
+          priority_review_required: priority.priority_review_required,
+          priority_auto_approved: priority.priority_auto_approved,
+          priority_auto_approval_failed: priority.priority_auto_approval_failed,
+          match_context_ms: performanceMs.match_context,
+          replace_ms: performanceMs.replace,
+          refresh_ms: performanceMs.refresh,
+          priority_quality_ms: performanceMs.priority_quality,
+          total_ms: Math.round(performance.now() - startedAt),
+        });
+        if (priority.priority_claimed < candidateIds.length && options.requestUrl) {
+          await triggerPriceQualityGateRunner({ requestUrl: options.requestUrl });
+        }
+      } catch (error) {
+        performanceMs.priority_quality = Math.round(performance.now() - priorityStartedAt);
+        console.error("[store-visit-matching-rerun] priority quality failed; general worker remains the fallback", {
+          candidate_count: candidateIds.length,
+          match_context_ms: performanceMs.match_context,
+          replace_ms: performanceMs.replace,
+          refresh_ms: performanceMs.refresh,
+          priority_quality_ms: performanceMs.priority_quality,
+          total_ms: Math.round(performance.now() - startedAt),
+          error: error instanceof Error ? error.message : String(error),
+        });
+        if (options.requestUrl) {
+          await triggerPriceQualityGateRunner({ requestUrl: options.requestUrl });
+        }
       }
     },
   };

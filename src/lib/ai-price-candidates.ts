@@ -199,6 +199,40 @@ export type ProductMatchContext = {
   rules: MatchRuleSet;
 };
 
+/** Columns required by materialMatchMaster — keep in sync with that mapper. */
+export const PRODUCT_MATCH_MATERIAL_SELECT =
+  "tenant_sku_code,tenant_sku_name,category,sub_category,brand,sub_brand,type,sub_type,pack_count,f_expiry_date";
+
+/** Columns required by competitorMatchMaster — keep in sync with that mapper. */
+export const PRODUCT_MATCH_COMPETITOR_SELECT =
+  "id,competitor_sku_code,status,product_series,package_type,size,piece_count,normalized_name,raw_title,pack_type,brands(id,name)";
+
+export const PRODUCT_MATCH_MATERIAL_FIELDS = [
+  "tenant_sku_code",
+  "tenant_sku_name",
+  "category",
+  "sub_category",
+  "brand",
+  "sub_brand",
+  "type",
+  "sub_type",
+  "pack_count",
+  "f_expiry_date",
+] as const;
+
+export const PRODUCT_MATCH_COMPETITOR_FIELDS = [
+  "id",
+  "competitor_sku_code",
+  "status",
+  "product_series",
+  "package_type",
+  "size",
+  "piece_count",
+  "normalized_name",
+  "raw_title",
+  "pack_type",
+] as const;
+
 function materialMatchMaster(item: MaterialMaster): ProductMatchMaster {
   return {
     id: item.tenant_sku_code,
@@ -254,8 +288,8 @@ function competitorMatchMaster(item: CompetitorProduct): ProductMatchMaster {
 
 export async function loadProductMatchContext(supabase: SupabaseServiceClient = createSupabaseServiceClient()): Promise<ProductMatchContext> {
   const [{ data: materials, error: materialError }, { data: products, error: productError }, { data: normalizationRows, error: normalizationError }] = await Promise.all([
-    supabase.from("material_master").select("*").limit(5000),
-    supabase.from("competitor_products").select("*, brands(id,name)").eq("status", "active").limit(5000),
+    supabase.from("material_master").select(PRODUCT_MATCH_MATERIAL_SELECT).limit(5000),
+    supabase.from("competitor_products").select(PRODUCT_MATCH_COMPETITOR_SELECT).eq("status", "active").limit(5000),
     supabase.from("product_match_normalizations").select("id,field,brand_scope,source_value,canonical_value,active").eq("active", true).limit(5000),
   ]);
   if (materialError) throw new Error(materialError.message);
