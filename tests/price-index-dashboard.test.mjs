@@ -104,7 +104,8 @@ test("dashboard derived data calculates weekly coefficients from own and benchma
   assert.match(dataFile, /monthWeeks/);
   assert.match(dataFile, /averageOrNull/);
   assert.match(dataFile, /getCompetitorSeriesMappings/);
-  assert.match(dataFile, /seriesNamesOverlap/);
+  assert.match(dataFile, /cleanText\(material\.material_group1\) === ownSeries/);
+  assert.match(dataFile, /mappingTargetsOverlapGpl2Scope/);
   assert.match(dataFile, /competitorSeriesLabel/);
   assert.match(dataFile, /competitorCells/);
   assert.match(dataFile, /ownBenchmarkAvgPrice/);
@@ -539,6 +540,7 @@ test("dashboard package filters cascade ownSeries then material_group2 then comp
   assert.match(dataFile, /ownPackage\?: string/);
   assert.match(dataFile, /competitorPackage\?: string/);
   assert.match(dataFile, /getPriceIndexPackageFilterOptions/);
+  assert.match(dataFile, /material_group1/);
   assert.match(dataFile, /material_group2/);
   assert.match(dataFile, /package_type/);
   assert.match(dataFile, /selectedOwnPackage/);
@@ -547,8 +549,13 @@ test("dashboard package filters cascade ownSeries then material_group2 then comp
   assert.match(dataFile, /ignore competitorPackage when ownPackage is missing/);
   assert.match(dataFile, /joinPackageFilterList/);
   assert.match(dataFile, /normalizePackageFilterList/);
-  assert.match(dashboardContent, /请先选择自有系列/);
-  assert.match(dashboardContent, /请先选择自有包装/);
+  assert.match(dataFile, /target_material_group2s/);
+  assert.match(dataFile, /mappingTargetsOverlapGpl2Scope/);
+  assert.match(dataFile, /getMaterialMasterForPriceIndex/);
+  assert.match(dashboardContent, /请先选择 GPL1/);
+  assert.match(dashboardContent, /请先选择 GPL2/);
+  assert.match(dashboardContent, /label="GPL2"/);
+  assert.match(dashboardContent, />GPL1</);
   assert.match(dashboardContent, /setOwnPackages\(\[\]\)/);
   assert.match(dashboardContent, /setCompetitorPackages\(\[\]\)/);
   assert.match(dashboardContent, /PackageMultiSelect/);

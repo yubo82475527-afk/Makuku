@@ -100,7 +100,14 @@ export const demoMaterialMaster: MaterialMaster[] = demoSkuMaster.map((sku, inde
     sub_category: sku.pack_type === "tape" ? "Tape" : "Pants",
     brand: "Makuku",
     sub_brand: subBrand,
-    material_group2: null,
+    material_group1: subBrand === "Comfort" || subBrand === "Slim" ? "Core" : "Value",
+    material_group2: subBrand === "Comfort"
+      ? "Comfort Pack"
+      : subBrand === "Slim"
+        ? "Slim Pack"
+        : subBrand === "Value"
+          ? "Value Pack"
+          : "Air Pack",
     type: sku.pack_type,
     sub_type: sku.size,
     pack_count: sku.piece_count,
@@ -172,7 +179,7 @@ export const demoCompetitorSeriesMappings: CompetitorSeriesMapping[] = [
     id: "series-map-1",
     brand_id: "b2",
     product_series: "Royal Soft",
-    target_makuku_series: "Slim",
+    target_material_group2s: ["Slim Pack"],
     is_default_benchmark: true,
     active: true,
     created_at: iso(80),
@@ -183,7 +190,7 @@ export const demoCompetitorSeriesMappings: CompetitorSeriesMapping[] = [
     id: "series-map-2",
     brand_id: "b3",
     product_series: "Gold",
-    target_makuku_series: "Comfort",
+    target_material_group2s: ["Comfort Pack", "Air Pack"],
     is_default_benchmark: false,
     active: true,
     created_at: iso(78),

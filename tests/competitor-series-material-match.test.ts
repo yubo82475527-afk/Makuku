@@ -11,7 +11,8 @@ function material(code: string, subCategory: string, packCount: number): Materia
     sub_category: subCategory,
     brand: "MAKUKU",
     sub_brand: "DRY CARE",
-    material_group2: null,
+    material_group1: null,
+    material_group2: "DRY CARE Pack",
     type: subCategory,
     sub_type: "L",
     pack_count: packCount,
@@ -28,7 +29,7 @@ test("series benchmark keeps Pants and Tape compatible before ranking piece coun
     normalized_name: "Competitor Pants L30",
     raw_title: "Competitor Pants L30",
     pack_type: "pants",
-  }, "DRY CARE", [material("TAPE-L30", "Tape", 30), material("PANTS-L28", "Pants", 28)]);
+  }, ["DRY CARE Pack"], [material("TAPE-L30", "Tape", 30), material("PANTS-L28", "Pants", 28)]);
 
   assert.equal(result.material?.tenant_sku_code, "PANTS-L28");
 });

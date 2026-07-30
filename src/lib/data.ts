@@ -23,7 +23,7 @@ import {
   normalizePackageFilterList,
 } from "@/lib/price-index-package-filters";
 import { priceSnapshotBusinessLine, priceSnapshotBusinessSize } from "@/lib/price-snapshot-business";
-import { findMatchingMaterialForSeries, materialShapeKey, productShapeKey } from "@/lib/competitor-series-mapping";
+import { findMatchingMaterialForSeries, materialShapeKey, normalizeMaterialGroup2Targets, productShapeKey } from "@/lib/competitor-series-mapping";
 import { compareDiaperSize } from "@/lib/size-order";
 import {
   intersectStoreIdLists,
@@ -328,6 +328,61 @@ export async function getMaterialMaster(): Promise<QueryResult<MaterialMaster[]>
 
   if (error) return { data: [], error: error.message, isDemo: false };
   return { data: (data ?? []) as MaterialMaster[], error: null, isDemo: false };
+}
+
+const PRICE_INDEX_MATERIAL_SELECT =
+  "tenant_sku_code,tenant_sku_name,category,sub_category,brand,sub_brand,material_group1,material_group2,type,sub_type,pack_count";
+
+async function getMaterialMasterForPriceIndex(): Promise<QueryResult<MaterialMaster[]>> {
+  if (!hasSupabaseServiceConfig()) {
+    return {
+      data: demoMaterialMaster,
+      error: "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY",
+      isDemo: true,
+    };
+  }
+
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("material_master")
+    .select(PRICE_INDEX_MATERIAL_SELECT)
+    .order("tenant_sku_code");
+
+  if (error) return { data: [], error: error.message, isDemo: false };
+  return { data: (data ?? []) as MaterialMaster[], error: null, isDemo: false };
+}
+
+async function getCompetitorProductsForPackageOptions(): Promise<QueryResult<Array<Pick<CompetitorProduct, "brand_id" | "product_series" | "package_type">>>> {
+  if (!hasSupabaseConfig()) {
+    return {
+      data: demoCompetitors
+        .filter((item) => item.status !== "disabled")
+        .map((item) => ({
+          brand_id: item.brand_id,
+          product_series: item.product_series,
+          package_type: item.package_type,
+        })),
+      error: null,
+      isDemo: true,
+    };
+  }
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("competitor_products")
+    .select("brand_id,product_series,package_type,status")
+    .or("status.is.null,status.neq.disabled");
+  if (error) return { data: [], error: error.message, isDemo: false };
+  return {
+    data: ((data ?? []) as Array<Pick<CompetitorProduct, "brand_id" | "product_series" | "package_type" | "status">>)
+      .filter((item) => item.status !== "disabled")
+      .map((item) => ({
+        brand_id: item.brand_id,
+        product_series: item.product_series,
+        package_type: item.package_type,
+      })),
+    error: null,
+    isDemo: false,
+  };
 }
 
 export async function getChannels(): Promise<QueryResult<ChannelMaster[]>> {
@@ -1257,11 +1312,17 @@ function priceSnapshotSelectForPageFilters(select: string, filters: PriceSnapsho
 }
 
 async function buildPriceSnapshotPageFilterContext(filters: PriceSnapshotPageFilters): Promise<PriceSnapshotPageFilterContext> {
-  const materialResult = await getMaterialMaster();
+  const materialResult = await getMaterialMasterForPriceIndex();
   const mappingsResult = filters.ownSeries?.trim() ? await getCompetitorSeriesMappings() : null;
+  const ownSeries = cleanText(filters.ownSeries);
+  const ownPackages = ownSeries ? normalizePackageFilterList(filters.ownPackage) : [];
+  const gpl1Materials = ownSeries
+    ? materialResult.data.filter((material) => cleanText(material.material_group1) === ownSeries)
+    : [];
+  const gpl2Scope = resolveGpl2Scope(gpl1Materials, ownPackages);
   const mappings = (mappingsResult?.data ?? []).filter((mapping) => {
-    if (!mapping.active || !filters.ownSeries) return false;
-    return seriesNamesOverlap(mapping.target_makuku_series, filters.ownSeries);
+    if (!mapping.active || !ownSeries) return false;
+    return mappingTargetsOverlapGpl2Scope(mapping, gpl2Scope);
   });
   return {
     materialMaster: materialResult.data,
@@ -1592,7 +1653,7 @@ function priceSnapshotMatchesOwnSeries(
   context: PriceSnapshotPageFilterContext | null,
 ) {
   const material = priceSnapshotMappedMaterialForFilters(snapshot, context);
-  return Boolean(material && seriesNamesOverlap(material.sub_brand, ownSeries));
+  return Boolean(material && cleanText(material.material_group1) === cleanText(ownSeries));
 }
 
 function priceSnapshotMatchesOwnPackage(
@@ -1965,39 +2026,45 @@ export async function getPriceIndexPackageFilterOptions(filters: {
     };
   }
 
-  const [materialResult, mappingsResult, competitorProductsResult] = await Promise.all([
-    getMaterialMaster(),
+  const selectedOwnPackages = normalizePackageFilterList(filters.ownPackage);
+  const [materialResult, mappingsResult] = await Promise.all([
+    getMaterialMasterForPriceIndex(),
     getCompetitorSeriesMappings(),
-    getCompetitorProducts(),
   ]);
   const ownPackageOptions = uniqueStrings(
     materialResult.data
-      .filter((item) => cleanText(item.sub_brand) === ownSeries)
+      .filter((item) => cleanText(item.material_group1) === ownSeries)
       .map((item) => cleanText(item.material_group2)),
   );
-  const selectedOwnPackages = intersectPackageFilterList(
-    normalizePackageFilterList(filters.ownPackage),
-    ownPackageOptions,
-  );
+  const validOwnPackages = intersectPackageFilterList(selectedOwnPackages, ownPackageOptions);
+  const gpl1Materials = materialResult.data.filter((item) => cleanText(item.material_group1) === ownSeries);
+  const gpl2Scope = resolveGpl2Scope(gpl1Materials, validOwnPackages);
   const mappedSeries = mappingsResult.data.filter((mapping) => {
     if (!mapping.active) return false;
-    return seriesNamesOverlap(mapping.target_makuku_series, ownSeries);
+    return mappingTargetsOverlapGpl2Scope(mapping, gpl2Scope);
   });
   const allowedBenchmarkKeys = new Set(
     mappedSeries.map((mapping) => benchmarkSeriesKey(mapping.brand_id, mapping.product_series)),
   );
-  const competitorPackageOptions = selectedOwnPackages.length
-    ? uniqueStrings(
+
+  let competitorPackageOptions: string[] = [];
+  let competitorProductsError: string | null = null;
+  let competitorProductsIsDemo = false;
+  if (validOwnPackages.length) {
+    const competitorProductsResult = await getCompetitorProductsForPackageOptions();
+    competitorProductsError = competitorProductsResult.error;
+    competitorProductsIsDemo = competitorProductsResult.isDemo;
+    competitorPackageOptions = uniqueStrings(
       competitorProductsResult.data
         .filter((product) => allowedBenchmarkKeys.has(benchmarkSeriesKey(product.brand_id, product.product_series)))
         .map((product) => cleanText(product.package_type)),
-    )
-    : [];
+    );
+  }
 
   return {
     data: { ownPackageOptions, competitorPackageOptions },
-    error: materialResult.error ?? mappingsResult.error ?? competitorProductsResult.error,
-    isDemo: materialResult.isDemo || mappingsResult.isDemo || competitorProductsResult.isDemo,
+    error: materialResult.error ?? mappingsResult.error ?? competitorProductsError,
+    isDemo: materialResult.isDemo || mappingsResult.isDemo || competitorProductsIsDemo,
   };
 }
 
@@ -2023,9 +2090,9 @@ export async function getWeeklyPriceCoefficientBoard(
   const monthStart = `${month}-01T00:00:00.000Z`;
   const monthEnd = new Date(Date.UTC(year, monthNumber ?? 1, 1)).toISOString();
   const [materialResult, mappingsResult, competitorProductsResult, scopedStoreIds] = await Promise.all([
-    getMaterialMaster(),
+    getMaterialMasterForPriceIndex(),
     getCompetitorSeriesMappings(),
-    getCompetitorProducts(),
+    getCompetitorProductsForPackageOptions(),
     filters.dataScope ? resolveScopedStoreIds(filters.dataScope) : Promise.resolve(null),
   ]);
   if (scopedStoreIds?.length === 0) {
@@ -2043,25 +2110,27 @@ export async function getWeeklyPriceCoefficientBoard(
       isDemo: materialResult.isDemo || mappingsResult.isDemo || competitorProductsResult.isDemo,
     };
   }
-  const ownSeriesOptions = uniqueStrings(materialResult.data.map((item) => cleanText(item.sub_brand)));
+  const ownSeriesOptions = uniqueStrings(materialResult.data.map((item) => cleanText(item.material_group1)));
   const selectedOwnSeries = filters.ownSeries && ownSeriesOptions.includes(filters.ownSeries)
     ? filters.ownSeries
     : ownSeriesOptions[0] ?? null;
   const ownPackageOptions = uniqueStrings(
     materialResult.data
-      .filter((item) => cleanText(item.sub_brand) === selectedOwnSeries)
+      .filter((item) => cleanText(item.material_group1) === selectedOwnSeries)
       .map((item) => cleanText(item.material_group2)),
   );
   const selectedOwnPackage = selectedOwnSeries
     ? intersectPackageFilterList(normalizePackageFilterList(filters.ownPackage), ownPackageOptions)
     : [];
   const scopedMaterialCodes = materialResult.data
-    .filter((item) => cleanText(item.sub_brand) === selectedOwnSeries)
+    .filter((item) => cleanText(item.material_group1) === selectedOwnSeries)
     .filter((item) => !selectedOwnPackage.length || selectedOwnPackage.includes(cleanText(item.material_group2) ?? ""))
     .map((item) => item.tenant_sku_code);
+  const gpl1Materials = materialResult.data.filter((item) => cleanText(item.material_group1) === selectedOwnSeries);
+  const gpl2Scope = resolveGpl2Scope(gpl1Materials, selectedOwnPackage);
   const scopedMappings = mappingsResult.data.filter((mapping) => {
     if (!mapping.active) return false;
-    return seriesNamesOverlap(mapping.target_makuku_series, selectedOwnSeries);
+    return mappingTargetsOverlapGpl2Scope(mapping, gpl2Scope);
   });
 
   let storeIds = scopedStoreIds;
@@ -2452,7 +2521,7 @@ function buildWeeklyPriceCoefficientBoard(input: {
   materialMaster: MaterialMaster[];
   snapshots: PriceSnapshot[];
   mappings: CompetitorSeriesMapping[];
-  competitorProducts?: CompetitorProduct[];
+  competitorProducts?: Array<Pick<CompetitorProduct, "brand_id" | "product_series" | "package_type">>;
   filters: WeeklyPriceCoefficientFilters;
 }): WeeklyPriceCoefficientBoard {
   const month = normalizeDashboardMonth(input.filters.month);
@@ -2463,11 +2532,11 @@ function buildWeeklyPriceCoefficientBoard(input: {
     startDate: week.startDate,
     endDate: week.endDate,
   }));
-  const ownSeriesOptions = uniqueStrings(input.materialMaster.map((item) => cleanText(item.sub_brand)));
+  const ownSeriesOptions = uniqueStrings(input.materialMaster.map((item) => cleanText(item.material_group1)));
   const selectedOwnSeries = input.filters.ownSeries && ownSeriesOptions.includes(input.filters.ownSeries)
     ? input.filters.ownSeries
     : ownSeriesOptions[0] ?? null;
-  const ownMaterials = input.materialMaster.filter((item) => cleanText(item.sub_brand) === selectedOwnSeries);
+  const ownMaterials = input.materialMaster.filter((item) => cleanText(item.material_group1) === selectedOwnSeries);
   const ownPackageOptions = uniqueStrings(ownMaterials.map((item) => cleanText(item.material_group2)));
   // Cascade: ignore ownPackage when series is missing; ignore competitorPackage when ownPackage is missing.
   const selectedOwnPackage = selectedOwnSeries
@@ -2485,9 +2554,10 @@ function buildWeeklyPriceCoefficientBoard(input: {
   const scopedMaterials = seriesMaterials
     .filter((item) => !selectedOwnPackage.length || selectedOwnPackage.includes(cleanText(item.material_group2) ?? ""));
   const scopedMaterialCodes = new Set(scopedMaterials.map((item) => item.tenant_sku_code));
+  const gpl2Scope = resolveGpl2Scope(ownMaterials, selectedOwnPackage);
   const mappedSeries = input.mappings.filter((mapping) => {
     if (!mapping.active) return false;
-    return seriesNamesOverlap(mapping.target_makuku_series, selectedOwnSeries);
+    return mappingTargetsOverlapGpl2Scope(mapping, gpl2Scope);
   });
   const competitorSeries = mappedSeries
     .map((mapping) => ({
@@ -3115,7 +3185,7 @@ function competitorSnapshotMaterialCode(
     if (cacheKey && cache) cache.set(cacheKey, null);
     return null;
   }
-  const materialMatch = findMatchingMaterialForSeries(product, mapping.target_makuku_series, materials);
+  const materialMatch = findMatchingMaterialForSeries(product, mapping.target_material_group2s, materials);
   const materialCode = materialMatch.material?.tenant_sku_code ?? null;
   if (cacheKey && cache) cache.set(cacheKey, materialCode);
   return materialCode;
@@ -3186,11 +3256,16 @@ function competitorSeriesLabel(brandName: string | null | undefined, productSeri
   return [cleanText(brandName), cleanText(productSeries)].filter(Boolean).join(" ");
 }
 
-function seriesNamesOverlap(left: string | null | undefined, right: string | null | undefined) {
-  const leftKey = normalizeDashboardText(left);
-  const rightKey = normalizeDashboardText(right);
-  if (!leftKey || !rightKey) return false;
-  return leftKey === rightKey || leftKey.includes(rightKey) || rightKey.includes(leftKey);
+function resolveGpl2Scope(materials: MaterialMaster[], selectedOwnPackages: string[]) {
+  if (selectedOwnPackages.length) return selectedOwnPackages;
+  return uniqueStrings(materials.map((item) => cleanText(item.material_group2)));
+}
+
+function mappingTargetsOverlapGpl2Scope(mapping: CompetitorSeriesMapping, gpl2Scope: string[]) {
+  if (!gpl2Scope.length) return false;
+  const scopeKeys = new Set(gpl2Scope.map((value) => normalizeDashboardText(value)).filter(Boolean));
+  return normalizeMaterialGroup2Targets(mapping.target_material_group2s)
+    .some((target) => scopeKeys.has(normalizeDashboardText(target)));
 }
 
 

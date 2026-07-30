@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 const legacyCompetitorsPage = readFileSync("src/app/[locale]/competitors/page.tsx", "utf8");
 const competitorMappingsPage = readFileSync("src/app/[locale]/competitor-mappings/page.tsx", "utf8");
 const competitorSeriesRulesPanel = readFileSync("src/components/competitor-series-rules-panel.tsx", "utf8");
+const competitorSeriesRuleDrawer = readFileSync("src/components/competitor-series-rule-drawer.tsx", "utf8");
 const competitorProductsPage = readFileSync("src/app/[locale]/competitor-products/page.tsx", "utf8");
 const competitorProductsTable = readFileSync("src/components/competitor-products-table.tsx", "utf8");
 const reviewWorkbench = readFileSync("src/components/ai-price-candidates-workbench.tsx", "utf8");
@@ -19,7 +20,7 @@ test("competitor mapping is an automatic series rule configuration page", () => 
   assert.doesNotMatch(competitorMappingsPage, /automaticRules/);
   assert.doesNotMatch(competitorMappingsPage, /filteredCompetitorSkus/);
   assert.match(competitorSeriesRulesPanel, /data-role="automatic-mapping-rules"/);
-  assert.match(competitorSeriesRulesPanel, /target_makuku_series/);
+  assert.match(competitorSeriesRuleDrawer, /target_material_group2/);
   assert.match(competitorSeriesRulesPanel, /coveredSkus/);
   assert.doesNotMatch(competitorMappingsPage, /MappingStatusTabs/);
   assert.doesNotMatch(competitorMappingsPage, /mappingStatus/);
@@ -29,8 +30,10 @@ test("competitor mapping is an automatic series rule configuration page", () => 
 test("competitor mapping filters by competitor brand and series only", () => {
   assert.match(competitorMappingsPage, /competitorBrandOptions\(competitorProducts\)/);
   assert.match(competitorMappingsPage, /competitorSeriesOptions\(competitorProducts, params\.brand\)/);
-  assert.match(competitorMappingsPage, /<SelectInput name="brand"/);
-  assert.match(competitorMappingsPage, /<SelectInput name="series"/);
+  assert.match(competitorMappingsPage, /name="brand"/);
+  assert.match(competitorMappingsPage, /name="series"/);
+  assert.match(competitorMappingsPage, /QueryForm/);
+  assert.match(competitorMappingsPage, /QuerySubmitButton/);
   assert.match(competitorMappingsPage, /params\.series/);
   assert.doesNotMatch(competitorMappingsPage, /productNameMatches/);
   assert.doesNotMatch(competitorMappingsPage, /<TextInput name="product"/);

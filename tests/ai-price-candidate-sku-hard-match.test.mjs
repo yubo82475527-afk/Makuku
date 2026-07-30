@@ -11,6 +11,7 @@ function material(overrides) {
     sub_category: "Pants",
     brand: "MAKUKU",
     sub_brand: overrides.sub_brand,
+    material_group1: overrides.material_group1 ?? null,
     material_group2: overrides.material_group2 ?? null,
     type: overrides.type ?? "Big pack",
     sub_type: overrides.sub_type,

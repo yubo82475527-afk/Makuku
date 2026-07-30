@@ -18,8 +18,8 @@ test("competitor series mapping schema owns the default benchmark flag", () => {
 
 test("benchmark selection is configured inline on competitor mapping rules", () => {
   assert.match(competitorMappingPage, /CompetitorSeriesRulesPanel/);
-  assert.match(rulesPanel, /name="intent" value="set_benchmark"/);
-  assert.match(rulesPanel, /name="intent" value="clear_benchmark"/);
+  assert.match(rulesPanel, /intent: "set_benchmark"/);
+  assert.match(rulesPanel, /intent: "clear_benchmark"/);
   assert.match(rulesPanel, /is_default_benchmark/);
   assert.match(rulesPanel, /defaultBenchmark/);
   assert.match(competitorSeriesRoute, /setDefaultBenchmarkRule/);

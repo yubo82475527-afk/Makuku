@@ -4,14 +4,33 @@ export function seriesKey(value: string | null | undefined) {
   return String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-export function makukuSeriesOptions(materials: MaterialMaster[]) {
-  return Array.from(new Set(materials.map((material) => cleanText(material.sub_brand)).filter(Boolean) as string[])).sort((left, right) => left.localeCompare(right));
+export function materialGroup2Options(materials: MaterialMaster[]) {
+  return Array.from(new Set(materials.map((material) => cleanText(material.material_group2)).filter(Boolean) as string[])).sort((left, right) => left.localeCompare(right));
 }
 
-export function findMatchingMaterialForSeries(product: Pick<CompetitorProduct, "size" | "piece_count" | "normalized_name" | "raw_title" | "pack_type">, targetMakukuSeries: string, materials: MaterialMaster[]) {
+/** @deprecated Use materialGroup2Options */
+export function makukuSeriesOptions(materials: MaterialMaster[]) {
+  return materialGroup2Options(materials);
+}
+
+export function normalizeMaterialGroup2Targets(values: string[] | string | null | undefined) {
+  const list = Array.isArray(values) ? values : String(values ?? "").split(",");
+  return Array.from(new Set(list.map((value) => cleanText(value)).filter(Boolean) as string[]));
+}
+
+export function findMatchingMaterialForSeries(
+  product: Pick<CompetitorProduct, "size" | "piece_count" | "normalized_name" | "raw_title" | "pack_type">,
+  targetMaterialGroup2s: string[] | string,
+  materials: MaterialMaster[],
+) {
+  const targetKeys = new Set(normalizeMaterialGroup2Targets(targetMaterialGroup2s).map((value) => seriesKey(value)));
+  if (!targetKeys.size) {
+    return { status: "not_found" as const, material: null };
+  }
+
   const candidatePieceCounts = productPieceCountCandidates(product);
   const sameSeriesSizeMaterials = materials.filter((material) => {
-    if (seriesKey(material.sub_brand) !== seriesKey(targetMakukuSeries)) return false;
+    if (!targetKeys.has(seriesKey(material.material_group2))) return false;
     if (seriesKey(material.sub_type) !== seriesKey(product.size)) return false;
     const productShape = productShapeKey(product.pack_type, product.normalized_name, product.raw_title);
     const materialShape = materialShapeKey(material.type, material.sub_category, material.tenant_sku_name);

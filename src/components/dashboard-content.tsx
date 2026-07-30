@@ -167,14 +167,14 @@ function WeeklyPriceCoefficientFilters({
         />
         <PackageMultiSelect
           name="ownPackage"
-          label={isZh ? "自有包装" : "Own package"}
+          label="GPL2"
           selected={ownPackages}
           options={ownPackageOptions}
           enabled={ownPackageEnabled}
           loading={optionsLoading && ownPackageEnabled}
           isZh={isZh}
-          disabledHint={isZh ? "请先选择自有系列" : "Select own series first"}
-          emptyHint={isZh ? "全部自有包装" : "All own packages"}
+          disabledHint={isZh ? "请先选择 GPL1" : "Select GPL1 first"}
+          emptyHint={isZh ? "全部 GPL2" : "All GPL2"}
           onChange={(next) => {
             setOwnPackages(next);
             setCompetitorPackages([]);
@@ -189,7 +189,7 @@ function WeeklyPriceCoefficientFilters({
           enabled={competitorPackageEnabled}
           loading={optionsLoading && competitorPackageEnabled}
           isZh={isZh}
-          disabledHint={isZh ? "请先选择自有包装" : "Select own package first"}
+          disabledHint={isZh ? "请先选择 GPL2" : "Select GPL2 first"}
           emptyHint={isZh ? "全部竞品包装" : "All competitor packages"}
           onChange={setCompetitorPackages}
         />
@@ -277,14 +277,14 @@ function OwnSeriesFilter({
 }) {
   return (
     <label className={dashboardFilterControlClassName}>
-      <span className="mr-2 shrink-0 text-xs font-medium text-slate-500">{isZh ? "自有系列" : "Own series"}</span>
+      <span className="mr-2 shrink-0 text-xs font-medium text-slate-500">GPL1</span>
       <select
         name="ownSeries"
         value={selectedOwnSeries ?? ""}
         onChange={(event) => onChange(event.target.value)}
-        className="min-w-0 flex-1 bg-transparent outline-none"
+        className="min-w-0 flex-1 bg-transparent text-sm font-normal outline-none"
       >
-        <option value="">{isZh ? "全部自有系列" : "All own series"}</option>
+        <option value="">{isZh ? "全部 GPL1" : "All GPL1"}</option>
         {options.map((series) => (
           <option key={series} value={series}>
             {series}
@@ -348,10 +348,10 @@ function PackageMultiSelect({
         type="button"
         disabled={!enabled}
         onClick={() => setOpen((current) => !current)}
-        className={`${enabled ? dashboardFilterControlClassName : dashboardFilterDisabledClassName} w-full justify-between gap-2 text-left`}
+        className={`${enabled ? dashboardFilterControlClassName : dashboardFilterDisabledClassName} w-full justify-between gap-2 text-left font-normal`}
       >
         <span className="mr-2 shrink-0 text-xs font-medium text-slate-500">{label}</span>
-        <span className="min-w-0 flex-1 truncate">{summary}</span>
+        <span className="min-w-0 flex-1 truncate text-sm font-normal">{summary}</span>
         <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
       </button>
       {open && enabled ? (

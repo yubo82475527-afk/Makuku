@@ -18,6 +18,7 @@ function matchesSearch(sku: MaterialMaster, query: string) {
     sku.sub_category,
     sku.brand,
     sku.sub_brand,
+    sku.material_group1,
     sku.material_group2,
     sku.type,
     sku.sub_type,
@@ -99,6 +100,7 @@ export function MaterialMasterTable({
                 <td className="py-3 pr-3">{sku.sub_category}</td>
                 <td className="py-3 pr-3">{sku.brand}</td>
                 <td className="py-3 pr-3">{sku.sub_brand ?? "-"}</td>
+                <td className="py-3 pr-3">{sku.material_group1 ?? "-"}</td>
                 <td className="py-3 pr-3">{sku.material_group2 ?? "-"}</td>
                 <td className="py-3 pr-3">{sku.type ?? "-"}</td>
                 <td className="py-3 pr-3">{sku.sub_type ?? "-"}</td>

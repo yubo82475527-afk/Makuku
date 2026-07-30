@@ -9,6 +9,7 @@ const pricesPage = [
 const priceSnapshotsTable = readFileSync("src/components/price-snapshots-table.tsx", "utf8");
 const competitorMappingsPage = readFileSync("src/app/[locale]/competitor-mappings/page.tsx", "utf8");
 const competitorSeriesRulesPanel = readFileSync("src/components/competitor-series-rules-panel.tsx", "utf8");
+const competitorSeriesRuleDrawer = readFileSync("src/components/competitor-series-rule-drawer.tsx", "utf8");
 const competitorProductsTable = readFileSync("src/components/competitor-products-table.tsx", "utf8");
 const competitorsRoute = readFileSync("src/app/api/competitors/route.ts", "utf8");
 const dashboardPage = readFileSync("src/app/[locale]/dashboard/page.tsx", "utf8");
@@ -17,7 +18,7 @@ const productMasterSearchSelect = readFileSync("src/components/product-master-se
 const appShell = readFileSync("src/components/app-shell.tsx", "utf8");
 
 test("SKU price monitor stays a price fact view without benchmark configuration actions", () => {
-  assert.match(pricesPage, /Export CSV/);
+  assert.match(pricesPage, /PriceSnapshotExportButton|Export CSV|导出/);
   assert.doesNotMatch(pricesPage, /PriceSnapshotActions/);
   assert.match(priceSnapshotsTable, /price_per_piece/);
   assert.doesNotMatch(pricesPage, /market-benchmarks/);
@@ -29,9 +30,9 @@ test("competitor mapping exposes automatic series rules and benchmark selection"
   assert.match(competitorMappingsPage, /getCompetitorSeriesMappings/);
   assert.match(competitorMappingsPage, /getMaterialMaster/);
   assert.match(competitorSeriesRulesPanel, /data-role="automatic-mapping-rules"/);
-  assert.match(competitorSeriesRulesPanel, /target_makuku_series/);
-  assert.match(competitorSeriesRulesPanel, /name="intent" value="set_benchmark"/);
-  assert.match(competitorSeriesRulesPanel, /name="intent" value="clear_benchmark"/);
+  assert.match(competitorSeriesRuleDrawer, /target_material_group2/);
+  assert.match(competitorSeriesRulesPanel, /intent: "set_benchmark"/);
+  assert.match(competitorSeriesRulesPanel, /intent: "clear_benchmark"/);
   assert.match(competitorSeriesRulesPanel, /is_default_benchmark/);
   assert.match(competitorSeriesRulesPanel, /coveredSkus/);
   assert.doesNotMatch(competitorMappingsPage, /CompetitorMappingsTable/);

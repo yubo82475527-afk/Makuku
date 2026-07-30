@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { PageShellState } from "@/components/page-shell-state";
 import { CompetitorSeriesRulesPanel } from "@/components/competitor-series-rules-panel";
-import { Button, Card, DataNotice, SelectInput } from "@/components/ui";
+import { QueryForm, QuerySubmitButton } from "@/components/query-form";
+import { Card, DataNotice } from "@/components/ui";
 import { getBrands, getCompetitorProducts, getCompetitorSeriesMappings, getMaterialMaster } from "@/lib/data";
 import { getPageI18n } from "@/lib/i18n/server";
 
@@ -24,15 +25,12 @@ export default async function CompetitorMappingsPage({
   const competitorProducts = productsResult.data.filter((product) => {
     if (ownBrandIds.has(product.brand_id)) return false;
     if (isOwnBrandName(product.brands?.name)) return false;
+    // Mapping options follow Active master data only; disabled rows are historical dirty spellings.
+    if (product.status === "disabled") return false;
     return true;
   });
   const brandOptions = competitorBrandOptions(competitorProducts);
   const seriesOptions = competitorSeriesOptions(competitorProducts, params.brand);
-  const filteredProducts = competitorProducts.filter((product) => {
-    if (params.brand && product.brand_id !== params.brand) return false;
-    if (params.series && seriesKey(product.product_series) !== seriesKey(params.series)) return false;
-    return true;
-  });
   const filteredRules = seriesMappingsResult.data.filter((rule) => {
     if (params.brand && rule.brand_id !== params.brand) return false;
     if (params.series && seriesKey(rule.product_series) !== seriesKey(params.series)) return false;
@@ -45,17 +43,24 @@ export default async function CompetitorMappingsPage({
       <PageShellState locale={locale} dict={dict} title={copy.title} currentPath="/competitor-mappings" isDemo={productsResult.isDemo || materialResult.isDemo || seriesMappingsResult.isDemo} />
       <DataNotice dict={dict} error={productsResult.error ?? brandsResult.error ?? materialResult.error ?? seriesMappingsResult.error} />
       <Card className="mb-4">
-        <form className="grid gap-3 md:grid-cols-3">
-          <SelectInput name="brand" defaultValue={params.brand ?? ""}>
-            <option value="">{dict.common.allBrands}</option>
-            {brandOptions.map((brand) => <option key={brand.id} value={brand.id}>{brand.name}</option>)}
-          </SelectInput>
-          <SelectInput name="series" defaultValue={params.series ?? ""}>
-            <option value="">{copy.allSeries}</option>
-            {seriesOptions.map((series) => <option key={series.value} value={series.value}>{series.label}</option>)}
-          </SelectInput>
-          <Button type="submit">{dict.common.filter}</Button>
-        </form>
+        <QueryForm className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)_minmax(120px,180px)]">
+          <BrandFilter
+            locale={locale}
+            brand={params.brand ?? ""}
+            options={brandOptions}
+            allBrandsLabel={dict.common.allBrands}
+          />
+          <SeriesFilter
+            locale={locale}
+            series={params.series ?? ""}
+            options={seriesOptions}
+            allSeriesLabel={copy.allSeries}
+          />
+          <QuerySubmitButton
+            idleLabel={dict.common.filter}
+            pendingLabel={locale === "zh" ? "筛选中..." : "Filtering..."}
+          />
+        </QueryForm>
       </Card>
 
       <Card>
@@ -65,13 +70,66 @@ export default async function CompetitorMappingsPage({
           </Link>
         </div>
         <CompetitorSeriesRulesPanel
-          products={filteredProducts}
+          products={competitorProducts}
           materials={materialResult.data}
           rules={filteredRules}
           locale={locale}
         />
       </Card>
     </>
+  );
+}
+
+const filterControlClassName =
+  "flex min-h-10 items-center rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus-within:border-slate-500 focus-within:ring-2 focus-within:ring-slate-200";
+
+function BrandFilter({
+  locale,
+  brand,
+  options,
+  allBrandsLabel,
+}: {
+  locale: string;
+  brand: string;
+  options: Array<{ id: string; name: string }>;
+  allBrandsLabel: string;
+}) {
+  const isZh = locale === "zh";
+  return (
+    <label className={filterControlClassName}>
+      <span className="mr-2 shrink-0 text-xs font-medium text-slate-500">{isZh ? "竞品品牌" : "Competitor Brand"}</span>
+      <select name="brand" defaultValue={brand} className="min-w-0 flex-1 bg-transparent py-2 outline-none">
+        <option value="">{allBrandsLabel}</option>
+        {options.map((item) => (
+          <option key={item.id} value={item.id}>{item.name}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function SeriesFilter({
+  locale,
+  series,
+  options,
+  allSeriesLabel,
+}: {
+  locale: string;
+  series: string;
+  options: Array<{ value: string; label: string }>;
+  allSeriesLabel: string;
+}) {
+  const isZh = locale === "zh";
+  return (
+    <label className={filterControlClassName}>
+      <span className="mr-2 shrink-0 text-xs font-medium text-slate-500">{isZh ? "竞品系列" : "Competitor Series"}</span>
+      <select name="series" defaultValue={series} className="min-w-0 flex-1 bg-transparent py-2 outline-none">
+        <option value="">{allSeriesLabel}</option>
+        {options.map((item) => (
+          <option key={item.value} value={item.value}>{item.label}</option>
+        ))}
+      </select>
+    </label>
   );
 }
 

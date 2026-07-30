@@ -4,7 +4,12 @@ export async function readRequestBody(request: Request) {
     return { body: await request.json(), isForm: false };
   }
   const formData = await request.formData();
-  return { body: Object.fromEntries(formData.entries()), isForm: true };
+  const body: Record<string, unknown> = {};
+  for (const key of new Set(formData.keys())) {
+    const values = formData.getAll(key).map((value) => String(value));
+    body[key] = values.length <= 1 ? (values[0] ?? "") : values;
+  }
+  return { body, isForm: true };
 }
 
 export function formRedirect(request: Request, path: string) {

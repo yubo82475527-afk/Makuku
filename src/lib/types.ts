@@ -300,6 +300,7 @@ export type MaterialMaster = {
   sub_category: string;
   brand: string;
   sub_brand: string | null;
+  material_group1: string | null;
   material_group2: string | null;
   type: string | null;
   sub_type: string | null;
@@ -644,7 +645,7 @@ export type CompetitorSeriesMapping = {
   id: string;
   brand_id: string;
   product_series: string | null;
-  target_makuku_series: string;
+  target_material_group2s: string[];
   is_default_benchmark: boolean;
   active: boolean;
   created_at: string;

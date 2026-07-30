@@ -10,6 +10,7 @@ type MaterialImportRow = {
   sub_category: string;
   brand: string;
   sub_brand: string | null;
+  material_group1: string | null;
   material_group2: string | null;
   type: string | null;
   sub_type: string | null;
@@ -19,8 +20,7 @@ type MaterialImportRow = {
   f_expiry_date: string;
 };
 
-const legacyColumnCount = 12;
-const expectedColumnCount = 13;
+const expectedColumnCount = 14;
 const maxFileSizeBytes = 10 * 1024 * 1024;
 const allowedExtensions = [".xlsx", ".xls", ".csv"];
 
@@ -56,12 +56,9 @@ function dateToIso(value: unknown, rowNumber: number) {
 }
 
 function parseImportRow(row: unknown[], rowNumber: number): MaterialImportRow {
-  if (row.length < legacyColumnCount) {
-    throw new Error(`Row ${rowNumber}: expected ${expectedColumnCount} columns (legacy ${legacyColumnCount} still accepted)`);
+  if (row.length < expectedColumnCount) {
+    throw new Error(`Row ${rowNumber}: expected ${expectedColumnCount} columns`);
   }
-
-  const hasMaterialGroup2 = row.length >= expectedColumnCount;
-  const typeIndex = hasMaterialGroup2 ? 7 : 6;
 
   return {
     tenant_sku_code: requiredText(row[0], rowNumber, "tenant_sku_code"),
@@ -70,13 +67,14 @@ function parseImportRow(row: unknown[], rowNumber: number): MaterialImportRow {
     sub_category: requiredText(row[3], rowNumber, "sub_category"),
     brand: requiredText(row[4], rowNumber, "brand"),
     sub_brand: optionalText(row[5]),
-    material_group2: hasMaterialGroup2 ? optionalText(row[6]) : null,
-    type: optionalText(row[typeIndex]),
-    sub_type: optionalText(row[typeIndex + 1]),
-    pack_count: requiredNumber(row[typeIndex + 2], rowNumber, "pack_count"),
-    box_count: requiredNumber(row[typeIndex + 3], rowNumber, "box_count"),
-    pcs_price: requiredNumber(row[typeIndex + 4], rowNumber, "pcs_price"),
-    f_expiry_date: dateToIso(row[typeIndex + 5], rowNumber),
+    material_group1: optionalText(row[6]),
+    material_group2: optionalText(row[7]),
+    type: optionalText(row[8]),
+    sub_type: optionalText(row[9]),
+    pack_count: requiredNumber(row[10], rowNumber, "pack_count"),
+    box_count: requiredNumber(row[11], rowNumber, "box_count"),
+    pcs_price: requiredNumber(row[12], rowNumber, "pcs_price"),
+    f_expiry_date: dateToIso(row[13], rowNumber),
   };
 }
 
