@@ -38,8 +38,8 @@ test("standalone market benchmark management surface is gone", () => {
 test("weekly price coefficient board does not use legacy benchmark rule period prices", () => {
   assert.match(dataFile, /getCompetitorSeriesMappings/);
   assert.match(dataFile, /mapping\.is_default_benchmark/);
-  assert.match(dataFile, /defaultBenchmarkSeries/);
-  assert.match(dataFile, /defaultBenchmarkSeries \? defaultBenchmarkPrices : \[\]/);
+  assert.match(dataFile, /computePriceIndexCoefficients/);
+  assert.match(dataFile, /competitorSeriesAvgs/);
   assert.doesNotMatch(dataFile, /allMappedBenchmarkPrices/);
   assert.doesNotMatch(dataFile, /getMarketBenchmarkRules\(\)/);
   assert.doesNotMatch(dataFile, /benchmarkPricesFromPeriodPrices/);

@@ -102,7 +102,7 @@ test("dashboard keeps the weekly coefficient board but is no longer a single-pan
   assert.match(dataFile, /getCompetitorSeriesMappings/);
   assert.match(dataFile, /is_default_benchmark/);
   assert.match(dataFile, /materialMaster\.map\(\(item\) => cleanText\(item\.material_group1\)\)/);
-  assert.match(dataFile, /ownAvgPrice \/ benchmarkAvgPrice/);
+  assert.match(dataFile, /computePriceIndexCoefficients/);
   assert.match(dashboardPage, /DashboardClient/);
   assert.doesNotMatch(dashboardPage, /PriceIndexTreeTable/);
   assert.match(readFileSync("src/components/price-index-tree-table.tsx", "utf8"), /PRICE\/PCS \{week\.label\}/);

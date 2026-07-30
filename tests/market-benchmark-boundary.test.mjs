@@ -74,8 +74,8 @@ test("standalone market benchmark management is removed from product routes", ()
 test("dashboard price index derives benchmark selection from competitor mappings", () => {
   assert.match(dataFile, /getCompetitorSeriesMappings/);
   assert.match(dataFile, /is_default_benchmark/);
-  assert.match(dataFile, /defaultBenchmarkSeries/);
-  assert.match(dataFile, /defaultBenchmarkSeries \? defaultBenchmarkPrices : \[\]/);
+  assert.match(dataFile, /computePriceIndexCoefficients/);
+  assert.match(dataFile, /competitorSeriesAvgs/);
   assert.doesNotMatch(dataFile, /allMappedBenchmarkPrices/);
   assert.doesNotMatch(dataFile, /getMarketBenchmarkRules\(\)/);
   assert.doesNotMatch(dataFile, /market_benchmark_rules/);

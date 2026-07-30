@@ -16,6 +16,7 @@ import {
 } from "@/lib/demo-data";
 import { formatShortImageId } from "@/lib/format";
 import { monthWeeks } from "@/lib/periods";
+import { computePriceIndexCoefficients } from "@/lib/price-index-coefficient";
 import { normalizePriceIndexDimensions } from "@/lib/price-index-dimensions";
 import {
   intersectPackageFilterList,
@@ -3259,55 +3260,56 @@ function buildWeeklyCoefficientCell(input: {
   const ownAvgPrice = averageOrNull(ownPrices);
   const ownBrandOptions = uniqueStrings(weeklyOwnSnapshots.map((snapshot) => priceSnapshotBrandForFilters(snapshot)));
   const ownBrand = ownBrandOptions.length === 1 ? ownBrandOptions[0] : undefined;
-  const defaultBenchmarkSeries = input.competitorSeries.find((series) => series.isBenchmark) ?? null;
   const weeklyBenchmarkSnapshots = input.benchmarkSnapshots;
   const benchmarkSnapshotsBySeries = bucketSnapshotsByBenchmarkSeries(weeklyBenchmarkSnapshots);
-  const defaultBenchmarkPrices = defaultBenchmarkSeries
-    ? (benchmarkSnapshotsBySeries.get(defaultBenchmarkSeries.key) ?? [])
-      .map((snapshot) => Number(snapshot.price_per_piece))
-      .filter(isPositiveNumber)
-    : [];
-  const ownBenchmarkPrices = defaultBenchmarkSeries ? defaultBenchmarkPrices : [];
-  const ownBenchmarkAvgPrice = averageOrNull(ownBenchmarkPrices);
-  const competitorCells = input.competitorSeries.map((series) => {
-    const benchmarkPrices = (benchmarkSnapshotsBySeries.get(series.key) ?? [])
+  const competitorSeriesAvgs = input.competitorSeries.map((series) => {
+    const seriesPrices = (benchmarkSnapshotsBySeries.get(series.key) ?? [])
       .map((snapshot) => Number(snapshot.price_per_piece))
       .filter(isPositiveNumber);
-    const benchmarkAvgPrice = averageOrNull(benchmarkPrices);
     return {
-      seriesKey: series.key,
-      benchmarkAvgPrice,
-      benchmarkSampleCount: benchmarkPrices.length,
-      coefficient: series.isBenchmark
-        ? (benchmarkAvgPrice ? 1 : null)
-        : ownAvgPrice && benchmarkAvgPrice
-          ? Math.round((ownAvgPrice / benchmarkAvgPrice) * 100) / 100
-          : null,
-      benchmarkHref: buildWeeklyPriceHref(input.locale, {
-        startDate: input.week.startDate,
-        endDate: input.week.endDate,
-        organization: input.organization,
-        province: input.province,
-        cityName: input.cityName,
-        district: input.district,
-        size: input.size,
-        shape: input.shape,
-        owner: "competitor",
-        brand: series.brand,
-        series: series.series ?? undefined,
-        ownSeries: input.ownSeries ?? undefined,
-        ownPackage: joinPackageFilterList(input.selectedOwnPackage),
-        competitorPackage: joinPackageFilterList(input.selectedCompetitorPackage),
-      }),
+      series,
+      avgPrice: averageOrNull(seriesPrices),
+      sampleCount: seriesPrices.length,
     };
   });
+  const { ownCoefficient, competitorCoefficients } = computePriceIndexCoefficients({
+    ownAvgPrice,
+    competitorSeries: competitorSeriesAvgs.map(({ series, avgPrice }) => ({
+      key: series.key,
+      isBenchmark: series.isBenchmark,
+      avgPrice,
+    })),
+  });
+  const coefficientByKey = new Map(competitorCoefficients.map((item) => [item.key, item.coefficient]));
+  const competitorCells = competitorSeriesAvgs.map(({ series, avgPrice, sampleCount }) => ({
+    seriesKey: series.key,
+    benchmarkAvgPrice: avgPrice,
+    benchmarkSampleCount: sampleCount,
+    coefficient: coefficientByKey.get(series.key) ?? null,
+    benchmarkHref: buildWeeklyPriceHref(input.locale, {
+      startDate: input.week.startDate,
+      endDate: input.week.endDate,
+      organization: input.organization,
+      province: input.province,
+      cityName: input.cityName,
+      district: input.district,
+      size: input.size,
+      shape: input.shape,
+      owner: "competitor",
+      brand: series.brand,
+      series: series.series ?? undefined,
+      ownSeries: input.ownSeries ?? undefined,
+      ownPackage: joinPackageFilterList(input.selectedOwnPackage),
+      competitorPackage: joinPackageFilterList(input.selectedCompetitorPackage),
+    }),
+  }));
 
   return {
     week: input.week.key ?? input.week.label ?? input.week.startDate,
     startDate: input.week.startDate,
     endDate: input.week.endDate,
     ownAvgPrice,
-    ownCoefficient: ownAvgPrice && ownBenchmarkAvgPrice ? Math.round((ownAvgPrice / ownBenchmarkAvgPrice) * 100) / 100 : null,
+    ownCoefficient,
     ownSampleCount: ownPrices.length,
     ownHref: buildWeeklyPriceHref(input.locale, {
       startDate: input.week.startDate,
