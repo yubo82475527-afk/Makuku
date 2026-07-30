@@ -38,6 +38,8 @@ import { resolveCandidatePriceHandling } from "@/lib/price-handling-status";
 import type {
   Alert,
   AiPriceCandidate,
+  AiPriceCandidateStatus,
+  AiPriceQualityGateStatus,
   AiPriceReviewRule,
   AppUser,
   Brand,
@@ -56,6 +58,7 @@ import type {
   OpportunityAction,
   OpportunityActionStatus,
   OpportunityActionType,
+  PriceReviewDecision,
   PriceSnapshot,
   ProductMatchNormalization,
   ProductSegmentBattle,
@@ -4861,10 +4864,10 @@ function candidateContributesToQuality(row: StoreVisitMonitorQualityRow) {
 function candidateNeedsMonitorConfirmation(row: StoreVisitMonitorQualityRow) {
   if (isInactiveQualityLifecycleStatus(row.h5_lifecycle_status)) return false;
   return resolveCandidatePriceHandling({
-    status: row.status,
-    review_decision: row.review_decision,
-    quality_gate_status: row.quality_gate_status as Parameters<typeof resolveCandidatePriceHandling>[0]["quality_gate_status"],
-    quality_gate_attempt_count: row.quality_gate_attempt_count,
+    status: row.status as AiPriceCandidateStatus,
+    review_decision: (row.review_decision ?? undefined) as PriceReviewDecision | undefined,
+    quality_gate_status: (row.quality_gate_status ?? undefined) as AiPriceQualityGateStatus | undefined,
+    quality_gate_attempt_count: row.quality_gate_attempt_count ?? undefined,
   }).action_type === "MANUAL_CONFIRMATION_REQUIRED";
 }
 
