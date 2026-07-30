@@ -1184,7 +1184,14 @@ export async function getPriceSnapshotsPage(filters: PriceSnapshotPageFilters = 
     return { data: [], total: 0, page, perPage, error: null, isDemo: false };
   }
   const filterContext = await buildPriceSnapshotPageFilterContext(filters);
-  const fallback = filterPriceSnapshotPageRows(filterPriceSnapshotsByOwner(demoPriceSnapshots, owner, filterContext), filters, filterContext);
+  const fallbackFiltered = filterPriceSnapshotPageRows(
+    filterPriceSnapshotsByOwner(demoPriceSnapshots, owner, filterContext),
+    filters.priceIndexDrill ? priceIndexDrillPreDedupeFilters(filters) : filters,
+    filterContext,
+  );
+  const fallback = filters.priceIndexDrill
+    ? finalizePriceIndexDrillSnapshots(fallbackFiltered, filters)
+    : fallbackFiltered;
   const shouldPostFilter = shouldUseNormalizedPriceSnapshotPageFilters(filters);
   const selectWithMaterial = priceSnapshotSelectForPageFilters(priceSnapshotSelectWithMaterial, filters);
   const legacySelect = priceSnapshotSelectForPageFilters(legacyPriceSnapshotSelect, filters);
@@ -1229,7 +1236,8 @@ export async function getPriceSnapshotsPage(filters: PriceSnapshotPageFilters = 
 
     if (filters.capturedFrom) query = query.gte("captured_at", filters.capturedFrom);
     if (filters.capturedTo) query = query.lt("captured_at", filters.capturedTo);
-    if (!shouldPostFilter) {
+    // Drill must not push geo filters to SQL: index dedupes first, then buckets by winning snapshot region.
+    if (!shouldPostFilter && !filters.priceIndexDrill) {
       if (filters.visitCode) query = query.ilike("offline_store_visits.visit_code", `%${escapeIlikePattern(filters.visitCode)}%`);
       if (filters.province) query = query.ilike("offline_store_visits.province", `%${escapeIlikePattern(filters.province)}%`);
       if (filters.cityName) query = query.ilike("offline_store_visits.city_name", `%${escapeIlikePattern(filters.cityName)}%`);
@@ -1264,10 +1272,37 @@ export async function getPriceSnapshotsPage(filters: PriceSnapshotPageFilters = 
     }
   };
 
-  const shouldScan = shouldPostFilter || perPage > 200;
+  /** Collect every filter match, then dedupe to price-index sample set before paginating. */
+  const scanPriceIndexDrillPageWithSelect = async (select: string) => {
+    const matched: PriceSnapshot[] = [];
+    let scanFrom = 0;
+    const preDedupeFilters = priceIndexDrillPreDedupeFilters(filters);
+
+    while (true) {
+      const { data, error } = await buildQuery(select, "scan", scanFrom, scanFrom + priceSnapshotPageFilterScanPageSize - 1);
+      if (error) return { rows: [] as PriceSnapshot[], total: 0, error };
+
+      const pageRows = (data ?? []) as unknown as PriceSnapshot[];
+      matched.push(...filterPriceSnapshotPageRows(pageRows, preDedupeFilters, filterContext));
+      if (pageRows.length < priceSnapshotPageFilterScanPageSize) {
+        const samples = finalizePriceIndexDrillSnapshots(matched, filters);
+        return { rows: samples.slice(from, to + 1), total: samples.length, error: null };
+      }
+      scanFrom += priceSnapshotPageFilterScanPageSize;
+    }
+  };
+
+  // priceIndexDrill must scan fully so weekly latest-per-store samples match index sampleCount.
+  const shouldScan = shouldPostFilter || perPage > 200 || Boolean(filters.priceIndexDrill);
   if (shouldScan) {
-    let scanResult = await scanFilteredPageWithSelect(selectWithMaterial);
-    if (resultNeedsLegacyPriceSnapshotQuery(scanResult.error)) scanResult = await scanFilteredPageWithSelect(legacySelect);
+    let scanResult = filters.priceIndexDrill
+      ? await scanPriceIndexDrillPageWithSelect(selectWithMaterial)
+      : await scanFilteredPageWithSelect(selectWithMaterial);
+    if (resultNeedsLegacyPriceSnapshotQuery(scanResult.error)) {
+      scanResult = filters.priceIndexDrill
+        ? await scanPriceIndexDrillPageWithSelect(legacySelect)
+        : await scanFilteredPageWithSelect(legacySelect);
+    }
 
     if (scanResult.error) {
       return {
@@ -1692,6 +1727,67 @@ function snapshotMatchesPriceIndexDrillPeriod(snapshot: PriceSnapshot, filters: 
   return true;
 }
 
+/** Align real-price drill list with price-index sample set (latest per store×entity in the drill window). */
+function dedupePriceIndexDrillSnapshots(snapshots: PriceSnapshot[], filters: PriceSnapshotPageFilters) {
+  const weeks = priceIndexDrillWeeks(filters);
+  const own: PriceSnapshot[] = [];
+  const competitor: PriceSnapshot[] = [];
+  for (const snapshot of snapshots) {
+    if (snapshot.competitor_product_id) competitor.push(snapshot);
+    else own.push(snapshot);
+  }
+  return [
+    ...dedupeLatestPriceSnapshotsByWeek(own, weeks, priceIndexOwnStoreEntityKey),
+    ...dedupeLatestPriceSnapshotsByWeek(competitor, weeks, priceIndexCompetitorStoreEntityKey),
+  ];
+}
+
+/**
+ * Match index order: dedupe across the full week window first, then keep samples whose
+ * winning snapshot lands in the drilled province/city/district, and only positive prices.
+ */
+function finalizePriceIndexDrillSnapshots(snapshots: PriceSnapshot[], filters: PriceSnapshotPageFilters) {
+  const deduped = dedupePriceIndexDrillSnapshots(snapshots, filters)
+    .filter((snapshot) => isPositiveNumber(Number(snapshot.price_per_piece)));
+  return sortPriceSnapshotsForPage(filterPriceIndexDrillPostDedupeRows(deduped, filters));
+}
+
+/** Drop geo filters before dedupe so a later capture in another region can win (same as index). */
+function priceIndexDrillPreDedupeFilters(filters: PriceSnapshotPageFilters): PriceSnapshotPageFilters {
+  return {
+    ...filters,
+    province: undefined,
+    cityName: undefined,
+    district: undefined,
+  };
+}
+
+function filterPriceIndexDrillPostDedupeRows(snapshots: PriceSnapshot[], filters: PriceSnapshotPageFilters) {
+  return snapshots.filter((snapshot) => {
+    const region = snapshotRegionForFilters(snapshot);
+    if (filters.province && !matchesPriceSnapshotText(region.province, filters.province)) return false;
+    if (filters.cityName && !matchesPriceSnapshotText(region.cityName, filters.cityName)) return false;
+    if (filters.district && !matchesPriceSnapshotText(region.district, filters.district)) return false;
+    return true;
+  });
+}
+
+function priceIndexDrillWeeks(filters: PriceSnapshotPageFilters): WeeklyPriceCoefficientBoard["weeks"] {
+  const startDate = cleanText(filters.dashboardDateFrom) ?? "0000-01-01";
+  const endDate = cleanText(filters.dashboardDateTo) ?? "9999-12-31";
+  return [{ key: "drill", label: "drill", startDate, endDate }];
+}
+
+function sortPriceSnapshotsForPage(snapshots: PriceSnapshot[]) {
+  return [...snapshots].sort((left, right) => {
+    const createdCmp = compareIsoTimestamp(right.created_at, left.created_at);
+    if (createdCmp !== 0) return createdCmp;
+    const capturedCmp = compareIsoTimestamp(right.captured_at, left.captured_at);
+    if (capturedCmp !== 0) return capturedCmp;
+    return String(left.id).localeCompare(String(right.id));
+  });
+}
+
 function priceSnapshotSizeForFilters(snapshot: PriceSnapshot, context: PriceSnapshotPageFilterContext | null) {
   return cleanText(priceSnapshotMappedMaterialForFilters(snapshot, context)?.sub_type)
     ?? cleanText(priceSnapshotBusinessSize(snapshot))
@@ -2068,12 +2164,31 @@ export async function getPriceIndexPackageFilterOptions(filters: {
   };
 }
 
+export type WeeklyPriceCoefficientBoardBuild = {
+  board: WeeklyPriceCoefficientBoard;
+  /** Deduped own + competitor snapshots that feed board averages (export Sheet2 source). */
+  detailSnapshots: PriceSnapshot[];
+};
+
 export async function getWeeklyPriceCoefficientBoard(
   locale = "zh",
   filters: WeeklyPriceCoefficientFilters = {},
 ): Promise<QueryResult<WeeklyPriceCoefficientBoard>> {
+  const result = await getWeeklyPriceCoefficientBoardWithDetail(locale, filters);
+  return {
+    data: result.data.board,
+    error: result.error,
+    isDemo: result.isDemo,
+  };
+}
+
+/** Same board path as the homepage, plus the deduped sample set for export Sheet2. */
+export async function getWeeklyPriceCoefficientBoardWithDetail(
+  locale = "zh",
+  filters: WeeklyPriceCoefficientFilters = {},
+): Promise<QueryResult<WeeklyPriceCoefficientBoardBuild>> {
   if (filters.dataScope?.mode === "empty") {
-    const emptyBoard = buildWeeklyPriceCoefficientBoard({
+    const emptyBuild = buildWeeklyPriceCoefficientBoardWithDetail({
       locale,
       materialMaster: [],
       snapshots: [],
@@ -2081,7 +2196,7 @@ export async function getWeeklyPriceCoefficientBoard(
       competitorProducts: [],
       filters,
     });
-    return { data: emptyBoard, error: null, isDemo: false };
+    return { data: emptyBuild, error: null, isDemo: false };
   }
 
   const month = normalizeDashboardMonth(filters.month);
@@ -2096,7 +2211,7 @@ export async function getWeeklyPriceCoefficientBoard(
     filters.dataScope ? resolveScopedStoreIds(filters.dataScope) : Promise.resolve(null),
   ]);
   if (scopedStoreIds?.length === 0) {
-    const emptyBoard = buildWeeklyPriceCoefficientBoard({
+    const emptyBuild = buildWeeklyPriceCoefficientBoardWithDetail({
       locale,
       materialMaster: materialResult.data,
       snapshots: [],
@@ -2105,7 +2220,7 @@ export async function getWeeklyPriceCoefficientBoard(
       filters,
     });
     return {
-      data: emptyBoard,
+      data: emptyBuild,
       error: materialResult.error ?? mappingsResult.error ?? competitorProductsResult.error,
       isDemo: materialResult.isDemo || mappingsResult.isDemo || competitorProductsResult.isDemo,
     };
@@ -2143,7 +2258,7 @@ export async function getWeeklyPriceCoefficientBoard(
     if (organizationStoreIds && organizationStoreIds.length > 0) {
       storeIds = intersectStoreIdLists(organizationStoreIds, scopedStoreIds);
       if (storeIds?.length === 0) {
-        const emptyBoard = buildWeeklyPriceCoefficientBoard({
+        const emptyBuild = buildWeeklyPriceCoefficientBoardWithDetail({
           locale,
           materialMaster: materialResult.data,
           snapshots: [],
@@ -2152,7 +2267,7 @@ export async function getWeeklyPriceCoefficientBoard(
           filters,
         });
         return {
-          data: emptyBoard,
+          data: emptyBuild,
           error: materialResult.error ?? mappingsResult.error ?? competitorProductsResult.error,
           isDemo: materialResult.isDemo || mappingsResult.isDemo || competitorProductsResult.isDemo,
         };
@@ -2168,7 +2283,7 @@ export async function getWeeklyPriceCoefficientBoard(
     includeVisitRegion: dimensions.some((level) => level === "province" || level === "city" || level === "district"),
     storeIds,
   });
-  const data = buildWeeklyPriceCoefficientBoard({
+  const data = buildWeeklyPriceCoefficientBoardWithDetail({
     locale,
     materialMaster: materialResult.data,
     snapshots: scopedSnapshotsResult.data,
@@ -2524,6 +2639,17 @@ function buildWeeklyPriceCoefficientBoard(input: {
   competitorProducts?: Array<Pick<CompetitorProduct, "brand_id" | "product_series" | "package_type">>;
   filters: WeeklyPriceCoefficientFilters;
 }): WeeklyPriceCoefficientBoard {
+  return buildWeeklyPriceCoefficientBoardWithDetail(input).board;
+}
+
+function buildWeeklyPriceCoefficientBoardWithDetail(input: {
+  locale: string;
+  materialMaster: MaterialMaster[];
+  snapshots: PriceSnapshot[];
+  mappings: CompetitorSeriesMapping[];
+  competitorProducts?: Array<Pick<CompetitorProduct, "brand_id" | "product_series" | "package_type">>;
+  filters: WeeklyPriceCoefficientFilters;
+}): WeeklyPriceCoefficientBoardBuild {
   const month = normalizeDashboardMonth(input.filters.month);
   const dimensions = normalizePriceIndexDimensions(input.filters.dimensions);
   const weeks = monthWeeks(month).map((week) => ({
@@ -2610,11 +2736,22 @@ function buildWeeklyPriceCoefficientBoard(input: {
   const visibleBenchmarkSnapshots = selectedOrganization
     ? benchmarkSnapshots.filter((snapshot) => matchesDashboardText(snapshotOrganizationName(snapshot), selectedOrganization))
     : benchmarkSnapshots;
+  // One store × SKU (or competitor product) contributes at most one sample per week.
+  const dedupedOwnSnapshots = dedupeLatestPriceSnapshotsByWeek(
+    visibleOwnSnapshots,
+    weeks,
+    priceIndexOwnStoreEntityKey,
+  );
+  const dedupedBenchmarkSnapshots = dedupeLatestPriceSnapshotsByWeek(
+    visibleBenchmarkSnapshots,
+    weeks,
+    priceIndexCompetitorStoreEntityKey,
+  );
   const rows = buildWeeklyCoefficientTree({
     locale: input.locale,
     weeks,
-    ownSnapshots: visibleOwnSnapshots,
-    benchmarkSnapshots: visibleBenchmarkSnapshots,
+    ownSnapshots: dedupedOwnSnapshots,
+    benchmarkSnapshots: dedupedBenchmarkSnapshots,
     competitorSeries,
     selectedOwnSeries,
     selectedOwnPackage,
@@ -2626,7 +2763,7 @@ function buildWeeklyPriceCoefficientBoard(input: {
     dimensions,
   });
 
-  return {
+  const board: WeeklyPriceCoefficientBoard = {
     dimensions,
     month,
     title: 'BABY DIAPERS MID',
@@ -2644,6 +2781,11 @@ function buildWeeklyPriceCoefficientBoard(input: {
     competitorSeries,
     rows,
   };
+  const detailSnapshots = sortPriceIndexDetailSnapshots([
+    ...dedupedOwnSnapshots,
+    ...dedupedBenchmarkSnapshots,
+  ]);
+  return { board, detailSnapshots };
 }
 
 function buildWeeklyCoefficientTree(input: {
@@ -3026,6 +3168,70 @@ function bucketSnapshotsByWeek(
     }
   }
   return buckets;
+}
+
+/** Keep the latest snapshot per store×entity within each week bucket, then flatten. */
+function dedupeLatestPriceSnapshotsByWeek(
+  snapshots: PriceSnapshot[],
+  weeks: WeeklyPriceCoefficientBoard["weeks"],
+  entityKey: (snapshot: PriceSnapshot) => string,
+) {
+  const byWeek = bucketSnapshotsByWeek(snapshots, weeks);
+  const result: PriceSnapshot[] = [];
+  for (const week of weeks) {
+    const weekKey = week.key ?? week.label ?? week.startDate;
+    const bucket = byWeek.get(weekKey) ?? [];
+    const latestByEntity = new Map<string, PriceSnapshot>();
+    for (const snapshot of bucket) {
+      const key = entityKey(snapshot);
+      const current = latestByEntity.get(key);
+      if (!current || isNewerPriceSnapshot(snapshot, current)) {
+        latestByEntity.set(key, snapshot);
+      }
+    }
+    result.push(...latestByEntity.values());
+  }
+  return result;
+}
+
+function priceIndexOwnStoreEntityKey(snapshot: PriceSnapshot) {
+  const storeId = cleanText(snapshot.offline_store_id);
+  const sku = snapshotMaterialCode(snapshot);
+  if (!storeId || !sku) return `__singleton__:${snapshot.id}`;
+  return `${storeId}|${sku}`;
+}
+
+function priceIndexCompetitorStoreEntityKey(snapshot: PriceSnapshot) {
+  const storeId = cleanText(snapshot.offline_store_id);
+  const productId = cleanText(snapshot.competitor_product_id) ?? cleanText(snapshot.competitor_products?.id);
+  if (!storeId || !productId) return `__singleton__:${snapshot.id}`;
+  return `${storeId}|${productId}`;
+}
+
+function isNewerPriceSnapshot(candidate: PriceSnapshot, current: PriceSnapshot) {
+  const capturedCmp = compareIsoTimestamp(candidate.captured_at, current.captured_at);
+  if (capturedCmp !== 0) return capturedCmp > 0;
+  const createdCmp = compareIsoTimestamp(candidate.created_at, current.created_at);
+  if (createdCmp !== 0) return createdCmp > 0;
+  return String(candidate.id).localeCompare(String(current.id)) > 0;
+}
+
+function compareIsoTimestamp(left: string | null | undefined, right: string | null | undefined) {
+  const leftMs = Date.parse(String(left ?? ""));
+  const rightMs = Date.parse(String(right ?? ""));
+  const safeLeft = Number.isFinite(leftMs) ? leftMs : Number.NEGATIVE_INFINITY;
+  const safeRight = Number.isFinite(rightMs) ? rightMs : Number.NEGATIVE_INFINITY;
+  return safeLeft - safeRight;
+}
+
+function sortPriceIndexDetailSnapshots(snapshots: PriceSnapshot[]) {
+  return [...snapshots].sort((left, right) => {
+    const capturedCmp = compareIsoTimestamp(right.captured_at, left.captured_at);
+    if (capturedCmp !== 0) return capturedCmp;
+    const createdCmp = compareIsoTimestamp(right.created_at, left.created_at);
+    if (createdCmp !== 0) return createdCmp;
+    return String(right.id).localeCompare(String(left.id));
+  });
 }
 
 function buildWeeklyCoefficientCell(input: {

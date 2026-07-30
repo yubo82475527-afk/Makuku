@@ -1,5 +1,5 @@
 import XLSX from "xlsx-js-style";
-import { getWeeklyPriceCoefficientBoard, type WeeklyPriceCoefficientFilters } from "@/lib/data";
+import { getWeeklyPriceCoefficientBoardWithDetail, type WeeklyPriceCoefficientFilters } from "@/lib/data";
 import type { DataScope } from "@/lib/data-scope";
 import { normalizePriceIndexDimensions } from "@/lib/price-index-dimensions";
 import {
@@ -12,8 +12,8 @@ import {
   type PriceIndexExportLocale,
 } from "@/lib/price-index-matrix-export";
 import {
-  buildPriceSnapshotExport,
-  normalizePriceSnapshotExportFilters,
+  buildPriceSnapshotExportRowsFromSnapshots,
+  loadPriceSnapshotsByIdsForExport,
 } from "@/lib/price-snapshot-export";
 
 export type { PriceIndexExportLocale } from "@/lib/price-index-matrix-export";
@@ -93,15 +93,6 @@ export function buildPriceIndexExportDownloadName(input?: { createdAt?: string |
   return `price-index-${date}.xlsx`;
 }
 
-function monthDateBounds(month: string | undefined) {
-  const normalized = /^\d{4}-\d{2}$/.test(clean(month)) ? clean(month) : new Date().toISOString().slice(0, 7);
-  const [year, monthNumber] = normalized.split("-").map(Number);
-  const startDate = `${normalized}-01`;
-  const endExclusive = new Date(Date.UTC(year, monthNumber ?? 1, 1));
-  const endDate = new Date(endExclusive.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  return { startDate, endDate, month: normalized };
-}
-
 export async function buildPriceIndexExport(input: {
   filters?: Record<string, unknown>;
   locale?: string;
@@ -122,41 +113,30 @@ export async function buildPriceIndexExport(input: {
     dimensions: normalizePriceIndexDimensions(filters.dimensions),
     dataScope: filters.dataScope,
   };
-  const boardResult = await getWeeklyPriceCoefficientBoard(locale, boardFilters);
+  const boardResult = await getWeeklyPriceCoefficientBoardWithDetail(locale, boardFilters);
   if (boardResult.error) throw new Error(boardResult.error);
 
-  const matrix = buildPriceIndexMatrix(boardResult.data, locale);
+  const board = boardResult.data.board;
+  const matrix = buildPriceIndexMatrix(board, locale);
   await input.onProgress?.({ totalRows: matrix.dataRowCount, exportedRows: Math.floor(matrix.dataRowCount / 2) });
 
-  const { startDate, endDate } = monthDateBounds(filters.month ?? boardResult.data.month);
-  const detailFilters = {
-    ...normalizePriceSnapshotExportFilters({
-      owner: "all",
-      ownSeries: filters.ownSeries ?? boardResult.data.selectedOwnSeries ?? undefined,
-      ownPackage: filters.ownPackage,
-      competitorPackage: filters.competitorPackage,
-      organization: filters.organization,
-      createdFrom: startDate,
-      createdTo: endDate,
-      dashboardDateFrom: startDate,
-      dashboardDateTo: endDate,
-      priceIndexDrill: true,
-    }),
-    dataScope: filters.dataScope,
-  };
-  const detailExport = await buildPriceSnapshotExport({
-    filters: detailFilters,
-    locale,
-    onProgress: async (progress) => {
-      await input.onProgress?.({
-        totalRows: matrix.dataRowCount + progress.totalRows,
-        exportedRows: matrix.dataRowCount + progress.exportedRows,
-      });
-    },
+  // Sheet2 = same deduped sample IDs as the index averages, hydrated for full detail columns.
+  const detailIds = boardResult.data.detailSnapshots.map((snapshot) => String(snapshot.id));
+  await input.onProgress?.({
+    totalRows: matrix.dataRowCount + detailIds.length,
+    exportedRows: matrix.dataRowCount,
+  });
+  const detailSnapshots = boardResult.isDemo || detailIds.length === 0
+    ? boardResult.data.detailSnapshots
+    : await loadPriceSnapshotsByIdsForExport({ ids: detailIds });
+  const detailExport = buildPriceSnapshotExportRowsFromSnapshots(detailSnapshots, locale);
+  await input.onProgress?.({
+    totalRows: matrix.dataRowCount + detailExport.rowCount,
+    exportedRows: matrix.dataRowCount + detailExport.rowCount,
   });
 
   const workbook = XLSX.utils.book_new();
-  const indexSheet = buildPriceIndexMatrixSheet(boardResult.data, locale);
+  const indexSheet = buildPriceIndexMatrixSheet(board, locale);
   XLSX.utils.book_append_sheet(workbook, indexSheet, locale === "zh" ? "价格指数" : "Price Index");
 
   const detailSheet = XLSX.utils.aoa_to_sheet(

@@ -143,6 +143,13 @@ async function PricesContent({
   return (
     <>
       <DataNotice dict={dict} error={pricesResult.error ?? filterOptionsResult.error} />
+      {params.priceIndexDrill === "1" ? (
+        <div className="mb-4 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+          {locale === "zh"
+            ? "当前为价格指数样本：该周期内每店每商品仅保留最新一条，条数与指数采样量对齐。重新筛选后将恢复全部真实价格。"
+            : "Showing price-index samples: latest price per store per product in this period (aligned with index sample count). Re-filtering restores the full real-price list."}
+        </div>
+      ) : null}
       <Card className="mb-4">
         <form className="space-y-3">
           {/*

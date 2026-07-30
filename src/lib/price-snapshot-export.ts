@@ -237,8 +237,17 @@ export async function buildPriceSnapshotExport(input: {
     if (snapshots.length >= totalRows || result.data.length === 0) break;
   }
 
-  const rowCells = snapshots.map((snapshot) => buildPriceSnapshotCsvCells(snapshot, locale));
-  const header = csvColumns[locale];
+  return buildPriceSnapshotExportRowsFromSnapshots(snapshots, locale);
+}
+
+/** Build the standard price-detail sheet rows from an already-selected snapshot list. */
+export function buildPriceSnapshotExportRowsFromSnapshots(
+  snapshots: PriceSnapshot[],
+  locale?: string,
+) {
+  const normalizedLocale = normalizePriceSnapshotExportLocale(locale);
+  const rowCells = snapshots.map((snapshot) => buildPriceSnapshotCsvCells(snapshot, normalizedLocale));
+  const header = csvColumns[normalizedLocale];
   const csv = [
     header.map(csvEscape).join(","),
     ...rowCells.map((cells) => cells.map(csvEscape).join(",")),
@@ -250,6 +259,36 @@ export async function buildPriceSnapshotExport(input: {
     rowCount: rowCells.length,
     downloadName: buildPriceSnapshotExportDownloadName(),
   };
+}
+
+/**
+ * Hydrate board-selected snapshot IDs with full export columns.
+ * Preserves input id order so Sheet2 stays aligned with index samples.
+ */
+export async function loadPriceSnapshotsByIdsForExport(input: {
+  ids: string[];
+  supabase?: SupabaseServiceClient;
+}) {
+  const ids = Array.from(new Set(input.ids.map((id) => clean(id)).filter(Boolean)));
+  if (ids.length === 0) return [] as PriceSnapshot[];
+
+  const supabase = input.supabase ?? createSupabaseServiceClient();
+  const byId = new Map<string, PriceSnapshot>();
+  const chunkSize = 200;
+  for (let offset = 0; offset < ids.length; offset += chunkSize) {
+    const chunk = ids.slice(offset, offset + chunkSize);
+    const { data, error } = await supabase
+      .from("price_snapshots")
+      .select(PRICE_SNAPSHOT_EXPORT_SELECT)
+      .in("id", chunk);
+    if (error) throw new Error(error.message);
+    for (const row of data ?? []) {
+      const snapshot = row as PriceSnapshot;
+      byId.set(String(snapshot.id), snapshot);
+    }
+  }
+
+  return ids.map((id) => byId.get(id)).filter((snapshot): snapshot is PriceSnapshot => Boolean(snapshot));
 }
 
 function toExclusiveCapturedTo(value: string | null | undefined) {

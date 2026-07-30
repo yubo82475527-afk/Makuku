@@ -33,12 +33,15 @@ test("price index export builds xlsx with index and detail sheets", () => {
   const exportDomain = read("src/lib/price-index-export.ts");
   const jobDomain = read("src/lib/price-index-export-jobs.ts");
   const jobsRoute = read("src/app/api/price-index/export-jobs/route.ts");
+  const snapshotExport = read("src/lib/price-snapshot-export.ts");
 
   assert.match(exportDomain, /export function normalizePriceIndexExportFilters/);
   assert.match(exportDomain, /ownSeries \? joinPackageFilterList\(normalizePackageFilterList\(input\.ownPackage\)\)/);
   assert.match(exportDomain, /competitorPackage/);
-  assert.match(exportDomain, /getWeeklyPriceCoefficientBoard/);
-  assert.match(exportDomain, /buildPriceSnapshotExport/);
+  assert.match(exportDomain, /getWeeklyPriceCoefficientBoardWithDetail/);
+  assert.match(exportDomain, /loadPriceSnapshotsByIdsForExport/);
+  assert.match(exportDomain, /buildPriceSnapshotExportRowsFromSnapshots/);
+  assert.match(exportDomain, /detailSnapshots/);
   assert.match(exportDomain, /buildPriceIndexMatrix/);
   assert.match(exportDomain, /xlsx-js-style/);
   assert.match(exportDomain, /withPriceIndexExportDataScope/);
@@ -47,8 +50,11 @@ test("price index export builds xlsx with index and detail sheets", () => {
   assert.match(exportDomain, /价格指数|Price Index/);
   assert.match(exportDomain, /价格明细|Price Detail/);
   assert.match(exportDomain, /bookType: "xlsx"/);
+  assert.doesNotMatch(exportDomain, /buildPriceSnapshotExport\(/);
   assert.doesNotMatch(exportDomain, /flattenPriceIndexRows/);
   assert.doesNotMatch(exportDomain, /["']路径["']/);
+  assert.match(snapshotExport, /export function buildPriceSnapshotExportRowsFromSnapshots/);
+  assert.match(snapshotExport, /export async function loadPriceSnapshotsByIdsForExport/);
   assert.match(jobsRoute, /resolveDataScopeForSession/);
   assert.match(jobsRoute, /withPriceIndexExportDataScope/);
   const matrixDomain = read("src/lib/price-index-matrix-export.ts");

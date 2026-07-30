@@ -127,6 +127,29 @@ test("dashboard derived data calculates weekly coefficients from own and benchma
   assert.match(dataFile, /snapshotOrganizationName/);
 });
 
+test("price index keeps one latest store-entity sample per week before averaging", () => {
+  assert.match(dataFile, /function dedupeLatestPriceSnapshotsByWeek\(/);
+  assert.match(dataFile, /function priceIndexOwnStoreEntityKey\(/);
+  assert.match(dataFile, /function priceIndexCompetitorStoreEntityKey\(/);
+  assert.match(dataFile, /function isNewerPriceSnapshot\(/);
+  assert.match(dataFile, /dedupedOwnSnapshots/);
+  assert.match(dataFile, /dedupedBenchmarkSnapshots/);
+  assert.match(dataFile, /detailSnapshots/);
+  assert.match(dataFile, /getWeeklyPriceCoefficientBoardWithDetail/);
+  const boardFn = dataFile.slice(
+    dataFile.indexOf("function buildWeeklyPriceCoefficientBoardWithDetail"),
+    dataFile.indexOf("function buildWeeklyCoefficientTree"),
+  );
+  assert.match(boardFn, /dedupeLatestPriceSnapshotsByWeek\(\s*visibleOwnSnapshots/);
+  assert.match(boardFn, /dedupeLatestPriceSnapshotsByWeek\(\s*visibleBenchmarkSnapshots/);
+  assert.match(boardFn, /ownSnapshots: dedupedOwnSnapshots/);
+  assert.match(boardFn, /benchmarkSnapshots: dedupedBenchmarkSnapshots/);
+  assert.doesNotMatch(
+    dataFile.slice(dataFile.indexOf("function buildWeeklyCoefficientCell"), dataFile.indexOf("function bucketSnapshotsByBenchmarkSeries")),
+    /dedupeLatestPriceSnapshotsByWeek/,
+  );
+});
+
 test("dashboard organization selection matches normalized labels", () => {
   assert.match(dataFile, /function selectDashboardTextOption\(/);
   assert.match(dataFile, /function matchesDashboardText\(/);
@@ -371,6 +394,27 @@ test("price index drill-through keeps the dashboard calendar sample scope on fir
   assert.doesNotMatch(pricesPage, /<HiddenFilter name="ownSeries"/);
 });
 
+test("price index drill-through dedupes to latest store-entity samples before paginating", () => {
+  assert.match(dataFile, /function dedupePriceIndexDrillSnapshots\(/);
+  assert.match(dataFile, /function finalizePriceIndexDrillSnapshots\(/);
+  assert.match(dataFile, /function priceIndexDrillPreDedupeFilters\(/);
+  assert.match(dataFile, /function priceIndexDrillWeeks\(/);
+  assert.match(dataFile, /scanPriceIndexDrillPageWithSelect/);
+  assert.match(dataFile, /Boolean\(filters\.priceIndexDrill\)/);
+  assert.match(dataFile, /finalizePriceIndexDrillSnapshots\(matched, filters\)/);
+  assert.match(dataFile, /dedupeLatestPriceSnapshotsByWeek\(own, weeks, priceIndexOwnStoreEntityKey\)/);
+  assert.match(dataFile, /dedupeLatestPriceSnapshotsByWeek\(competitor, weeks, priceIndexCompetitorStoreEntityKey\)/);
+  assert.match(dataFile, /isPositiveNumber\(Number\(snapshot\.price_per_piece\)\)/);
+  assert.match(dataFile, /province: undefined,\s*cityName: undefined,\s*district: undefined/);
+  const pageFn = dataFile.slice(
+    dataFile.indexOf("export async function getPriceSnapshotsPage"),
+    dataFile.indexOf("function priceSnapshotSelectForPageFilters"),
+  );
+  assert.match(pageFn, /filters\.priceIndexDrill\s*\?\s*await scanPriceIndexDrillPageWithSelect/);
+  assert.match(pageFn, /priceIndexDrillPreDedupeFilters\(filters\)/);
+  assert.match(pricesPage, /当前为价格指数样本|Showing price-index samples/);
+});
+
 test("dashboard drill-through sends structured ownership brand and series filters", () => {
   assert.match(dataFile, /params\.set\("owner", input\.owner\)/);
   assert.match(dataFile, /params\.set\("series", input\.series\)/);
@@ -396,7 +440,14 @@ test("price snapshot export reuses the list scope, including dashboard drill-thr
   assert.match(priceExportRoute, /function toInclusiveCapturedFrom\(/);
   assert.match(priceExportRoute, /const date = new Date\(`\$\{text\}T00:00:00`\)/);
   assert.match(priceExportRoute, /perPage: priceSnapshotExportBatchSize/);
-  assert.doesNotMatch(priceExportRoute, /\.from\("price_snapshots"\)/);
+  const snapshotExportDomain = readFileSync("src/lib/price-snapshot-export.ts", "utf8");
+  const listExportFn = snapshotExportDomain.slice(
+    snapshotExportDomain.indexOf("export async function buildPriceSnapshotExport"),
+    snapshotExportDomain.indexOf("export function buildPriceSnapshotExportRowsFromSnapshots"),
+  );
+  assert.doesNotMatch(listExportFn, /\.from\("price_snapshots"\)/);
+  assert.match(snapshotExportDomain, /export async function loadPriceSnapshotsByIdsForExport/);
+  assert.match(snapshotExportDomain, /\.in\("id", chunk\)/);
   assert.match(dataFile, /const shouldScan = shouldPostFilter \|\| perPage > 200/);
   assert.match(pricesPage, /<InlineTextFilter name="organization"/);
   assert.match(priceSnapshotLinkedFilters, /name="series"/);
