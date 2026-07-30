@@ -22,7 +22,8 @@ test("match-only rerun route reuses stored vision rows without image AI", () => 
   assert.match(gateway, /replaceVisitOutput/);
   assert.match(gateway, /triggerReview/);
   assert.match(gateway, /candidateDisposition:\s*"delete"/);
-  assert.doesNotMatch(gateway, /preserveExistingCandidates:\s*true/);
+  assert.match(gateway, /preserveExistingCandidates:\s*true/);
+  assert.match(gateway, /INSERT_RETRY_ATTEMPTS/);
   assert.doesNotMatch(route, /runStoreVisitAnalysis|runStoreVisitAiAnalysisForVisit|openai|vision model/i);
 });
 

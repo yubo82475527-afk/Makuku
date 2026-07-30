@@ -15,6 +15,10 @@
     {
       "path": "/api/internal/price-quality/run",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/internal/store-visit-monitor/rerun-jobs/run",
+      "schedule": "* * * * *"
     }
   ]
 }

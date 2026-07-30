@@ -25,6 +25,7 @@ export type StoreVisitOutputReplacement = {
   insertedCount: number;
   deletedSnapshotCount: number;
   methodCounts: Record<string, number>;
+  insertedSkuCandidateIds?: string[];
 };
 
 export type StoreVisitMatchingRerunGateway = {
@@ -49,16 +50,26 @@ export type StoreVisitMatchingRerunResult = {
   deletedSnapshotCount: number;
   methodCounts: Record<string, number>;
   failures: Array<{ visitId: string; visitCode: string | null; error: string }>;
+  matchedVisitIds: string[];
+  skippedVisitIds: string[];
+  permanentlyFailedVisitIds: string[];
+  insertedSkuCandidateIds: string[];
+  /** Visit ids that failed during this invocation only (for attempt accounting). */
+  failedVisitIdsThisRun: string[];
 };
 
 export type StoreVisitMatchingRerunProgress = StoreVisitMatchingRerunResult;
 
 export type StoreVisitMatchingRerunOptions = {
   onVisitProgress?: (progress: StoreVisitMatchingRerunProgress) => void | Promise<void>;
-  startOffset?: number;
+  /** Visits already finished (matched / skipped / permanently failed) — excluded from this run. */
+  excludeVisitIds?: string[];
   maxVisits?: number;
+  concurrency?: number;
   initialProgress?: Partial<Omit<StoreVisitMatchingRerunResult, "selectedVisitCount">>;
 };
+
+export const DEFAULT_MATCH_ONLY_VISIT_CONCURRENCY = 12;
 
 function clean(value: unknown) {
   return String(value ?? "").trim();
@@ -91,6 +102,33 @@ function addMethodCounts(target: Record<string, number>, source: Record<string, 
   for (const [method, count] of Object.entries(source)) target[method] = (target[method] ?? 0) + count;
 }
 
+function uniqueIds(values: string[]) {
+  return Array.from(new Set(values.map((value) => clean(value)).filter(Boolean)));
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const limit = Math.max(1, Math.min(concurrency, items.length));
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  async function runWorker() {
+    while (true) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= items.length) return;
+      results[index] = await worker(items[index], index);
+    }
+  }
+
+  await Promise.all(Array.from({ length: limit }, () => runWorker()));
+  return results;
+}
+
 export async function rerunStoreVisitMatching(
   request: StoreVisitMatchingRerunRequest,
   gateway: StoreVisitMatchingRerunGateway,
@@ -110,39 +148,110 @@ export async function rerunStoreVisitMatching(
     deletedSnapshotCount: initialProgress.deletedSnapshotCount ?? 0,
     methodCounts: { ...(initialProgress.methodCounts ?? {}) },
     failures: [...(initialProgress.failures ?? [])],
+    matchedVisitIds: uniqueIds(initialProgress.matchedVisitIds ?? []),
+    skippedVisitIds: uniqueIds(initialProgress.skippedVisitIds ?? []),
+    permanentlyFailedVisitIds: uniqueIds(initialProgress.permanentlyFailedVisitIds ?? []),
+    insertedSkuCandidateIds: [],
+    failedVisitIdsThisRun: [],
   };
-  const processedVisitIds: string[] = [];
-  const startOffset = Math.max(0, Math.min(Math.floor(options.startOffset ?? 0), visits.length));
-  const maxVisits = options.maxVisits === undefined ? visits.length : Math.max(0, Math.floor(options.maxVisits));
-  const visitsToProcess = visits.slice(startOffset, startOffset + maxVisits);
 
-  for (const visit of visitsToProcess) {
+  const excludeVisitIds = new Set(uniqueIds([
+    ...(options.excludeVisitIds ?? []),
+    ...result.matchedVisitIds,
+    ...result.skippedVisitIds,
+    ...result.permanentlyFailedVisitIds,
+  ]));
+  const remainingVisits = visits.filter((visit) => !excludeVisitIds.has(visit.id));
+  const maxVisits = options.maxVisits === undefined ? remainingVisits.length : Math.max(0, Math.floor(options.maxVisits));
+  const visitsToProcess = remainingVisits.slice(0, maxVisits);
+  const concurrency = Math.max(
+    1,
+    Math.floor(options.concurrency ?? DEFAULT_MATCH_ONLY_VISIT_CONCURRENCY),
+  );
+
+  type VisitOutcome =
+    | { kind: "skipped"; visitId: string }
+    | {
+      kind: "matched";
+      visitId: string;
+      insertedCount: number;
+      deletedSnapshotCount: number;
+      methodCounts: Record<string, number>;
+      insertedSkuCandidateIds: string[];
+    }
+    | { kind: "failed"; visitId: string; visitCode: string | null; error: string };
+
+  const batchMatchedIds: string[] = [];
+  let progressLock: Promise<void> = Promise.resolve();
+  const withProgressLock = async (fn: () => Promise<void>) => {
+    const run = progressLock.then(fn, fn);
+    progressLock = run.then(() => undefined, () => undefined);
+    await run;
+  };
+
+  await mapWithConcurrency(visitsToProcess, concurrency, async (visit): Promise<VisitOutcome> => {
+    let outcome: VisitOutcome;
     try {
       const rows = await gateway.loadStoredVisionRows(visit);
       if (rows.length === 0) {
-        result.skippedVisitCount += 1;
-        await options.onVisitProgress?.({ ...result });
-        continue;
+        outcome = { kind: "skipped", visitId: visit.id };
+      } else {
+        const replacement = await gateway.replaceVisitOutput({ visit, rows, matchContext });
+        await gateway.refreshVisit(visit);
+        outcome = {
+          kind: "matched",
+          visitId: visit.id,
+          insertedCount: replacement.insertedCount,
+          deletedSnapshotCount: replacement.deletedSnapshotCount,
+          methodCounts: replacement.methodCounts,
+          insertedSkuCandidateIds: replacement.insertedSkuCandidateIds ?? [],
+        };
       }
-      const replacement = await gateway.replaceVisitOutput({ visit, rows, matchContext });
-      await gateway.refreshVisit(visit);
-      result.processedVisitCount += 1;
-      result.insertedCandidateCount += replacement.insertedCount;
-      result.deletedSnapshotCount += replacement.deletedSnapshotCount;
-      addMethodCounts(result.methodCounts, replacement.methodCounts);
-      processedVisitIds.push(visit.id);
-      await options.onVisitProgress?.({ ...result });
     } catch (error) {
-      result.failedVisitCount += 1;
-      result.failures.push({
+      outcome = {
+        kind: "failed",
         visitId: visit.id,
         visitCode: visit.visitCode,
         error: error instanceof Error ? error.message : String(error),
-      });
-      await options.onVisitProgress?.({ ...result });
+      };
     }
-  }
 
-  if (processedVisitIds.length > 0) await gateway.triggerReview(processedVisitIds);
+    await withProgressLock(async () => {
+      if (outcome.kind === "skipped") {
+        result.skippedVisitCount += 1;
+        result.skippedVisitIds = uniqueIds([...result.skippedVisitIds, outcome.visitId]);
+      } else if (outcome.kind === "matched") {
+        result.processedVisitCount += 1;
+        result.insertedCandidateCount += outcome.insertedCount;
+        result.deletedSnapshotCount += outcome.deletedSnapshotCount;
+        addMethodCounts(result.methodCounts, outcome.methodCounts);
+        result.matchedVisitIds = uniqueIds([...result.matchedVisitIds, outcome.visitId]);
+        result.insertedSkuCandidateIds.push(...outcome.insertedSkuCandidateIds);
+        batchMatchedIds.push(outcome.visitId);
+        result.failures = result.failures.filter((failure) => failure.visitId !== outcome.visitId);
+        result.failedVisitCount = result.failures.length;
+      } else {
+        result.failures = [
+          ...result.failures.filter((failure) => failure.visitId !== outcome.visitId),
+          {
+            visitId: outcome.visitId,
+            visitCode: outcome.visitCode,
+            error: outcome.error,
+          },
+        ];
+        result.failedVisitCount = result.failures.length;
+        result.failedVisitIdsThisRun = uniqueIds([...result.failedVisitIdsThisRun, outcome.visitId]);
+      }
+      await options.onVisitProgress?.({
+        ...result,
+        insertedSkuCandidateIds: [...result.insertedSkuCandidateIds],
+      });
+    });
+
+    return outcome;
+  });
+
+  if (batchMatchedIds.length > 0) await gateway.triggerReview(batchMatchedIds);
+  result.insertedSkuCandidateIds = uniqueIds(result.insertedSkuCandidateIds);
   return result;
 }

@@ -29,14 +29,9 @@ async function requireCronSecretOrAdmin(request: Request) {
   return auth.response;
 }
 
-export async function POST(request: Request) {
-  const authResponse = await requireCronSecretOrAdmin(request);
-  if (authResponse) return authResponse;
-
-  const { body } = await readRequestBody(request).catch(() => ({ body: {} }));
-  const jobId = clean((body as Record<string, unknown>).job_id);
+async function runAndRespond(request: Request, jobId: string | null) {
   try {
-    const result = await runStoreVisitRerunJob({ jobId: jobId || null, requestUrl: request.url });
+    const result = await runStoreVisitRerunJob({ jobId, requestUrl: request.url });
     return Response.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -47,4 +42,20 @@ export async function POST(request: Request) {
     }
     return Response.json({ error: message }, { status: 500 });
   }
+}
+
+export async function GET(request: Request) {
+  const authResponse = await requireCronSecretOrAdmin(request);
+  if (authResponse) return authResponse;
+  const jobId = clean(new URL(request.url).searchParams.get("job_id")) || null;
+  return runAndRespond(request, jobId);
+}
+
+export async function POST(request: Request) {
+  const authResponse = await requireCronSecretOrAdmin(request);
+  if (authResponse) return authResponse;
+
+  const { body } = await readRequestBody(request).catch(() => ({ body: {} }));
+  const jobId = clean((body as Record<string, unknown>).job_id) || null;
+  return runAndRespond(request, jobId);
 }

@@ -52,6 +52,7 @@ test("rerun replaces stored Visit output and triggers review without an AI depen
   assert.equal(result.processedVisitCount, 1);
   assert.equal(result.insertedCandidateCount, 1);
   assert.equal(result.deletedSnapshotCount, 1);
+  assert.deepEqual(result.matchedVisitIds, ["v1"]);
 });
 
 test("matching rerun reports progress after each visit without changing final result", async () => {
@@ -80,6 +81,7 @@ test("matching rerun reports progress after each visit without changing final re
     { date_from: "2026-07-01", date_to: "2026-07-15" },
     gateway,
     {
+      concurrency: 1,
       onVisitProgress(snapshot) {
         progress.push({
           processedVisitCount: snapshot.processedVisitCount,
@@ -94,7 +96,7 @@ test("matching rerun reports progress after each visit without changing final re
   assert.deepEqual(progress.map((item) => item.processedVisitCount), [1, 2]);
 });
 
-test("matching rerun can resume from processed visit offset and run only one batch", async () => {
+test("matching rerun excludes finished visits and runs a limited batch", async () => {
   const replaced: string[] = [];
   const reviewed: string[][] = [];
   const gateway: StoreVisitMatchingRerunGateway = {
@@ -126,13 +128,15 @@ test("matching rerun can resume from processed visit offset and run only one bat
     { date_from: "2026-07-01", date_to: "2026-07-15" },
     gateway,
     {
-      startOffset: 1,
+      concurrency: 1,
+      excludeVisitIds: ["v1"],
       maxVisits: 2,
       initialProgress: {
         processedVisitCount: 1,
         insertedCandidateCount: 3,
         deletedSnapshotCount: 1,
         methodCounts: { EXACT_CODE: 3 },
+        matchedVisitIds: ["v1"],
       },
     },
   );
@@ -144,4 +148,82 @@ test("matching rerun can resume from processed visit offset and run only one bat
   assert.equal(result.insertedCandidateCount, 7);
   assert.equal(result.deletedSnapshotCount, 3);
   assert.deepEqual(result.methodCounts, { EXACT_CODE: 3, FULL_SIGNATURE: 4 });
+  assert.deepEqual(result.matchedVisitIds, ["v1", "v2", "v3"]);
+});
+
+test("matching rerun processes visits concurrently and still reviews all matched visits", async () => {
+  let inFlight = 0;
+  let maxInFlight = 0;
+  const replaced: string[] = [];
+  const gateway: StoreVisitMatchingRerunGateway = {
+    async selectVisits() {
+      return [
+        { id: "v1", visitCode: "ST1" },
+        { id: "v2", visitCode: "ST2" },
+        { id: "v3", visitCode: "ST3" },
+        { id: "v4", visitCode: "ST4" },
+      ];
+    },
+    async loadMatchContext() {
+      return { id: "context" };
+    },
+    async loadStoredVisionRows(visit) {
+      return [{ sourceImageId: `${visit.id}-image`, sourceRowIndex: 0 }];
+    },
+    async replaceVisitOutput({ visit }) {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      inFlight -= 1;
+      replaced.push(visit.id);
+      return { insertedCount: 1, deletedSnapshotCount: 0, methodCounts: { FULL_SIGNATURE: 1 } };
+    },
+    async refreshVisit() {},
+    async triggerReview() {},
+  };
+
+  const result = await rerunStoreVisitMatching(
+    { date_from: "2026-07-01", date_to: "2026-07-15" },
+    gateway,
+    { concurrency: 3 },
+  );
+
+  assert.equal(result.processedVisitCount, 4);
+  assert.equal(replaced.length, 4);
+  assert.ok(maxInFlight >= 2);
+  assert.ok(maxInFlight <= 3);
+});
+
+test("matching rerun keeps failed visits out of matched ids so they can be retried", async () => {
+  const gateway: StoreVisitMatchingRerunGateway = {
+    async selectVisits() {
+      return [
+        { id: "v1", visitCode: "ST1" },
+        { id: "v2", visitCode: "ST2" },
+      ];
+    },
+    async loadMatchContext() {
+      return { id: "context" };
+    },
+    async loadStoredVisionRows(visit) {
+      return [{ sourceImageId: `${visit.id}-image`, sourceRowIndex: 0 }];
+    },
+    async replaceVisitOutput({ visit }) {
+      if (visit.id === "v1") throw new Error("boom");
+      return { insertedCount: 1, deletedSnapshotCount: 0, methodCounts: { FULL_SIGNATURE: 1 } };
+    },
+    async refreshVisit() {},
+    async triggerReview() {},
+  };
+
+  const result = await rerunStoreVisitMatching(
+    { date_from: "2026-07-01", date_to: "2026-07-15" },
+    gateway,
+    { concurrency: 1 },
+  );
+
+  assert.deepEqual(result.matchedVisitIds, ["v2"]);
+  assert.deepEqual(result.failedVisitIdsThisRun, ["v1"]);
+  assert.equal(result.failures.length, 1);
+  assert.equal(result.failures[0]?.visitId, "v1");
 });

@@ -25,6 +25,36 @@ export type StoreVisitMatchingRerunGatewayOptions = {
   requestUrl?: string | null;
 };
 
+const INSERT_RETRY_ATTEMPTS = 3;
+
+async function sleep(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function insertCandidateRowsWithRetry(input: {
+  visitId: string;
+  rows: Awaited<ReturnType<typeof buildAiPriceCandidateRows>>;
+  supabase: SupabaseServiceClient;
+}) {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= INSERT_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      // invalidate already deleted prior candidates; skip delete here to avoid empty windows on retry.
+      return await insertAiPriceCandidateRows({
+        visitId: input.visitId,
+        rows: input.rows,
+        preserveExistingCandidates: true,
+        supabase: input.supabase,
+      });
+    } catch (error) {
+      lastError = error;
+      if (attempt >= INSERT_RETRY_ATTEMPTS) break;
+      await sleep(100 * attempt);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
 export function createStoreVisitMatchingRerunGateway(
   supabase: SupabaseServiceClient,
   options: StoreVisitMatchingRerunGatewayOptions = {},
@@ -65,6 +95,7 @@ export function createStoreVisitMatchingRerunGateway(
       const images = rows as StoredPriceImage[];
       const sourceItems = sourceItemsFromStoredPriceImages(images);
       const imageIds = images.map((image) => image.id);
+      // Build first so invalidate/insert never run against empty replacement rows.
       const candidateRows = await buildAiPriceCandidateRows({
         visitId: visit.id,
         sourceItems,
@@ -80,19 +111,16 @@ export function createStoreVisitMatchingRerunGateway(
         reviewedBy: "matching_rerun",
         supabase,
       });
-      const inserted = await insertAiPriceCandidateRows({
+      const inserted = await insertCandidateRowsWithRetry({
         visitId: visit.id,
         rows: candidateRows,
-        affectedImageIds: imageIds,
         supabase,
       });
-      insertedCandidateIdsByVisit.set(
-        visit.id,
-        inserted
-          .filter((candidate) => candidate.candidate_type === "SKU")
-          .map((candidate) => candidate.id)
-          .filter(Boolean),
-      );
+      const skuIds = inserted
+        .filter((candidate) => candidate.candidate_type === "SKU")
+        .map((candidate) => candidate.id)
+        .filter(Boolean);
+      insertedCandidateIdsByVisit.set(visit.id, skuIds);
       const methodCounts: Record<string, number> = {};
       for (const candidate of inserted) {
         const method = candidate.ai_match_method ?? "UNMATCHED";
@@ -103,6 +131,7 @@ export function createStoreVisitMatchingRerunGateway(
         insertedCount: inserted.length,
         deletedSnapshotCount: invalidation.deletedSnapshotCount,
         methodCounts,
+        insertedSkuCandidateIds: skuIds,
       };
     },
     async refreshVisit(_visit) {
@@ -133,6 +162,7 @@ export function createStoreVisitMatchingRerunGateway(
           priority_quality_ms: performanceMs.priority_quality,
           total_ms: Math.round(performance.now() - startedAt),
         });
+        // Do not treat global quality wake as completion; job layer checks terminal status.
         if (priority.priority_claimed < candidateIds.length && options.requestUrl) {
           await triggerPriceQualityGateRunner({ requestUrl: options.requestUrl });
         }
@@ -157,6 +187,45 @@ export function createStoreVisitMatchingRerunGateway(
 
 export async function selectStoreVisitMatchingRerunVisits(supabase: SupabaseServiceClient, selector: StoreVisitMatchingRerunSelector) {
   return selectVisits(supabase, selector);
+}
+
+export async function listUnsettledSkuCandidateIdsForVisits(input: {
+  supabase: SupabaseServiceClient;
+  visitIds: string[];
+  limit?: number;
+}) {
+  const visitIds = Array.from(new Set(input.visitIds.map((value) => String(value ?? "").trim()).filter(Boolean)));
+  if (visitIds.length === 0) return [] as string[];
+  const limit = Math.max(1, Math.min(input.limit ?? 5000, 5000));
+  const { data, error } = await input.supabase
+    .from("ai_price_candidates")
+    .select("id")
+    .in("visit_id", visitIds)
+    .eq("candidate_type", "SKU")
+    .in("status", ["pending", "approved"])
+    .or("quality_gate_status.in.(PENDING,PROCESSING),and(quality_gate_status.eq.FAILED,quality_gate_attempt_count.lt.3)")
+    .limit(limit);
+  if (error) throw new Error(error.message);
+  return (data ?? [])
+    .map((row) => String((row as { id?: unknown }).id ?? "").trim())
+    .filter(Boolean);
+}
+
+export async function countUnsettledSkuQualityForVisits(input: {
+  supabase: SupabaseServiceClient;
+  visitIds: string[];
+}) {
+  const visitIds = Array.from(new Set(input.visitIds.map((value) => String(value ?? "").trim()).filter(Boolean)));
+  if (visitIds.length === 0) return 0;
+  const { count, error } = await input.supabase
+    .from("ai_price_candidates")
+    .select("id", { count: "exact", head: true })
+    .in("visit_id", visitIds)
+    .eq("candidate_type", "SKU")
+    .in("status", ["pending", "approved"])
+    .or("quality_gate_status.in.(PENDING,PROCESSING),and(quality_gate_status.eq.FAILED,quality_gate_attempt_count.lt.3)");
+  if (error) throw new Error(error.message);
+  return count ?? 0;
 }
 
 async function selectVisits(supabase: SupabaseServiceClient, selector: StoreVisitMatchingRerunSelector) {

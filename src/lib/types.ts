@@ -1162,6 +1162,14 @@ export type StoreVisitRerunChildAiJob = {
   jobId: string;
 };
 
+export type StoreVisitRerunJobProgress = {
+  matched_visit_ids: string[];
+  skipped_visit_ids: string[];
+  permanently_failed_visit_ids: string[];
+  failure_attempts: Record<string, number>;
+  quality_unsettled_count: number;
+};
+
 export type StoreVisitRerunJob = {
   id: string;
   mode: StoreVisitRerunJobMode;
@@ -1178,6 +1186,7 @@ export type StoreVisitRerunJob = {
   method_counts: Record<string, number>;
   child_ai_jobs: StoreVisitRerunChildAiJob[];
   failures: StoreVisitRerunJobFailure[];
+  progress: StoreVisitRerunJobProgress;
   error_message: string | null;
   started_at: string | null;
   completed_at: string | null;

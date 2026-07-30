@@ -140,14 +140,20 @@ export function StoreVisitRerunJobMenu({
                     <div className="font-semibold text-slate-950">{job.total_visits}</div>
                   </div>
                   <div className="rounded-md bg-slate-50 px-2 py-1.5">
-                    <div className="text-slate-500">{isZh ? "已处理" : "Processed"}</div>
-                    <div className="font-semibold text-slate-950">{job.processed_visits}</div>
+                    <div className="text-slate-500">{isZh ? "已匹配" : "Matched"}</div>
+                    <div className="font-semibold text-slate-950">{job.progress?.matched_visit_ids?.length ?? Math.max(0, job.processed_visits - job.skipped_visits - job.failed_visits)}</div>
                   </div>
                   <div className="rounded-md bg-slate-50 px-2 py-1.5">
                     <div className="text-slate-500">{isZh ? "失败" : "Failed"}</div>
                     <div className="font-semibold text-slate-950">{job.failed_visits}</div>
                   </div>
                 </div>
+
+                {job.mode === "match_only" && (job.progress?.quality_unsettled_count ?? 0) > 0 ? (
+                  <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
+                    {isZh ? "质量未结案" : "Quality unsettled"}: {job.progress.quality_unsettled_count}
+                  </div>
+                ) : null}
 
                 <div className="mt-2 text-xs text-slate-500">
                   {isZh ? "创建时间" : "Created"}: {createdAtText(job.created_at)}

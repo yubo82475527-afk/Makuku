@@ -27,6 +27,8 @@ test("store visit rerun job APIs create list load and run jobs", () => {
   assert.match(jobRoute, /refreshStoreVisitRerunJobProgress/);
   assert.match(runRoute, /CRON_SECRET/);
   assert.match(runRoute, /runStoreVisitRerunJob/);
+  assert.match(runRoute, /export async function GET/);
+  assert.match(runRoute, /export async function POST/);
 });
 
 test("rerun dialog supports async match-only and AI reanalysis modes", () => {
@@ -40,8 +42,9 @@ test("rerun dialog supports async match-only and AI reanalysis modes", () => {
 test("app shell exposes rerun job menu globally with progress and failures", () => {
   assert.match(menu, /StoreVisitRerunJobMenu/);
   assert.match(menu, /\/api\/store-visit-monitor\/rerun-jobs/);
-  assert.match(menu, /processed_visits/);
+  assert.match(menu, /matched_visit_ids/);
   assert.match(menu, /failed_visits/);
+  assert.match(menu, /quality_unsettled_count/);
   assert.match(menu, /failures/);
   assert.match(menu, /match_only/);
   assert.match(menu, /ai_reanalysis/);
