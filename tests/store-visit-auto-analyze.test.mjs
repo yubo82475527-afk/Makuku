@@ -34,6 +34,8 @@ const storeVisitMonitorExportButton = readMaybe("src/components/store-visit-moni
 const storeVisitMonitorExportMenu = readMaybe("src/components/store-visit-monitor-export-menu.tsx");
 const storeVisitMonitorExportJobs = readMaybe("src/lib/store-visit-monitor-export-jobs.ts");
 const storeVisitMonitorExportMigration = readMaybe("supabase/migrations/202607070001_store_visit_monitor_export_jobs.sql");
+const storeVisitMonitorSummaryMigration = readMaybe("supabase/migrations/202607300003_store_visit_monitor_summary_rpc.sql");
+const storeVisitMonitorNeedConfirmationMigration = readMaybe("supabase/migrations/202607300004_store_visit_monitor_summary_need_confirmation.sql");
 const dataFile = readFileSync("src/lib/data.ts", "utf8");
 const storeVisitAiJobs = readMaybe("src/lib/store-visit-ai-jobs.ts");
 const storeVisitAiJobRoute = readMaybe("src/app/api/store-visit/ai-jobs/[jobId]/route.ts");
@@ -630,10 +632,10 @@ test("store visit monitor filter bar uses the compact labeled input pattern from
 
 test("store visit monitor pagination row contains page size and page counter together", () => {
   assert.match(storeVisitMonitorPage, /<form method="get" className="flex items-center gap-2">[\s\S]*name="page_size"/);
-  assert.match(storeVisitMonitorPage, /Page \$\{monitor\.pagination\.page\} of \$\{monitor\.pagination\.totalPages\}/);
+  assert.match(storeVisitMonitorPage, /Page \$\{activePagination\.page\} of \$\{activePagination\.totalPages\}/);
   assert.match(
     storeVisitMonitorPage,
-    /<div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4 text-sm">[\s\S]*name="page_size"[\s\S]*Previous[\s\S]*Page \$\{monitor\.pagination\.page\} of \$\{monitor\.pagination\.totalPages\}[\s\S]*Next/s,
+    /<div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4 text-sm">[\s\S]*name="page_size"[\s\S]*Previous[\s\S]*Page \$\{activePagination\.page\} of \$\{activePagination\.totalPages\}[\s\S]*Next/s,
   );
 });
 
@@ -751,11 +753,14 @@ test("store visit monitor route has an immediate loading shell for slow RSC navi
   assert.match(storeVisitMonitorClient, /fetch\(monitorUrl/);
   assert.match(storeVisitMonitorClient, /include_quality/);
   assert.match(storeVisitMonitorClient, /promoter_summary/);
+  assert.match(storeVisitMonitorClient, /summary_only/);
+  assert.match(storeVisitMonitorClient, /parseListView/);
   assert.doesNotMatch(storeVisitMonitorClient, /useSearchParams/);
   assert.match(storeVisitMonitorRoute, /getStoreVisitMonitor/);
   assert.match(storeVisitMonitorRoute, /includeQuality: url\.searchParams\.get\("include_quality"\) === "1"/);
   assert.match(storeVisitMonitorRoute, /includePromoterSummary: url\.searchParams\.get\("promoter_summary"\) === "1"/);
   assert.match(storeVisitMonitorRoute, /includeStoreSummary: url\.searchParams\.get\("store_summary"\) === "1"/);
+  assert.match(storeVisitMonitorRoute, /summaryOnly: url\.searchParams\.get\("summary_only"\) === "1"/);
 });
 
 test("store visit monitor data path includes per-visit price parsing quality metrics", () => {
@@ -784,8 +789,39 @@ test("store visit monitor promoter summary aggregates filtered visits and approv
   assert.match(dataFile, /storeSummary/);
   assert.match(dataFile, /parsedProductCount/);
   assert.match(dataFile, /approvedProductCount/);
+  assert.match(dataFile, /needConfirmationCount/);
   assert.match(dataFile, /organizationName/);
   assert.match(dataFile, /passRate/);
+  assert.match(dataFile, /store_visit_monitor_promoter_summary/);
+  assert.match(dataFile, /store_visit_monitor_store_summary/);
+  assert.match(dataFile, /promoterSummaryPagination/);
+  assert.match(dataFile, /storeSummaryPagination/);
+  assert.match(dataFile, /summaryOnly/);
+  assert.match(dataFile, /candidateNeedsMonitorConfirmation/);
+  assert.match(dataFile, /MANUAL_CONFIRMATION_REQUIRED/);
+  assert.doesNotMatch(dataFile, /loadStoreVisitMonitorAggregateVisits/);
+  assert.match(storeVisitMonitorSummaryMigration, /create or replace function public\.store_visit_monitor_promoter_summary/);
+  assert.match(storeVisitMonitorSummaryMigration, /create or replace function public\.store_visit_monitor_store_summary/);
+  assert.match(storeVisitMonitorSummaryMigration, /candidate_type = 'SKU'/);
+  assert.match(storeVisitMonitorSummaryMigration, /not in \('deleted', 'replaced', 'reanalyzed'\)/);
+  assert.match(storeVisitMonitorSummaryMigration, /Unnamed promoter/);
+  assert.match(storeVisitMonitorNeedConfirmationMigration, /need_confirmation_count/);
+  assert.match(storeVisitMonitorNeedConfirmationMigration, /NEED_REVIEW/);
+  assert.match(storeVisitMonitorNeedConfirmationMigration, /REVIEW_REQUIRED/);
+  assert.match(storeVisitMonitorNeedConfirmationMigration, /INSUFFICIENT_BENCHMARK/);
+  assert.match(storeVisitMonitorClient, /Need Confirmation|需确认/);
+  assert.match(storeVisitMonitorClient, /needConfirmationCount/);
+  assert.match(storeVisitMonitorExportJobs, /Need Confirmation/);
+  assert.match(storeVisitMonitorExportJobs, /needConfirmationCount/);
+  assert.match(storeVisitMonitorClient, /summaryParams\.set\("summary_only", "1"\)/);
+  assert.match(storeVisitMonitorClient, /summaryParams\.set\("promoter_summary", "1"\)/);
+  assert.match(storeVisitMonitorClient, /summaryParams\.set\("store_summary", "1"\)/);
+  assert.match(storeVisitMonitorClient, /mergeVisitListPayload/);
+  assert.match(storeVisitMonitorClient, /Never wipe promoter\/store rows/);
+  assert.match(storeVisitMonitorClient, /promoterPagination\.total/);
+  assert.match(storeVisitMonitorClient, /storePagination\.total/);
+  assert.match(storeVisitMonitorClient, /activePagination/);
+  assert.match(storeVisitMonitorClient, /viewHref\("promoter"\)/);
 });
 
 test("store visit monitor falls back when production lacks offline_store_visits.updated_at", () => {
@@ -795,7 +831,7 @@ test("store visit monitor falls back when production lacks offline_store_visits.
 });
 
 test("store visit monitor data path paginates the analysis list before row quality lookup", () => {
-  assert.match(dataFile, /pagination:\s*\{/);
+  assert.match(dataFile, /pagination: StoreVisitMonitorPagination/);
   assert.match(dataFile, /normalizeStoreVisitMonitorPagination/);
   assert.match(dataFile, /storeVisitMonitorDefaultPageSize\s*=\s*50/);
   assert.match(dataFile, /\.range\(from, to\)/);

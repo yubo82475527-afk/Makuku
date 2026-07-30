@@ -155,10 +155,11 @@ function buildPromoterWorkbookBuffer(rows: StoreVisitMonitorPromoterRow[]) {
     "Visited stores": row.storeCount,
     "Parsed products": row.parsedProductCount,
     "Approved products": row.approvedProductCount,
+    "Need Confirmation": row.needConfirmationCount,
     "Pass rate": formatPassRate(row.passRate),
   }));
   const worksheet = XLSX.utils.json_to_sheet(sheetRows);
-  worksheet["!cols"] = [{ wch: 24 }, { wch: 14 }, { wch: 16 }, { wch: 18 }, { wch: 12 }];
+  worksheet["!cols"] = [{ wch: 24 }, { wch: 14 }, { wch: 16 }, { wch: 18 }, { wch: 18 }, { wch: 12 }];
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, "By promoter");
   return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
@@ -173,6 +174,7 @@ function buildStoreWorkbookBuffer(rows: StoreVisitMonitorStoreRow[]) {
     District: row.district || "-",
     "Parsed products": row.parsedProductCount,
     "Approved products": row.approvedProductCount,
+    "Need Confirmation": row.needConfirmationCount,
     "Pass rate": formatPassRate(row.passRate),
   }));
   const worksheet = XLSX.utils.json_to_sheet(sheetRows);
@@ -183,6 +185,7 @@ function buildStoreWorkbookBuffer(rows: StoreVisitMonitorStoreRow[]) {
     { wch: 22 },
     { wch: 22 },
     { wch: 16 },
+    { wch: 18 },
     { wch: 18 },
     { wch: 12 },
   ];

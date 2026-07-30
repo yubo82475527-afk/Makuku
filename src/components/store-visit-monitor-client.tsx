@@ -7,9 +7,9 @@ import { StoreVisitMonitorExportButton } from "@/components/store-visit-monitor-
 import { StoreVisitMatchingRerunDialog, type MatchingRerunTarget } from "@/components/store-visit-matching-rerun-dialog";
 import StoreVisitMonitorLoading from "@/app/[locale]/store-visit-monitor/loading";
 import { QueryForm, QuerySubmitButton } from "@/components/query-form";
-import { Badge, Button, Card, DataNotice, EmptyState, MetricCard } from "@/components/ui";
+import { Badge, Card, DataNotice, EmptyState, MetricCard } from "@/components/ui";
 import { formatJakartaDateTimeSeconds, formatPercent } from "@/lib/format";
-import type { StoreVisitMonitorResult } from "@/lib/data";
+import type { StoreVisitMonitorPagination, StoreVisitMonitorResult } from "@/lib/data";
 import type { Dictionary } from "@/lib/i18n/get-dictionary";
 
 type StoreVisitMonitorPayload = {
@@ -17,6 +17,8 @@ type StoreVisitMonitorPayload = {
   error: string | null;
   isDemo: boolean;
 };
+
+type ListView = "visit" | "promoter" | "store";
 
 const ANALYSIS_STATUS_OPTIONS = [
   "pending",
@@ -65,6 +67,24 @@ function analysisStatusLabel(status: string | null | undefined, isZh: boolean) {
 
 const monitorFilterKeys = ["visit_code", "store_name", "promoter", "analysis_status", "date_from", "date_to"] as const;
 
+function parseListView(value: string | null): ListView {
+  if (value === "promoter" || value === "store") return value;
+  return "visit";
+}
+
+function emptySummaryPagination(page: number, pageSize: number): StoreVisitMonitorPagination {
+  return {
+    page,
+    pageSize,
+    total: 0,
+    totalPages: 1,
+    from: 0,
+    to: 0,
+    hasPrevious: false,
+    hasNext: false,
+  };
+}
+
 export function StoreVisitMonitorClient({
   locale,
   dict,
@@ -77,12 +97,12 @@ export function StoreVisitMonitorClient({
   canRerunMatching: boolean;
 }) {
   const searchParams = useMemo(() => new URLSearchParams(queryString), [queryString]);
+  const listView = parseListView(searchParams.get("view"));
   const [payload, setPayload] = useState<StoreVisitMonitorPayload | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [rerunTarget, setRerunTarget] = useState<MatchingRerunTarget | null>(null);
   const [metricsExpanded, setMetricsExpanded] = useState(false);
-  const [listView, setListView] = useState<"visit" | "promoter" | "store">("visit");
   const [summaryLoading, setSummaryLoading] = useState(false);
   const isZh = locale === "zh";
 
@@ -93,6 +113,25 @@ export function StoreVisitMonitorClient({
     qualityParams.set("include_quality", "1");
     const qualityUrl = `/api/store-visit-monitor?${qualityParams.toString()}`;
 
+    function mergeVisitListPayload(
+      current: StoreVisitMonitorPayload | null,
+      next: StoreVisitMonitorPayload,
+    ): StoreVisitMonitorPayload {
+      // Visit/quality requests do not load summaries. Never wipe promoter/store rows
+      // that a faster summary_only response already wrote into state.
+      if (!current?.data) return next;
+      return {
+        ...next,
+        data: {
+          ...next.data,
+          promoterSummary: current.data.promoterSummary ?? [],
+          storeSummary: current.data.storeSummary ?? [],
+          promoterSummaryPagination: current.data.promoterSummaryPagination ?? next.data.promoterSummaryPagination,
+          storeSummaryPagination: current.data.storeSummaryPagination ?? next.data.storeSummaryPagination,
+        },
+      };
+    }
+
     async function loadMonitor() {
       try {
         const response = await fetch(monitorUrl, {
@@ -101,7 +140,8 @@ export function StoreVisitMonitorClient({
         });
         const nextPayload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(nextPayload.error ?? (isZh ? "巡店记录加载失败" : "Failed to load store visit monitor"));
-        setPayload(nextPayload as StoreVisitMonitorPayload);
+        if (controller.signal.aborted) return;
+        setPayload((current) => mergeVisitListPayload(current, nextPayload as StoreVisitMonitorPayload));
 
         const qualityResponse = await fetch(qualityUrl, {
           cache: "no-store",
@@ -109,18 +149,7 @@ export function StoreVisitMonitorClient({
         });
         const qualityPayload = await qualityResponse.json().catch(() => ({}));
         if (qualityResponse.ok && !controller.signal.aborted) {
-          setPayload((current) => {
-            const next = qualityPayload as StoreVisitMonitorPayload;
-            if (!current?.data) return next;
-            return {
-              ...next,
-              data: {
-                ...next.data,
-                promoterSummary: current.data.promoterSummary ?? next.data.promoterSummary ?? [],
-                storeSummary: current.data.storeSummary ?? next.data.storeSummary ?? [],
-              },
-            };
-          });
+          setPayload((current) => mergeVisitListPayload(current, qualityPayload as StoreVisitMonitorPayload));
         }
       } catch (error) {
         if (controller.signal.aborted) return;
@@ -137,12 +166,36 @@ export function StoreVisitMonitorClient({
 
     const controller = new AbortController();
     const summaryParams = new URLSearchParams(queryString);
-    summaryParams.set("promoter_summary", "1");
-    summaryParams.set("store_summary", "1");
+    summaryParams.set("summary_only", "1");
+    if (listView === "promoter") {
+      summaryParams.set("promoter_summary", "1");
+      summaryParams.delete("store_summary");
+    } else {
+      summaryParams.set("store_summary", "1");
+      summaryParams.delete("promoter_summary");
+    }
     const summaryUrl = `/api/store-visit-monitor?${summaryParams.toString()}`;
 
     async function loadSummaries() {
       setSummaryLoading(true);
+      // Clear previous summary so filter/page changes don't show stale rows
+      // while the new summary_only request is in flight.
+      setPayload((current) => {
+        if (!current?.data) return current;
+        const emptyPage = emptySummaryPagination(
+          Number(searchParams.get("page") || "1") || 1,
+          Number(searchParams.get("page_size") || String(current.data.pagination.pageSize) || "50") || 50,
+        );
+        return {
+          ...current,
+          data: {
+            ...current.data,
+            ...(listView === "promoter"
+              ? { promoterSummary: [], promoterSummaryPagination: emptyPage }
+              : { storeSummary: [], storeSummaryPagination: emptyPage }),
+          },
+        };
+      });
       try {
         const response = await fetch(summaryUrl, {
           cache: "no-store",
@@ -157,8 +210,18 @@ export function StoreVisitMonitorClient({
             ...current,
             data: {
               ...current.data,
-              promoterSummary: summaryData.data?.promoterSummary ?? [],
-              storeSummary: summaryData.data?.storeSummary ?? [],
+              promoterSummary: listView === "promoter"
+                ? (summaryData.data?.promoterSummary ?? [])
+                : (current.data.promoterSummary ?? []),
+              storeSummary: listView === "store"
+                ? (summaryData.data?.storeSummary ?? [])
+                : (current.data.storeSummary ?? []),
+              promoterSummaryPagination: listView === "promoter"
+                ? (summaryData.data?.promoterSummaryPagination ?? current.data.promoterSummaryPagination)
+                : current.data.promoterSummaryPagination,
+              storeSummaryPagination: listView === "store"
+                ? (summaryData.data?.storeSummaryPagination ?? current.data.storeSummaryPagination)
+                : current.data.storeSummaryPagination,
             },
           };
         });
@@ -171,7 +234,7 @@ export function StoreVisitMonitorClient({
 
     void loadSummaries();
     return () => controller.abort();
-  }, [listView, queryString, reloadKey]);
+  }, [listView, queryString, reloadKey, searchParams]);
 
   if (!payload) {
     return (
@@ -187,16 +250,28 @@ export function StoreVisitMonitorClient({
   const exportFilters = Object.fromEntries(
     monitorFilterKeys.map((key) => [key, getFilter(key)]).filter(([, value]) => value),
   ) as Record<string, string>;
-  const pageHref = (nextPage: number) => {
+  const promoterPagination = monitor.promoterSummaryPagination ?? emptySummaryPagination(monitor.pagination.page, monitor.pagination.pageSize);
+  const storePagination = monitor.storeSummaryPagination ?? emptySummaryPagination(monitor.pagination.page, monitor.pagination.pageSize);
+  const activePagination = listView === "promoter"
+    ? promoterPagination
+    : listView === "store"
+      ? storePagination
+      : monitor.pagination;
+
+  const buildMonitorHref = (options: { view?: ListView; page?: number; pageSize?: number }) => {
     const query = new URLSearchParams();
     for (const key of monitorFilterKeys) {
       const value = getFilter(key);
       if (value) query.set(key, value);
     }
-    query.set("page", String(nextPage));
-    query.set("page_size", String(monitor.pagination.pageSize));
+    const view = options.view ?? listView;
+    if (view !== "visit") query.set("view", view);
+    query.set("page", String(options.page ?? activePagination.page));
+    query.set("page_size", String(options.pageSize ?? activePagination.pageSize));
     return `/${locale}/store-visit-monitor?${query.toString()}`;
   };
+  const pageHref = (nextPage: number) => buildMonitorHref({ page: nextPage });
+  const viewHref = (view: ListView) => buildMonitorHref({ view, page: 1 });
 
   return (
     <>
@@ -254,6 +329,7 @@ export function StoreVisitMonitorClient({
 
       <Card className="mb-4">
         <QueryForm className="grid gap-3 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+          {listView !== "visit" ? <input type="hidden" name="view" value={listView} /> : null}
           <DateRangeFilter locale={locale} dateFrom={monitor.filters.dateFrom} dateTo={monitor.filters.dateTo} />
           <LabeledTextFilter label={isZh ? "巡店编号" : "Visit code"} name="visit_code" placeholder={isZh ? "输入巡店编号" : "Search visit"} defaultValue={getFilter("visit_code")} />
           <LabeledTextFilter label={isZh ? "门店名称" : "Store name"} name="store_name" placeholder={isZh ? "搜索门店" : "Search store"} defaultValue={getFilter("store_name")} />
@@ -280,27 +356,24 @@ export function StoreVisitMonitorClient({
       <Card>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div className="inline-flex rounded-lg bg-slate-100 p-1" aria-label={isZh ? "列表视图" : "List view"}>
-            <button
-              type="button"
-              onClick={() => setListView("visit")}
+            <Link
+              href={viewHref("visit")}
               className={`rounded-md px-4 py-2 text-sm font-medium ${listView === "visit" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
             >
               {isZh ? "按拜访" : "By visit"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setListView("promoter")}
+            </Link>
+            <Link
+              href={viewHref("promoter")}
               className={`rounded-md px-4 py-2 text-sm font-medium ${listView === "promoter" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
             >
               {isZh ? "按导购" : "By promoter"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setListView("store")}
+            </Link>
+            <Link
+              href={viewHref("store")}
               className={`rounded-md px-4 py-2 text-sm font-medium ${listView === "store" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
             >
               {isZh ? "按门店" : "By store"}
-            </button>
+            </Link>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {listView === "visit" && canRerunMatching && !payload.isDemo ? (
@@ -318,12 +391,12 @@ export function StoreVisitMonitorClient({
         <div className="mb-3 text-sm text-slate-500">
           {listView === "promoter"
             ? (isZh
-              ? `${monitor.filters.dateFrom} 至 ${monitor.filters.dateTo} · 筛选条件内 · ${(monitor.promoterSummary ?? []).length} 位导购`
-              : `${monitor.filters.dateFrom} to ${monitor.filters.dateTo} · Current filters · ${(monitor.promoterSummary ?? []).length} promoters`)
+              ? `${monitor.filters.dateFrom} 至 ${monitor.filters.dateTo} · 筛选条件内 · ${promoterPagination.total} 位导购`
+              : `${monitor.filters.dateFrom} to ${monitor.filters.dateTo} · Current filters · ${promoterPagination.total} promoters`)
             : listView === "store"
               ? (isZh
-                ? `${monitor.filters.dateFrom} 至 ${monitor.filters.dateTo} · 筛选条件内 · ${(monitor.storeSummary ?? []).length} 家门店`
-                : `${monitor.filters.dateFrom} to ${monitor.filters.dateTo} · Current filters · ${(monitor.storeSummary ?? []).length} stores`)
+                ? `${monitor.filters.dateFrom} 至 ${monitor.filters.dateTo} · 筛选条件内 · ${storePagination.total} 家门店`
+                : `${monitor.filters.dateFrom} to ${monitor.filters.dateTo} · Current filters · ${storePagination.total} stores`)
             : monitor.pagination.total === 0
               ? (isZh ? "0 条巡店" : "0 visits")
               : (isZh
@@ -350,6 +423,7 @@ export function StoreVisitMonitorClient({
                       <th className="py-2 pr-3">{isZh ? "拜访门店数" : "Stores visited"}</th>
                       <th className="py-2 pr-3">{isZh ? "解析商品数" : "Parsed products"}</th>
                       <th className="py-2 pr-3">{isZh ? "通过商品数" : "Approved products"}</th>
+                      <th className="py-2 pr-3">{isZh ? "需确认" : "Need Confirmation"}</th>
                       <th className="py-2 pr-3">{isZh ? "通过率" : "Pass rate"}</th>
                     </tr>
                   </thead>
@@ -360,6 +434,7 @@ export function StoreVisitMonitorClient({
                         <td className="py-2.5 pr-3">{row.storeCount}</td>
                         <td className="py-2.5 pr-3">{row.parsedProductCount}</td>
                         <td className="py-2.5 pr-3">{row.approvedProductCount}</td>
+                        <td className="py-2.5 pr-3">{row.needConfirmationCount}</td>
                         <td className="py-2.5 pr-3">{formatPercent(row.passRate !== null ? row.passRate * 100 : null)}</td>
                       </tr>
                     ))}
@@ -390,6 +465,7 @@ export function StoreVisitMonitorClient({
                       <th className="w-36 max-w-36 py-2 pr-3">{isZh ? "区" : "District"}</th>
                       <th className="py-2 pr-3">{isZh ? "解析商品数" : "Parsed products"}</th>
                       <th className="py-2 pr-3">{isZh ? "通过商品数" : "Approved products"}</th>
+                      <th className="py-2 pr-3">{isZh ? "需确认" : "Need Confirmation"}</th>
                       <th className="py-2 pr-3">{isZh ? "通过率" : "Pass rate"}</th>
                     </tr>
                   </thead>
@@ -411,6 +487,7 @@ export function StoreVisitMonitorClient({
                         </td>
                         <td className="py-2.5 pr-3 whitespace-nowrap">{row.parsedProductCount}</td>
                         <td className="py-2.5 pr-3 whitespace-nowrap">{row.approvedProductCount}</td>
+                        <td className="py-2.5 pr-3 whitespace-nowrap">{row.needConfirmationCount}</td>
                         <td className="py-2.5 pr-3 whitespace-nowrap">{formatPercent(row.passRate !== null ? row.passRate * 100 : null)}</td>
                       </tr>
                     ))}
@@ -493,10 +570,12 @@ export function StoreVisitMonitorClient({
             </table>
           </div>
         ) : null}
+          </>
+        )}
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4 text-sm">
           <div className="text-slate-600">
-            {monitor.pagination.from}-{monitor.pagination.to} / {monitor.pagination.total}
+            {activePagination.from}-{activePagination.to} / {activePagination.total}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <form method="get" className="flex items-center gap-2">
@@ -504,9 +583,10 @@ export function StoreVisitMonitorClient({
                 const value = getFilter(key);
                 return value ? <input key={key} type="hidden" name={key} value={value} /> : null;
               })}
+              {listView !== "visit" ? <input type="hidden" name="view" value={listView} /> : null}
               <select
                 name="page_size"
-                defaultValue={String(monitor.pagination.pageSize)}
+                defaultValue={String(activePagination.pageSize)}
                 className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none focus:border-slate-500"
               >
                 <option value="25">{isZh ? "25 / 页" : "25 / page"}</option>
@@ -514,13 +594,16 @@ export function StoreVisitMonitorClient({
                 <option value="100">{isZh ? "100 / 页" : "100 / page"}</option>
               </select>
               <input type="hidden" name="page" value="1" />
-              <Button type="submit" className="border border-slate-300 bg-white text-slate-700 hover:bg-slate-50">
+              <button
+                type="submit"
+                className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
                 {isZh ? "应用" : "Apply"}
-              </Button>
+              </button>
             </form>
-            {monitor.pagination.hasPrevious ? (
+            {activePagination.hasPrevious ? (
               <Link
-                href={pageHref(monitor.pagination.page - 1)}
+                href={pageHref(activePagination.page - 1)}
                 className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-3 font-medium text-slate-700 hover:bg-slate-50"
               >
                 {isZh ? "上一页" : "Previous"}
@@ -531,11 +614,11 @@ export function StoreVisitMonitorClient({
               </span>
             )}
             <span className="inline-flex h-9 items-center px-2 text-slate-600">
-              {isZh ? `第 ${monitor.pagination.page} / ${monitor.pagination.totalPages} 页` : `Page ${monitor.pagination.page} of ${monitor.pagination.totalPages}`}
+              {isZh ? `第 ${activePagination.page} / ${activePagination.totalPages} 页` : `Page ${activePagination.page} of ${activePagination.totalPages}`}
             </span>
-            {monitor.pagination.hasNext ? (
+            {activePagination.hasNext ? (
               <Link
-                href={pageHref(monitor.pagination.page + 1)}
+                href={pageHref(activePagination.page + 1)}
                 className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-3 font-medium text-slate-700 hover:bg-slate-50"
               >
                 {isZh ? "下一页" : "Next"}
@@ -547,8 +630,6 @@ export function StoreVisitMonitorClient({
             )}
           </div>
         </div>
-          </>
-        )}
       </Card>
       {rerunTarget ? (
         <StoreVisitMatchingRerunDialog
