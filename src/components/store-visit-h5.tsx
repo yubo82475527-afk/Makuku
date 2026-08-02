@@ -69,6 +69,8 @@ type HistoryStoreOption = {
   channel_type: string;
   channel_id?: string | null;
   address?: string | null;
+  external_md_id?: string | null;
+  external_md_name?: string | null;
   last_visit_at: string;
   visit_count: number;
   channels?: { id: string; code: string; name: string; type: string } | null;
@@ -340,22 +342,9 @@ function uiCopy(locale: Locale) {
       };
 }
 
-function channelLabel(value: string | null | undefined, store?: OfflineStoreOption | null) {
-  if (store?.channels?.name) return store.channels.name;
-  switch (value) {
-    case "modern_trade":
-      return "Modern Trade";
-    case "baby_store":
-      return "Baby Store";
-    case "pharmacy":
-      return "Pharmacy";
-    case "general_trade":
-      return "General Trade";
-    case "other":
-      return "Other";
-    default:
-      return value || "-";
-  }
+function mdNameLabel(store: Pick<OfflineStoreOption, "external_md_name"> | null | undefined) {
+  const name = store?.external_md_name?.trim();
+  return name || "-";
 }
 
 function formatMb(bytes: number) {
@@ -1163,7 +1152,7 @@ export function StoreVisitH5({ locale }: { locale: Locale }) {
             </div>
             <div className="mt-4 grid gap-2 text-sm">
               <ReadOnlyRow label={labels.city} value={formatStoreRegionText(selectedStore) || "-"} />
-              <ReadOnlyRow label={labels.channelType} value={channelLabel(selectedStore.channel_type, selectedStore)} />
+              <ReadOnlyRow label={labels.channelType} value={mdNameLabel(selectedStore)} />
               <ReadOnlyRow label={labels.address} value={selectedStore.address || "-"} />
             </div>
             {storeInfoIncomplete ? <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{labels.storeInfoIncomplete}</div> : null}
@@ -1336,6 +1325,8 @@ function StoreSearchStep({
       channel_type: store.channel_type,
       channel_id: store.channel_id ?? null,
       address: store.address ?? null,
+      external_md_id: store.external_md_id ?? null,
+      external_md_name: store.external_md_name ?? null,
       channels: store.channels ?? null,
     };
   }

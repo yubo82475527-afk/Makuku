@@ -12,6 +12,8 @@ type HistoryStoreItem = {
   channel_type: string;
   channel_id?: string | null;
   address?: string | null;
+  external_md_id?: string | null;
+  external_md_name?: string | null;
   last_visit_at: string;
   visit_count: number;
   channels?: { id: string; code: string; name: string; type: string } | null;
@@ -34,10 +36,11 @@ type StoreRow = Record<string, unknown>;
 
 const maxRecentVisitRows = 800;
 
-const fullStoreSelect = "id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,created_at,channels(id,code,name,type)";
-const noChannelStoreSelect = "id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,created_at";
-const noStatusStoreSelect = "id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,created_at,channels(id,code,name,type)";
-const legacyRegionStoreSelect = "id,name,city,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,created_at";
+const fullStoreSelect = "id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,created_at,external_md_id,external_md_name,channels(id,code,name,type)";
+const noChannelStoreSelect = "id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,created_at,external_md_id,external_md_name";
+const noStatusStoreSelect = "id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,created_at,external_md_id,external_md_name,channels(id,code,name,type)";
+const legacyRegionStoreSelect = "id,name,city,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,created_at,external_md_id,external_md_name";
+const legacyWithoutExternalMdSelect = "id,name,city,province,city_name,district,channel_type,channel_id,address,latitude,longitude,location_accuracy_m,location_captured_at,status,disabled_at,deleted_at,created_by,created_by_user_id,created_by_name,created_at,channels(id,code,name,type)";
 
 function cleanText(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : "";
@@ -84,6 +87,11 @@ function isStoreRegionColumnError(error: QueryError) {
 function isChannelRelationError(error: QueryError) {
   const message = error?.message ?? "";
   return message.includes("channels") || message.includes("schema cache");
+}
+
+function isExternalMdColumnError(error: QueryError) {
+  const message = error?.message ?? "";
+  return message.includes("external_md_id") || message.includes("external_md_name");
 }
 
 function normalizeVisitTime(visit: { created_at?: string | null; visit_date?: string | null }) {
@@ -144,6 +152,8 @@ function normalizeHistoryStore(store: StoreRow, aggregates: Map<string, VisitAgg
     channel_type: channelType,
     channel_id: cleanText(store.channel_id) || null,
     address: cleanText(store.address) || null,
+    external_md_id: cleanText(store.external_md_id) || null,
+    external_md_name: cleanText(store.external_md_name) || null,
     last_visit_at: aggregate?.last_visit_at ?? "1970-01-01T00:00:00.000Z",
     visit_count: aggregate?.visit_count ?? 0,
     channels: normalizeChannel(store.channels),
@@ -181,6 +191,8 @@ function buildDemoHistoryStores(userId: string, q: string, limit: number) {
       channel_type: store.channel_type,
       channel_id: store.channel_id ?? null,
       address: store.address ?? null,
+      external_md_id: store.external_md_id ?? null,
+      external_md_name: store.external_md_name ?? null,
       last_visit_at: visitMap.get(store.id)?.last_visit_at ?? "1970-01-01T00:00:00.000Z",
       visit_count: visitMap.get(store.id)?.visit_count ?? 0,
       channels: store.channels ?? null,
@@ -246,6 +258,15 @@ async function readStoreDetailsByIds(storeIds: string[]): Promise<{ rows: StoreR
     .in("id", storeIds);
   data = full.data;
   error = full.error;
+
+  if (isExternalMdColumnError(error) && !isChannelRelationError(error) && !isStoreStatusColumnError(error) && !isStoreRegionColumnError(error)) {
+    const withoutExternalMd = await supabase
+      .from("offline_stores")
+      .select(legacyWithoutExternalMdSelect)
+      .in("id", storeIds);
+    data = withoutExternalMd.data;
+    error = withoutExternalMd.error;
+  }
 
   if (isChannelRelationError(error)) {
     const noChannels = await supabase

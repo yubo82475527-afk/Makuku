@@ -1389,7 +1389,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
           </Link>
           <div className="min-w-0">
             <h1 className="truncate text-xl font-bold">{visit?.store_name ?? copy.storeVisit}</h1>
-            <p className="text-xs text-slate-500">{visit?.visit_code ?? "-"} / {visit?.region ?? "-"} / {visit?.channel ?? "-"} / {visit?.visit_date ?? "-"}</p>
+            <p className="text-xs text-slate-500">{visit?.region ?? "-"} / {visit?.visit_date ?? "-"}</p>
             <p className="mt-1 text-[11px] text-slate-400">{text.batchCode}: {visit?.visit_code ?? "-"}</p>
           </div>
         </header>
