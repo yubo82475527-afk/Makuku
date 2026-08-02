@@ -191,20 +191,41 @@ function candidateNeedsManualConfirmation(candidate: AiPriceCandidate | null) {
   return candidate?.price_handling?.action_type === "MANUAL_CONFIRMATION_REQUIRED";
 }
 
-function visitPriceHandlingStatusLabel(status: VisitPriceHandlingSummary["status"]) {
+function visitPriceHandlingStatusLabel(
+  status: VisitPriceHandlingSummary["status"],
+  locale: Locale,
+  inFlight: boolean,
+) {
+  if (inFlight) return locale === "zh" ? "分析中" : "Analyzing";
+  if (locale === "zh") {
+    if (status === "ACTION_REQUIRED") return "待处理";
+    if (status === "COMPLETED") return "已完成";
+    return "分析中";
+  }
   if (status === "ACTION_REQUIRED") return "Action required";
   if (status === "COMPLETED") return "Completed";
-  return "Processing";
+  return "Analyzing";
 }
 
-function visitPriceHandlingActionSummary(summary: VisitPriceHandlingSummary | undefined) {
-  const counts = summary?.action_counts;
-  if (!counts) return [];
-  return [
-    counts.retake_required > 0 ? `${counts.retake_required} photo retake${counts.retake_required === 1 ? "" : "s"}` : null,
-    counts.manual_confirmation_required > 0 ? `${counts.manual_confirmation_required} price confirmation${counts.manual_confirmation_required === 1 ? "" : "s"}` : null,
-    counts.retry_required > 0 ? (counts.retry_required === 1 ? "1 retry" : `${counts.retry_required} retries`) : null,
-  ].filter((value): value is string => Boolean(value));
+function visitPriceHandlingActionSummary(
+  summary: VisitPriceHandlingSummary | undefined,
+  locale: Locale,
+  failedPhotoCount: number,
+) {
+  const approved = summary?.candidate_counts.approved ?? 0;
+  const pendingConfirm = summary?.action_counts.manual_confirmation_required ?? 0;
+  const parts: string[] = [];
+  const showSuccess = approved > 0 || summary?.status === "COMPLETED";
+  if (locale === "zh") {
+    if (showSuccess) parts.push(`成功 ${approved}`);
+    if (pendingConfirm > 0) parts.push(`待确认 ${pendingConfirm}`);
+    if (failedPhotoCount > 0) parts.push(`需重拍 ${failedPhotoCount}`);
+  } else {
+    if (showSuccess) parts.push(`Success ${approved}`);
+    if (pendingConfirm > 0) parts.push(`Pending ${pendingConfirm}`);
+    if (failedPhotoCount > 0) parts.push(`Failed ${failedPhotoCount}`);
+  }
+  return parts;
 }
 
 function candidateRequiresProductCorrection(candidate: AiPriceCandidate) {
@@ -1071,17 +1092,26 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
 
   const status = visit?.analysis_status ?? "pending";
   const priceHandlingStatus = visit?.price_handling?.status ?? "PROCESSING";
-  const priceHandlingActions = visitPriceHandlingActionSummary(visit?.price_handling);
   const activeAiJob = isActiveAiJob(visit?.active_ai_job) ? visit?.active_ai_job ?? null : null;
   const activeAiJobImageIds = useMemo(() => (
     new Set(activeAiJob?.target_image_ids ?? [])
   ), [activeAiJob?.target_image_ids]);
-  const fullVisitAiActive = activeAiJob?.job_type === "full_visit_reanalysis";
   const hasPendingOrAnalyzingImage = (visit?.offline_visit_images ?? []).some((image) => image.analysis_status === "pending" || image.analysis_status === "analyzing");
   const hasPendingOrAnalyzingPriceImage = (visit?.offline_visit_images ?? []).some((image) => isPriceImageType(image.image_type) && (image.analysis_status === "pending" || image.analysis_status === "analyzing"));
-  const visitAnalysisInProgress = analyzing || fullVisitReanalyzing || fullVisitAiActive || hasPendingOrAnalyzingPriceImage || status === "analyzing";
+  const canRunWholeVisitAnalysis = status === "pending" && visit?.visit_status === "uploaded" && !hasPendingOrAnalyzingImage && !activeAiJob;
+  const visitInFlight = analyzing
+    || fullVisitReanalyzing
+    || Boolean(activeAiJob)
+    || hasPendingOrAnalyzingPriceImage
+    || status === "analyzing"
+    || (priceHandlingStatus === "PROCESSING" && !canRunWholeVisitAnalysis)
+    || analysisPhase !== "idle";
   const businessRetakeImages = (visit?.offline_visit_images ?? []).filter(isRetakeRequiredPriceImage);
   const systemFailedImages = (visit?.offline_visit_images ?? []).filter((image) => image.analysis_status === "failed" && !isRetakeRequiredPriceImage(image) && (image.analysis_error || image.error_message));
+  const failedPhotoCount = businessRetakeImages.length + systemFailedImages.length;
+  const priceHandlingActions = visitInFlight
+    ? []
+    : visitPriceHandlingActionSummary(visit?.price_handling, locale, failedPhotoCount);
   const groupedSystemFailedImages = useMemo(() => {
     const groups = new Map<string, { message: string; images: OfflineVisitImage[] }>();
     for (const image of systemFailedImages) {
@@ -1099,10 +1129,9 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
     }
     return Array.from(groups.values()) as GroupedSystemFailedImage[];
   }, [systemFailedImages]);
-  const canRunWholeVisitAnalysis = status === "pending" && visit?.visit_status === "uploaded" && !hasPendingOrAnalyzingImage && !activeAiJob;
   const canRunFullVisitAi = appUserRole === "admin";
-  const canShowFullVisitReanalysis = canRunFullVisitAi && status !== "pending" && !hasPendingOrAnalyzingImage;
-  const updateLocked = analysisPhase !== "idle" || fullVisitAiActive;
+  const canShowFullVisitReanalysis = canRunFullVisitAi && status !== "pending" && !hasPendingOrAnalyzingImage && !visitInFlight;
+  const updateLocked = visitInFlight;
   const signedImagesByPath = useMemo(
     () => new Map((visit?.signed_images ?? []).map((image) => [image.path, image] as const)),
     [visit?.signed_images],
@@ -1367,13 +1396,6 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
 
         {error ? <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
         {notice ? <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</div> : null}
-        {activeAiJob ? (
-          <div className="mb-4 flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-800">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            AI analysis running in background
-          </div>
-        ) : null}
-
         {loading ? (
           <div className="space-y-4">
             <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -1406,7 +1428,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="text-xs font-medium uppercase text-slate-500">Price handling</div>
-                  <div className="mt-1 text-lg font-bold">{visitPriceHandlingStatusLabel(priceHandlingStatus)}</div>
+                  <div className="mt-1 text-lg font-bold">{visitPriceHandlingStatusLabel(priceHandlingStatus, locale, visitInFlight)}</div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   {canRunWholeVisitAnalysis ? (
@@ -1419,7 +1441,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                     <button
                       type="button"
                       onClick={() => setFullVisitReanalyzeConfirmOpen(true)}
-                      disabled={fullVisitReanalyzing || analysisPhase !== "idle" || Boolean(activeAiJob)}
+                      disabled={fullVisitReanalyzing || visitInFlight}
                       aria-label={text.reanalyzeFullVisit}
                       title={text.reanalyzeFullVisit}
                       className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-amber-200 bg-amber-50 text-amber-700 shadow-sm transition hover:border-amber-300 hover:bg-amber-100 disabled:opacity-60"
@@ -1430,7 +1452,7 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   <button
                     type="button"
                     onClick={refreshVisitDetail}
-                    disabled={refreshingVisit || analysisPhase !== "idle"}
+                    disabled={refreshingVisit}
                     aria-label={text.refreshVisit}
                     title={text.refreshVisit}
                     className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-slate-50/70 text-slate-500 shadow-sm transition hover:border-slate-300 hover:bg-white hover:text-slate-700 disabled:opacity-60"
@@ -1439,8 +1461,8 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   </button>
                 </div>
               </div>
-              {priceHandlingStatus === "ACTION_REQUIRED" && priceHandlingActions.length > 0 ? (
-                <div className="mt-3 text-sm text-amber-800">{priceHandlingActions.join(" · ")}</div>
+              {!visitInFlight && priceHandlingActions.length > 0 ? (
+                <div className={`mt-3 text-sm ${priceHandlingStatus === "ACTION_REQUIRED" ? "text-amber-800" : "text-slate-600"}`}>{priceHandlingActions.join(" · ")}</div>
               ) : null}
               {status === "partial" ? (
                 <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
@@ -1516,7 +1538,6 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   collapsed={collapsedGroups.makuku_shelf}
                   onToggleCollapsed={() => setCollapsedGroups((current) => ({ ...current, makuku_shelf: !current.makuku_shelf }))}
                   updateLocked={updateLocked}
-                  visitAnalysisInProgress={visitAnalysisInProgress}
                   text={text}
                   localUploadsByImageId={localUploads}
                   thumbnailSrcForImage={thumbnailSrcForImage}
@@ -1548,7 +1569,6 @@ export function StoreVisitDetailH5({ locale, id }: { locale: Locale; id: string 
                   collapsed={collapsedGroups.competitor_shelf}
                   onToggleCollapsed={() => setCollapsedGroups((current) => ({ ...current, competitor_shelf: !current.competitor_shelf }))}
                   updateLocked={updateLocked}
-                  visitAnalysisInProgress={visitAnalysisInProgress}
                   text={text}
                   localUploadsByImageId={localUploads}
                   thumbnailSrcForImage={thumbnailSrcForImage}
@@ -1945,7 +1965,6 @@ function PriceSectionGroup({
   collapsed,
   onToggleCollapsed,
   updateLocked,
-  visitAnalysisInProgress,
   text,
   localUploadsByImageId,
   thumbnailSrcForImage,
@@ -1975,7 +1994,6 @@ function PriceSectionGroup({
   collapsed: boolean;
   onToggleCollapsed: () => void;
   updateLocked: boolean;
-  visitAnalysisInProgress: boolean;
   text: ReturnType<typeof detailText>;
   localUploadsByImageId: Record<string, LocalUploadState>;
   thumbnailSrcForImage: (imageId: string, sourceUrl?: string | null) => string;
@@ -2030,9 +2048,17 @@ function PriceSectionGroup({
             const expectedThumbnailSrc = normalizeBrowserImageSrc(previewUrl);
             const thumbnailFailed = thumbnailFailedSources[section.image.id] === expectedThumbnailSrc;
             const isProcessingRetake = sectionLocalUpload?.mode === "retake";
-            const isAnalyzingImage = section.image.analysis_status === "analyzing";
+            const isAnalyzingImage = section.image.analysis_status === "pending" || section.image.analysis_status === "analyzing";
             const isReanalyzingImage = aiJobImageIds.includes(section.image.id);
-            const priceRowsPending = visitAnalysisInProgress || retryingImageIds.includes(section.image.id) || isAnalyzingImage || isReanalyzingImage || (isProcessingRetake && sectionLocalUpload?.status === "analyzing");
+            const imageHasProcessingCandidates = candidates.some((candidate) => (
+              candidate.source_image_id === section.image.id
+              && candidateHandlingStatus(candidate) === "PROCESSING"
+            ));
+            const priceRowsPending = retryingImageIds.includes(section.image.id)
+              || isAnalyzingImage
+              || isReanalyzingImage
+              || imageHasProcessingCandidates
+              || (isProcessingRetake && sectionLocalUpload?.status === "analyzing");
             const displayRows = buildPriceDisplayRows(
               candidates,
               section.image.id,
@@ -2188,7 +2214,9 @@ function PriceSectionGroup({
           ) : null}
 
           <div className="mt-3 space-y-2">
-            {priceRowsPending ? null : displayRows.length ? displayRows.map((displayRow) => {
+            {priceRowsPending ? (
+              <EmptyLine text={locale === "zh" ? "明细暂不展示" : text.analyzingOne} />
+            ) : displayRows.length ? displayRows.map((displayRow) => {
               const { row, rowIndex, rowKey, candidate, displayCandidate } = displayRow;
               const displayPieceCount = candidateDisplayPieceCount(displayCandidate, row.piece_count);
               const displayPricePerPiece = candidateDisplayPricePerPiece(displayCandidate, row.price_per_piece_idr);
@@ -2207,8 +2235,9 @@ function PriceSectionGroup({
                       {needsManualConfirmation && candidate ? (
                         <button
                           type="button"
+                          disabled={updateLocked}
                           onClick={() => onEditRow(section, row, rowIndex, candidate)}
-                          className="shrink-0 whitespace-nowrap text-[11px] font-semibold leading-5 text-blue-600"
+                          className="shrink-0 whitespace-nowrap text-[11px] font-semibold leading-5 text-blue-600 disabled:text-slate-300"
                         >
                           {text.editRow}
                         </button>

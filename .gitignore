@@ -1,5 +1,8 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# 本地交付知识（PRD / UI / 计划），不推送到 GitHub
+docs-private/
+
 # dependencies
 /node_modules
 /.pnp

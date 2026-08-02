@@ -11,11 +11,11 @@ import { withMinimumDelay } from "@/lib/async-ui";
 import { localeLabels, replacePathLocale, type Locale } from "@/lib/i18n/config";
 import { writeLocalePreferenceCookie } from "@/lib/locale-preference";
 import { getMobileCopy } from "@/lib/mobile-i18n";
-import { summarizeBrandSkuCounts } from "@/lib/store-visit-summary";
-import type { PriceHandlingStatus, StoreVisitAnalysisStatus, StoreVisitAiResult, StoreVisitAiJobSummary, VisitPriceHandlingSummary } from "@/lib/types";
+import type { PriceHandlingStatus, StoreVisitAnalysisStatus, StoreVisitAiJobSummary, VisitPriceHandlingSummary } from "@/lib/types";
 import { MobileLanguageSwitch } from "@/components/mobile-language-switch";
 
 const storageKey = "makuku_app_user";
+const FOREGROUND_REFRESH_THROTTLE_MS = 2000;
 
 type AppUser = {
   id: string;
@@ -36,8 +36,9 @@ type VisitListItem = {
   analysis_status?: StoreVisitAnalysisStatus | null;
   analysis_error?: string | null;
   price_handling?: VisitPriceHandlingSummary | null;
-  ai_result?: StoreVisitAiResult | null;
   photo_count?: number;
+  failed_photo_count?: number;
+  in_flight?: boolean;
   created_at: string;
   active_ai_job?: StoreVisitAiJobSummary | null;
 };
@@ -84,25 +85,65 @@ function formatVisitDate(value: string, locale: Locale) {
   }).format(new Date(`${value}T00:00:00`));
 }
 
-function summarizeVisitBrandCounts(aiResult: StoreVisitAiResult | null | undefined, locale: Locale) {
-  const priceRows = aiResult?.price_insights?.key_sku_prices ?? [];
-  if (!priceRows.length) return aiResult?.store_summary ?? null;
-  return summarizeBrandSkuCounts(priceRows, locale) ?? aiResult?.store_summary ?? null;
+function visitIsInFlight(visit: VisitListItem) {
+  if (visit.in_flight) return true;
+  if (visit.active_ai_job?.status === "queued" || visit.active_ai_job?.status === "running") return true;
+  if (visit.analysis_status === "pending" || visit.analysis_status === "analyzing") return true;
+  return visit.price_handling?.status === "PROCESSING";
 }
 
 function visitHandlingStatus(visit: VisitListItem): PriceHandlingStatus {
+  if (visitIsInFlight(visit)) return "PROCESSING";
   return visit.price_handling?.status ?? "PROCESSING";
 }
 
 function priceHandlingStatusLabel(locale: Locale, status: PriceHandlingStatus) {
   if (locale === "zh") {
-    if (status === "ACTION_REQUIRED") return "\u9700\u8981\u5904\u7406";
+    if (status === "ACTION_REQUIRED") return "\u5f85\u5904\u7406";
     if (status === "COMPLETED") return "\u5df2\u5b8c\u6210";
     return "\u5904\u7406\u4e2d";
   }
   if (status === "ACTION_REQUIRED") return "Action required";
   if (status === "COMPLETED") return "Completed";
   return "Processing";
+}
+
+function visitProgressCopy(visit: VisitListItem, locale: Locale) {
+  if (visitIsInFlight(visit)) {
+    return {
+      zh: "\u89e3\u6790\u4e2d",
+      en: "Analyzing\u2026",
+    };
+  }
+  const approved = visit.price_handling?.candidate_counts.approved ?? 0;
+  const pendingConfirm = visit.price_handling?.action_counts.manual_confirmation_required ?? 0;
+  const failedPhotos = visit.failed_photo_count ?? 0;
+  const partsZh: string[] = [];
+  const partsEn: string[] = [];
+  const handlingStatus = visit.price_handling?.status ?? "PROCESSING";
+  // Completed visits always show success count (including 0) per list STATE 04.
+  if (approved > 0 || handlingStatus === "COMPLETED") {
+    partsZh.push(`\u6210\u529f ${approved}`);
+    partsEn.push(`Success ${approved}`);
+  }
+  if (pendingConfirm > 0) {
+    partsZh.push(`\u5f85\u786e\u8ba4 ${pendingConfirm}`);
+    partsEn.push(`Pending ${pendingConfirm}`);
+  }
+  if (failedPhotos > 0) {
+    partsZh.push(`\u9700\u91cd\u62cd ${failedPhotos}`);
+    partsEn.push(`Failed ${failedPhotos}`);
+  }
+  if (partsZh.length === 0) {
+    return {
+      zh: visit.analysis_error ?? "\u6682\u65e0\u8fdb\u5ea6",
+      en: visit.analysis_error ?? "No progress yet",
+    };
+  }
+  return {
+    zh: partsZh.join(" \u00b7 "),
+    en: partsEn.join(" \u00b7 "),
+  };
 }
 
 function Badge({ children, className }: { children: ReactNode; className: string }) {
@@ -208,6 +249,7 @@ function MobileCaptureSettingsMenu({
 export function StoreVisitsListH5({ locale }: { locale: Locale }) {
   const router = useRouter();
   const copy = getMobileCopy(locale);
+  const [authChecked, setAuthChecked] = useState(false);
   const [user, setUser] = useState<AppUser | null>(null);
   const [visits, setVisits] = useState<VisitListItem[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
@@ -222,6 +264,7 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
   const [loginPhase, setLoginPhase] = useState<"idle" | "submitting" | "redirecting">("idle");
   const [loginError, setLoginError] = useState<string | null>(null);
   const autoAnalysisAttemptedIds = useRef<Set<string>>(new Set());
+  const lastFetchAtRef = useRef(0);
   const newVisitHref = `/${locale}/mobile/offline-capture/new`;
 
   const loginText = locale === "zh"
@@ -260,10 +303,17 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
         redirecting: "Signed in. Entering the app...",
       };
 
-  const loadVisits = useCallback(async (nextPage = 1, append = false, currentUser: AppUser | null = null) => {
+  const loadVisits = useCallback(async (
+    nextPage = 1,
+    append = false,
+    currentUser: AppUser | null = null,
+    options?: { silent?: boolean },
+  ) => {
     if (!currentUser?.id) return;
+    const silent = options?.silent === true;
+    lastFetchAtRef.current = Date.now();
     if (append) setLoadingMore(true);
-    else setLoading(true);
+    else if (!silent) setLoading(true);
     setError(null);
 
     const params = new URLSearchParams({
@@ -288,6 +338,7 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
       setError(copy.networkRetry);
       if (!append) setVisits([]);
     } finally {
+      lastFetchAtRef.current = Date.now();
       setLoading(false);
       setLoadingMore(false);
     }
@@ -361,42 +412,84 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
       });
     } finally {
       setAutoAnalyzingVisitIds((current) => current.filter((id) => id !== visitId));
-      await loadVisits(1, false, currentUser);
+      await loadVisits(1, false, currentUser, { silent: true });
     }
   }, [loadVisits]);
 
   useEffect(() => {
-    const timeout = setTimeout(() => {
+    let cancelled = false;
+
+    async function syncAuth() {
       const stored = loadUser();
-      setUser(stored);
-      if (stored) {
-        void loadVisits(1, false, stored);
-      } else {
+      if (!stored?.id) {
+        if (!cancelled) {
+          setUser(null);
+          setAuthChecked(true);
+          setLoading(false);
+        }
+        return;
+      }
+
+      try {
+        // List API only needs localStorage user_id; detail APIs need app_session cookie.
+        // Validate cookie session here so stale localStorage cannot enter the list.
+        const response = await fetch("/api/auth/session", { cache: "no-store" });
+        const payload = await response.json().catch(() => ({}));
+        if (cancelled) return;
+
+        if (payload.user?.id) {
+          const nextUser: AppUser = {
+            id: payload.user.id,
+            username: payload.user.username,
+            displayName: payload.user.displayName,
+            role: payload.user.role,
+          };
+          saveUser(nextUser);
+          setUser(nextUser);
+          setAuthChecked(true);
+          void loadVisits(1, false, nextUser);
+          return;
+        }
+
+        localStorage.removeItem(storageKey);
+        setUser(null);
+        setAuthChecked(true);
+        setLoading(false);
+      } catch {
+        if (cancelled) return;
+        localStorage.removeItem(storageKey);
+        setUser(null);
+        setAuthChecked(true);
         setLoading(false);
       }
-    }, 0);
-    return () => clearTimeout(timeout);
+    }
+
+    void syncAuth();
+    return () => {
+      cancelled = true;
+    };
   }, [loadVisits]);
 
   useEffect(() => {
     if (!user?.id) return;
 
-    function refreshVisits() {
-      void loadVisits(1, false, user);
+    function refreshVisitsIfDue() {
+      if (Date.now() - lastFetchAtRef.current < FOREGROUND_REFRESH_THROTTLE_MS) return;
+      void loadVisits(1, false, user, { silent: true });
     }
 
     function handleVisibilityChange() {
       if (document.visibilityState === "visible") {
-        void loadVisits(1, false, user);
+        refreshVisitsIfDue();
       }
     }
 
-    window.addEventListener("focus", refreshVisits);
-    window.addEventListener("pageshow", refreshVisits);
+    window.addEventListener("focus", refreshVisitsIfDue);
+    window.addEventListener("pageshow", refreshVisitsIfDue);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
-      window.removeEventListener("focus", refreshVisits);
-      window.removeEventListener("pageshow", refreshVisits);
+      window.removeEventListener("focus", refreshVisitsIfDue);
+      window.removeEventListener("pageshow", refreshVisitsIfDue);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [loadVisits, user]);
@@ -415,16 +508,34 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
 
   useEffect(() => {
     if (!user?.id) return undefined;
-    const hasInFlightPriceWork = visits.some((visit) => (
-      visit.active_ai_job?.status === "queued" || visit.active_ai_job?.status === "running"
-      || visit.price_handling?.status === "PROCESSING"
-    ));
+    const hasInFlightPriceWork = visits.some((visit) => visitIsInFlight(visit));
     if (!hasInFlightPriceWork) return undefined;
     const interval = window.setInterval(() => {
-      void loadVisits(1, false, user);
+      void loadVisits(1, false, user, { silent: true });
     }, 8000);
     return () => window.clearInterval(interval);
   }, [loadVisits, user, visits]);
+
+  if (!authChecked) {
+    return (
+      <main className="mx-auto min-h-screen max-w-md bg-slate-50 px-4 py-5 text-slate-950">
+        <header className="mb-4">
+          <h1 className="text-xl font-bold">{copy.myVisits}</h1>
+        </header>
+        <div className="space-y-3">
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="h-5 w-28 animate-pulse rounded bg-slate-200" />
+            <div className="mt-3 h-4 w-40 animate-pulse rounded bg-slate-100" />
+            <div className="mt-4 h-14 animate-pulse rounded-lg bg-slate-100" />
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4 text-center text-sm text-slate-500 shadow-sm">
+            <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />
+            {copy.loadingVisits}
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   if (!user) {
     return (
@@ -552,10 +663,8 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
         ) : null}
         {visits.map((visit) => {
           const handlingStatus = visitHandlingStatus(visit);
-          const summary = summarizeVisitBrandCounts(visit.ai_result, locale);
-          const priceRetakeRequired = (visit.price_handling?.action_counts.retake_required ?? 0) > 0;
-          const openVisitToHandleWork = handlingStatus === "ACTION_REQUIRED";
-          const activeAiJob = visit.active_ai_job?.status === "queued" || visit.active_ai_job?.status === "running";
+          const progress = visitProgressCopy(visit, locale);
+          const progressText = locale === "zh" ? progress.zh : progress.en;
           return (
             <article key={visit.id} className="rounded-xl border border-slate-200 bg-white shadow-sm">
               <Link
@@ -565,38 +674,18 @@ export function StoreVisitsListH5({ locale }: { locale: Locale }) {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <h2 className="truncate text-base font-bold">{visit.store_name}</h2>
-                    <p className="mt-1 truncate text-xs text-slate-500">{visit.region ?? "-"} / {visit.channel ?? "-"}</p>
+                    <p className="mt-1 truncate text-xs text-slate-500">{visit.region?.trim() || "-"}</p>
                   </div>
                   <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-slate-400" />
                 </div>
 
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <Badge className={handlingStatusClass(handlingStatus)}>{priceHandlingStatusLabel(locale, handlingStatus)}</Badge>
-                  {activeAiJob ? (
-                    <Badge className="bg-blue-50 text-blue-700 ring-blue-200">
-                      {locale === "zh" ? "\u540e\u53f0\u91cd\u8dd1\u4e2d" : "Background re-run"}
-                    </Badge>
-                  ) : null}
                 </div>
 
-                {priceRetakeRequired ? (
-                  <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium leading-5 text-amber-800">
-                    {loginText.pricePhotoRetakeRequired}
-                  </p>
-                ) : openVisitToHandleWork ? (
-                  <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium leading-5 text-amber-800">
-                    {locale === "zh" ? "\u8fdb\u5165\u8be6\u60c5\u5904\u7406\u5f85\u529e\u4ef7\u683c\u6216\u56fe\u7247\u3002" : "Open details to handle required price or photo actions."}
-                  </p>
-                ) : summary ? (
-                  <p
-                    className="mt-3 overflow-hidden text-sm leading-5 text-slate-700"
-                    style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}
-                  >
-                    {summary}
-                  </p>
-                ) : (
-                  <p className="mt-3 text-sm text-slate-400">{visit.analysis_error ?? copy.noSummaryYet}</p>
-                )}
+                <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm font-medium leading-5 text-slate-600">
+                  {progressText}
+                </p>
 
                 <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-500">
                   <span className="inline-flex items-center gap-1.5">

@@ -2,7 +2,13 @@ import { demoOfflineStoreVisits } from "@/lib/demo-data";
 import { createSupabaseServiceClient, hasSupabaseServiceConfig } from "@/lib/supabase";
 import { loadActiveAiJobsForVisits } from "@/lib/store-visit-ai-jobs";
 import { summarizeVisitPriceHandling } from "@/lib/price-handling-status";
-import type { AiPriceCandidate, OfflineStoreVisit, StoreVisitAiResult, StoreVisitAiJobSummary, VisitPriceHandlingSummary } from "@/lib/types";
+import type { AiPriceCandidate, OfflineStoreVisit, StoreVisitAiJobSummary, VisitPriceHandlingSummary } from "@/lib/types";
+
+type VisitListImageMetrics = {
+  photoCount: number;
+  failedPhotoCount: number;
+  hasInFlightPriceImage: boolean;
+};
 
 const defaultPageSize = 20;
 const maxPageSize = 50;
@@ -120,10 +126,20 @@ async function loadLegacyTodayRowsWithoutVisitDate(params: {
   };
 }
 
-function photoCount(visit: OfflineStoreVisit, photoCountsByVisitId?: Map<string, number>) {
+function isListPriceImageType(imageType: string | null | undefined) {
+  return imageType === "own_shelf"
+    || imageType === "makuku_shelf"
+    || imageType === "competitor_shelf";
+}
+
+function photoCount(visit: OfflineStoreVisit, imageMetricsByVisitId?: Map<string, VisitListImageMetrics>) {
   const legacyCount = Array.isArray(visit.image_urls) ? visit.image_urls.length : 0;
-  const rowCount = photoCountsByVisitId?.get(visit.id) ?? visit.offline_visit_images?.length ?? 0;
+  const rowCount = imageMetricsByVisitId?.get(visit.id)?.photoCount ?? visit.offline_visit_images?.length ?? 0;
   return Math.max(legacyCount, rowCount);
+}
+
+function isActiveJobStatus(status: string | null | undefined) {
+  return status === "queued" || status === "running";
 }
 
 function formatVisitRegion(visit: OfflineStoreVisit) {
@@ -134,29 +150,24 @@ function formatVisitRegion(visit: OfflineStoreVisit) {
 function serializeVisit(
   visit: OfflineStoreVisit,
   activeAiJob?: StoreVisitAiJobSummary | null,
-  photoCountsByVisitId?: Map<string, number>,
+  imageMetricsByVisitId?: Map<string, VisitListImageMetrics>,
   priceHandling?: VisitPriceHandlingSummary,
+  rerunInFlight?: boolean,
 ) {
-  const storeSummary = typeof visit.ai_result?.store_summary === "string" ? visit.ai_result.store_summary : null;
-  const keySkuPrices = Array.isArray(visit.ai_result?.price_insights?.key_sku_prices)
-    ? visit.ai_result.price_insights.key_sku_prices.map((row) => ({
-        brand: row.brand,
-        product: row.product,
-        price: row.price,
-        piece_count: row.piece_count,
-        tag: row.tag,
-        confidence: row.confidence,
-      }))
-    : [];
-  const aiResult = (storeSummary || keySkuPrices.length > 0)
-    ? ({
-        store_summary: storeSummary ?? "",
-        price_insights: {
-          brand_price_range: [],
-          key_sku_prices: keySkuPrices,
-        },
-      } as unknown as StoreVisitAiResult)
-    : null;
+  const metrics = imageMetricsByVisitId?.get(visit.id);
+  const resolvedPriceHandling = priceHandling ?? summarizeVisitPriceHandling({
+    analysis_status: visit.analysis_status,
+    active_job_status: activeAiJob?.status ?? null,
+    candidates: [],
+  });
+  const inFlight = Boolean(
+    rerunInFlight
+    || isActiveJobStatus(activeAiJob?.status)
+    || metrics?.hasInFlightPriceImage
+    || visit.analysis_status === "pending"
+    || visit.analysis_status === "analyzing"
+    || resolvedPriceHandling.status === "PROCESSING",
+  );
   return {
     id: visit.id,
     store_name: visit.store_name,
@@ -168,14 +179,11 @@ function serializeVisit(
     visit_status: visit.visit_status,
     analysis_status: visit.analysis_status ?? "pending",
     analysis_error: visit.analysis_error ?? null,
-    price_handling: priceHandling ?? summarizeVisitPriceHandling({
-      analysis_status: visit.analysis_status,
-      active_job_status: activeAiJob?.status ?? null,
-      candidates: [],
-    }),
-    ai_result: aiResult,
+    price_handling: resolvedPriceHandling,
     image_urls: visit.image_urls ?? [],
-    photo_count: photoCount(visit, photoCountsByVisitId),
+    photo_count: photoCount(visit, imageMetricsByVisitId),
+    failed_photo_count: metrics?.failedPhotoCount ?? 0,
+    in_flight: inFlight,
     created_at: visit.created_at,
     active_ai_job: activeAiJob ?? null,
   };
@@ -231,24 +239,118 @@ async function loadVisitPageRows(params: {
   return { error: null, rows };
 }
 
-async function loadPhotoCountsByVisitId(params: {
+async function loadVisitImageMetricsByVisitId(params: {
   supabase: ReturnType<typeof createSupabaseServiceClient>;
   visitIds: string[];
 }) {
-  if (params.visitIds.length === 0) return new Map<string, number>();
+  if (params.visitIds.length === 0) return new Map<string, VisitListImageMetrics>();
+
+  // Prefer DB-side aggregation so large vision_result JSON never leaves Postgres.
+  const rpcResult = await params.supabase.rpc("h5_list_visit_image_metrics", {
+    p_visit_ids: params.visitIds,
+  });
+  if (!rpcResult.error && Array.isArray(rpcResult.data)) {
+    const metrics = new Map<string, VisitListImageMetrics>();
+    for (const row of rpcResult.data as Array<{
+      visit_id?: unknown;
+      photo_count?: unknown;
+      failed_photo_count?: unknown;
+      has_in_flight_price_image?: unknown;
+    }>) {
+      const visitId = String(row.visit_id ?? "");
+      if (!visitId) continue;
+      metrics.set(visitId, {
+        photoCount: Number(row.photo_count) || 0,
+        failedPhotoCount: Number(row.failed_photo_count) || 0,
+        hasInFlightPriceImage: Boolean(row.has_in_flight_price_image),
+      });
+    }
+    return metrics;
+  }
+
+  // Fallback: light columns only (no full vision_result payload).
   const { data, error } = await params.supabase
     .from("offline_visit_images")
-    .select("visit_id")
+    .select("visit_id,analysis_status,image_type,deleted_at,replaced_by_image_id,photo_quality:vision_result->photo_quality")
     .in("visit_id", params.visitIds);
-  if (error) return new Map<string, number>();
+  if (error) return new Map<string, VisitListImageMetrics>();
 
-  const counts = new Map<string, number>();
+  const metrics = new Map<string, VisitListImageMetrics>();
   for (const row of data ?? []) {
-    const visitId = String((row as { visit_id?: unknown }).visit_id ?? "");
-    if (!visitId) continue;
-    counts.set(visitId, (counts.get(visitId) ?? 0) + 1);
+    const record = row as {
+      visit_id?: unknown;
+      analysis_status?: unknown;
+      image_type?: unknown;
+      deleted_at?: unknown;
+      replaced_by_image_id?: unknown;
+      photo_quality?: unknown;
+    };
+    const visitId = String(record.visit_id ?? "");
+    if (!visitId || record.replaced_by_image_id || record.deleted_at) continue;
+    const current = metrics.get(visitId) ?? { photoCount: 0, failedPhotoCount: 0, hasInFlightPriceImage: false };
+    current.photoCount += 1;
+    const imageType = String(record.image_type ?? "");
+    const analysisStatus = String(record.analysis_status ?? "");
+    if (isListPriceImageType(imageType)) {
+      if (analysisStatus === "pending" || analysisStatus === "analyzing") {
+        current.hasInFlightPriceImage = true;
+      }
+      const photoQuality = record.photo_quality && typeof record.photo_quality === "object" && !Array.isArray(record.photo_quality)
+        ? record.photo_quality as { status?: unknown }
+        : null;
+      const failed = analysisStatus === "failed" || photoQuality?.status === "retake_required";
+      if (failed) current.failedPhotoCount += 1;
+    }
+    metrics.set(visitId, current);
   }
-  return counts;
+  return metrics;
+}
+
+async function loadActiveRerunVisitIds(params: {
+  supabase: ReturnType<typeof createSupabaseServiceClient>;
+  visitIds: string[];
+}) {
+  if (params.visitIds.length === 0) return new Set<string>();
+  const visitIdSet = new Set(params.visitIds);
+  const { data, error } = await params.supabase
+    .from("store_visit_rerun_jobs")
+    .select("child_ai_jobs,selector,progress")
+    .in("status", ["queued", "running"])
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (error || !data?.length) return new Set<string>();
+
+  const inFlight = new Set<string>();
+  for (const row of data) {
+    const record = row as {
+      child_ai_jobs?: unknown;
+      selector?: unknown;
+      progress?: unknown;
+    };
+    if (Array.isArray(record.child_ai_jobs)) {
+      for (const child of record.child_ai_jobs) {
+        const visitId = String((child as { visitId?: unknown })?.visitId ?? "").trim();
+        if (visitId && visitIdSet.has(visitId)) inFlight.add(visitId);
+      }
+    }
+    const selector = record.selector && typeof record.selector === "object" && !Array.isArray(record.selector)
+      ? record.selector as Record<string, unknown>
+      : null;
+    const selectorVisitIds = Array.isArray(selector?.visitIds) ? selector.visitIds : [];
+    const progress = record.progress && typeof record.progress === "object" && !Array.isArray(record.progress)
+      ? record.progress as Record<string, unknown>
+      : null;
+    const settled = new Set<string>([
+      ...(Array.isArray(progress?.matched_visit_ids) ? progress.matched_visit_ids.map((id) => String(id)) : []),
+      ...(Array.isArray(progress?.skipped_visit_ids) ? progress.skipped_visit_ids.map((id) => String(id)) : []),
+      ...(Array.isArray(progress?.permanently_failed_visit_ids) ? progress.permanently_failed_visit_ids.map((id) => String(id)) : []),
+    ]);
+    for (const rawId of selectorVisitIds) {
+      const visitId = String(rawId ?? "").trim();
+      if (visitId && visitIdSet.has(visitId) && !settled.has(visitId)) inFlight.add(visitId);
+    }
+  }
+  return inFlight;
 }
 
 async function loadPriceHandlingCandidatesForVisits(params: {
@@ -256,15 +358,18 @@ async function loadPriceHandlingCandidatesForVisits(params: {
   visitIds: string[];
 }) {
   if (params.visitIds.length === 0) return new Map<string, AiPriceCandidate[]>();
+  // Keep null lifecycle rows: SQL `NOT IN (...)` would drop NULL and hide approved counts.
   const { data, error } = await params.supabase
     .from("ai_price_candidates")
     .select("visit_id,status,review_decision,quality_gate_status,quality_gate_attempt_count,h5_lifecycle_status")
-    .in("visit_id", params.visitIds);
+    .in("visit_id", params.visitIds)
+    .or("h5_lifecycle_status.is.null,h5_lifecycle_status.not.in.(deleted,replaced,reanalyzed)");
   if (error) throw new Error(error.message);
 
   const byVisitId = new Map<string, AiPriceCandidate[]>();
   for (const row of (data ?? []) as AiPriceCandidate[]) {
-    if (!row.visit_id || row.h5_lifecycle_status === "deleted" || row.h5_lifecycle_status === "replaced" || row.h5_lifecycle_status === "reanalyzed") continue;
+    if (!row.visit_id) continue;
+    if (row.h5_lifecycle_status === "deleted" || row.h5_lifecycle_status === "replaced" || row.h5_lifecycle_status === "reanalyzed") continue;
     const candidates = byVisitId.get(row.visit_id) ?? [];
     candidates.push(row);
     byVisitId.set(row.visit_id, candidates);
@@ -304,30 +409,32 @@ export async function GET(request: Request) {
     }
 
     const supabase = createSupabaseServiceClient();
-    const visitsResult = await loadVisitPageRows({
-      supabase,
-      userId,
-      from,
-      pageSize,
-    });
+    const todayVisitDate = todayVisitDateValue();
+    const { start, end } = todayRange();
+    const [visitsResult, visitDateRowsResult, legacyRowsResult] = await Promise.all([
+      loadVisitPageRows({
+        supabase,
+        userId,
+        from,
+        pageSize,
+      }),
+      loadTodayRowsWithVisitDate({
+        supabase,
+        userId,
+        todayVisitDate,
+      }),
+      loadLegacyTodayRowsWithoutVisitDate({
+        supabase,
+        userId,
+        start,
+        end,
+      }),
+    ]);
 
     if (visitsResult.error) {
       return Response.json({ error: visitsResult.error.message }, { status: 400 });
     }
 
-    const todayVisitDate = todayVisitDateValue();
-    const { start, end } = todayRange();
-    const visitDateRowsResult = await loadTodayRowsWithVisitDate({
-      supabase,
-      userId,
-      todayVisitDate,
-    });
-    const legacyRowsResult = await loadLegacyTodayRowsWithoutVisitDate({
-      supabase,
-      userId,
-      start,
-      end,
-    });
     const todayRows = [...visitDateRowsResult.rows, ...legacyRowsResult.rows];
 
     const rows = visitsResult.rows;
@@ -335,16 +442,20 @@ export async function GET(request: Request) {
     const hasNext = rows.length > fetchTo;
     const pagedRows = rows.slice(from, from + pageSize);
     const visitIds = pagedRows.map((visit) => visit.id);
-    const [activeJobsByVisitId, photoCountsByVisitId, candidatesByVisitId] = await Promise.all([
+    const [activeJobsByVisitId, imageMetricsByVisitId, candidatesByVisitId, rerunInFlightVisitIds] = await Promise.all([
       loadActiveAiJobsForVisits({
         supabase,
         visitIds,
       }),
-      loadPhotoCountsByVisitId({
+      loadVisitImageMetricsByVisitId({
         supabase,
         visitIds,
       }),
       loadPriceHandlingCandidatesForVisits({
+        supabase,
+        visitIds,
+      }),
+      loadActiveRerunVisitIds({
         supabase,
         visitIds,
       }),
@@ -362,8 +473,9 @@ export async function GET(request: Request) {
       visits: pagedRows.map((visit) => serializeVisit(
         visit,
         activeJobsByVisitId.get(visit.id) ?? null,
-        photoCountsByVisitId,
+        imageMetricsByVisitId,
         priceHandlingByVisitId.get(visit.id),
+        rerunInFlightVisitIds.has(visit.id),
       )),
       pagination: {
         page,
