@@ -4,14 +4,23 @@ export function normalizePieceCount(value: unknown): number | null {
   return Math.floor(parsed);
 }
 
-/** Longest-first size tokens so XXL is not split into XL. */
-const SIZE_PACK_SIZE_TOKEN = "XXXXL|XXXL|XXL|XL|NB-S|NB|L|M|S";
+/** Longest-first size tokens so XXL is not split into XL. Includes 2XL/3XL/4XL aliases. */
+const SIZE_PACK_SIZE_TOKEN = "4XL|3XL|2XL|XXXXL|XXXL|XXL|XL|NB-S|NB|L|M|S";
 
 function sizePackVariantPattern() {
   return new RegExp(
     String.raw`\b(${SIZE_PACK_SIZE_TOKEN})-?\s*(\d{1,3})(?:\s*\+\s*(\d{1,3}))?(?:s\b|\b)(?!\s*-\s*\d+\s*kg\b)`,
     "gi",
   );
+}
+
+/** Align numeric XL aliases with matching-layer canonical sizes (2XL→XXL, 3XL→XXXL, 4XL→XXXXL). */
+function canonicalizeSizePackSize(size: string): string {
+  const upper = size.toUpperCase();
+  if (upper === "2XL") return "XXL";
+  if (upper === "3XL") return "XXXL";
+  if (upper === "4XL") return "XXXXL";
+  return upper;
 }
 
 export type SizePackVariant = {
@@ -31,7 +40,7 @@ export function extractSizePackVariantsFromTitle(value: string | null | undefine
   const variants: SizePackVariant[] = [];
 
   for (const match of title.matchAll(sizePackVariantPattern())) {
-    const size = String(match[1] ?? "").toUpperCase();
+    const size = canonicalizeSizePackSize(String(match[1] ?? ""));
     const base = Number(match[2]);
     const bonus = match[3] ? Number(match[3]) : 0;
     const pieceCount = normalizePieceCount(base + bonus);
@@ -97,7 +106,7 @@ export function parsePieceCountText(value: string | null | undefined): number | 
   const pcsMatch = text.match(/\b(\d{1,3})\s*(?:pcs?|pieces?)\b/i);
   if (pcsMatch) return normalizePieceCount(Number(pcsMatch[1]));
 
-  const trailingPackMatch = text.match(/\b(?:nb-s|nb|s|m|l|xl|xxl|xxxl|xxxxl)\s*(\d{1,3})(?:\s*\+\s*(\d{1,3}))?\b/i);
+  const trailingPackMatch = text.match(/\b(?:nb-s|nb|s|m|l|xl|xxl|xxxl|xxxxl|2xl|3xl|4xl)\s*(\d{1,3})(?:\s*\+\s*(\d{1,3}))?\b/i);
   if (trailingPackMatch) {
     const base = Number(trailingPackMatch[1]);
     const bonus = trailingPackMatch[2] ? Number(trailingPackMatch[2]) : 0;

@@ -220,6 +220,25 @@ test("extractSizePackVariantsFromTitle finds every SIZE+pack pair and ignores ba
     extractSizePackVariantsFromTitle("MAKUKU PANTS M30+6"),
     [{ size: "M", pieceCount: 36, pieceCountText: "30+6", label: "M 30+6" }],
   );
+  assert.deepEqual(
+    extractSizePackVariantsFromTitle("MAKUKU GROW CARE 3XL14"),
+    [{ size: "XXXL", pieceCount: 14, pieceCountText: "14", label: "XXXL 14" }],
+  );
+  assert.deepEqual(
+    extractSizePackVariantsFromTitle("MAKUKU GROW CARE 2XL 20"),
+    [{ size: "XXL", pieceCount: 20, pieceCountText: "20", label: "XXL 20" }],
+  );
+  assert.deepEqual(
+    extractSizePackVariantsFromTitle("MAKUKU GROW CARE 4XL12"),
+    [{ size: "XXXXL", pieceCount: 12, pieceCountText: "12", label: "XXXXL 12" }],
+  );
+  assert.equal(parsePieceCountFromProductTitle("MAKUKU GROW CARE 3XL14"), 14);
+  assert.deepEqual(resolveTrustedPieceCount({
+    productTitle: "MAKUKU GROW CARE 3XL14",
+    extractedValue: null,
+    extractedText: null,
+    sourceLabel: null,
+  }), { pieceCount: 14, source: "TITLE_SIZE_PACK" });
   assert.equal(
     buildSingleVariantProductTitle("MAKUKU Dry Care Pants XL 24+4 / XXL 22+4", {
       size: "XL",
@@ -375,4 +394,20 @@ test("normalizeStoreVisitPriceImageAnalysis does not split titles without a slas
   assert.equal(result.rows[0]?.sku, "MAKUKU COMFORT FIT PANTS S3 M60 1CAP");
   assert.equal(result.rows[0]?.piece_count, 60);
   assert.equal(result.rows[0]?.group_id, "tag_1");
+});
+
+test("normalizeStoreVisitPriceImageAnalysis derives piece count from 3XL pack titles", () => {
+  const result = storeVisitAi.normalizeStoreVisitPriceImageAnalysis({
+    photo_quality: { status: "pass", reasons: [], message: "ok" },
+    rows: [{
+      source_type: "PRICE_TAG",
+      brand: "MAKUKU",
+      sku: "MAKUKU GROW CARE 3XL14",
+      normal_package_text: "84.900",
+    }],
+  }, "price");
+
+  assert.equal(result.rows.length, 1);
+  assert.equal(result.rows[0]?.piece_count, 14);
+  assert.equal(result.rows[0]?.sku, "MAKUKU GROW CARE 3XL14");
 });
