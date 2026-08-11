@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
 import ts from "typescript";
-import { resolveTrustedPieceCount, extractSizePackVariantsFromTitle, buildSingleVariantProductTitle, normalizePieceCountFromCandidates, normalizePieceCountFromEvidence } from "../src/lib/piece-count.ts";
+import { resolveTrustedPieceCount, extractSizePackVariantsFromTitle, extractSizePackVariantsForRowSplit, primarySizePackVariantFromTitle, buildSingleVariantProductTitle, normalizePieceCountFromCandidates, normalizePieceCountFromEvidence } from "../src/lib/piece-count.ts";
 
 function transpileModule(path) {
   return ts.transpileModule(readFileSync(path, "utf8"), {
@@ -49,6 +49,8 @@ function loadStoreVisitAi(priceUtils) {
           normalizePieceCountFromCandidates,
           resolveTrustedPieceCount,
           extractSizePackVariantsFromTitle,
+          extractSizePackVariantsForRowSplit,
+          primarySizePackVariantFromTitle,
           buildSingleVariantProductTitle,
         };
       }
@@ -335,8 +337,10 @@ test("store visit price image normalization preserves original and promotion pri
   }, "competitor_shelf");
 
   assert.equal(normalized.rows.length, 2);
-  assert.deepEqual(normalized.rows.map((row) => row.list_price_idr), [116000, 87500]);
-  assert.deepEqual(normalized.rows.map((row) => row.net_price_idr), [101000, 78000]);
+  assert.equal(normalized.rows[0]?.list_price_idr, 116000);
+  assert.equal(normalized.rows[1]?.list_price_idr, 87500);
+  assert.equal(normalized.rows[0]?.net_price_idr, 101000);
+  assert.equal(normalized.rows[1]?.net_price_idr, 78000);
 });
 
 test("store visit price image normalization keeps clear package price ahead of visible per-piece evidence", () => {

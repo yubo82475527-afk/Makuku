@@ -10,7 +10,8 @@ test("store visit price candidate sync reads persisted price image rows", () => 
   assert.match(syncFile, /offline_visit_images/);
   assert.match(syncFile, /vision_result/);
   assert.match(syncFile, /schema_version !== "store_visit_price_image_v1"/);
-  assert.match(syncFile, /sourceRowIndex: rowIndex/);
+  assert.match(syncFile, /sourceItemFromPriceRow\(image, row, rowIndex\)/);
+  assert.match(syncFile, /extractSizePackVariantsForRowSplit/);
 });
 
 test("store visit price candidate sync carries persisted row evidence confidence", () => {

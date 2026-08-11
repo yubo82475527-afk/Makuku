@@ -5,9 +5,12 @@ import vm from "node:vm";
 import ts from "typescript";
 import {
   buildSingleVariantProductTitle,
+  extractSizePackVariantsForRowSplit,
   extractSizePackVariantsFromTitle,
   normalizePieceCountFromCandidates,
   normalizePieceCountFromEvidence,
+  parsePieceCountFromProductTitle,
+  primarySizePackVariantFromTitle,
   resolveTrustedPieceCount,
 } from "../src/lib/piece-count.ts";
 
@@ -60,6 +63,8 @@ function loadStoreVisitAi(priceUtils) {
           normalizePieceCountFromCandidates,
           resolveTrustedPieceCount,
           extractSizePackVariantsFromTitle,
+          extractSizePackVariantsForRowSplit,
+          primarySizePackVariantFromTitle,
           buildSingleVariantProductTitle,
         };
       }
@@ -86,6 +91,8 @@ test("piece count helper supports bonus pack and size-pack text formats", () => 
   assert.match(pieceCountHelper, /openBonusMatch/);
   assert.match(pieceCountHelper, /nb-s\|nb\|s\|m\|l\|xl\|xxl\|xxxl\|xxxxl/i);
   assert.match(pieceCountHelper, /extractSizePackVariantsFromTitle/);
+  assert.match(pieceCountHelper, /extractSizePackVariantsForRowSplit/);
+  assert.match(pieceCountHelper, /primarySizePackVariantFromTitle/);
   assert.match(pieceCountHelper, /const valueText = typeof value === "string" \? value : null/);
   assert.match(pieceCountHelper, /\[valueText, \.\.\.textCandidates\]/);
 });
@@ -94,6 +101,7 @@ test("store visit price image normalization carries a trusted piece-count source
   assert.match(storeVisitAiSource, /resolveTrustedPieceCount/);
   assert.match(storeVisitAiSource, /piece_count_source_label/);
   assert.match(storeVisitAiSource, /expandMultiSizePackRawRows/);
+  assert.match(storeVisitAiSource, /extractSizePackVariantsForRowSplit/);
   assert.match(candidateService, /resolveTrustedPieceCount/);
   assert.match(candidateService, /piece_count_source_label/);
 });
@@ -223,6 +231,48 @@ test("extractSizePackVariantsFromTitle finds every SIZE+pack pair and ignores ba
   );
 });
 
+test("row split only expands slash-separated multi size-pack titles", () => {
+  assert.deepEqual(
+    extractSizePackVariantsForRowSplit("MAKUKU Dry Care Pants XL 24+4 / XXL 22+4"),
+    [
+      { size: "XL", pieceCount: 28, pieceCountText: "24+4", label: "XL 24+4" },
+      { size: "XXL", pieceCount: 26, pieceCountText: "22+4", label: "XXL 22+4" },
+    ],
+  );
+  assert.deepEqual(
+    extractSizePackVariantsForRowSplit("MAKUKU COMFORT FIT PANTS S3 M60 1CAP"),
+    [],
+  );
+  assert.deepEqual(
+    extractSizePackVariantsForRowSplit("MAKUKU COMFORT FIT PANTS SJ M60 1C4P"),
+    [],
+  );
+  assert.deepEqual(
+    extractSizePackVariantsForRowSplit("MAKUKU Dry Care Pants XL 24+4 XXL 22+4"),
+    [],
+  );
+});
+
+test("primary size-pack and title piece count prefer trailing pack over leading OCR noise", () => {
+  assert.deepEqual(
+    primarySizePackVariantFromTitle("MAKUKU COMFORT FIT PANTS S3 M60 1CAP"),
+    { size: "M", pieceCount: 60, pieceCountText: "60", label: "M 60" },
+  );
+  assert.equal(parsePieceCountFromProductTitle("MAKUKU COMFORT FIT PANTS S3 M60 1CAP"), 60);
+  assert.deepEqual(resolveTrustedPieceCount({
+    productTitle: "MAKUKU COMFORT FIT PANTS S3 M60 1CAP",
+    extractedValue: 3,
+    extractedText: "3",
+    sourceLabel: null,
+  }), { pieceCount: 60, source: "TITLE_SIZE_PACK" });
+  assert.deepEqual(resolveTrustedPieceCount({
+    productTitle: "MAKUKU COMFORT FIT PANTS S3 M60 1CAP",
+    extractedValue: 60,
+    extractedText: "60",
+    sourceLabel: "Pcs",
+  }), { pieceCount: 60, source: "LABELED_PCS" });
+});
+
 test("normalizeStoreVisitPriceImageAnalysis splits multi size-pack titles into one row per variant", () => {
   const result = storeVisitAi.normalizeStoreVisitPriceImageAnalysis({
     photo_quality: { status: "pass", reasons: [], message: "ok" },
@@ -304,4 +354,25 @@ test("normalizeStoreVisitPriceImageAnalysis keeps a single size-pack title as on
   assert.equal(result.rows.length, 1);
   assert.equal(result.rows[0]?.sku, "MAKUKU Dry Care Pants XL 24+4");
   assert.equal(result.rows[0]?.piece_count, 28);
+});
+
+test("normalizeStoreVisitPriceImageAnalysis does not split titles without a slash separator", () => {
+  const result = storeVisitAi.normalizeStoreVisitPriceImageAnalysis({
+    photo_quality: { status: "pass", reasons: [], message: "ok" },
+    rows: [{
+      source_type: "PRICE_TAG",
+      group_id: "tag_1",
+      brand: "MAKUKU",
+      sku: "MAKUKU COMFORT FIT PANTS S3 M60 1CAP",
+      piece_count: 3,
+      piece_count_text: "3",
+      normal_package_text: "102.900",
+      list_price_text: "117.500",
+    }],
+  }, "price");
+
+  assert.equal(result.rows.length, 1);
+  assert.equal(result.rows[0]?.sku, "MAKUKU COMFORT FIT PANTS S3 M60 1CAP");
+  assert.equal(result.rows[0]?.piece_count, 60);
+  assert.equal(result.rows[0]?.group_id, "tag_1");
 });

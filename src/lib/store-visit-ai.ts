@@ -20,9 +20,10 @@ import { createJsonChatCompletion, imageUrlPart, textPart } from "@/lib/ai-clien
 import { parseIdrPrice, reconcilePackagePriceMetrics } from "@/lib/price-utils";
 import {
   buildSingleVariantProductTitle,
-  extractSizePackVariantsFromTitle,
+  extractSizePackVariantsForRowSplit,
   normalizePieceCountFromCandidates,
   normalizePieceCountFromEvidence,
+  primarySizePackVariantFromTitle,
   resolveTrustedPieceCount,
   type SizePackVariant,
 } from "@/lib/piece-count";
@@ -608,7 +609,7 @@ function expandMultiSizePackRawRows(rows: unknown[]): unknown[] {
     const sectionTitle = asOptionalString(row.section_title);
     const productFamilyText = resolvePriceRowProductFamilyText(asOptionalString(row.product_family_text), sectionTitle);
     const sku = buildPriceImageSkuName(brand, productFamilyText, asString(row.sku, "Unknown SKU"));
-    const variants = extractSizePackVariantsFromTitle(sku);
+    const variants = extractSizePackVariantsForRowSplit(sku);
     if (variants.length < 2) return [item];
 
     const groupId = asOptionalString(row.group_id);
@@ -640,7 +641,7 @@ function dedupeNormalizedPriceImageRows<T extends {
   const seen = new Set<string>();
   const result: T[] = [];
   for (const row of rows) {
-    const fromTitle = extractSizePackVariantsFromTitle(row.sku)[0];
+    const fromTitle = primarySizePackVariantFromTitle(row.sku);
     const anchorSize = String(row.row_anchor ?? "").split("|")[0]?.trim().toUpperCase() || "";
     const size = fromTitle?.size || anchorSize;
     const pieceCount = row.piece_count ?? fromTitle?.pieceCount ?? "";

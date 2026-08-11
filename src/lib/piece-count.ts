@@ -53,6 +53,27 @@ export function extractSizePackVariantsFromTitle(value: string | null | undefine
   return variants;
 }
 
+/**
+ * Trailing SIZE+pcs is the pack identity when a title has multiple matches but is not a
+ * slash-separated size list (e.g. OCR noise "S3" before real "M60").
+ */
+export function primarySizePackVariantFromTitle(value: string | null | undefined): SizePackVariant | null {
+  const variants = extractSizePackVariantsFromTitle(value);
+  if (variants.length === 0) return null;
+  return variants[variants.length - 1] ?? null;
+}
+
+/**
+ * Only slash-separated multi-size titles are eligible to expand into one row per size.
+ * Example: "XL 24+4 / XXL 22+4". Titles like "S3 M60" must stay as one row.
+ */
+export function extractSizePackVariantsForRowSplit(value: string | null | undefined): SizePackVariant[] {
+  const title = String(value ?? "");
+  if (!title.includes("/")) return [];
+  const variants = extractSizePackVariantsFromTitle(title);
+  return variants.length >= 2 ? variants : [];
+}
+
 /** Strip all SIZE+pack spans, then append one variant label. */
 export function buildSingleVariantProductTitle(title: string, variant: SizePackVariant): string {
   const stripped = String(title ?? "")
@@ -96,12 +117,7 @@ export function parsePieceCountText(value: string | null | undefined): number | 
 export type TrustedPieceCountSource = "AI_EXTRACTED" | "TITLE_SIZE_PACK" | "LABELED_PCS" | "UNTRUSTED";
 
 export function parsePieceCountFromProductTitle(value: string | null | undefined): number | null {
-  const title = String(value ?? "").replace(/\([^)]*\)/g, " ");
-  const sizePackMatch = title.match(/\b(?:nb-s|nb|s|m|l|xl|xxl|xxxl|xxxxl)-?\s*(\d{1,3})(?:\s*\+\s*(\d{1,3}))?(?:s\b|\b)(?!\s*-\s*\d+\s*kg\b)/i);
-  if (!sizePackMatch) return null;
-  const base = Number(sizePackMatch[1]);
-  const bonus = sizePackMatch[2] ? Number(sizePackMatch[2]) : 0;
-  return normalizePieceCount(base + bonus);
+  return primarySizePackVariantFromTitle(value)?.pieceCount ?? null;
 }
 
 export function resolveTrustedPieceCount(input: {
@@ -110,6 +126,11 @@ export function resolveTrustedPieceCount(input: {
   extractedText?: string | null;
   sourceLabel?: string | null;
 }): { pieceCount: number | null; source: TrustedPieceCountSource } {
+  const title = String(input.productTitle ?? "");
+  const variants = extractSizePackVariantsFromTitle(title);
+  const primary = primarySizePackVariantFromTitle(title);
+  const multiWithoutListSeparator = !title.includes("/") && variants.length >= 2;
+
   const extractedText = String(input.extractedText ?? "").trim();
   const hasPcsLabel = /\bpcs?\b/i.test(String(input.sourceLabel ?? ""));
   const parsedExtractedText = /\b\d{1,3}\s*\+\s*$/.test(extractedText)
@@ -117,14 +138,22 @@ export function resolveTrustedPieceCount(input: {
     : parsePieceCountText(extractedText);
   const extractedPieceCount = parsedExtractedText ?? (hasPcsLabel ? normalizePieceCount(input.extractedValue) : null);
   if (extractedPieceCount !== null) {
+    // Ignore extracted counts that only match a leading noise SIZE+pcs token (SJ→S3 before M60).
+    if (
+      multiWithoutListSeparator
+      && primary
+      && primary.pieceCount !== extractedPieceCount
+      && variants.slice(0, -1).some((variant) => variant.pieceCount === extractedPieceCount)
+    ) {
+      return { pieceCount: primary.pieceCount, source: "TITLE_SIZE_PACK" };
+    }
     return {
       pieceCount: extractedPieceCount,
       source: hasPcsLabel ? "LABELED_PCS" : "AI_EXTRACTED",
     };
   }
 
-  const titlePieceCount = parsePieceCountFromProductTitle(input.productTitle);
-  if (titlePieceCount !== null) return { pieceCount: titlePieceCount, source: "TITLE_SIZE_PACK" };
+  if (primary) return { pieceCount: primary.pieceCount, source: "TITLE_SIZE_PACK" };
 
   return { pieceCount: null, source: "UNTRUSTED" };
 }

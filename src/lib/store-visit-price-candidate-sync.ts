@@ -4,7 +4,11 @@ import {
   type AiPriceCandidateSourceItem,
 } from "@/lib/ai-price-candidates";
 import type { ProductMatchContext } from "@/lib/ai-price-candidates";
-import { buildSingleVariantProductTitle, extractSizePackVariantsFromTitle } from "@/lib/piece-count";
+import {
+  buildSingleVariantProductTitle,
+  extractSizePackVariantsForRowSplit,
+  primarySizePackVariantFromTitle,
+} from "@/lib/piece-count";
 import { createSupabaseServiceClient } from "@/lib/supabase";
 import type { StoreVisitPriceImageAnalysis, StoreVisitPriceImageRow } from "@/lib/types";
 
@@ -96,7 +100,7 @@ function dedupePriceSourceItems(items: AiPriceCandidateSourceItem[]): AiPriceCan
   const seen = new Set<string>();
   const result: AiPriceCandidateSourceItem[] = [];
   for (const item of items) {
-    const fromTitle = extractSizePackVariantsFromTitle(item.product)[0];
+    const fromTitle = primarySizePackVariantFromTitle(item.product);
     const anchorSize = String(item.rowAnchor ?? "").split("|")[0]?.trim().toUpperCase() || "";
     const size = fromTitle?.size || anchorSize;
     const pieceCount = item.piece_count ?? fromTitle?.pieceCount ?? "";
@@ -116,7 +120,7 @@ function sourceItemsFromImage(image: PriceImageRow): AiPriceCandidateSourceItem[
 
   for (const [rowIndex, row] of result.rows.entries()) {
     if (hiddenRowIndexes.has(rowIndex)) continue;
-    const variants = extractSizePackVariantsFromTitle(row.sku);
+    const variants = extractSizePackVariantsForRowSplit(row.sku);
     if (variants.length < 2) {
       items.push(sourceItemFromPriceRow(image, row, rowIndex));
       continue;
